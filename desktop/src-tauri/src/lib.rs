@@ -4,6 +4,7 @@ use tauri::Manager;
 
 mod alert_checker;
 mod arweave;
+mod backup;
 mod commands;
 mod db;
 mod dead_drop;
@@ -137,6 +138,8 @@ pub fn run() {
             commands::finance_api_settings::set_finance_api_settings,
             commands::storage_settings::get_storage_settings,
             commands::storage_settings::set_storage_settings,
+            commands::backup::export_workspace_backup,
+            commands::backup::import_workspace_backup,
             commands::reit::list_reit_fundamentals,
             commands::reit::get_reit_manual_indicators,
             commands::reit::save_reit_manual_indicators,

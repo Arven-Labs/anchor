@@ -1867,7 +1867,7 @@
 - **Estado ao final**: fila da Fase 8 avança — item 3 fechado, restam (4) revalidação ponta a
   ponta (bloqueada externamente) e (5) Fase 8.5 (loop completo de sync, ainda não iniciada).
 
-### 2026-09-16 — Sessão 99 (interrompida por limite de token, retomar daqui)
+### 2026-09-16 — Sessão 99 (retomada após pausa por limite de token — ver continuação abaixo)
 
 - **Objetivo**: dono do projeto pediu pra continuar sem alvo específico. Checado de novo o
   bloqueio da Fase 8 — confirmado ao vivo no repo do TruthID que a wallet Arweave ainda não
@@ -1894,9 +1894,42 @@
 - **Container Docker do desktop pode ter ficado rodando** (`docker compose up` em background,
   log em `/tmp/anchor-dev.log`) — confirmar/derrubar (`docker compose down` em `desktop/`) numa
   sessão futura se ainda estiver de pé.
-- **Estado ao final**: nenhum código tocado nesta sessão. Pendências que seguem em aberto pra
-  próxima sessão, na ordem que faz mais sentido retomar: (1) checklist manual da Fase 15 (o mais
-  barato — sem gastar token de agente, só o dono do projeto clicando); (2) rodar o code
-  review de verdade do `24860e1` de novo, mas em nível **`high`** em vez de `max` (pedido
-  explícito do dono do projeto — `max` gastou token sem chegar a produzir achado nenhum); (3)
-  Fase 8 segue bloqueada esperando a wallet Arweave do TruthID, sem novidade.
+- **Estado nesse ponto**: nenhum código tocado ainda. Pendências registradas pra retomar: (1)
+  checklist manual da Fase 15 (o mais barato — sem gastar token de agente, só o dono do projeto
+  clicando); (2) rodar o code review de verdade do `24860e1` de novo, mas em nível **`high`** em
+  vez de `max` (pedido explícito do dono do projeto — `max` gastou token sem chegar a produzir
+  achado nenhum); (3) Fase 8 segue bloqueada esperando a wallet Arweave do TruthID, sem novidade.
+
+**Continuação da mesma sessão — Fase 16 (Backup do Workspace) implementada**:
+
+- Dono do projeto pediu pra seguir com a Fase 16. `AskUserQuestion` (4 perguntas) fechou o
+  escopo: formato export estruturado (JSON) — escolha do dono do projeto, contra minha
+  recomendação inicial de cópia bruta; ao descobrir que o schema tem 55 entidades, segunda
+  pergunta fechou por **export genérico via introspecção SQL** em vez de código por entidade;
+  escopo banco+anexos; gatilho manual; destino só local. Plano registrado (`EnterPlanMode`/
+  `ExitPlanMode`) sem gastar Explore/Plan agents — exploração feita direto (o dono do projeto
+  tinha acabado de pedir economia de token), aprovado igual.
+- **Implementado**: `desktop/src-tauri/src/backup.rs` (engine) + `commands/backup.rs` (comandos
+  `export_workspace_backup`/`import_workspace_backup`) + `AppError::Json` novo +
+  `BackupSettingsSection.tsx` (5ª seção em Settings, depois de Storage). Detalhe técnico
+  completo em `PHASE.md`, Fase 16.
+- **Achado de implementação, não previsto no plano original**: `PRAGMA foreign_keys` não pode
+  ser alterado dentro de uma transação já aberta (regra do próprio SQLite) — o plano original
+  previa isso pra depois rodar `PRAGMA foreign_key_check` manual. Trocado por `PRAGMA
+  defer_foreign_keys = ON` (esse sim pode mudar em transação aberta), que adia a checagem de FK
+  pro `commit()` — mais simples que o desenho original, sem checagem manual nenhuma.
+- **Verificado ao vivo, dentro do container já rodando** (`docker exec anchor-desktop-1 cargo
+  check/test`, `npx tsc --noEmit`, reaproveitando o build da tentativa de teste manual da Fase
+  15 desta mesma sessão): `cargo test --lib` **203/203 sem regressão** (3 testes novos). `tsc
+  --noEmit` limpo. `npm run tauri dev` recompilou e relançou o app sozinho (hot-reload do Rust +
+  Vite HMR do frontend) sem crash — confirmado só por screenshot passivo (app ainda na tela
+  "Choose a Workspace", mesma decisão de não dirigir a UI via `xdotool` desta sessão).
+- **Escopo cortado conscientemente**: teste "contra o schema real com todas as migrations
+  aplicadas" (cogitado no plano) descartado — exigiria puxar o crate `migration` como dev-dep do
+  crate principal, hoje não é dependência dele (só roda via `sea-orm-cli` manual). Os testes
+  unitários com tabelas ad-hoc já cobrem tipo/FK/versão sem essa complexidade extra.
+- **Pendência que segue aberta**: teste de clique real (export → import contra um Workspace de
+  verdade, o mesmo container ainda de pé) — nem essa nem a pendência da Fase 15 foram clicadas
+  pelo dono do projeto ainda nesta sessão.
+- **Estado ao final**: Fase 16 implementada e verificada por teste automatizado; falta só a
+  confirmação visual/manual (mesmo padrão pendente que a Fase 15 já tinha).

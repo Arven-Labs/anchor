@@ -3,7 +3,19 @@
 > Este projeto usa a mesma estrutura de arquivos do TruthID (outro projeto do mesmo dono): o estado
 > foi dividido em arquivos menores dentro desta pasta (`project/`), em vez de um único
 > `PROJECT_STATE.md` monolítico na raiz.
-> Última atualização: 2026-09-13 (Sessão 98 — **Fase 8, item 3 da fila implementado**: branch de
+> Última atualização: 2026-09-16 (Sessão 99 — **Fase 16 implementada**: Backup do Workspace,
+> ideia registrada na Sessão 96. Export/import estruturado (JSON) via introspecção SQL genérica
+> (`sqlite_master`/`PRAGMA table_info`, cobre as 55 tabelas do schema sem código por entidade) +
+> anexos via `StorageProvider` da Fase 15. Restore roda numa transação com `PRAGMA
+> defer_foreign_keys = ON` (achado de sessão: `PRAGMA foreign_keys` não pode mudar dentro de
+> transação aberta) e recusa rodar se o `schema_version` do arquivo não bater com o banco atual.
+> Novo `backup.rs`/`commands/backup.rs`/`BackupSettingsSection.tsx` (5ª seção em Settings).
+> `cargo test --lib` 203/203 (3 novos), `tsc --noEmit` limpo. **Pendência**: teste de clique real
+> (export→import contra um Workspace de verdade) ainda não confirmado pelo dono do projeto —
+> mesma pendência que a Fase 15 já tinha. Ver `PHASE.md`/`SESSIONS.md` Fase 16 pro detalhe
+> completo, incluindo a checagem de Fase 8 (segue bloqueada esperando a wallet Arweave do
+> TruthID) e a tentativa de code review abortada por limite de token nesta mesma sessão.
+> Última atualização anterior: 2026-09-13 (Sessão 98 — **Fase 8, item 3 da fila implementado**: branch de
 > leitura `ar://` no Anchor — novo `arweave::fetch_content` (GET público em `arweave.net/{tx_id}`,
 > sem TruthID no meio), `sync_registry::parse_arweave_tx_id`, e `sync_snapshot_cipher::decrypt`
 > promovido de teste pra função real (tag de autenticação AES-GCM na decifra é a prova

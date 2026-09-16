@@ -1539,19 +1539,52 @@ migração entre providers (`exportAll`/`importAll` — o contrato existe na tra
 via `LocalFSProvider`, mas sem UI/comando de migração, já que não há um segundo provider real pra
 migrar pra ele ainda), `DecentralizedVaultProvider` (depende da Fase 8/Vault Web3 avançar).
 
-### Fase 16 — Backup do Workspace (ideia trazida em conversa pelo dono do projeto na Sessão 96, puro registro, não iniciada)
+### Fase 16 — Backup do Workspace (ideia trazida em conversa pelo dono do projeto na Sessão 96, implementada na Sessão 99)
 
 **Objetivo**: mecanismo explícito de backup/restauração de um Workspace inteiro (dados +
-eventualmente anexos, ver Fase 15), distinto do sync contínuo multi-dispositivo já desenhado na
-Fase 8 — cobre o caso de o usuário simplesmente querer um snapshot restaurável (proteção contra
-perda de dado/corrupção/troca de máquina), não a sincronização em tempo real entre dispositivos.
-Não decidido ainda: formato do backup (dump do SQLite vs. export estruturado), gatilho (manual vs.
-periódico), nem destino (local vs. remoto — se remoto, provavelmente reaproveita as interfaces
-`StorageProvider` da Fase 15 em vez de inventar um mecanismo próprio).
+anexos, ver Fase 15), distinto do sync contínuo multi-dispositivo já desenhado na Fase 8 — cobre
+o caso de o usuário simplesmente querer um snapshot restaurável (proteção contra perda de
+dado/corrupção/troca de máquina), não a sincronização em tempo real entre dispositivos.
 
-**Estado**: puro registro de intenção — nenhuma decisão de arquitetura tomada, nenhum código
-escrito. Relacionada à Fase 8 (sync) e à Fase 15 (`StorageProvider`), mas não depende de nenhuma
-das duas pra existir na sua forma mais simples (backup local manual).
+**Decisões de escopo (Sessão 99, `AskUserQuestion`)**: export **estruturado (JSON)**, não cópia
+bruta do `.db` — mas dado que o schema tem 55 entidades (`entity/`), em vez de código específico
+por tabela, o export é **genérico via introspecção SQL** (`sqlite_master` + `PRAGMA
+table_info`), cobrindo qualquer tabela presente ou futura sem precisar ser tocado de novo.
+Escopo banco + anexos (reaproveita `StorageProvider::export_all`/`import_all` da Fase 15).
+Gatilho manual (botão em Settings, sem scheduler). Destino só local (file picker do SO).
+
+**Implementado**: `desktop/src-tauri/src/backup.rs` (engine, sem depender de Tauri) — lista
+tabelas via `sqlite_master`, lê tipo/afinidade de cada coluna via `PRAGMA table_info` (afinidade
+decide como extrair/reconstituir cada valor: Integer/Real/Text/Blob — cobre tudo que os
+migrations deste projeto realmente geram, incluindo o caso `boolean` caindo no fallback NUMERIC
+do SQLite, sempre 0/1). Formato do arquivo: `{format_version, schema_version, created_at,
+tables: {nome: [linhas...]}, attachments: [(path, base64)]}`. **Restore roda numa única
+transação com `PRAGMA defer_foreign_keys = ON`** (diferente de `PRAGMA foreign_keys`, que não
+pode mudar dentro de uma transação já aberta) — apaga+insere todas as tabelas em qualquer ordem
+e o `commit()` falha sozinho (rollback automático) se alguma FK ficar quebrada no fim, sem
+precisar de checagem manual. **Guard de segurança**: restore recusa rodar se o `schema_version`
+do arquivo (última migration aplicada no banco de origem) não bater com o banco atual — evita
+restaurar um backup de um schema incompatível, já que o projeto não tem nenhuma ferramenta de
+diff/migração parcial. Comandos novos `export_workspace_backup`/`import_workspace_backup`
+(`commands/backup.rs`), resolvendo o provider ativo do jeito que `commands/property.rs` já
+fazia. UI: seção nova "Backup" em Settings (`BackupSettingsSection.tsx`) — botão de export (file
+picker `save()`) e de import (`open()` + confirmação explícita "Confirm — overwrite all data?"
+antes de rodar, mesmo padrão "Confirm?" de `IaSettingsSection.tsx`).
+
+**Verificado**: `cargo test --lib` 203/203 sem regressão (3 testes novos — round-trip
+preservando null/tipos e respeitando FK entre duas tabelas ad-hoc, guard de `format_version`
+desconhecido, guard de `schema_version` incompatível). `tsc --noEmit` limpo. App relançado ao
+vivo (rebuild automático do `npm run tauri dev`) sem crash, mas **teste de clique real (export →
+import contra um Workspace de verdade) ainda não foi feito** — fica pendência pro dono do
+projeto confirmar, mesmo padrão da Fase 15.
+
+**Limitação conhecida, aceita conscientemente**: `import_all` do `StorageProvider` só
+sobrescreve por caminho, não apaga arquivo que não está no backup — um restore nunca *perde* um
+anexo mais novo que o usuário criou depois do backup, mas também não limpa anexos órfãos. Teste
+"contra o schema real com todas as migrations aplicadas" (cogitado no plano) foi descartado por
+exigir uma dependência dev nova (crate `migration`, hoje só usado via `sea-orm-cli` manual, fora
+do grafo de dependências do crate principal) — os testes unitários com tabelas ad-hoc já cobrem
+a lógica de tipo/FK/versão sem essa complexidade extra.
 
 ### Fase 17 — Índices macro adicionais via EasyBusiness: SELIC, DI Futuro (ideia trazida em conversa pelo dono do projeto na Sessão 96, puro registro, não iniciada)
 

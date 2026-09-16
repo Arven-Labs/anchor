@@ -50,6 +50,8 @@ pub enum AppError {
     Arweave(String),
     #[error("decryption failed: {0}")]
     Decryption(String),
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 impl AppError {
@@ -79,6 +81,7 @@ impl AppError {
             AppError::FinanceApi(_) => "FINANCE_API_ERROR",
             AppError::Arweave(_) => "ARWEAVE_ERROR",
             AppError::Decryption(_) => "DECRYPTION_ERROR",
+            AppError::Json(_) => "JSON_ERROR",
         }
     }
 }
