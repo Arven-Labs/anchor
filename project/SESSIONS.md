@@ -1866,3 +1866,37 @@
   TruthID (item 4 da fila, fora deste repo). Fica pendente pra quando isso existir.
 - **Estado ao final**: fila da Fase 8 avança — item 3 fechado, restam (4) revalidação ponta a
   ponta (bloqueada externamente) e (5) Fase 8.5 (loop completo de sync, ainda não iniciada).
+
+### 2026-09-16 — Sessão 99 (interrompida por limite de token, retomar daqui)
+
+- **Objetivo**: dono do projeto pediu pra continuar sem alvo específico. Checado de novo o
+  bloqueio da Fase 8 — confirmado ao vivo no repo do TruthID que a wallet Arweave ainda não
+  existe (`"nenhuma wallet Arweave configurada"` ainda no código, `arweave/wallet.rs` só tem
+  geração/parse de JWK, nada de fluxo de criação plugado), então itens 4 e 5 da fila continuam
+  travados fora deste repo. `AskUserQuestion` sobre qual frente livre seguir — dono do projeto
+  escolheu a **pendência da Fase 15** (Sessão 97): validar ao vivo o fluxo de anexos por trás do
+  `StorageProvider` novo.
+- **App subiu com sucesso**: `desktop/dev.sh` (`xhost +local:docker` + `docker compose up`),
+  build Rust limpo (`Finished dev profile`, só warnings de dead-code pré-existentes), app abriu
+  até a tela "Choose a Workspace" (screenshot passivo confirmou). Não avançou pra dentro do app
+  porque dirigir a UI via `xdotool` é a prática desaconselhada por este projeto (ver
+  `feedback-anchor-workflow` na memória — incidente real de clique errado numa janela por trás,
+  já que `DISPLAY` aqui é a área de trabalho real do dono do projeto) — passado o checklist pro
+  dono do projeto clicar manualmente: criar asset → subir anexo → preview → apagar; repetir pra
+  tese; apagar tese inteira e conferir que os anexos somem; conferir seção "Storage" em Settings
+  (Local ativo, outras 3 opções "coming soon"). **Esse checklist ainda não foi executado/
+  confirmado** — pendência segue aberta.
+- **Pivô pra code review**: dono do projeto pediu, em vez do teste manual, um code review "brabo"
+  do commit da Fase 15 (`24860e1`). Disparado `/code-review 24860e1 max` em background (fork).
+  **Abortado pelo próprio dono do projeto por limite de token/uso** antes do agente terminar de
+  nem ler o diff direito (só tinha corrigido o path do repo) — **nenhum achado real foi
+  produzido**, não tem nada de code review pra aproveitar de fato desta sessão.
+- **Container Docker do desktop pode ter ficado rodando** (`docker compose up` em background,
+  log em `/tmp/anchor-dev.log`) — confirmar/derrubar (`docker compose down` em `desktop/`) numa
+  sessão futura se ainda estiver de pé.
+- **Estado ao final**: nenhum código tocado nesta sessão. Pendências que seguem em aberto pra
+  próxima sessão, na ordem que faz mais sentido retomar: (1) checklist manual da Fase 15 (o mais
+  barato — sem gastar token de agente, só o dono do projeto clicando); (2) rodar o code
+  review de verdade do `24860e1` de novo, mas em nível **`high`** em vez de `max` (pedido
+  explícito do dono do projeto — `max` gastou token sem chegar a produzir achado nenhum); (3)
+  Fase 8 segue bloqueada esperando a wallet Arweave do TruthID, sem novidade.
