@@ -1,10 +1,5 @@
-import { useState, type FormEvent } from "react";
-import {
-  ASSET_CLASSES_WITH_AUTO_QUOTE,
-  ASSET_CLASS_LABELS,
-  type AssetClass,
-} from "../portfolio/types";
-import Field from "../components/Field";
+import { SearchIcon } from "lucide-react";
+import type { AssetClass } from "../portfolio/types";
 import StockAnalysisSection from "./StockAnalysisSection";
 import FiiLookupSection from "./FiiLookupSection";
 import EtfLookupSection from "./EtfLookupSection";
@@ -14,15 +9,6 @@ import MetalLookupSection from "./MetalLookupSection";
 import UsStockLookupSection from "./UsStockLookupSection";
 import ReitLookupSection from "./ReitLookupSection";
 import EtfUsLookupSection from "./EtfUsLookupSection";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 /// Fase 10, item 8, Sessão 43 — "Pesquisa" virou a tela unificada de
@@ -50,72 +36,35 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 /// `UsStockLookupSection.tsx`/`ReitLookupSection.tsx`, sem fundamentos), que
 /// só recebem o ticker já commitado — cada uma cuida do próprio fetch/estado,
 /// sem nada compartilhado entre elas além do visual (`shared.tsx`).
-function StockLookupPanel({ workspaceId }: { workspaceId: number }) {
-  const [tickerInput, setTickerInput] = useState("");
-  const [activeTicker, setActiveTicker] = useState<string | null>(null);
-  const [assetClass, setAssetClass] = useState<AssetClass>("acao_br");
-
-  function handleSearch(event: FormEvent) {
-    event.preventDefault();
-    const normalized = tickerInput.trim().toUpperCase();
-    if (!normalized) return;
-    setActiveTicker(normalized);
-  }
-
+///
+/// Sessão seguinte à Fase 16 — a busca (classe + ticker) saiu daqui e virou
+/// `nav/GlobalSearch.tsx`, fixa na navbar em `App.tsx`, pedido explícito do
+/// dono do projeto ("queria deixar o campo de pesquisa no topo, do lado da
+/// navbar"). Este componente agora só recebe `assetClass`/`activeTicker` já
+/// commitados e desenha o resultado.
+function StockLookupPanel({
+  workspaceId,
+  assetClass,
+  activeTicker,
+}: {
+  workspaceId: number;
+  assetClass: AssetClass;
+  activeTicker: string | null;
+}) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Research</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
-        <form onSubmit={handleSearch} className="flex items-end gap-3">
-          <div className="w-40">
-            <Field label="Class">
-              <Select
-                value={assetClass}
-                onValueChange={(value) => setAssetClass(value as AssetClass)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ASSET_CLASSES_WITH_AUTO_QUOTE.map((key) => (
-                    <SelectItem key={key} value={key}>
-                      {ASSET_CLASS_LABELS[key]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
+        {!activeTicker && (
+          <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-10 text-center text-muted-foreground">
+            <SearchIcon className="size-5" />
+            <p className="text-sm">
+              Use a busca no topo da tela pra analisar um ativo.
+            </p>
           </div>
-          <Field label="Ticker" className="flex-1">
-            <Input
-              required
-              value={tickerInput}
-              onChange={(e) => setTickerInput(e.currentTarget.value)}
-              placeholder={
-                assetClass === "fii"
-                  ? "HGLG11"
-                  : assetClass === "etf_br"
-                    ? "BOVA11"
-                    : assetClass === "cripto"
-                      ? "ETH"
-                      : assetClass === "bdr"
-                        ? "AAPL34"
-                        : assetClass === "metal"
-                          ? "XAU"
-                          : assetClass === "acao_internacional"
-                            ? "AAPL"
-                            : assetClass === "reit"
-                              ? "O"
-                              : assetClass === "etf_us"
-                                ? "SPY"
-                                : "PETR4"
-              }
-            />
-          </Field>
-          <Button type="submit">Search</Button>
-        </form>
+        )}
 
         {activeTicker &&
           (assetClass === "fii" ? (
