@@ -1933,3 +1933,33 @@
   pelo dono do projeto ainda nesta sessão.
 - **Estado ao final**: Fase 16 implementada e verificada por teste automatizado; falta só a
   confirmação visual/manual (mesmo padrão pendente que a Fase 15 já tinha).
+
+### 2026-09-23 — Sessão 100
+
+- **Objetivo**: dono do projeto pediu pra extrair o máximo do arquivo solto `anchor.md` (raiz do
+  repo, não versionado, "Anchor — decisões recentes") e registrar no `project/`, mais duas ideias
+  novas trazidas em conversa. Só registro — "depois fazemos o debate". Nenhum código tocado.
+- **Do `anchor.md`** (2 decisões + 2 ideias):
+  1. **Remover o chat de IA** — Warden vira a única interface conversacional do ecossistema.
+     Fase 20 (nova). Escopo exato (só chat vs. também extração de documento/proposta de
+     valuation) ficou como pergunta em aberto.
+  2. **Consumo do Lume** — o `easybusiness` das Fases 14/17 foi renomeado pra Lume; Anchor
+     consome via sidecar local com fallback pra instância compartilhada se o Warden já tiver
+     subido uma. Fase 21 (nova). O `anchor.md` cita um `lume.md` que não existe neste repo.
+  3. **Backtesting/portfolio quant** como módulo do Anchor (não app separado). Fase 22 (nova).
+  4. **Attestations cross-app via TruthID** (provar fatos da carteira sem expor dados). Fase 23
+     (nova).
+- **Ideias novas da conversa**:
+  5. **Gestão de impostos sobre investimentos** — apuração automática do IR nas vendas, gerar
+     DARF, imposto pago refletido na rentabilidade da Carteira e no fluxo de caixa das Finanças
+     Gerais. Fase 24 (nova), com um levantamento das regras BR que o motor provavelmente precisa
+     cobrir, marcado explicitamente como **não verificado** (confirmar na fonte oficial antes de
+     implementar).
+  6. **Web app auto-hospedado** — o próprio app desktop pode ser servidor (Configurações: modo
+     servidor, porta), navegador acessa a UI completa; referência: fluxo do Warden (Fase 9.8 +
+     P78 de lá). Fase 25 (nova), com os pontos de debate levantados.
+- **Arquivos tocados**: `PHASE.md` (6 fases novas, 20 a 25), `ROADMAP.md` (6 bullets novos),
+  `ARCHITECTURE.md` (3 linhas novas na tabela de decisões). `INDEX.md` não atualizado (mesmo
+  padrão das Sessões 95/96 — só registro). `anchor.md` deixado onde está, não apagado.
+- **Estado ao final**: 6 itens registrados, nenhum iniciado; debate pendente com o dono do
+  projeto.

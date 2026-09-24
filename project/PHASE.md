@@ -1626,3 +1626,174 @@ diário, per-asset vs. per-workspace, quais telas precisam converter). Não bloq
 outra fase, mas toca bastante superfície (Resumo, Posições, gráficos de alocação, Rentabilidade)
 se um dia for implementada.
 
+
+### Fase 20 — Remover o chat de IA do Anchor (Warden vira a única interface conversacional; decisão registrada na Sessão 100, não iniciada)
+
+**Origem**: decisão do dono do projeto, trazida no arquivo solto `anchor.md` (raiz do repo, fora
+do `project/`) e registrada aqui na Sessão 100.
+
+**Decisão**: tirar o painel de chat de IA do Anchor (entregue na Fase 7 — `desktop/src/chat/`,
+`desktop/src/chat-full/`, `desktop/src/components/assistant-ui/`). O **Warden** (repo irmão
+`../warden`) passa a ser a **única interface conversacional do ecossistema** — o Anchor não
+duplica essa funcionalidade.
+
+**Em aberto (pra debater antes de implementar)**:
+- Escopo exato da remoção: só o chat (`ChatPanel`/`ChatScreen`/`ChatToggleButton`/`ApiKeyGate`)
+  ou também as outras features de IA que não são conversa — ex. `ai/DocumentExtractDialog.tsx`
+  (extração de dados de documento) e `ValuationProposalCard` (IA propõe criar valuation, Fase
+  7.10.4). A decisão original fala de "AI chat panel", não de toda IA.
+- O que acontece com a chave de API guardada no keyring e com o backend Rust do chat (comandos,
+  contador de tokens da Fase 7.10.3).
+- Como o Warden passa a enxergar os dados do Anchor pra substituir o chat (ex. tool/MCP do
+  Warden lendo o banco/API do Anchor) — sem isso, remover o chat é perda de funcionalidade, não
+  migração. Conecta com a Fase 25 (Anchor como servidor expõe uma API que o Warden poderia
+  consumir).
+
+**Estado**: decisão tomada, nada executado. Fase 7 continua como está no código até a remoção.
+
+### Fase 21 — Consumo do Lume (ex-EasyBusiness) com fallback pra instância compartilhada do Warden (registrada na Sessão 100, não iniciada)
+
+**Origem**: arquivo solto `anchor.md`, registrado aqui na Sessão 100.
+
+**Contexto de nomenclatura**: o repo `easybusiness` citado nas Fases 14 e 17 (Finance API) foi
+**renomeado pra Lume** (repo irmão `../lume`). O Anchor continua sendo o primeiro consumidor-alvo
+do Lume. Os textos antigos das Fases 14/17 mantêm "EasyBusiness" por serem registro histórico;
+daqui pra frente o nome é Lume. (O `anchor.md` menciona um `lume.md` de referência que **não
+existe** neste repo — provavelmente estava junto com esse arquivo em outro lugar.)
+
+**Decisão**: o Anchor consome o Lume via **sidecar local** (o mecanismo que já existe desde a
+Fase 14.2 — `desktop/src-tauri/src/finance_api/`, binário embutido, modo Local/Remote da Fase
+14.3), **com fallback pra uma instância compartilhada se o Warden já tiver subido uma** na mesma
+máquina — em vez de cada app do ecossistema subir o seu próprio processo do Lume. Sem custo pro
+usuário na versão gratuita/local.
+
+**Em aberto**: como o Anchor descobre que já existe uma instância do Warden rodando (porta fixa
+conhecida, arquivo de lock/descoberta, registro no SO); ordem de preferência (usar a
+compartilhada primeiro e só subir sidecar próprio se não existir, ou o contrário); o que fazer se
+o Warden fechar e derrubar a instância no meio do uso do Anchor; compatibilidade de versão entre
+o Lume embutido no Anchor (`.easybusiness-version`, fixado por SHA) e o do Warden.
+
+**Estado**: decisão de direção tomada, nada implementado. Hoje o sidecar local já funciona
+(Fase 14); falta só a parte do fallback/compartilhamento.
+
+### Fase 22 — Motor de backtesting / portfolio quant como módulo do Anchor (ideia registrada na Sessão 100, não decidida)
+
+**Origem**: arquivo solto `anchor.md` — "ideia registrada pra explorar depois (não decidida, só
+anotada)".
+
+**Ideia**: um motor de backtesting de estratégia de carteira — alocação, rebalanceamento,
+drawdown, correlação — consumindo dados históricos do Lume (Fase 21).
+
+**Direção já pensada**: faz mais sentido como **módulo dentro do Anchor**, não como projeto/app
+separado — seria útil também pro usuário avançado, não só pensando numa futura gestora de fundos,
+e aproveita a base de usuários que já valida teses ativo por ativo no Anchor (valuation/teses
+viram estratégia de carteira testável).
+
+**Estado**: puro registro de intenção, nada decidido sobre escopo, UI ou onde o cálculo roda.
+
+### Fase 23 — Attestations cross-app via TruthID (provar fatos da carteira sem expor dados; ideia registrada na Sessão 100, não decidida)
+
+**Origem**: arquivo solto `anchor.md` — "ideia registrada pra explorar depois (não decidida, só
+anotada)".
+
+**Ideia**: usar o `VaultRegistry`/ZK attestations do TruthID (item 2 do roadmap do TruthID) pra
+o Anchor **provar coisas sobre a carteira do usuário sem expor os dados brutos** — ex. "patrimônio
+acima de X". Reaproveita essa capacidade do TruthID dentro do próprio ecossistema antes de
+oferecê-la pra fora. Conecta com a Fase 8 (Anchor já integra com TruthID pra assinatura/cifra do
+sync).
+
+**Estado**: puro registro de intenção, depende do lado TruthID existir primeiro.
+
+### Fase 24 — Gestão de impostos sobre investimentos (apuração automática + DARF; ideia trazida pelo dono do projeto na Sessão 100, não iniciada)
+
+**Origem**: pedido em conversa do dono do projeto na Sessão 100.
+
+**Objetivo**: o Anchor apurar sozinho o imposto devido sobre investimentos, de forma "bem
+eficiente". Fluxo desejado, nas palavras do dono do projeto: "comprou tanto, teve tanto de lucro
+na venda, portanto terá que pagar isso, clique aqui para gerar o DARF e pagar".
+
+**O que foi pedido explicitamente**:
+1. **Cálculo automático** do ganho/prejuízo em cada venda a partir das transações já registradas
+   na Carteira (preço médio de compra já existe — ver Fase 13), e do imposto devido resultante.
+2. **Geração do DARF** a partir do valor apurado ("clique aqui pra gerar e pagar").
+3. **Imposto pago registrado automaticamente** em dois lugares:
+   - na **Carteira**, entrando no cálculo de rentabilidade (rentabilidade líquida de imposto);
+   - nas **Finanças Gerais** (Fase 12), como saída no fluxo de caixa.
+
+**Contexto de domínio a levantar/validar no debate** (regras BR que o motor provavelmente precisa
+cobrir — **não verificadas nesta sessão, legislação muda com frequência, confirmar na fonte
+oficial antes de implementar**):
+- Apuração **mensal**, separada por categoria: ações swing trade (com isenção pra vendas até um
+  limite mensal), day trade (alíquota maior, sem isenção), FII (sem isenção sobre ganho de
+  capital), ETF, BDR, cripto (regras e limites próprios), ativos no exterior (regime anual da Lei
+  14.754/2023, diferente do mensal).
+- **Compensação de prejuízo** acumulado de meses anteriores, dentro da mesma categoria
+  (swing com swing, day trade com day trade, FII com FII).
+- **IRRF "dedo-duro"** retido na fonte na venda, abatido do imposto devido.
+- Regra do **valor mínimo de DARF** (valor abaixo do mínimo acumula pro mês seguinte) e
+  **vencimento** (último dia útil do mês seguinte à venda), com multa/juros se atrasar.
+- Renda fixa/fundos: IR já retido na fonte (tabela regressiva, come-cotas) — provavelmente só
+  informativo/registro, não gera DARF.
+- Proventos: dividendos (hoje isentos, mas em discussão legislativa) vs. JCP (retido na fonte) —
+  a automação de proventos (Fase 13.6) já existe e pode alimentar isso.
+
+**Em aberto (pra debater)**:
+- Como o "gerar DARF" funciona na prática: não há API pública oficial conhecida da Receita pra
+  emitir DARF de terceiros — opções a investigar: gerar os dados preenchidos (código de receita,
+  período de apuração, valor) e abrir o Sicalc Web da Receita; gerar código de barras/PIX
+  localmente se o layout for público; ou só um guia copiável.
+- Escopo da primeira fatia (ex. só ações swing trade + FII, deixando cripto/exterior/day trade
+  pra depois).
+- Se day trade precisa de marcação explícita na transação (hoje provavelmente não distingue).
+- Se entra também apoio à **declaração anual do IRPF** (bens e direitos com custo de aquisição,
+  rendimentos isentos, prejuízos a compensar) — extensão natural, não pedida explicitamente.
+- Onde mora o dado: tabela própria de apuração mensal + DARFs gerados/pagos (status: a pagar,
+  pago, vencido), ligada às transações da Carteira e a uma transação em Finanças Gerais.
+- Multi-moeda/exterior interage com a Fase 19 (moeda base).
+
+**Estado**: puro registro de intenção — nenhuma decisão de escopo, modelo de dado ou fonte de
+regra tomada. Dono do projeto pediu explicitamente pra só registrar agora e debater depois.
+
+### Fase 25 — Web app auto-hospedado: o próprio Anchor como servidor (ideia trazida pelo dono do projeto na Sessão 100, não iniciada)
+
+**Origem**: pedido em conversa do dono do projeto na Sessão 100, citando o fluxo desejado do
+Warden como referência (ver `../warden/project/ROADMAP.md`, seção "Interface web auto-hospedada no
+próprio hub", `PENDING.md` P78, e Fase 9.8 do Warden — "app desktop embute o próprio
+`warden-server`").
+
+**Objetivo**: o Anchor ter uma versão **web auto-hospedável** — o mesmo app que existe no desktop
+e no mobile, só que acessível pelo navegador — onde **o servidor é o próprio app**, não um
+produto separado:
+- Uma instância desktop do Anchor pode ser **só app** (como hoje) ou **servidor** (e continuar
+  sendo app ao mesmo tempo).
+- Isso se define nas **Configurações**: "esta instância é um servidor", **porta**, e esse tipo de
+  configuração.
+- Com o modo servidor ligado, abrir `http://<ip>:<porta>` no navegador mostra a interface web
+  completa do Anchor daquela instância (mesmo espírito Jellyfin que o Warden adotou: o servidor
+  que você hospeda já vem com a própria interface web).
+
+**Pontos pra debater** (levantados ao registrar, nada decidido):
+- **Frontend**: reaproveitar o React do `desktop/` trocando a camada `invoke()` do Tauri por
+  chamadas HTTP pro servidor (exige uma camada de transporte abstrata no frontend) vs. frontend
+  web separado. Reaproveitar parece natural já que o app inteiro já é React.
+- **Backend**: os `#[tauri::command]` hoje são a API; expor a mesma lógica via HTTP (ex. axum)
+  dentro do processo Tauri, reaproveitando os mesmos serviços/SeaORM.
+- **Autenticação no navegador**: login próprio vs. usuários/RBAC dos Workspaces (Fase 10) vs.
+  TruthID (Fase 8/23). Obrigatório se exposto fora da LAN.
+- **HTTPS** quando exposto na internet; bind só em localhost/LAN por padrão.
+- **Modo headless**: servidor rodando sem janela (homelab, VPS, imagem Docker) — o dono do
+  projeto descreveu "desktop pode ser servidor", mas um servidor 24/7 provavelmente quer rodar
+  sem a UI desktop aberta.
+- **Relação com o mobile** (Fase 11.2, Flutter com banco próprio, sem sync): o mobile poderia
+  virar cliente deste servidor, o que resolveria o problema de sync do mobile por outro caminho
+  que não a Fase 8.
+- **Relação com a Fase 8** (sync descentralizado via TruthID/Arweave) e com o
+  `SelfHostedProvider` reservado na Fase 15 — um servidor Anchor próprio é um candidato natural
+  a implementação do `SelfHostedProvider`.
+- **Concorrência** no SQLite com vários clientes simultâneos (desktop local + navegadores).
+- **Versão paga hospedada** análoga ao tier pago do Warden (P50) e ao `ManagedCloudProvider` da
+  Fase 15 — não pedida agora, só registrar a simetria.
+- Serve de API pro Warden consumir os dados do Anchor (ver Fase 20).
+
+**Estado**: puro registro de intenção — dono do projeto pediu explicitamente pra só registrar e
+debater depois.
