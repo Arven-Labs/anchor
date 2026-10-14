@@ -17,7 +17,6 @@ import DividendHistoryChart from "./DividendHistoryChart";
 import PriceHistoryChart from "./PriceHistoryChart";
 import NewValuationDialog from "../models/NewValuationDialog";
 import SavedValuationsPanel from "../valuations/SavedValuationsPanel";
-import AboutCompanySection from "./AboutCompanySection";
 import AssetThesesSidebar from "./AssetThesesSidebar";
 import {
   AddToAssetsButton,
@@ -370,8 +369,6 @@ function UsStockLookupSection({
               <p className="text-muted-foreground">No saved valuation for {ticker} yet.</p>
             )}
           </div>
-
-          <AboutCompanySection ticker={ticker} assetClass="acao_internacional" />
 
           <AssetThesesSidebar
             workspaceId={workspaceId}

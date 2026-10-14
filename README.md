@@ -23,8 +23,6 @@ a UI built around exactly that workflow.
   OS notification fires when it triggers.
 - **Stock Lookup**: search any B3 ticker for quote, fundamentals, technicals (SMA/CAGR), a
   dividend-history chart, and a free-text note — auto-fetches data on first search, cached after.
-- **AI chat panel**: ask questions about your own saved valuations/alerts using your own Gemini,
-  Claude, or OpenAI API key — read-only access to your data, key stored in the OS keyring.
 - **(in progress)** Cross-device sync via [TruthID](https://github.com/masterlxz/truthid) + IPFS —
   no server operated by this project; see [`project/PHASE.md`](project/PHASE.md), Fase 8.
 
@@ -63,7 +61,8 @@ session-by-session history — start at [`project/INDEX.md`](project/INDEX.md).
 
 ## Security
 
-- AI provider API keys live in the OS keyring, never in the SQLite database or in git.
+- API keys (e.g. a remote Finance API key) live in the OS keyring, never in the SQLite database or
+  in git.
 - Your local SQLite database (actual valuations/portfolio data) is gitignored and never leaves your
   machine.
 - This is a personal tool, not professionally audited — treat it as early-stage software.

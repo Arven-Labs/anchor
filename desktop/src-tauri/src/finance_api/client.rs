@@ -251,33 +251,6 @@ pub async fn fetch_company_dcf_fundamentals(
     get(handle, &format!("/v1/companies/{cvm_code}/dcf-fundamentals")).await
 }
 
-/// `protocolo_entrega` costuma ser o número de protocolo da CVM, mas vem
-/// vazio pra "Relatório Proventos" (confirmado ao vivo do lado do
-/// `easybusiness`) — nesse caso a Finance API já devolve o próprio
-/// `link_download` no lugar, então este campo é sempre um identificador
-/// único por documento independente da categoria.
-#[derive(Debug, Deserialize)]
-pub struct CompanyDividendNoticePoint {
-    pub protocolo_entrega: String,
-    pub data_entrega: NaiveDate,
-    pub link_download: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CompanyDividendNoticesResponse {
-    pub cvm_code: i32,
-    #[serde(flatten)]
-    pub meta: ResponseMeta,
-    pub data: Vec<CompanyDividendNoticePoint>,
-}
-
-pub async fn fetch_company_dividend_notices(
-    handle: &FinanceApiHandle,
-    cvm_code: i32,
-) -> Result<CompanyDividendNoticesResponse, AppError> {
-    get(handle, &format!("/v1/companies/{cvm_code}/dividend-notices")).await
-}
-
 // ---------------------------------------------------------------------------
 // crypto — /v1/crypto/...
 // ---------------------------------------------------------------------------

@@ -18,20 +18,10 @@ pub enum AppError {
     InvalidInput(String),
     #[error("database error: {0}")]
     Database(#[from] sea_orm::DbErr),
-    #[error("unsupported AI chat provider '{0}'")]
-    UnknownProvider(String),
     #[error("keyring error: {0}")]
     Keyring(#[from] keyring::Error),
-    #[error("no API key found in the keyring for key id {0} (was it deleted outside the app?)")]
-    MissingApiKey(String),
     #[error("HTTP request failed: {0}")]
     Http(#[from] reqwest::Error),
-    #[error("Gemini API error: {0}")]
-    GeminiApi(String),
-    #[error("Claude API error: {0}")]
-    ClaudeApi(String),
-    #[error("OpenAI API error: {0}")]
-    OpenAiApi(String),
     #[error("could not find a TruthID Desktop instance running on this machine")]
     TruthIdNotFound,
     #[error("TruthID error: {0}")]
@@ -65,13 +55,8 @@ impl AppError {
             AppError::CollectorFailed(_) => "COLLECTOR_FAILED",
             AppError::InvalidInput(_) => "INVALID_INPUT",
             AppError::Database(_) => "DATABASE_ERROR",
-            AppError::UnknownProvider(_) => "UNKNOWN_PROVIDER",
             AppError::Keyring(_) => "KEYRING_ERROR",
-            AppError::MissingApiKey(_) => "MISSING_API_KEY",
             AppError::Http(_) => "HTTP_ERROR",
-            AppError::GeminiApi(_) => "GEMINI_API_ERROR",
-            AppError::ClaudeApi(_) => "CLAUDE_API_ERROR",
-            AppError::OpenAiApi(_) => "OPENAI_API_ERROR",
             AppError::TruthIdNotFound => "TRUTHID_NOT_FOUND",
             AppError::TruthId(_) => "TRUTHID_ERROR",
             AppError::InvalidAddress(_) => "INVALID_ADDRESS",

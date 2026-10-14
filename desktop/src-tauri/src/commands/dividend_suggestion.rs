@@ -52,7 +52,7 @@ fn validate_payment_type(payment_type: &Option<String>) -> Result<(), AppError> 
 // Conciliação (Sessão 77.2, generalizada na automação CVM da parte
 // "futuro"): se já existe uma sugestão pendente de outra fonte na mesma
 // data (`source = "manual"`, cadastrada à mão pelo dono do projeto, ou
-// `source = "cvm"`, gerada por `commands::cvm_dividend_notice`), o
+// `source = "cvm"`, gerada pela automação CVM removida na Fase 20), o
 // `generate_` não cria sugestão nova — só concilia: valor ±10% → marca a
 // outra como `matched` (ainda exige o clique de Confirmar); divergiu →
 // marca a outra como `divergent` e cria uma sugestão automática paralela

@@ -36,8 +36,7 @@ pub async fn get_reit_manual_indicators(
 /// FFO/AFFO por ação e taxa de ocupação — os indicadores "de verdade" de
 /// REIT que não existem como tag XBRL (confirmado ao vivo antes de
 /// implementar, ver docstring da migration `m20260803_140000_create_reit_tables`).
-/// Campo manual editável, find-then-upsert por ticker, mesmo padrão de
-/// `generate_company_ai_info`.
+/// Campo manual editável, find-then-upsert por ticker.
 #[derive(Deserialize)]
 pub struct SaveReitManualIndicatorsRequest {
     pub ticker: String,

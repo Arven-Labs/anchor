@@ -214,24 +214,6 @@ pub struct StockFundamentalsRow {
     pub shares_outstanding: f64,
 }
 
-/// Resolve `ticker` → `cvm_code` via bolsai (a bolsai devolve o código da
-/// CVM de brinde na resposta de fundamentos, sem precisar de uma chamada de
-/// resolução separada — ver `StockBolsaiFundamentals.cvm_code` no
-/// `easybusiness`). `None` cobre tanto "bolsai não conhece o ticker" (404)
-/// quanto "resposta trouxe um `cvm_code` não numérico" — mesmo tratamento
-/// que `collect_fundamentals` já dava a esse segundo caso antes de virar
-/// função própria (nunca visto na prática, mas mais seguro que um `unwrap`).
-pub async fn resolve_cvm_code(
-    handle: &FinanceApiHandle,
-    ticker: &str,
-) -> Result<Option<i32>, AppError> {
-    let Some(bolsai) = skip_not_found(client::fetch_stock_bolsai_fundamentals(handle, ticker)).await?
-    else {
-        return Ok(None);
-    };
-    Ok(bolsai.cvm_code.parse().ok())
-}
-
 pub async fn collect_fundamentals(
     db: &DatabaseConnection,
     handle: &FinanceApiHandle,

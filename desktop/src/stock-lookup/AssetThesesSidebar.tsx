@@ -38,8 +38,7 @@ type UpdateThesisRequest = {
 /// catálogo (`assets`), resolvido pelo `ticker`. Sem tabela nem comando
 /// novo no backend. Se o ticker ainda não estiver cadastrado em `assets`
 /// (botão "Add to Assets" no topo da tela ainda não clicado), criar a
-/// primeira tese registra o ativo primeiro, silenciosamente — mesmo
-/// espírito "sem BO" do `AboutCompanySection.tsx`.
+/// primeira tese registra o ativo primeiro, silenciosamente.
 function AssetThesesSidebar({
   workspaceId,
   ticker,

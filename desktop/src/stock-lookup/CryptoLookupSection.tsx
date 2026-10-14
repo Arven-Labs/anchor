@@ -7,7 +7,6 @@ import type { StockPriceHistory, StockQuote } from "../collector/types";
 import { INDICATORS, INDICATOR_KEYS, type IndicatorKey } from "./cryptoIndicators";
 import { AddToAssetsButton, CryptoFearGreedGauge, StatTile, type StockNote } from "./shared";
 import PriceHistoryChart from "./PriceHistoryChart";
-import AboutCompanySection from "./AboutCompanySection";
 import Field from "../components/Field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -317,8 +316,6 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
               </Button>
             </div>
           </div>
-
-          <AboutCompanySection ticker={ticker} assetClass="cripto" />
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <StatTile label="Price" value={formatUsd(price)} />

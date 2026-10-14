@@ -23,8 +23,6 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::ai_valuation_proposal::Entity")]
-    AiValuationProposal,
     #[sea_orm(has_many = "super::alert_rule::Entity")]
     AlertRule,
     #[sea_orm(has_many = "super::banks_inputs::Entity")]
@@ -43,12 +41,6 @@ pub enum Relation {
     RimInputs,
     #[sea_orm(has_many = "super::rnav_inputs::Entity")]
     RnavInputs,
-}
-
-impl Related<super::ai_valuation_proposal::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::AiValuationProposal.def()
-    }
 }
 
 impl Related<super::alert_rule::Entity> for Entity {

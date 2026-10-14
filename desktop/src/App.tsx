@@ -5,11 +5,7 @@ import AlertsPanel from "./alerts/AlertsPanel";
 import PortfolioPanel from "./portfolio/PortfolioPanel";
 import FinancesPanel from "./finances/FinancesPanel";
 import WorkspaceGate from "./workspace/WorkspaceGate";
-import ChatPanel from "./chat/ChatPanel";
-import ChatToggleButton from "./chat/ChatToggleButton";
-import type { GeminiContent } from "./chat/types";
 import SettingsPage from "./settings/SettingsPage";
-import ChatScreen from "./chat-full/ChatScreen";
 import GlobalSearch from "./nav/GlobalSearch";
 import type { AssetClass } from "./portfolio/types";
 import { Button } from "@/components/ui/button";
@@ -19,7 +15,6 @@ import {
   WalletIcon,
   LandmarkIcon,
   BellIcon,
-  MessageSquareIcon,
   SettingsIcon,
   LogOutIcon,
 } from "lucide-react";
@@ -57,15 +52,13 @@ type SectionKey = keyof typeof SECTIONS;
 
 // Sem lib de rotas — app desktop de janela única não tem barra de endereço
 // pra uma URL de verdade ganhar alguma coisa. Esse estado troca a tela
-// inteira (Tabs vs Configurações/chat).
-type AppView = "main" | "settings" | "chat";
+// inteira (Tabs vs Configurações). A tela de chat saiu na Fase 20.
+type AppView = "main" | "settings";
 
 function App() {
   const [workspaceId, setWorkspaceId] = useState<number | null>(null);
   const [view, setView] = useState<AppView>("main");
   const [section, setSection] = useState<SectionKey>("home");
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatHistory, setChatHistory] = useState<GeminiContent[]>([]);
   const [assetClass, setAssetClass] = useState<AssetClass>("acao_br");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
 
@@ -87,14 +80,6 @@ function App() {
     return (
       <main className="mx-auto max-w-6xl p-8">
         <SettingsPage onBack={() => setView("main")} />
-      </main>
-    );
-  }
-
-  if (view === "chat") {
-    return (
-      <main className="mx-auto max-w-6xl p-8">
-        <ChatScreen onBack={() => setView("main")} />
       </main>
     );
   }
@@ -157,15 +142,6 @@ function App() {
               type="button"
               variant="ghost"
               size="icon-sm"
-              onClick={() => setView("chat")}
-            >
-              <MessageSquareIcon />
-              <span className="sr-only">Full-screen chat</span>
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
               onClick={() => setView("settings")}
             >
               <SettingsIcon />
@@ -214,13 +190,6 @@ function App() {
           </TabsContent>
         </Tabs>
       </main>
-      <ChatToggleButton open={chatOpen} onToggle={() => setChatOpen((o) => !o)} />
-      <ChatPanel
-        open={chatOpen}
-        onOpenChange={setChatOpen}
-        history={chatHistory}
-        onHistoryChange={setChatHistory}
-      />
     </>
   );
 }

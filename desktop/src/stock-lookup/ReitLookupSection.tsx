@@ -13,7 +13,6 @@ import type {
 import type { ReitFundamentals, ReitManualIndicators } from "../portfolio/types";
 import DividendHistoryChart from "./DividendHistoryChart";
 import PriceHistoryChart from "./PriceHistoryChart";
-import AboutCompanySection from "./AboutCompanySection";
 import {
   AddToAssetsButton,
   CompanyLogo,
@@ -51,10 +50,8 @@ const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 /// manual editável (`reit_manual_indicators`), mesmo espírito do landbank
 /// do RNAV, em vez de tentar automatizar algo que a fonte não tem.
 ///
-/// `AboutCompanySection` fica depois dos indicadores (não logo após o
-/// header como no FII atual) — seguindo o padrão novo estabelecido em Ação
-/// BR/americana. Sem `AssetThesesSidebar` — não foi pedido, e FII também
-/// não tem (fica pra uma sessão futura se sentir falta).
+/// Sem `AssetThesesSidebar` — não foi pedido, e FII também não tem (fica pra
+/// uma sessão futura se sentir falta).
 function ReitLookupSection({ ticker }: { ticker: string }) {
   const [noteDraft, setNoteDraft] = useState("");
   const [ffoDraft, setFfoDraft] = useState("");
@@ -363,8 +360,6 @@ function ReitLookupSection({ ticker }: { ticker: string }) {
               No dividend payments found for {ticker} — not every REIT distributes.
             </p>
           )}
-
-          <AboutCompanySection ticker={ticker} assetClass="reit" />
 
           <div>
             <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Notes</h3>

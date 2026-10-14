@@ -12,7 +12,6 @@ import type {
 } from "../collector/types";
 import DividendHistoryChart from "./DividendHistoryChart";
 import PriceHistoryChart from "./PriceHistoryChart";
-import AboutCompanySection from "./AboutCompanySection";
 import {
   AddToAssetsButton,
   CompanyLogo,
@@ -235,8 +234,6 @@ function FiiLookupSection({ ticker }: { ticker: string }) {
               </Button>
             </div>
           </div>
-
-          <AboutCompanySection ticker={ticker} assetClass="fii" />
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatTile label="Price" value={formatCurrency(price)} />

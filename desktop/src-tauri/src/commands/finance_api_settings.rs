@@ -4,12 +4,14 @@
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 use serde::Serialize;
 
-use crate::commands::api_key::KEYRING_SERVICE;
 use crate::entity::finance_api_settings;
 use crate::error::AppError;
 
-// Username fixo, não reaproveita o esquema "{provider}:{id}" de `ai_api_key` — não há "provider"
-// nem múltiplas chaves nomeadas aqui, só uma chave remota possível por vez.
+// Serviço do keyring do app (morava em `commands::api_key` até a Fase 20 remover as chaves de IA;
+// este é o único consumidor que sobrou).
+const KEYRING_SERVICE: &str = "anchor";
+
+// Username fixo — só uma chave remota possível por vez.
 const REMOTE_KEY_USERNAME: &str = "finance_api_remote";
 
 #[derive(Serialize)]

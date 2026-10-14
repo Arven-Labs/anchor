@@ -6,7 +6,6 @@ import { latestForTicker } from "../collector/latestForTicker";
 import type { StockPriceHistory, StockQuote } from "../collector/types";
 import { AddToAssetsButton, StatTile, type StockNote } from "./shared";
 import PriceHistoryChart from "./PriceHistoryChart";
-import AboutCompanySection from "./AboutCompanySection";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -189,8 +188,6 @@ function MetalLookupSection({ ticker }: { ticker: string }) {
               </Button>
             </div>
           </div>
-
-          <AboutCompanySection ticker={ticker} assetClass="metal" />
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
             <StatTile label="Price (oz)" value={formatUsdPerOz(price)} />

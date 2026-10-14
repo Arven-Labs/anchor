@@ -436,7 +436,7 @@ MarketData {
 
 ---
 
-### Fase 7 — Chat de IA Integrado (ideia levantada na Sessão 10, em andamento)
+### Fase 7 — Chat de IA Integrado (ideia levantada na Sessão 10; **removida por inteiro na Sessão 101, Fase 20** — texto abaixo é registro histórico)
 
 **Objetivo**: um chat de IA dentro do próprio app, num painel lateral flutuante (sobrepõe a tela atual, não é uma aba nova), onde o usuário usa a própria chave de API (Gemini/Claude/ChatGPT) pra tirar dúvidas sobre suas valuations e alertas salvos ("cara, essa valuation deu estranho, por quê?"). O chat tem acesso **só de leitura** ao banco (sem criar/editar nada) e a um "repertório" fixo de como os modelos do sistema funcionam. Histórico da conversa vive em memória enquanto o app está aberto — reseta só quando o app fecha, não quando o painel é fechado/reaberto.
 
@@ -1078,7 +1078,7 @@ Verificação: coletor testado ao vivo duas vezes contra `SPY` dentro do contain
 
 **Infra reaproveitável já existente**: `recharts` (já dependência, usado em `stock-lookup/PriceHistoryChart.tsx`/`DividendHistoryChart.tsx`/`portfolio/ProfitabilitySection.tsx`) é o precedente natural pros gráficos novos, mesmo padrão `ResponsiveContainer` + tooltip customizado — evita introduzir uma segunda lib de gráficos.
 
-### Fase 13.6 — Automação de Proventos (ideia levantada na Sessão 75, desenhada na Sessão 76, parte "passado" + conciliação implementadas na Sessão 77/77.2, parte "futuro" implementada na Sessão 94 via CVM em vez de brapi.dev)
+### Fase 13.6 — Automação de Proventos (ideia levantada na Sessão 75, desenhada na Sessão 76, parte "passado" + conciliação implementadas na Sessão 77/77.2, parte "futuro" implementada na Sessão 94 via CVM em vez de brapi.dev; **parte "futuro" removida na Sessão 101, Fase 20** — dependia de IA pra ler o PDF do aviso)
 
 **Parte "futuro" — Sessão 94 (2026-08-30)**: brapi.dev, cogitado desde a Sessão 76, **não tem
 plano gratuito pra ticker real** (confirmado ao vivo — só sandbox de 4 tickers sem token; real
@@ -1627,7 +1627,7 @@ outra fase, mas toca bastante superfície (Resumo, Posições, gráficos de aloc
 se um dia for implementada.
 
 
-### Fase 20 — Remover o chat de IA do Anchor (Warden vira a única interface conversacional; decisão registrada na Sessão 100, não iniciada)
+### Fase 20 — Remover a IA do Anchor (Warden vira a única interface de IA; decisão registrada na Sessão 100, **executada na Sessão 101**)
 
 **Origem**: decisão do dono do projeto, trazida no arquivo solto `anchor.md` (raiz do repo, fora
 do `project/`) e registrada aqui na Sessão 100.
@@ -1649,7 +1649,36 @@ duplica essa funcionalidade.
   migração. Conecta com a Fase 25 (Anchor como servidor expõe uma API que o Warden poderia
   consumir).
 
-**Estado**: decisão tomada, nada executado. Fase 7 continua como está no código até a remoção.
+**Debate fechado na Sessão 101 (2026-10-14)**, 3 decisões do dono do projeto:
+1. **Escopo: toda a IA**, não só o chat (contra minha recomendação de manter as features não
+   conversacionais). Sai junto: extração de PDF (botão do landbank no RNAV, Fase 2.4), "About the
+   asset" (Fase 10 item 8, Sessão 60), a parte "futuro" da 13.6 (avisos de proventos da CVM lidos
+   por IA, Sessão 94) e a tela de chaves de API em Settings.
+2. **Dados: migration que apaga** as tabelas (`m20261014_100000_drop_ai_tables`).
+3. **Timing: agora**, aceitando perder a funcionalidade até existir ponte com o Warden (Fase 25 ou
+   um MCP futuro).
+
+**Executado**:
+- [x] Frontend: `src/chat/`, `src/chat-full/`, `src/components/assistant-ui/`, `src/ai/`,
+  `AboutCompanySection.tsx` apagados; `App.tsx` sem botão/painel de chat; Settings sem a seção
+  "IA"; RNAV com landbank só manual; Dividends sem "Check CVM notices" (sugestões `source =
+  "cvm"` já gravadas continuam no banco e aparecem normalmente). Deps npm removidas:
+  `@assistant-ui/react`, `@assistant-ui/react-markdown`, `zustand`, `tw-shimmer` (as 4 entraram
+  com a Fase 7.10).
+- [x] Backend: comandos `chat`/`conversation`/`ai_proposal`/`api_key`/`company_ai_info`/
+  `document_extraction`/`cvm_dividend_notice`, `domain::{chat_provider,cvm_dividend_notice}`, 6
+  entidades, 5 variantes de `AppError` só de IA, e o código que virou morto em `finance_api`
+  (`fetch_company_dividend_notices`, `stocks::resolve_cvm_code`). `KEYRING_SERVICE` mudou pra
+  `finance_api_settings.rs` (único consumidor restante).
+- [x] Migration irreversível (`down` devolve erro) que dropa `ai_valuation_proposal`,
+  `ai_message`, `ai_conversation`, `ai_api_key`, `company_ai_info`,
+  `cvm_dividend_notice_documents`.
+- `cargo test --lib` **170/170** (eram 203 — os 33 a menos moravam nos módulos apagados),
+  `tsc --noEmit` limpo, crate `migration` compila.
+
+**Pendente**: aplicar a migration no banco real de dev (`sea-orm-cli migrate up`, depois de um
+Backup da Fase 16) e as chaves de IA que ficaram órfãs no keyring do SO (serviço `anchor`,
+username `{provider}:{id}`) — ver `SESSIONS.md`, Sessão 101.
 
 ### Fase 21 — Consumo do Lume (ex-EasyBusiness) com fallback pra instância compartilhada do Warden (registrada na Sessão 100, não iniciada)
 

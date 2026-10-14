@@ -4,8 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import type { Asset, DividendSuggestionView, PaymentType } from "./types";
 import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS } from "./types";
-import type { ApiKeySummary } from "../settings/SettingsPage";
-import { DEFAULT_MODEL_BY_PROVIDER } from "../ai/modelDefaults";
 import {
   Dialog,
   DialogContent,
@@ -44,10 +42,9 @@ import {
 // fonte automática trouxer o pagamento, o "Generate suggestions" concilia em
 // vez de duplicar — valor ±10% vira `matched` (ainda precisa Confirmar),
 // divergente vira `divergent` e ganha uma sugestão automática paralela pra
-// comparar. Parte "futuro" (mesma sessão): brapi.dev não tem plano grátis
-// pra ticker real — automatizada via "Relatório Proventos" da CVM em vez
-// disso ("Check CVM notices", `commands::cvm_dividend_notice`), que gera
-// sugestões `source = "cvm"` sujeitas à mesma conciliação.
+// comparar. A parte "futuro" automática via CVM (Sessão 94, lia o PDF do
+// aviso com IA) saiu na Fase 20 junto com toda a IA do Anchor — sugestões
+// `source = "cvm"` antigas continuam no banco e aparecem normalmente.
 
 const SOURCE_LABELS: Record<string, string> = {
   manual: "Manual",
@@ -111,15 +108,6 @@ export default function DividendSuggestionsSection({
     queryFn: () => invoke("list_dividend_suggestions", { portfolioId }),
   });
 
-  // Mesmo padrão de auto-seleção de key/modelo do AboutCompanySection.tsx
-  // (primeira key cadastrada + modelo barato default do provider) — o botão
-  // some por completo sem nenhuma key de IA configurada, "sem BO".
-  const keysQuery = useQuery<ApiKeySummary[], AppError>({
-    queryKey: ["api-keys"],
-    queryFn: () => invoke("list_api_keys"),
-  });
-  const apiKeys = keysQuery.data ?? [];
-
   const suggestions = suggestionsQuery.data ?? [];
 
   function invalidate() {
@@ -131,25 +119,6 @@ export default function DividendSuggestionsSection({
   const generateMutation = useMutation<{ generated: number }, AppError, void>({
     mutationFn: () =>
       invoke("generate_dividend_suggestions", { request: { portfolio_id: portfolioId } }),
-    onSuccess: invalidate,
-  });
-
-  type CheckCvmResult = {
-    documents_checked: number;
-    suggestions_created: number;
-    skipped: number;
-  };
-  const checkCvmMutation = useMutation<CheckCvmResult, AppError, void>({
-    mutationFn: () => {
-      const key = apiKeys[0];
-      return invoke("check_cvm_dividend_notices", {
-        request: {
-          portfolio_id: portfolioId,
-          key_id: key.id,
-          model: DEFAULT_MODEL_BY_PROVIDER[key.provider] ?? "",
-        },
-      });
-    },
     onSuccess: invalidate,
   });
 
@@ -265,31 +234,12 @@ export default function DividendSuggestionsSection({
             <Button variant="outline" onClick={() => setExpectingOpen(true)}>
               Register future dividend
             </Button>
-            {apiKeys.length > 0 && (
-              <Button
-                variant="outline"
-                onClick={() => checkCvmMutation.mutate()}
-                disabled={checkCvmMutation.isPending}
-              >
-                {checkCvmMutation.isPending ? "Checking CVM…" : "Check CVM notices"}
-              </Button>
-            )}
           </div>
-          {checkCvmMutation.isSuccess && (
-            <p className="text-sm text-muted-foreground">
-              Checked {checkCvmMutation.data.documents_checked} new CVM document(s):{" "}
-              {checkCvmMutation.data.suggestions_created} suggestion(s) created,{" "}
-              {checkCvmMutation.data.skipped} skipped (ambiguous or unusable).
-            </p>
-          )}
-          {(generateMutation.isError ||
-            createExpectedMutation.isError ||
-            checkCvmMutation.isError) && (
+          {(generateMutation.isError || createExpectedMutation.isError) && (
             <p className="text-sm text-red-600">
               {(
                 generateMutation.error ??
                 createExpectedMutation.error ??
-                checkCvmMutation.error ??
                 new Error("failed")
               ).message}
             </p>

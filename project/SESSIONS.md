@@ -1963,3 +1963,23 @@
   padrão das Sessões 95/96 — só registro). `anchor.md` deixado onde está, não apagado.
 - **Estado ao final**: 6 itens registrados, nenhum iniciado; debate pendente com o dono do
   projeto.
+
+### 2026-10-14 — Sessão 101
+
+- **Objetivo**: executar a Fase 20 (remover a IA do Anchor), escolhida pelo dono do projeto entre
+  as 6 fases registradas na Sessão 100.
+- **Debate fechado via `AskUserQuestion`**: escopo **toda a IA** (minha recomendação era só a
+  conversa, mantendo extração de PDF/"About the asset"/avisos CVM — dono do projeto escolheu tirar
+  tudo); dados via **migration que apaga**; remoção **agora**, sem esperar ponte com o Warden.
+- **Executado**: ver Fase 20 em `PHASE.md` pra lista completa. Resumo: ~20 arquivos de frontend e
+  15 de backend apagados, 4 deps npm removidas, migration `m20261014_100000_drop_ai_tables`
+  (irreversível de propósito), README sem a feature de chat.
+- **Achado de caminho**: `finance_api_settings.rs` importava `KEYRING_SERVICE` de `api_key.rs` —
+  constante movida pra lá em vez de apagar junto. Após a remoção, `fetch_company_dividend_notices`
+  e `stocks::resolve_cvm_code` viraram código morto (só a automação CVM usava) — apagados também.
+- **Verificado** (via `docker compose run --rm --no-deps desktop`): `tsc --noEmit` limpo, `cargo
+  test --lib` **170/170** (203 → 170, os 33 a menos eram testes dos módulos apagados), crate
+  `migration` compila. Um erro de link transitório numa rodada intermediária não se repetiu.
+  Avisos de compilação restantes são todos pré-existentes (conferido contra `HEAD`).
+- **Pendente**: aplicar a migration no banco real de dev; limpar as chaves de IA órfãs no keyring
+  do SO; teste de clique no app rodando.
