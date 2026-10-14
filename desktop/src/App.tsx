@@ -1,6 +1,6 @@
 import { useState } from "react";
 import HomeSection from "./home/HomeSection";
-import StockLookupPanel from "./stock-lookup/StockLookupPanel";
+import StockLookupPanel, { type ResearchView } from "./stock-lookup/StockLookupPanel";
 import AlertsPanel from "./alerts/AlertsPanel";
 import PortfolioPanel from "./portfolio/PortfolioPanel";
 import FinancesPanel from "./finances/FinancesPanel";
@@ -61,10 +61,17 @@ function App() {
   const [section, setSection] = useState<SectionKey>("home");
   const [assetClass, setAssetClass] = useState<AssetClass>("acao_br");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
+  const [researchView, setResearchView] = useState<ResearchView>("asset");
 
   function handleGlobalSearch(nextAssetClass: AssetClass, ticker: string) {
     setAssetClass(nextAssetClass);
     setActiveTicker(ticker);
+    setResearchView("asset");
+    setSection("lookup");
+  }
+
+  function openRates() {
+    setResearchView("rates");
     setSection("lookup");
   }
 
@@ -166,7 +173,7 @@ function App() {
           onValueChange={(value) => setSection(value as SectionKey)}
         >
           <TabsContent value="home">
-            <HomeSection workspaceId={workspaceId} />
+            <HomeSection workspaceId={workspaceId} onOpenRates={openRates} />
           </TabsContent>
 
           <TabsContent value="lookup">
@@ -174,6 +181,8 @@ function App() {
               workspaceId={workspaceId}
               assetClass={assetClass}
               activeTicker={activeTicker}
+              view={researchView}
+              onOpenRates={openRates}
             />
           </TabsContent>
 

@@ -427,6 +427,7 @@ pub async fn get_profitability_comparison(
     let candidates = [
         build_macro_series(db, "cdi", "CDI", &months).await?,
         build_macro_series(db, "ipca", "IPCA", &months).await?,
+        build_macro_series(db, "selic", "Selic", &months).await?,
         build_price_series(db, "^BVSP", "IBOV", &months, today).await?,
         build_price_series(db, "IVVB11", "IVVB11", &months, today).await?,
         build_price_series(db, "IFIX", "IFIX", &months, today).await?,

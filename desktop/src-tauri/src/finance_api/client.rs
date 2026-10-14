@@ -661,6 +661,51 @@ pub async fn fetch_fii_cnpj_resolution(
 }
 
 // ---------------------------------------------------------------------------
+// rates — /v1/rates/...
+// ---------------------------------------------------------------------------
+
+// Fase 17 — Meta Selic diária (BCB 432, em dias corridos, % a.a.) e curva
+// DI×PRE da B3. Curva em dia sem pregão = 404 (`FinanceApiNotFound`), não
+// erro — o chamador volta dia a dia via `skip_not_found`.
+#[derive(Debug, Deserialize)]
+pub struct SelicPoint {
+    pub reference_date: NaiveDate,
+    pub value_pct: f64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SelicResponse {
+    #[serde(flatten)]
+    pub meta: ResponseMeta,
+    pub data: Vec<SelicPoint>,
+}
+
+pub async fn fetch_selic(handle: &FinanceApiHandle, series_code: &str) -> Result<SelicResponse, AppError> {
+    get(handle, &format!("/v1/rates/selic/{series_code}")).await
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DiCurvePoint {
+    pub dias_uteis: i32,
+    pub rate_pct: f64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DiCurveResponse {
+    pub reference_date: NaiveDate,
+    #[serde(flatten)]
+    pub meta: ResponseMeta,
+    pub data: Vec<DiCurvePoint>,
+}
+
+pub async fn fetch_di_futures_curve(
+    handle: &FinanceApiHandle,
+    reference_date: NaiveDate,
+) -> Result<DiCurveResponse, AppError> {
+    get(handle, &format!("/v1/rates/di-futures-curve/{reference_date}")).await
+}
+
+// ---------------------------------------------------------------------------
 // tax-rules — /v1/tax-rules/br
 // ---------------------------------------------------------------------------
 

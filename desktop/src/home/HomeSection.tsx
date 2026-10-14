@@ -19,6 +19,8 @@ import { ASSET_CLASS_LABELS, type AssetClass } from "../portfolio/types";
 import type { StockQuote } from "../collector/types";
 import { latestForTicker } from "../collector/latestForTicker";
 import type { WorkspaceSummary, MonthlyReturn, HomeWidgetLayout, WidgetKey } from "./types";
+import KeyRatesTable from "../rates/KeyRatesTable";
+import { formatDate as formatRateDate, formatRate, useInterestRates } from "../rates/useInterestRates";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -63,6 +65,7 @@ const WIDGET_TITLES: Record<WidgetKey, string> = {
   allocation_donut: "Allocation by class",
   portfolios_table: "Portfolios",
   market_panel: "★ Market panel",
+  interest_rates: "Interest rates",
 };
 
 // Fase 10.8 fatia 2 — mesma disposição visual da fatia 1 (Sessão 84), agora
@@ -79,6 +82,8 @@ const DEFAULT_LAYOUT: HomeWidgetLayout[] = [
   { widget_key: "allocation_donut", position: 4, w: 6, h: 9, visible: true },
   { widget_key: "portfolios_table", position: 5, w: 6, h: 9, visible: true },
   { widget_key: "market_panel", position: 6, w: 12, h: 8, visible: true },
+  // Fase 17 — entra pra quem já personalizou via `mergeWithDefaults`.
+  { widget_key: "interest_rates", position: 7, w: 6, h: 10, visible: true },
 ];
 
 function mergeWithDefaults(saved: HomeWidgetLayout[]): HomeWidgetLayout[] {
@@ -298,8 +303,15 @@ function SortableWidget({
 // Watchlists. Layout (posição/tamanho/visibilidade de cada widget) agora é
 // editável via "Customize layout" e persiste em `home_widget_layout`,
 // escopado por workspace (`commands::home_layout`).
-function HomeSection({ workspaceId }: { workspaceId: number }) {
+function HomeSection({
+  workspaceId,
+  onOpenRates,
+}: {
+  workspaceId: number;
+  onOpenRates: () => void;
+}) {
   const queryClient = useQueryClient();
+  const ratesQuery = useInterestRates();
   const summaryQuery = useQuery<WorkspaceSummary, AppError>({
     queryKey: ["workspace-summary", workspaceId],
     queryFn: () => invoke("get_workspace_summary", { workspaceId }),
@@ -494,6 +506,48 @@ function HomeSection({ workspaceId }: { workspaceId: number }) {
           </TableBody>
         </Table>
       </>
+    ),
+    interest_rates: () => (
+      <div className="flex flex-col gap-3">
+        {ratesQuery.isLoading && <p className="text-sm">Loading…</p>}
+        {ratesQuery.isError && (
+          <p className="text-sm text-red-600">{ratesQuery.error.message}</p>
+        )}
+        {ratesQuery.data && (
+          <>
+            <div>
+              <p className="text-sm text-muted-foreground">Selic target</p>
+              {ratesQuery.data.selic ? (
+                <>
+                  <p className="text-2xl font-semibold">
+                    {formatRate(ratesQuery.data.selic.current_pct)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    since {formatRateDate(ratesQuery.data.selic.since)}
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Unavailable right now — the Central Bank's service didn't answer.
+                </p>
+              )}
+            </div>
+            {ratesQuery.data.di ? (
+              <div>
+                <p className="mb-1 text-sm text-muted-foreground">DI futures</p>
+                <KeyRatesTable di={ratesQuery.data.di} />
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {ratesQuery.data.di_error ? "DI curve unavailable right now." : "No recent DI curve."}
+              </p>
+            )}
+          </>
+        )}
+        <Button variant="outline" size="sm" className="w-fit" onClick={onOpenRates}>
+          Details
+        </Button>
+      </div>
     ),
   };
 

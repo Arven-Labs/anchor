@@ -1,5 +1,7 @@
-import { SearchIcon } from "lucide-react";
+import { PercentIcon, SearchIcon } from "lucide-react";
 import type { AssetClass } from "../portfolio/types";
+import RatesSection from "./RatesSection";
+import { Button } from "@/components/ui/button";
 import StockAnalysisSection from "./StockAnalysisSection";
 import FiiLookupSection from "./FiiLookupSection";
 import EtfLookupSection from "./EtfLookupSection";
@@ -42,31 +44,44 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 /// dono do projeto ("queria deixar o campo de pesquisa no topo, do lado da
 /// navbar"). Este componente agora só recebe `assetClass`/`activeTicker` já
 /// commitados e desenha o resultado.
+/// Fase 17 — `view = "rates"` mostra a tela de juros (Selic + curva DI), que
+/// não tem ticker. Entra pelo atalho no estado vazio daqui ou pelo
+/// "Details" do widget da Home; a busca global volta pro modo "asset".
+export type ResearchView = "asset" | "rates";
+
 function StockLookupPanel({
   workspaceId,
   assetClass,
   activeTicker,
+  view,
+  onOpenRates,
 }: {
   workspaceId: number;
   assetClass: AssetClass;
   activeTicker: string | null;
+  view: ResearchView;
+  onOpenRates: () => void;
 }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Research</CardTitle>
+        <CardTitle>{view === "rates" ? "Research — Interest rates" : "Research"}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
-        {!activeTicker && (
-          <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-10 text-center text-muted-foreground">
+        {view === "rates" && <RatesSection />}
+
+        {view === "asset" && !activeTicker && (
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border py-10 text-center text-muted-foreground">
             <SearchIcon className="size-5" />
-            <p className="text-sm">
-              Use a busca no topo da tela pra analisar um ativo.
-            </p>
+            <p className="text-sm">Use the search bar at the top to analyze an asset.</p>
+            <Button variant="outline" size="sm" onClick={onOpenRates}>
+              <PercentIcon />
+              Or see Brazilian interest rates
+            </Button>
           </div>
         )}
 
-        {activeTicker &&
+        {view === "asset" && activeTicker &&
           (assetClass === "fii" ? (
             <FiiLookupSection key={activeTicker} ticker={activeTicker} />
           ) : assetClass === "etf_br" ? (

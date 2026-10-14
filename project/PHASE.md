@@ -1604,6 +1604,41 @@ easybusiness) já tem `/v1/rates/selic/{series_code}` (BCB SGS) e `/v1/rates/di-
 {reference_date}` (B3) — `api/app/routers/rates.py` de lá. Falta só o lado do Anchor (client +
 painel/benchmarks). Candidata natural à próxima fase.
 
+**Implementada na Sessão 101 (2026-10-14)**, em plan mode. Decisões do dono do projeto
+(AskUserQuestion): aparece **nos dois lugares** (widget na Home + tela em Research), **Selic
+também como benchmark** na Rentabilidade (contra minha recomendação — anda colada no CDI), DI
+Futuro como **curva + prazos-chave**.
+- [x] `domain/rates.rs` puro: `selic_monthly_returns` (Meta Selic diária do BCB 432, que vem em
+  dias corridos, capitalizada `(1+meta)^(1/252)` por **dia útil** — reaproveita o calendário
+  bancário da Fase 24 — com a meta vigente em cada dia), `selic_changes` (decisões do Copom),
+  `rate_at_years` (interpolação linear por dias úteis, sem extrapolar).
+- [x] Benchmark: `collect_benchmarks` grava `index_code = "selic"` em `macro_index_monthly` (mesmo
+  caminho de CDI/IPCA; helper `upsert_monthly` extraído); linha "Selic" no gráfico "Return vs.
+  benchmarks" no mesmo laranja do grupo juros (CDI/IPCA) com traço próprio — sem 4º matiz,
+  mesma regra da Sessão 83. Conferido no banco de dev: 332 meses desde 1999-03, Selic mensal ≈
+  CDI + 0,01 p.p. (ex. set/2026 1,089% vs 1,08%) — coerente com o CDI rodar ~0,10 p.p. a.a.
+  abaixo da meta.
+- [x] Juros ao vivo: `commands/rates.rs::get_interest_rates` (sem tabela no Anchor — o Lume
+  cacheia): Selic atual + desde quando + histórico de mudanças; curva do último pregão (volta
+  dia a dia, 404 = sem pregão) e de ~1 mês antes; prazos 1/2/3/5/10 anos. Selic e DI **falham de
+  forma independente** (`*_error`), buscadas em paralelo.
+- [x] UI: widget **Home → Interest rates** (entra pelo `mergeWithDefaults`, sem migração de
+  layout) e **Research → Interest rates** (modo sem ticker, `researchView` em `App.tsx`, atalho
+  no estado vazio do Research e "Details" no widget): gráfico em degrau da Selic (1A/5A/tudo) e
+  curva DI hoje vs. 1 mês atrás (mesmo matiz, traço + legenda) com prazos-chave marcados; tabela
+  de prazos com direção em ícone + texto. Skill `dataviz` carregada antes dos gráficos.
+- **Achado ao vivo — BCB instável**: `/v1/rates/selic/meta` do Lume dava 502 seguido. Causa: o
+  BCB oscila (mesma janela em 0,4s, ~30s, 502 ou HTML com status 200) e o Lume cortava em 15s,
+  sendo que uma janela falha derrubava a série inteira. Corrigido **no Lume** (nova tentativa por
+  janela, ver SESSIONS.md de lá) e, no Anchor, a Selic deixou de derrubar a coleta dos outros 7
+  benchmarks (falhou → 0 meses, tenta na próxima). **Fragilidade pré-existente registrada**:
+  CDI/IPCA mensais do BCB também usam 15s sem nova tentativa — um 502 do BCB ainda derruba a
+  coleta inteira (visto ao vivo uma vez nesta sessão).
+- Verificado: `cargo test --lib` **202/202** (6 novos), `tsc --noEmit` limpo, testes `#[ignore]`
+  ao vivo contra o Lume local passando (Selic plausível — 13,75% hoje —, curva do último pregão
+  com > 200 vértices, coleta dos 8 benchmarks). **Não testado em tela** (adiado).
+- Fora desta fatia: Selic over/efetiva, IPCA+/NTN-B, interpolação flat-forward, alerta de Copom.
+
 ### Fase 18 — Software de apoio à gestão de opções (ideia trazida em conversa pelo dono do projeto na Sessão 96, puro registro, não iniciada)
 
 **Objetivo**: suporte a operações com opções sobre ações (ex. venda coberta, travas, etc.) —

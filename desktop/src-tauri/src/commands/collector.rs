@@ -293,10 +293,11 @@ pub async fn run_benchmark_backfill(
         .map(|s| CollectorSummary {
             success: true,
             output: format!(
-                "CDI: {} month(s); IPCA: {} month(s); IBOV: {} point(s); IVVB11: {} point(s); \
-                 IFIX: {} point(s); SMLL: {} point(s); IDIV: {} point(s)",
+                "CDI: {} month(s); IPCA: {} month(s); Selic: {} month(s); IBOV: {} point(s); \
+                 IVVB11: {} point(s); IFIX: {} point(s); SMLL: {} point(s); IDIV: {} point(s)",
                 s.cdi_count,
                 s.ipca_count,
+                s.selic_count,
                 s.ibov_count,
                 s.ivvb11_count,
                 s.ifix_count,

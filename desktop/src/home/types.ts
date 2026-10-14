@@ -34,7 +34,8 @@ export type WidgetKey =
   | "kpi_return"
   | "allocation_donut"
   | "portfolios_table"
-  | "market_panel";
+  | "market_panel"
+  | "interest_rates";
 
 export type HomeWidgetLayout = {
   widget_key: WidgetKey;

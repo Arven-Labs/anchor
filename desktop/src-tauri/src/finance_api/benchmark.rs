@@ -7,13 +7,14 @@
 // mesma decisão do Python (`collect_us_price_history(["^BVSP"])`).
 //
 // `commands::profitability::get_profitability_comparison` lê estas linhas
-// exatamente pelos `index_code`/`ticker` usados abaixo (`"cdi"`/`"ipca"` em
-// `macro_index_monthly`; `"^BVSP"`/`"IVVB11"`/`"IFIX"`/`"SMLL"`/`"IDIV"` em
-// `stock_price_history`) — não mudar sem atualizar os dois lados.
-use chrono::Utc;
+// exatamente pelos `index_code`/`ticker` usados abaixo (`"cdi"`/`"ipca"`/
+// `"selic"` em `macro_index_monthly`; `"^BVSP"`/`"IVVB11"`/`"IFIX"`/`"SMLL"`/
+// `"IDIV"` em `stock_price_history`) — não mudar sem atualizar os dois lados.
+use chrono::{NaiveDate, Utc};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{DatabaseConnection, EntityTrait, Set};
 
+use crate::domain::rates;
 use crate::entity::{macro_index_monthly, stock_price_history};
 use crate::error::AppError;
 use crate::finance_api::{client, insert_ignoring_conflicts, stocks, us_stock, FinanceApiHandle};
@@ -21,6 +22,7 @@ use crate::finance_api::{client, insert_ignoring_conflicts, stocks, us_stock, Fi
 pub struct BenchmarkSummary {
     pub cdi_count: usize,
     pub ipca_count: usize,
+    pub selic_count: usize,
     pub ibov_count: usize,
     pub ivvb11_count: usize,
     pub ifix_count: usize,
@@ -38,18 +40,45 @@ async fn collect_macro_series(
     handle: &FinanceApiHandle,
     series_code: &str,
 ) -> Result<usize, AppError> {
-    let now = Utc::now().to_rfc3339();
     let response = client::fetch_benchmark_series(handle, series_code).await?;
-
-    let models: Vec<_> = response
+    let rows: Vec<(String, f64)> = response
         .data
         .iter()
-        .map(|point| macro_index_monthly::ActiveModel {
+        .map(|point| (point.reference_month.format("%Y-%m").to_string(), point.value_pct))
+        .collect();
+    upsert_monthly(db, series_code, "bcb_sgs", rows).await
+}
+
+/// Fase 17 — Selic como benchmark: a fonte é a Meta Selic diária (% a.a.),
+/// convertida aqui em retorno mensal (% no mês, mesma unidade do CDI) por
+/// `domain::rates::selic_monthly_returns`. Mês corrente parcial é reescrito
+/// a cada coleta (upsert).
+async fn collect_selic_series(
+    db: &DatabaseConnection,
+    handle: &FinanceApiHandle,
+) -> Result<usize, AppError> {
+    let response = client::fetch_selic(handle, "meta").await?;
+    let points: Vec<(NaiveDate, f64)> =
+        response.data.iter().map(|p| (p.reference_date, p.value_pct)).collect();
+    let rows = rates::selic_monthly_returns(&points, Utc::now().date_naive());
+    upsert_monthly(db, "selic", "bcb_sgs_meta_selic", rows).await
+}
+
+async fn upsert_monthly(
+    db: &DatabaseConnection,
+    index_code: &str,
+    source: &str,
+    rows: Vec<(String, f64)>,
+) -> Result<usize, AppError> {
+    let now = Utc::now().to_rfc3339();
+    let models: Vec<_> = rows
+        .into_iter()
+        .map(|(year_month, value_pct)| macro_index_monthly::ActiveModel {
             id: sea_orm::ActiveValue::NotSet,
-            index_code: Set(series_code.to_string()),
-            year_month: Set(point.reference_month.format("%Y-%m").to_string()),
-            value_pct: Set(point.value_pct),
-            source: Set("bcb_sgs".to_string()),
+            index_code: Set(index_code.to_string()),
+            year_month: Set(year_month),
+            value_pct: Set(value_pct),
+            source: Set(source.to_string()),
             fetched_at: Set(now.clone()),
         })
         .collect();
@@ -125,6 +154,16 @@ pub async fn collect_benchmarks(
 ) -> Result<BenchmarkSummary, AppError> {
     let cdi_count = collect_macro_series(db, handle, "cdi").await?;
     let ipca_count = collect_macro_series(db, handle, "ipca").await?;
+    // Selic não derruba o resto: a série diária é a mais frágil da coleta
+    // (~10 mil pontos em 4 janelas do BCB, que oscila — ver Fase 17).
+    // Falhou → 0 meses agora, tenta de novo na próxima coleta.
+    let selic_count = match collect_selic_series(db, handle).await {
+        Ok(count) => count,
+        Err(err) => {
+            eprintln!("collect_benchmarks: Selic skipped — {err}");
+            0
+        }
+    };
 
     // IBOV (^BVSP, sem sufixo — é índice, não papel B3): mesmo mecanismo de
     // "ticker sem sufixo" que ação americana/REIT/ETF-US usam.
@@ -141,6 +180,7 @@ pub async fn collect_benchmarks(
     Ok(BenchmarkSummary {
         cdi_count,
         ipca_count,
+        selic_count,
         ibov_count,
         ivvb11_count,
         ifix_count,
@@ -168,13 +208,15 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn live_collect_benchmarks_writes_all_7_series() {
+    async fn live_collect_benchmarks_writes_all_8_series() {
         let db = dev_db().await;
         let handle = handle();
 
         let summary = collect_benchmarks(&db, &handle).await.unwrap();
         assert!(summary.cdi_count > 0);
         assert!(summary.ipca_count > 0);
+        // Meta Selic desde 1999 → bem mais de 300 meses.
+        assert!(summary.selic_count > 300);
         assert!(summary.ibov_count > 0);
         assert!(summary.ivvb11_count > 0);
         assert!(summary.ifix_count > 0);

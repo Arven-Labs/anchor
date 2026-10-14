@@ -2023,3 +2023,18 @@
   com o SHA novo, `build.yml` e README apontando pro `Arven-Labs/lume`. Fase 17 marcada como
   desbloqueada (Lume já tem `/v1/rates` com SELIC/DI Futuro) — próxima candidata.
 - **Pendente**: teste de tela das Fases 15/16/20/24.
+
+**Continuação, mesma sessão — Fase 17 (SELIC e DI Futuro).**
+- Plan mode; 3 decisões via `AskUserQuestion` (os dois lugares — Home + Research; Selic também
+  como benchmark; DI como curva + prazos-chave). Detalhe em `PHASE.md`, Fase 17.
+- **Achado ao vivo**: Selic do Lume em 502 seguido por instabilidade do BCB (timeout de 15s por
+  janela, uma janela falha derrubava a série). Investigado em camadas — BCB direto via `curl`
+  por janela, função de coleta do Lume direto no container, serviço com banco — até achar o
+  `ReadTimeout`. Corrigido no Lume (nova tentativa por janela, testes novos) e o Anchor ficou
+  resiliente (Selic e DI independentes; Selic não derruba os outros benchmarks).
+- **Verificado**: `cargo test --lib` 202/202, `tsc` limpo, testes ao vivo contra o Lume local
+  passando, Selic gravada no banco de dev e conferida contra o CDI. Tela não testada.
+- **Fechamento (confirmado pelo dono do projeto)**: correção do Lume publicada
+  (`Arven-Labs/lume@6880b93`), `.lume-version` atualizado pra esse commit, Fase 17 commitada.
+- **Pendente**: teste de tela das Fases 15/16/17/20/24; nova tentativa também pras séries mensais
+  do BCB (CDI/IPCA) no Lume.

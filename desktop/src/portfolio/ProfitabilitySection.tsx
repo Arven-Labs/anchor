@@ -78,6 +78,9 @@ const PORTFOLIO_SERIES: SeriesConfig = { key: "portfolio", label: "Portfolio", c
 const BENCHMARK_SERIES: Record<string, SeriesConfig> = {
   cdi: { key: "cdi", label: "CDI", color: CDI_COLOR },
   ipca: { key: "ipca", label: "IPCA", color: IPCA_COLOR, dashArray: "4 3" },
+  // Fase 17 — Meta Selic capitalizada por dia útil. Mesmo grupo laranja
+  // "juros/macro" de CDI/IPCA (sem 4º matiz), diferenciada só pelo traço.
+  selic: { key: "selic", label: "Selic", color: CDI_COLOR, dashArray: "1 3" },
   "^BVSP": { key: "^BVSP", label: "IBOV", color: IBOV_COLOR },
   IVVB11: { key: "IVVB11", label: "IVVB11", color: IBOV_COLOR, dashArray: "4 3" },
   IFIX: { key: "IFIX", label: "IFIX", color: IBOV_COLOR, dashArray: "1 3" },
