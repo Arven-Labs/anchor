@@ -81,26 +81,26 @@ jobs:
           python-version: '3.11'
 
       # Fase 14.1 — sidecar da Finance API. A fonte (api/sidecar_main.py) vive no repo
-      # irmão easybusiness (mesmo dono), fixada por SHA em `.easybusiness-version` (sem
+      # irmão Lume (ex-easybusiness, hoje em Arven-Labs/lume), fixada por SHA em `.lume-version` (sem
       # submodule — só um checkout num ref pinado). `--add-data` é necessário porque
       # `_run_migrations` lê `migrations/`/`alembic.ini` direto do disco em runtime (Alembic),
       # não via `import` — sem isso o binário quebra com "Path doesn't exist: .../migrations"
       # (achado ao vivo na Fase 14.2, Sessão 90). O separador do `--add-data` muda por SO
       # (`matrix.pyinstaller_data_sep`): `:` no Linux/macOS, `;` no Windows.
-      - name: Read easybusiness pinned ref
-        id: easybusiness-ref
+      - name: Read Lume pinned ref
+        id: lume-ref
         shell: bash
-        run: echo "sha=$(cat .easybusiness-version)" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(cat .lume-version)" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout easybusiness
+      - name: Checkout Lume
         uses: actions/checkout@v4
         with:
-          repository: masterlxz/easybusiness
-          ref: ${{ steps.easybusiness-ref.outputs.sha }}
-          path: easybusiness
+          repository: Arven-Labs/lume
+          ref: ${{ steps.lume-ref.outputs.sha }}
+          path: lume
 
       - name: Build Finance API sidecar
-        working-directory: easybusiness/api
+        working-directory: lume/api
         shell: bash
         run: |
           pip install -r requirements.txt -r requirements-sidecar-build.txt

@@ -1599,6 +1599,11 @@ que o endpoint existir lá, sem repetir a lógica de coleta localmente.
 quais fontes usar do lado do `easybusiness`. Bloqueada até o `easybusiness` ganhar suporte pra
 esses índices.
 
+**Desbloqueada (constatado na Sessão 101, confirmado pelo dono do projeto)**: o Lume (ex-
+easybusiness) já tem `/v1/rates/selic/{series_code}` (BCB SGS) e `/v1/rates/di-futures-curve/
+{reference_date}` (B3) — `api/app/routers/rates.py` de lá. Falta só o lado do Anchor (client +
+painel/benchmarks). Candidata natural à próxima fase.
+
 ### Fase 18 — Software de apoio à gestão de opções (ideia trazida em conversa pelo dono do projeto na Sessão 96, puro registro, não iniciada)
 
 **Objetivo**: suporte a operações com opções sobre ações (ex. venda coberta, travas, etc.) —
@@ -1846,8 +1851,13 @@ dado real — sugestão: conferir o primeiro mês real contra o ReVar.
 **Fora desta fatia**: cálculo de cripto e exterior (hoje só aviso); eventos corporativos
 (desdobramento/bonificação não existem como tipo de transação — quem tiver vai ver custo
 distorcido); `metal` (COMEX, não ouro ativo financeiro B3) ignorado; IRRF real informado pela
-corretora (hoje estimado); declaração anual (IRPF); integração pendente do sidecar: o bump de
-`.easybusiness-version` pro commit do Lume com a 1.17 depende do push de lá.
+corretora (hoje estimado); declaração anual (IRPF).
+
+**Sidecar atualizado (mesma sessão)**: Lume 1.17 publicado (`Arven-Labs/lume@a418f24`). De
+caminho, o pin foi **renomeado** `.easybusiness-version` → `.lume-version` (já com esse SHA) e o
+`build.yml` passou a fazer checkout de `Arven-Labs/lume` (público, sem token) em `lume/` — pedido
+do dono do projeto, o nome antigo só sobrevivia por redirect do GitHub. README também. Textos
+históricos neste arquivo mantêm "easybusiness". `build.yml` continua nunca disparado neste repo.
 
 ### Fase 25 — Web app auto-hospedado: o próprio Anchor como servidor (ideia trazida pelo dono do projeto na Sessão 100, não iniciada)
 

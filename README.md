@@ -34,7 +34,7 @@ a UI built around exactly that workflow.
 | Smart contract (sync, in progress) | Solidity (Foundry) | [`contracts/`](contracts/) |
 
 Quotes, fundamentals, and crypto data come from a local instance of the
-[EasyBusiness Finance API](https://github.com/masterlxz/easybusiness) (a sibling open-source
+[Lume Finance API](https://github.com/Arven-Labs/lume) (a sibling open-source
 project), embedded as a Tauri sidecar process — the Rust side talks to it over HTTP, no
 Python or subprocess-per-fetch involved.
 

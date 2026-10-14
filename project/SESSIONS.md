@@ -2018,5 +2018,8 @@
   teste `#[ignore]` ao vivo contra o Lume local passando (seed do Anchor == regras do Lume).
 - **Não verificado**: tela (adiado); apuração contra dado real (banco de dev sem nenhuma
   transação); interpretação "prejuízo em mês isento vai pra frente" vem de fonte secundária.
-- **Pendente**: push do Lume e bump de `.easybusiness-version` (precisa de confirmação); Fase 17
-  possivelmente desbloqueada (Lume já tem `/v1/rates` com SELIC/DI Futuro).
+- **Fechamento (confirmado pelo dono do projeto)**: Fase 24 commitada (`b575395`); Lume commitado
+  e publicado (`Arven-Labs/lume@a418f24`); pin renomeado `.easybusiness-version` → `.lume-version`
+  com o SHA novo, `build.yml` e README apontando pro `Arven-Labs/lume`. Fase 17 marcada como
+  desbloqueada (Lume já tem `/v1/rates` com SELIC/DI Futuro) — próxima candidata.
+- **Pendente**: teste de tela das Fases 15/16/20/24.
