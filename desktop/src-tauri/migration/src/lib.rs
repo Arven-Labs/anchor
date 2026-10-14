@@ -59,6 +59,8 @@ mod m20260829_150000_add_reit_fundamentals_unique_index;
 mod m20260830_100000_create_cvm_dividend_notice_documents;
 mod m20260913_100000_create_storage_settings;
 mod m20261014_100000_drop_ai_tables;
+mod m20261014_110000_create_tax_rules;
+mod m20261014_120000_create_tax_payments;
 
 pub struct Migrator;
 
@@ -125,6 +127,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260830_100000_create_cvm_dividend_notice_documents::Migration),
             Box::new(m20260913_100000_create_storage_settings::Migration),
             Box::new(m20261014_100000_drop_ai_tables::Migration),
+            Box::new(m20261014_110000_create_tax_rules::Migration),
+            Box::new(m20261014_120000_create_tax_payments::Migration),
         ]
     }
 }

@@ -41,6 +41,8 @@ pub use super::stock_price_history::Entity as StockPriceHistory;
 pub use super::stock_quotes::Entity as StockQuotes;
 pub use super::stock_technicals::Entity as StockTechnicals;
 pub use super::suggested_dividends::Entity as SuggestedDividends;
+pub use super::tax_payments::Entity as TaxPayments;
+pub use super::tax_rules::Entity as TaxRules;
 pub use super::theses::Entity as Theses;
 pub use super::thesis_attachments::Entity as ThesisAttachments;
 pub use super::transactions::Entity as Transactions;

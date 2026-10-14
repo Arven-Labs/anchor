@@ -44,6 +44,8 @@ pub mod stock_quotes;
 pub mod stock_technicals;
 pub mod storage_settings;
 pub mod suggested_dividends;
+pub mod tax_payments;
+pub mod tax_rules;
 pub mod theses;
 pub mod thesis_attachments;
 pub mod transactions;

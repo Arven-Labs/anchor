@@ -1,5 +1,6 @@
 // Fase 13.4 — agregações puras pra tela "Proventos": IR retido na fonte do
-// JSCP (15% fixo, decisão do dono do projeto) e o bucketing mensal
+// JSCP (era 15% fixo; desde a Fase 24 vem da regra `jcp_irrf_rate` vigente
+// na data do pagamento — 17,5% a partir de 2026, LC 224/2025) e o bucketing mensal
 // recebido/a-receber que alimenta o gráfico empilhado e a tabela "Monthly
 // history" (o front pivota Ano×Mês e agrega Mensal→Anual em cima disto,
 // mesmo padrão 100% client-side de LedgerSection.tsx/DividendHistoryChart.tsx).
@@ -8,14 +9,14 @@ use std::collections::HashMap;
 
 pub const PAYMENT_TYPE_DIVIDENDO: &str = "dividendo";
 pub const PAYMENT_TYPE_JSCP: &str = "jscp";
-const JSCP_IR_RATE: f64 = 0.15;
 
 // `None`/qualquer valor != "jscp" cai no ramo sem retenção — cobre tanto
 // "dividendo" explícito quanto `transactions.payment_type = NULL`
-// (lançamento legado, ver migration).
-pub fn net_total(total: f64, payment_type: Option<&str>) -> f64 {
+// (lançamento legado, ver migration). `jscp_rate` = regra vigente na data
+// do pagamento, resolvida pelo caller.
+pub fn net_total(total: f64, payment_type: Option<&str>, jscp_rate: f64) -> f64 {
     match payment_type {
-        Some(PAYMENT_TYPE_JSCP) => total * (1.0 - JSCP_IR_RATE),
+        Some(PAYMENT_TYPE_JSCP) => total * (1.0 - jscp_rate),
         _ => total,
     }
 }
@@ -70,17 +71,18 @@ mod tests {
 
     #[test]
     fn net_total_dividendo_has_no_withholding() {
-        assert_eq!(net_total(100.0, Some("dividendo")), 100.0);
+        assert_eq!(net_total(100.0, Some("dividendo"), 0.175), 100.0);
     }
 
     #[test]
-    fn net_total_jscp_withholds_15_pct() {
-        assert_eq!(net_total(100.0, Some("jscp")), 85.0);
+    fn net_total_jscp_withholds_the_given_rate() {
+        assert_eq!(net_total(100.0, Some("jscp"), 0.15), 85.0);
+        assert_eq!(net_total(100.0, Some("jscp"), 0.175), 82.5);
     }
 
     #[test]
     fn net_total_none_defaults_to_dividendo() {
-        assert_eq!(net_total(100.0, None), 100.0);
+        assert_eq!(net_total(100.0, None, 0.175), 100.0);
     }
 
     fn entry(asset_id: i32, date: &str, net_total: f64, received: bool) -> ProventoEntry {

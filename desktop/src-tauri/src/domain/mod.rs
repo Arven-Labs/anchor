@@ -14,5 +14,6 @@ pub mod projected_ceiling;
 pub mod proventos;
 pub mod rim;
 pub mod rnav;
+pub mod tax;
 pub mod transaction_ledger;
 pub mod twr;

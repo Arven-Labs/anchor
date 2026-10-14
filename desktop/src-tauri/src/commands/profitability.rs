@@ -5,7 +5,7 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Serialize;
 
 use crate::domain::benchmark::{self, PricePoint};
-use crate::domain::twr::{self, CashFlow};
+use crate::domain::twr::{self, CashFlow, FlowKind};
 use crate::entity::{assets, macro_index_monthly, stock_price_history, transactions};
 use crate::error::AppError;
 
@@ -172,6 +172,10 @@ pub async fn compute_profitability(
         return Ok(vec![]);
     }
 
+    // Fase 24 — DARF pago, rateado pras carteiras/ativo pedidos: custo sem
+    // ativo correspondente, reduz o retorno no mês do pagamento.
+    let tax_flows = crate::commands::tax::tax_cost_flows(db, portfolio_ids, asset_id).await?;
+
     let today = Utc::now().date_naive();
     let first_date = NaiveDate::parse_from_str(&relevant[0].transaction_date, "%Y-%m-%d")
         .map_err(|_| AppError::InvalidGuard("data de transação inválida".to_string()))?;
@@ -209,7 +213,7 @@ pub async fn compute_profitability(
                     let qty = tx.quantity.unwrap_or(0.0);
                     *holdings.entry(tx.asset_id.unwrap()).or_insert(0.0) += qty;
                     cash_flows.push(CashFlow {
-                        amount: tx.total_value,
+                        amount: twr::flow_amount(FlowKind::Contribution, tx.total_value),
                         weight,
                     });
                 }
@@ -217,17 +221,25 @@ pub async fn compute_profitability(
                     let qty = tx.quantity.unwrap_or(0.0);
                     *holdings.entry(tx.asset_id.unwrap()).or_insert(0.0) -= qty;
                     cash_flows.push(CashFlow {
-                        amount: -tx.total_value,
+                        amount: twr::flow_amount(FlowKind::Withdrawal, tx.total_value),
                         weight,
                     });
                 }
                 DIVIDEND => {
                     cash_flows.push(CashFlow {
-                        amount: tx.total_value,
+                        amount: twr::flow_amount(FlowKind::Income, tx.total_value),
                         weight,
                     });
                 }
                 _ => {}
+            }
+        }
+        for (paid_date, amount) in &tax_flows {
+            if paid_date.year() == year && paid_date.month() == month {
+                cash_flows.push(CashFlow {
+                    amount: twr::flow_amount(FlowKind::Cost, *amount),
+                    weight: flow_weight(*paid_date),
+                });
             }
         }
 

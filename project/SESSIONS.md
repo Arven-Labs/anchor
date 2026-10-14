@@ -1992,3 +1992,31 @@
   bloqueado pelo classificador de permissões (exploração de credenciais) — se o dono do projeto
   quiser conferir, faz manualmente (ex. Seahorse / "Senhas e chaves").
 - **Pendente**: teste de clique no app rodando (adiado pelo dono do projeto).
+
+**Continuação, mesma sessão — Fase 24 (impostos), fatia 1.**
+- **Pedido de processo do dono do projeto** (vale daqui pra frente, salvo em memória): mudança
+  grande começa em **plan mode**; edições sempre pela ferramenta de edição (diff visível), nunca
+  script Python/sed via Bash.
+- **Planejamento em plan mode**, com pesquisa de regra na fonte oficial (Receita) e 4 decisões
+  via `AskUserQuestion` (B3 calculado + avisos de cripto/exterior; regras do Lume — "ainda não
+  tem no lume, mas podemos fazer lá"; nível Workspace; pago → Finanças + rentabilidade). Dono do
+  projeto apontou durante a revisão do plano que **units (final 11) não têm a isenção** —
+  confirmado (SC Cosit 145/2021) e incorporado antes de aprovar.
+- **Achados no planejamento**: (1) `compute_positions` calcula preço médio sobre todas as compras
+  da história e ignora `fee` — serve pra tela, não pra IR, então o motor fiscal tem custo médio
+  próprio; (2) **bug real de sinal** do provento no Dietz (derrubava o retorno) — corrigido
+  primeiro, com teste; (3) JCP hardcoded em 15%, mas desde 2026 é 17,5% (LC 224/2025).
+- **Lume**: repo clonado em `../lume` (vive em `Arven-Labs/lume`; `masterlxz/easybusiness`
+  redireciona pra lá). Item 1.17 `/v1/tax-rules/br`, 8/8 testes. Achado de ambiente de lá:
+  `pytest` e `api` dividem o mesmo Postgres e o `create_all` dos testes quebra o `alembic
+  upgrade` do próximo `up` — volume (criado pela própria sessão) recriado. Registrado no
+  `SESSIONS.md` do Lume.
+- **Anchor**: ver Fase 24 em `PHASE.md` pra lista completa (migrations, `domain/tax/`,
+  `commands/tax.rs`, aba Taxes, Settings → Taxes, rentabilidade líquida).
+- **Verificado**: `cargo test --lib` **196/196** (26 novos), `tsc --noEmit` limpo, migrations
+  aplicadas no banco de dev (cópia em `data/anchor-pre-fase24.db`), seed conferido via `sqlite3`,
+  teste `#[ignore]` ao vivo contra o Lume local passando (seed do Anchor == regras do Lume).
+- **Não verificado**: tela (adiado); apuração contra dado real (banco de dev sem nenhuma
+  transação); interpretação "prejuízo em mês isento vai pra frente" vem de fonte secundária.
+- **Pendente**: push do Lume e bump de `.easybusiness-version` (precisa de confirmação); Fase 17
+  possivelmente desbloqueada (Lume já tem `/v1/rates` com SELIC/DI Futuro).

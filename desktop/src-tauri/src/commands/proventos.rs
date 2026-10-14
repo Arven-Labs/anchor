@@ -10,6 +10,7 @@ use chrono::{Duration, Utc};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Serialize;
 
+use crate::commands::tax::{jcp_rate_on, load_rule_set};
 use crate::domain::proventos::{bucket_monthly, by_asset, net_total, ProventoEntry, PAYMENT_TYPE_DIVIDENDO};
 use crate::entity::{assets, portfolio, suggested_dividends, transactions};
 use crate::error::AppError;
@@ -112,6 +113,7 @@ pub async fn get_proventos_summary(
             .collect()
     };
 
+    let rules = load_rule_set(db).await?;
     let mut rows: Vec<ProventoRow> = Vec::new();
 
     for tx in &paid_txs {
@@ -128,7 +130,11 @@ pub async fn get_proventos_summary(
             name: asset.name.clone(),
             asset_class: asset.asset_class.clone(),
             status: "paid".to_string(),
-            net_total: net_total(tx.total_value, Some(payment_type.as_str())),
+            net_total: net_total(
+                tx.total_value,
+                Some(payment_type.as_str()),
+                jcp_rate_on(&rules, &tx.transaction_date)?,
+            ),
             payment_type,
             com_date,
             payment_date: tx.transaction_date.clone(),
@@ -146,7 +152,11 @@ pub async fn get_proventos_summary(
             name: asset.name.clone(),
             asset_class: asset.asset_class.clone(),
             status: "receivable".to_string(),
-            net_total: net_total(s.total, Some(s.payment_type.as_str())),
+            net_total: net_total(
+                s.total,
+                Some(s.payment_type.as_str()),
+                jcp_rate_on(&rules, &s.payment_date)?,
+            ),
             payment_type: s.payment_type.clone(),
             com_date: s.com_date.clone(),
             payment_date: s.payment_date.clone(),

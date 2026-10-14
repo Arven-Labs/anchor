@@ -1,0 +1,737 @@
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+use chrono::{Datelike, NaiveDate};
+use serde::Serialize;
+
+use super::calendar::darf_due_date;
+use super::classify::{is_unit, treatment, TaxTreatment};
+use super::rules::{self, RuleSet};
+use crate::error::AppError;
+
+const EPS: f64 = 1e-9;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    Buy,
+    Sell,
+}
+
+/// Uma compra ou venda, já resolvida com os dados do ativo.
+#[derive(Clone, Debug)]
+pub struct Trade {
+    pub tx_id: i32,
+    pub portfolio_id: i32,
+    pub asset_id: i32,
+    pub ticker: String,
+    pub asset_class: String,
+    pub currency: String,
+    pub custodia_id: Option<i32>,
+    pub date: NaiveDate,
+    pub side: Side,
+    pub quantity: f64,
+    /// `transactions.total_value` (sem taxas).
+    pub gross_value: f64,
+    pub fee: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Bucket {
+    /// Operações comuns: ações, units, ETF, BDR.
+    Common,
+    DayTrade,
+    Fii,
+}
+
+/// Resultado de uma venda (ou da parte day trade dela).
+#[derive(Clone, Debug, Serialize)]
+pub struct SaleResult {
+    pub tx_id: i32,
+    pub portfolio_id: i32,
+    pub asset_id: i32,
+    pub ticker: String,
+    pub date: NaiveDate,
+    pub bucket: Bucket,
+    pub is_unit: bool,
+    /// Ação comum (não unit) vendida em operação comum — entra na soma do
+    /// limite de isenção.
+    pub exemption_eligible: bool,
+    pub quantity: f64,
+    /// Valor de venda bruto (base do limite de isenção e do IRRF 0,005%).
+    pub sale_value: f64,
+    /// Valor de venda − taxas de venda.
+    pub proceeds: f64,
+    /// Custo de aquisição (preço médio × quantidade, taxas de compra inclusas).
+    pub cost: f64,
+    pub gain: f64,
+    /// Vendeu mais do que o histórico de compras conhecido — o ganho só
+    /// considera a parte com custo conhecido.
+    pub cost_unknown: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct BucketResult {
+    pub bucket: Bucket,
+    /// Resultado do mês (ganhos − perdas), já sem o lucro isento.
+    pub result: f64,
+    pub loss_used: f64,
+    /// Prejuízo acumulado dessa gaveta depois deste mês.
+    pub loss_carried: f64,
+    pub taxable: f64,
+    pub rate: f64,
+    pub tax: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MonthAssessment {
+    /// `YYYY-MM`
+    pub period: String,
+    pub stock_sales_total: f64,
+    pub stock_exempt: bool,
+    pub exempt_gain: f64,
+    pub buckets: Vec<BucketResult>,
+    pub gross_tax: f64,
+    /// IRRF estimado retido nas vendas deste mês.
+    pub irrf_withheld: f64,
+    pub irrf_used: f64,
+    /// Imposto abaixo do mínimo de DARF vindo de meses anteriores.
+    pub carried_in: f64,
+    /// Valor do DARF deste mês (0 se ficou abaixo do mínimo).
+    pub due: f64,
+    /// Valor que ficou abaixo do mínimo e passa pro mês seguinte.
+    pub carried_out: f64,
+    pub due_date: NaiveDate,
+    pub darf_code: i32,
+    pub sales: Vec<SaleResult>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TaxWarning {
+    CostUnknown { ticker: String, date: NaiveDate },
+    CryptoSalesAboveExemption { period: String, sales_total: f64, limit: f64 },
+    CryptoSalesNonBrl { period: String },
+    ForeignSales { year: i32 },
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Assessment {
+    pub months: Vec<MonthAssessment>,
+    pub warnings: Vec<TaxWarning>,
+}
+
+#[derive(Default)]
+struct Position {
+    quantity: f64,
+    cost: f64,
+}
+
+#[derive(Default)]
+struct DayGroup {
+    buy_qty: f64,
+    buy_cost: f64,
+    sell_qty: f64,
+    sell_gross: f64,
+    sell_proceeds: f64,
+    sell_tx: Vec<i32>,
+}
+
+fn period_of(date: NaiveDate) -> String {
+    format!("{:04}-{:02}", date.year(), date.month())
+}
+
+/// Baixa `quantity` da posição ao custo médio. Devolve (custo, quantidade
+/// realmente coberta pelo histórico).
+fn take_from_position(pos: &mut Position, quantity: f64) -> (f64, f64) {
+    let covered = quantity.min(pos.quantity.max(0.0));
+    let avg = if pos.quantity > EPS { pos.cost / pos.quantity } else { 0.0 };
+    let cost = avg * covered;
+    pos.quantity -= covered;
+    pos.cost -= cost;
+    // Posição zerada → preço médio recomeça do zero na próxima compra.
+    if pos.quantity <= EPS {
+        *pos = Position::default();
+    }
+    (cost, covered)
+}
+
+/// Apura mês a mês o imposto de renda variável (B3) a partir das compras e
+/// vendas. `trades` pode vir em qualquer ordem e conter classes fora do
+/// escopo (viram avisos ou são ignoradas).
+pub fn assess(trades: &[Trade], rules: &RuleSet) -> Result<Assessment, AppError> {
+    let mut warnings = Vec::new();
+    collect_out_of_scope_warnings(trades, rules, &mut warnings)?;
+
+    let mut in_scope: Vec<&Trade> = trades
+        .iter()
+        .filter(|t| {
+            matches!(
+                treatment(&t.asset_class, &t.ticker),
+                TaxTreatment::StockExemptEligible | TaxTreatment::CommonNoExemption | TaxTreatment::Fii
+            )
+        })
+        .collect();
+    in_scope.sort_by(|a, b| (a.asset_id, a.date, a.tx_id).cmp(&(b.asset_id, b.date, b.tx_id)));
+
+    // 1) Por ativo, dia a dia: casa day trade por corretora, o resto mexe
+    //    no custo médio (compras antes das vendas dentro do mesmo dia).
+    let mut sales: Vec<SaleResult> = Vec::new();
+    let mut by_asset: BTreeMap<i32, Vec<&Trade>> = BTreeMap::new();
+    for t in in_scope {
+        by_asset.entry(t.asset_id).or_default().push(t);
+    }
+
+    for asset_trades in by_asset.values() {
+        let first = asset_trades[0];
+        let kind = treatment(&first.asset_class, &first.ticker);
+        let unit = is_unit(&first.asset_class, &first.ticker);
+        let mut pos = Position::default();
+
+        let mut by_day: BTreeMap<NaiveDate, Vec<&Trade>> = BTreeMap::new();
+        for t in asset_trades {
+            by_day.entry(t.date).or_default().push(t);
+        }
+
+        for (date, day_trades) in by_day {
+            let mut groups: BTreeMap<Option<i32>, DayGroup> = BTreeMap::new();
+            for t in &day_trades {
+                let g = groups.entry(t.custodia_id).or_default();
+                match t.side {
+                    Side::Buy => {
+                        g.buy_qty += t.quantity;
+                        g.buy_cost += t.gross_value + t.fee;
+                    }
+                    Side::Sell => {
+                        g.sell_qty += t.quantity;
+                        g.sell_gross += t.gross_value;
+                        g.sell_proceeds += t.gross_value - t.fee;
+                        g.sell_tx.push(t.tx_id);
+                    }
+                }
+            }
+
+            let mut swing_buys: Vec<(f64, f64)> = Vec::new();
+            let mut swing_sells: Vec<(i32, f64, f64, f64)> = Vec::new();
+
+            for g in groups.values() {
+                let matched = g.buy_qty.min(g.sell_qty);
+                if matched > EPS {
+                    let buy_share = matched / g.buy_qty;
+                    let sell_share = matched / g.sell_qty;
+                    let cost = g.buy_cost * buy_share;
+                    let proceeds = g.sell_proceeds * sell_share;
+                    sales.push(SaleResult {
+                        tx_id: g.sell_tx[0],
+                        portfolio_id: first.portfolio_id,
+                        asset_id: first.asset_id,
+                        ticker: first.ticker.clone(),
+                        date,
+                        bucket: if kind == TaxTreatment::Fii { Bucket::Fii } else { Bucket::DayTrade },
+                        is_unit: unit,
+                        exemption_eligible: false,
+                        quantity: matched,
+                        sale_value: g.sell_gross * sell_share,
+                        proceeds,
+                        cost,
+                        gain: proceeds - cost,
+                        cost_unknown: false,
+                    });
+                }
+                if g.buy_qty - matched > EPS {
+                    swing_buys.push((g.buy_qty - matched, g.buy_cost * (1.0 - matched / g.buy_qty)));
+                }
+                if g.sell_qty - matched > EPS {
+                    let rest = 1.0 - matched / g.sell_qty;
+                    swing_sells.push((
+                        g.sell_tx[0],
+                        g.sell_qty - matched,
+                        g.sell_gross * rest,
+                        g.sell_proceeds * rest,
+                    ));
+                }
+            }
+
+            for (qty, cost) in swing_buys {
+                pos.quantity += qty;
+                pos.cost += cost;
+            }
+            for (tx_id, qty, gross, proceeds) in swing_sells {
+                let (cost, covered) = take_from_position(&mut pos, qty);
+                let cost_unknown = covered + EPS < qty;
+                let share = if qty > EPS { covered / qty } else { 0.0 };
+                if cost_unknown {
+                    warnings.push(TaxWarning::CostUnknown { ticker: first.ticker.clone(), date });
+                }
+                let proceeds = proceeds * share;
+                sales.push(SaleResult {
+                    tx_id,
+                    portfolio_id: first.portfolio_id,
+                    asset_id: first.asset_id,
+                    ticker: first.ticker.clone(),
+                    date,
+                    bucket: if kind == TaxTreatment::Fii { Bucket::Fii } else { Bucket::Common },
+                    is_unit: unit,
+                    exemption_eligible: kind == TaxTreatment::StockExemptEligible,
+                    quantity: covered,
+                    sale_value: gross * share,
+                    proceeds,
+                    cost,
+                    gain: proceeds - cost,
+                    cost_unknown,
+                });
+            }
+        }
+    }
+
+    // `portfolio_id` por venda: o ativo pode estar em mais de uma carteira do
+    // Workspace; usa o da própria transação de venda.
+    let tx_portfolio: HashMap<i32, i32> = trades.iter().map(|t| (t.tx_id, t.portfolio_id)).collect();
+    for s in &mut sales {
+        if let Some(p) = tx_portfolio.get(&s.tx_id) {
+            s.portfolio_id = *p;
+        }
+    }
+
+    // 2) Mês a mês, em ordem: isenção, gavetas, compensação, IRRF, mínimo.
+    let mut by_month: BTreeMap<String, Vec<SaleResult>> = BTreeMap::new();
+    for s in sales {
+        by_month.entry(period_of(s.date)).or_default().push(s);
+    }
+
+    let mut loss: HashMap<Bucket, f64> = HashMap::new();
+    let mut irrf_credit = 0.0;
+    let mut carried = 0.0;
+    let mut months = Vec::new();
+
+    for (period, month_sales) in by_month {
+        let first_day = NaiveDate::parse_from_str(&format!("{period}-01"), "%Y-%m-%d")
+            .map_err(|_| AppError::InvalidGuard(format!("invalid period {period}")))?;
+
+        let limit = rules.get(rules::STOCK_EXEMPTION_MONTHLY_SALES, first_day)?;
+        let stock_sales_total: f64 = month_sales
+            .iter()
+            .filter(|s| s.exemption_eligible)
+            .map(|s| s.sale_value)
+            .sum();
+        let stock_exempt = stock_sales_total <= limit + EPS;
+
+        // Mês isento: lucro das ações comuns não é tributado e não consome
+        // prejuízo; prejuízo delas continua indo pra gaveta comum (prática de
+        // mercado — ver PHASE.md Fase 24).
+        let eligible_net: f64 = month_sales
+            .iter()
+            .filter(|s| s.exemption_eligible)
+            .map(|s| s.gain)
+            .sum();
+        let exempt_gain = if stock_exempt && eligible_net > 0.0 { eligible_net } else { 0.0 };
+
+        let mut buckets = Vec::new();
+        let mut gross_tax = 0.0;
+        for bucket in [Bucket::Common, Bucket::DayTrade, Bucket::Fii] {
+            let in_bucket: Vec<&SaleResult> = month_sales.iter().filter(|s| s.bucket == bucket).collect();
+            if in_bucket.is_empty() {
+                continue;
+            }
+            let mut result: f64 = in_bucket.iter().map(|s| s.gain).sum();
+            if bucket == Bucket::Common {
+                result -= exempt_gain;
+            }
+            let carried_loss = loss.entry(bucket).or_insert(0.0);
+            let (loss_used, taxable) = if result > 0.0 {
+                let used = result.min(*carried_loss);
+                *carried_loss -= used;
+                (used, result - used)
+            } else {
+                *carried_loss += -result;
+                (0.0, 0.0)
+            };
+            let rate_key = match bucket {
+                Bucket::Common => rules::COMMON_RATE,
+                Bucket::DayTrade => rules::DAY_TRADE_RATE,
+                Bucket::Fii => rules::FII_RATE,
+            };
+            let rate = rules.get(rate_key, first_day)?;
+            let tax = taxable * rate;
+            gross_tax += tax;
+            buckets.push(BucketResult {
+                bucket,
+                result,
+                loss_used,
+                loss_carried: *carried_loss,
+                taxable,
+                rate,
+                tax,
+            });
+        }
+
+        // IRRF estimado: 0,005% do valor de venda das operações comuns/FII;
+        // 1% do ganho positivo de day trade (por venda casada).
+        let irrf_common = rules.get(rules::IRRF_COMMON_RATE, first_day)?;
+        let irrf_dt = rules.get(rules::IRRF_DAY_TRADE_RATE, first_day)?;
+        let irrf_withheld: f64 = month_sales
+            .iter()
+            .map(|s| match s.bucket {
+                Bucket::DayTrade => s.gain.max(0.0) * irrf_dt,
+                _ => s.sale_value * irrf_common,
+            })
+            .sum();
+        irrf_credit += irrf_withheld;
+        let irrf_used = gross_tax.min(irrf_credit);
+        irrf_credit -= irrf_used;
+
+        let minimum = rules.get(rules::DARF_MINIMUM, first_day)?;
+        let carried_in = carried;
+        let payable = gross_tax - irrf_used + carried_in;
+        let (due, carried_out) = if payable + EPS < minimum { (0.0, payable) } else { (payable, 0.0) };
+        carried = carried_out;
+
+        months.push(MonthAssessment {
+            period: period.clone(),
+            stock_sales_total,
+            stock_exempt,
+            exempt_gain,
+            buckets,
+            gross_tax,
+            irrf_withheld,
+            irrf_used,
+            carried_in,
+            due,
+            carried_out,
+            due_date: darf_due_date(first_day.year(), first_day.month()),
+            darf_code: rules.get(rules::DARF_CODE_B3, first_day)? as i32,
+            sales: month_sales,
+        });
+    }
+
+    Ok(Assessment { months, warnings })
+}
+
+fn collect_out_of_scope_warnings(
+    trades: &[Trade],
+    rules: &RuleSet,
+    warnings: &mut Vec<TaxWarning>,
+) -> Result<(), AppError> {
+    let mut crypto_sales: BTreeMap<String, (f64, bool)> = BTreeMap::new();
+    let mut foreign_years: BTreeSet<i32> = BTreeSet::new();
+    for t in trades.iter().filter(|t| t.side == Side::Sell) {
+        match treatment(&t.asset_class, &t.ticker) {
+            TaxTreatment::CryptoWarning => {
+                let entry = crypto_sales.entry(period_of(t.date)).or_insert((0.0, false));
+                entry.0 += t.gross_value;
+                entry.1 |= t.currency != "BRL";
+            }
+            TaxTreatment::ForeignWarning => {
+                foreign_years.insert(t.date.year());
+            }
+            _ => {}
+        }
+    }
+    for (period, (total, non_brl)) in crypto_sales {
+        if non_brl {
+            warnings.push(TaxWarning::CryptoSalesNonBrl { period });
+            continue;
+        }
+        let first_day = NaiveDate::parse_from_str(&format!("{period}-01"), "%Y-%m-%d")
+            .map_err(|_| AppError::InvalidGuard(format!("invalid period {period}")))?;
+        let limit = rules.get(rules::CRYPTO_EXEMPTION_MONTHLY_SALES, first_day)?;
+        if total > limit + EPS {
+            warnings.push(TaxWarning::CryptoSalesAboveExemption { period, sales_total: total, limit });
+        }
+    }
+    for year in foreign_years {
+        warnings.push(TaxWarning::ForeignSales { year });
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::tax::rules::test_rule_set;
+
+    fn d(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    struct Builder {
+        trades: Vec<Trade>,
+    }
+
+    impl Builder {
+        fn new() -> Self {
+            Self { trades: Vec::new() }
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn trade(
+            mut self,
+            asset_id: i32,
+            ticker: &str,
+            class: &str,
+            date: &str,
+            side: Side,
+            quantity: f64,
+            gross: f64,
+            fee: f64,
+        ) -> Self {
+            let tx_id = self.trades.len() as i32 + 1;
+            self.trades.push(Trade {
+                tx_id,
+                portfolio_id: 1,
+                asset_id,
+                ticker: ticker.to_string(),
+                asset_class: class.to_string(),
+                currency: "BRL".to_string(),
+                custodia_id: Some(1),
+                date: d(date),
+                side,
+                quantity,
+                gross_value: gross,
+                fee,
+            });
+            self
+        }
+
+        fn buy(self, asset_id: i32, ticker: &str, class: &str, date: &str, qty: f64, gross: f64, fee: f64) -> Self {
+            self.trade(asset_id, ticker, class, date, Side::Buy, qty, gross, fee)
+        }
+
+        fn sell(self, asset_id: i32, ticker: &str, class: &str, date: &str, qty: f64, gross: f64, fee: f64) -> Self {
+            self.trade(asset_id, ticker, class, date, Side::Sell, qty, gross, fee)
+        }
+
+        fn assess(self) -> Assessment {
+            assess(&self.trades, &test_rule_set()).unwrap()
+        }
+    }
+
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-6
+    }
+
+    #[test]
+    fn receita_official_example() {
+        // Página "Cálculo e Pagamento do Imposto" da Receita: compra 50.000 +
+        // 15 de taxas, venda 60.000 − 18 de taxas (fev/2024) → ganho 9.967,
+        // imposto 1.495,05, IRRF 3,00 → 1.492,05 a pagar.
+        let a = Builder::new()
+            .buy(1, "PETR4", "acao_br", "2024-01-10", 1000.0, 50000.0, 15.0)
+            .sell(1, "PETR4", "acao_br", "2024-02-15", 1000.0, 60000.0, 18.0)
+            .assess();
+
+        let feb = &a.months[0];
+        assert_eq!(feb.period, "2024-02");
+        assert!(!feb.stock_exempt);
+        assert!(close(feb.sales[0].gain, 9967.0));
+        assert!(close(feb.gross_tax, 1495.05));
+        assert!(close(feb.irrf_withheld, 3.0));
+        assert!(close(feb.due, 1492.05));
+        assert_eq!(feb.darf_code, 6015);
+        assert_eq!(feb.due_date, d("2024-03-28"));
+    }
+
+    #[test]
+    fn stock_sales_up_to_limit_are_exempt() {
+        let a = Builder::new()
+            .buy(1, "PETR4", "acao_br", "2026-01-05", 100.0, 10000.0, 0.0)
+            .sell(1, "PETR4", "acao_br", "2026-02-05", 100.0, 18000.0, 0.0)
+            .assess();
+
+        let m = &a.months[0];
+        assert!(m.stock_exempt);
+        assert!(close(m.exempt_gain, 8000.0));
+        assert!(close(m.gross_tax, 0.0));
+        assert!(close(m.due, 0.0));
+    }
+
+    #[test]
+    fn etf_is_never_exempt() {
+        let a = Builder::new()
+            .buy(1, "BOVA11", "etf_br", "2026-01-05", 100.0, 10000.0, 0.0)
+            .sell(1, "BOVA11", "etf_br", "2026-02-05", 100.0, 12000.0, 0.0)
+            .assess();
+
+        assert!(close(a.months[0].gross_tax, 300.0));
+    }
+
+    #[test]
+    fn unit_is_taxed_and_does_not_count_towards_stock_limit() {
+        // TAEE11 vendida por só R$ 5 mil: tributada mesmo assim. E os R$ 18
+        // mil de PETR4 continuam isentos — a unit não soma no limite.
+        let a = Builder::new()
+            .buy(1, "TAEE11", "acao_br", "2026-01-05", 100.0, 4000.0, 0.0)
+            .buy(2, "PETR4", "acao_br", "2026-01-05", 100.0, 10000.0, 0.0)
+            .sell(1, "TAEE11", "acao_br", "2026-02-05", 100.0, 5000.0, 0.0)
+            .sell(2, "PETR4", "acao_br", "2026-02-05", 100.0, 18000.0, 0.0)
+            .assess();
+
+        let m = &a.months[0];
+        assert!(close(m.stock_sales_total, 18000.0));
+        assert!(m.stock_exempt);
+        let unit_sale = m.sales.iter().find(|s| s.ticker == "TAEE11").unwrap();
+        assert!(unit_sale.is_unit);
+        assert!(close(m.gross_tax, 150.0)); // 15% × 1.000 de lucro da unit
+    }
+
+    #[test]
+    fn day_trade_is_matched_and_taxed_at_20_percent() {
+        // Compra 100 e vende 100 no mesmo dia/corretora: day trade, sem
+        // isenção mesmo com venda pequena.
+        let a = Builder::new()
+            .buy(1, "PETR4", "acao_br", "2026-03-10", 100.0, 3000.0, 0.0)
+            .sell(1, "PETR4", "acao_br", "2026-03-10", 100.0, 3500.0, 0.0)
+            .assess();
+
+        let m = &a.months[0];
+        assert_eq!(m.sales[0].bucket, Bucket::DayTrade);
+        assert!(close(m.gross_tax, 100.0)); // 20% × 500
+        assert!(close(m.irrf_withheld, 5.0)); // 1% × 500
+        assert!(close(m.due, 95.0));
+    }
+
+    #[test]
+    fn partial_day_trade_leaves_rest_in_average_cost() {
+        // Tinha 100 a R$ 10; no dia compra 50 a R$ 12 e vende 80 a R$ 15.
+        // 50 casados = day trade (ganho 50 × 3 = 150). Os outros 30 vendidos
+        // saem do custo médio antigo (R$ 10) → ganho comum 30 × 5 = 150.
+        let a = Builder::new()
+            .buy(1, "VALE3", "acao_br", "2026-04-01", 100.0, 1000.0, 0.0)
+            .buy(1, "VALE3", "acao_br", "2026-04-20", 50.0, 600.0, 0.0)
+            .sell(1, "VALE3", "acao_br", "2026-04-20", 80.0, 1200.0, 0.0)
+            .assess();
+
+        let m = &a.months[0];
+        let dt = m.sales.iter().find(|s| s.bucket == Bucket::DayTrade).unwrap();
+        let common = m.sales.iter().find(|s| s.bucket == Bucket::Common).unwrap();
+        assert!(close(dt.quantity, 50.0));
+        assert!(close(dt.gain, 150.0));
+        assert!(close(common.quantity, 30.0));
+        assert!(close(common.gain, 150.0));
+    }
+
+    #[test]
+    fn different_brokers_same_day_is_not_day_trade() {
+        let mut trades = Builder::new()
+            .buy(1, "PETR4", "acao_br", "2026-03-01", 100.0, 3000.0, 0.0)
+            .buy(1, "PETR4", "acao_br", "2026-03-10", 100.0, 3000.0, 0.0)
+            .sell(1, "PETR4", "acao_br", "2026-03-10", 100.0, 3500.0, 0.0)
+            .trades;
+        trades[2].custodia_id = Some(2);
+
+        let a = assess(&trades, &test_rule_set()).unwrap();
+        assert!(a.months[0].sales.iter().all(|s| s.bucket == Bucket::Common));
+    }
+
+    #[test]
+    fn fii_has_own_bucket_and_rate() {
+        let a = Builder::new()
+            .buy(1, "HGLG11", "fii", "2026-01-05", 10.0, 1500.0, 0.0)
+            .sell(1, "HGLG11", "fii", "2026-02-05", 10.0, 1600.0, 0.0)
+            .assess();
+
+        let m = &a.months[0];
+        assert_eq!(m.buckets[0].bucket, Bucket::Fii);
+        assert!(close(m.gross_tax, 20.0)); // 20% × 100, sem isenção
+    }
+
+    #[test]
+    fn loss_carries_forward_within_bucket_only() {
+        // Jan: prejuízo de 1.000 em ETF (gaveta comum). Fev: lucro de 1.000
+        // em FII (outra gaveta, não compensa) e 1.500 em ETF (compensa 1.000).
+        let a = Builder::new()
+            .buy(1, "BOVA11", "etf_br", "2026-01-02", 100.0, 10000.0, 0.0)
+            .sell(1, "BOVA11", "etf_br", "2026-01-20", 100.0, 9000.0, 0.0)
+            .buy(2, "HGLG11", "fii", "2026-01-02", 10.0, 1000.0, 0.0)
+            .sell(2, "HGLG11", "fii", "2026-02-10", 10.0, 2000.0, 0.0)
+            .buy(3, "IVVB11", "etf_br", "2026-01-02", 10.0, 3000.0, 0.0)
+            .sell(3, "IVVB11", "etf_br", "2026-02-10", 10.0, 4500.0, 0.0)
+            .assess();
+
+        let feb = &a.months[1];
+        let common = feb.buckets.iter().find(|b| b.bucket == Bucket::Common).unwrap();
+        let fii = feb.buckets.iter().find(|b| b.bucket == Bucket::Fii).unwrap();
+        assert!(close(common.loss_used, 1000.0));
+        assert!(close(common.taxable, 500.0));
+        assert!(close(fii.loss_used, 0.0));
+        assert!(close(fii.taxable, 1000.0));
+    }
+
+    #[test]
+    fn exempt_gain_does_not_consume_carried_loss() {
+        // Jan: prejuízo de 500 em ETF. Fev: lucro isento de 2.000 em ações
+        // (vendas < 20k) → prejuízo segue intacto.
+        let a = Builder::new()
+            .buy(1, "BOVA11", "etf_br", "2026-01-02", 10.0, 1500.0, 0.0)
+            .sell(1, "BOVA11", "etf_br", "2026-01-20", 10.0, 1000.0, 0.0)
+            .buy(2, "PETR4", "acao_br", "2026-01-02", 100.0, 3000.0, 0.0)
+            .sell(2, "PETR4", "acao_br", "2026-02-10", 100.0, 5000.0, 0.0)
+            .assess();
+
+        let feb = &a.months[1];
+        let common = feb.buckets.iter().find(|b| b.bucket == Bucket::Common).unwrap();
+        assert!(close(common.loss_used, 0.0));
+        assert!(close(common.loss_carried, 500.0));
+    }
+
+    #[test]
+    fn tax_below_minimum_accumulates() {
+        // Fev: 15% × 40 = 6 → abaixo de R$ 10, acumula. Mar: 15% × 40 = 6 +
+        // 6 acumulado = 12 → DARF de 12 (IRRF de centavos ignorado no close).
+        let a = Builder::new()
+            .buy(1, "BOVA11", "etf_br", "2026-01-02", 20.0, 200.0, 0.0)
+            .sell(1, "BOVA11", "etf_br", "2026-02-10", 10.0, 140.0, 0.0)
+            .sell(1, "BOVA11", "etf_br", "2026-03-10", 10.0, 140.0, 0.0)
+            .assess();
+
+        let (feb, mar) = (&a.months[0], &a.months[1]);
+        assert!(close(feb.due, 0.0));
+        assert!(feb.carried_out > 5.9 && feb.carried_out < 6.0);
+        assert!(mar.due > 11.9 && mar.due < 12.0);
+        assert!(close(mar.carried_out, 0.0));
+    }
+
+    #[test]
+    fn average_cost_resets_after_position_is_closed() {
+        // Compra 10 a 100, vende tudo; recompra 10 a 50 e vende a 60 → o
+        // custo da segunda venda é 500 (não a média histórica de 75).
+        let a = Builder::new()
+            .buy(1, "BOVA11", "etf_br", "2026-01-02", 10.0, 1000.0, 0.0)
+            .sell(1, "BOVA11", "etf_br", "2026-01-10", 10.0, 1000.0, 0.0)
+            .buy(1, "BOVA11", "etf_br", "2026-02-02", 10.0, 500.0, 0.0)
+            .sell(1, "BOVA11", "etf_br", "2026-02-10", 10.0, 600.0, 0.0)
+            .assess();
+
+        assert!(close(a.months[1].sales[0].cost, 500.0));
+        assert!(close(a.months[1].sales[0].gain, 100.0));
+    }
+
+    #[test]
+    fn selling_more_than_known_flags_cost_unknown() {
+        let a = Builder::new()
+            .buy(1, "PETR4", "acao_br", "2026-01-02", 10.0, 300.0, 0.0)
+            .sell(1, "PETR4", "acao_br", "2026-02-10", 20.0, 800.0, 0.0)
+            .assess();
+
+        let sale = &a.months[0].sales[0];
+        assert!(sale.cost_unknown);
+        assert!(close(sale.quantity, 10.0));
+        assert!(close(sale.gain, 100.0)); // só os 10 com custo conhecido
+        assert!(matches!(a.warnings[0], TaxWarning::CostUnknown { .. }));
+    }
+
+    #[test]
+    fn crypto_and_foreign_only_warn() {
+        let mut b = Builder::new()
+            .buy(1, "BTC", "cripto", "2026-01-02", 1.0, 30000.0, 0.0)
+            .sell(1, "BTC", "cripto", "2026-02-10", 1.0, 40000.0, 0.0)
+            .buy(2, "AAPL", "acao_internacional", "2026-01-02", 1.0, 1000.0, 0.0)
+            .sell(2, "AAPL", "acao_internacional", "2026-02-10", 1.0, 1200.0, 0.0);
+        b.trades[2].currency = "USD".to_string();
+        b.trades[3].currency = "USD".to_string();
+        let a = b.assess();
+
+        assert!(a.months.is_empty());
+        assert!(a.warnings.iter().any(|w| matches!(w, TaxWarning::CryptoSalesAboveExemption { .. })));
+        assert!(a.warnings.iter().any(|w| matches!(w, TaxWarning::ForeignSales { year: 2026 })));
+    }
+}

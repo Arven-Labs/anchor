@@ -661,6 +661,31 @@ pub async fn fetch_fii_cnpj_resolution(
 }
 
 // ---------------------------------------------------------------------------
+// tax-rules — /v1/tax-rules/br
+// ---------------------------------------------------------------------------
+
+// Fase 24 — regras de IR curadas no Lume (sem `ResponseMeta`: não é dado
+// coletado de fonte externa com cache, é tabela versionada no repo de lá).
+#[derive(Debug, Deserialize)]
+pub struct TaxRulePoint {
+    pub key: String,
+    pub value: f64,
+    pub effective_from: NaiveDate,
+    pub description: String,
+    pub source: String,
+    pub verified_at: NaiveDate,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TaxRulesResponse {
+    pub rules: Vec<TaxRulePoint>,
+}
+
+pub async fn fetch_tax_rules_br(handle: &FinanceApiHandle) -> Result<TaxRulesResponse, AppError> {
+    get(handle, "/v1/tax-rules/br").await
+}
+
+// ---------------------------------------------------------------------------
 // Testes `#[ignore]` — precisam de uma Finance API real rodando em
 // `http://localhost:8000` com `API_KEYS=local-dev-key-change-me` (mesmos
 // valores de `sidecar::DEV_BASE_URL`/`DEV_API_KEY`), ex.: `sidecar_main.py`
