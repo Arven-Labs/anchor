@@ -1676,9 +1676,11 @@ duplica essa funcionalidade.
 - `cargo test --lib` **170/170** (eram 203 — os 33 a menos moravam nos módulos apagados),
   `tsc --noEmit` limpo, crate `migration` compila.
 
-**Pendente**: aplicar a migration no banco real de dev (`sea-orm-cli migrate up`, depois de um
-Backup da Fase 16) e as chaves de IA que ficaram órfãs no keyring do SO (serviço `anchor`,
-username `{provider}:{id}`) — ver `SESSIONS.md`, Sessão 101.
+- [x] Migration aplicada no banco real de dev (Sessão 101, com cópia antes em
+  `data/anchor-pre-fase20.db`). Nenhuma chave de IA órfã esperada no keyring (`ai_api_key` já
+  estava vazia).
+
+**Pendente**: teste de clique no app rodando — ver `SESSIONS.md`, Sessão 101.
 
 ### Fase 21 — Consumo do Lume (ex-EasyBusiness) com fallback pra instância compartilhada do Warden (registrada na Sessão 100, não iniciada)
 

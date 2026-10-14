@@ -1981,5 +1981,14 @@
   test --lib` **170/170** (203 → 170, os 33 a menos eram testes dos módulos apagados), crate
   `migration` compila. Um erro de link transitório numa rodada intermediária não se repetiu.
   Avisos de compilação restantes são todos pré-existentes (conferido contra `HEAD`).
-- **Pendente**: aplicar a migration no banco real de dev; limpar as chaves de IA órfãs no keyring
-  do SO; teste de clique no app rodando.
+- **Migration aplicada no banco real de dev** (mesma sessão, a pedido do dono do projeto): cópia
+  antes em `data/anchor-pre-fase20.db` (coberta pelo `*.db` do `.gitignore`). `sea-orm-cli` não
+  está mais instalado no host — rodada via CLI do próprio crate dentro do container (`docker compose
+  run --rm --no-deps -e DATABASE_URL=sqlite:///data/anchor.db desktop sh -c "cd
+  src-tauri/migration && cargo run -- up"`). Conferido: as 6 tabelas sumiram, `integrity_check`
+  ok, `foreign_key_check` vazio.
+- **Keyring**: `ai_api_key` já estava vazia no banco antes do drop, então não deve haver chave de IA
+  órfã. `secret-tool search --all service anchor` não achou nada; investigar mais a fundo foi
+  bloqueado pelo classificador de permissões (exploração de credenciais) — se o dono do projeto
+  quiser conferir, faz manualmente (ex. Seahorse / "Senhas e chaves").
+- **Pendente**: teste de clique no app rodando (adiado pelo dono do projeto).
