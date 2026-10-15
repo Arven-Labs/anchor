@@ -2052,3 +2052,8 @@
   **Fase 21** (fallback pra instância do Warden) provavelmente obsoleta — anotado em `PHASE.md` e
   `ROADMAP.md`, sem alterar a Fase 21.
 - **Pendente**: explorar o código e discutir as decisões com o dono do projeto (plan mode).
+- **Segunda spec, mesma sessão**: `SPEC-lume-desmontagem.md` (raiz) lida, registrada na Fase 26 do
+  `PHASE.md` (sub-seção "Spec irmã: desmontagem do Lume") e removida. Escrita pro agente do repo do
+  Lume; mesma decisão (Lume será desfeito, sem perda, só descartado depois de validado pelo dono do
+  projeto). Achado: afirma que a renomeação EasyBusiness → Lume não tinha sido aplicada, mas este
+  repo já a usa — conferir o estado real do repo de lá. Só documentação.

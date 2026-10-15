@@ -2012,3 +2012,34 @@ arquivar o Lume (decisão exclusiva do dono do projeto, depois de validar).
 **Estado**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
 arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan
 mode, conforme a regra número um acima.
+
+**Spec irmã: desmontagem do Lume** (arquivo solto `SPEC-lume-desmontagem.md`, trazido na Sessão 101,
+removido da raiz). É a **outra metade** da Fase 26 e foi escrita pro agente que trabalha no repo do
+**Lume** (não pro do Anchor) — registrada aqui pra este repo ter o contexto completo. Mesma regra
+número um (não presumir nada, explorar, apresentar o achado, confirmar cada decisão de arquitetura,
+opções com prós e contras; itens **[DIREÇÃO]** são ideias a validar).
+- **Decisão**: o Lume (antes EasyBusiness) **será desfeito**. Motivo: o dono do projeto percebeu que
+  trabalha em dois repositórios dentro de um único projeto, o que gera desorganização. Hoje o Lume é
+  uma API de informações financeiras consumida só pelo Anchor, embarcada como sidecar.
+- **Objetivo**: mapear com precisão o que existe no Lume e planejar com o dono do projeto a migração
+  do que for necessário pro Anchor, de modo que ao final o Lume seja descartável **sem perda**.
+- **O que o agente do Lume deve fazer**: (1) inventariar capacidades, fontes de dados,
+  cache/armazenamento, contratos expostos e configuração; (2) identificar o que o Anchor consome e
+  como (sidecar, fallback pra instância compartilhada) **verificando, sem presumir**; (3) propor com
+  opções e tradeoffs o que migra, o que é reescrito e o que é descartado; (4) documentar a migração
+  de forma que o agente do Anchor execute a outra metade com contexto.
+- **Estado do repo do Lume após a migração**: permanece no GitHub por enquanto; o dono do projeto
+  valida com o tempo que o Anchor funciona sem ele e **só então** arquiva ou apaga (decisão dele).
+  Nada pode ser deletado ou arquivado sem confirmação explícita. Considerar um aviso no README do
+  Lume ("em desmontagem" + pra onde foram as responsabilidades) — **confirmar antes**.
+- **Questões abertas dessa spec**: alguma ideia/decisão antiga do Lume a preservar (padrão
+  `DataProvider` com fonte grátis, BYO-key e premium)? O que acontece com a renomeação
+  EasyBusiness → Lume, que ainda não havia sido aplicada no repo de lá (provavelmente perde o
+  sentido — confirmar)? Algo além do Anchor depende do Lume?
+- **Fora de escopo**: mudanças no Warden ou no TruthID; criar novos repositórios.
+- **Observação**: ela diz que a renomeação "ainda não havia sido aplicada", mas este repo já usa
+  "Lume" (`.lume-version`, `Arven-Labs/lume`, Fases 21/24). Ao desmontar, o nome é irrelevante, mas
+  vale conferir o estado real do repo de lá em vez de confiar na spec.
+- **Impacto aqui**: os pins (`.lume-version`, `build.yml`), o módulo `finance_api::*` (sidecar +
+  client HTTP, Fase 14) e tudo que consome `/v1/*` (Fases 14/17/24) são o que precisa migrar. O
+  inventário detalhado deve sair do lado do Lume; este repo executa a metade do Anchor.
