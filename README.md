@@ -56,7 +56,8 @@ forge test
 
 **CI**: GitHub Actions runs the desktop (`cargo test`, `tsc`), contracts (`forge test`) and mobile
 (`flutter analyze`/`flutter test`) checks on every push to `main` touching each folder. Pushing a
-`v*` tag builds the Linux/Windows/macOS installers into a draft release. See
+`v*` tag builds the Linux/Windows/macOS installers and the Android APK (debug-signed for now) into a
+draft release. See
 [`.github/workflows/`](.github/workflows/).
 
 ## Status

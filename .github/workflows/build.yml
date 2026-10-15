@@ -121,3 +121,43 @@ jobs:
           releaseName: Anchor ${{ github.ref_name }}
           releaseDraft: true
           includeDebug: false
+
+  # APK do companion Flutter, anexado ao mesmo release em rascunho. Por enquanto assinado
+  # com a chave de debug (`signingConfig` em mobile/android/app/build.gradle.kts), o que
+  # basta pra instalar no celular mas não serve pra Play Store. Quando houver versão
+  # oficial, trocar por keystore próprio guardado nos secrets do GitHub.
+  apk:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: flutter build apk
+        working-directory: mobile
+        run: |
+          flutter pub get
+          flutter build apk --release
+
+      - name: Renomeia o APK
+        run: cp mobile/build/app/outputs/flutter-apk/app-release.apk anchor-${{ github.ref_name }}.apk
+
+      - name: Anexa ao release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Anchor ${{ github.ref_name }}
+          draft: true
+          files: anchor-${{ github.ref_name }}.apk

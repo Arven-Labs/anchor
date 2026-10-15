@@ -38,3 +38,36 @@ jobs:
       - name: flutter test
         working-directory: mobile
         run: flutter test
+
+  # APK de teste sob demanda (botão "Run workflow"). Assinado com a chave de debug,
+  # serve pra instalar direto no celular. O APK de release sai no build.yml, junto da tag.
+  apk:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: flutter build apk
+        working-directory: mobile
+        run: |
+          flutter pub get
+          flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: anchor-mobile-apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk

@@ -2113,3 +2113,16 @@ de preferência dentro da organização.
 - **Pendente**: `build.yml` (release) nunca rodou, testar criando uma tag quando fizer sentido.
   Próximo `./dev.sh` recompila o Rust do zero (volume de cache apagado). Teste de tela das Fases
   15/16/17/20/24 continua pendente.
+
+### 2026-10-15 — Sessão 104
+
+**Geração de APK no CI.** Pedido do dono do projeto: deixar pronto pra quando o mobile for
+desenvolvido de verdade. Antes disso o CI só rodava `flutter analyze`/`flutter test`.
+- **Feito**: job `apk` no `build.yml` (depois do `build`), que roda `flutter build apk --release`
+  e anexa `anchor-<tag>.apk` ao mesmo release em rascunho dos instaladores desktop. Job `apk`
+  também no `ci-mobile.yml`, só no "Run workflow" manual, que publica o APK como artefato.
+- **Decisão**: assinar com a chave de debug (já é o `signingConfig` do `build.gradle.kts`),
+  porque ainda não há versão oficial. Serve pra instalar no celular, não pra Play Store.
+  Na hora da versão oficial: keystore próprio nos secrets do GitHub.
+- **Pendente**: o job `apk` do `build.yml` nunca rodou (depende de tag, como o resto do
+  `build.yml`).
