@@ -46,7 +46,7 @@ Leia o arquivo relevante para o que você precisa:
 | Log completo de sessões de trabalho | `SESSIONS.md` |
 
 **Ao começar uma sessão**: diga ao Claude Code "leia os arquivos em `project/` e me ajude a continuar"
-**Ao validar código**: dê push e confira o CI no GitHub Actions (`gh run list`), em vez de rodar os testes localmente. Ver `OVERVIEW.md`, "CI no GitHub Actions"
+**Ao validar código**: `cd desktop && ./dev.sh check` (tsc + cargo check, leve) enquanto desenvolve; depois dê push e confira o CI no GitHub Actions (`gh run list`), em vez de rodar os testes localmente. Ver `OVERVIEW.md`, "CI no GitHub Actions"
 **Ao terminar uma sessão**: atualize o Log de Sessões em `SESSIONS.md` e marque etapas concluídas em `PHASE.md`
 **Ao tomar uma decisão**: registre em `ARCHITECTURE.md`
 **Ao mudar de máquina**: sincronize via git

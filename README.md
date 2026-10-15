@@ -43,7 +43,8 @@ Python or subprocess-per-fetch involved.
 **Desktop app** (Tauri + React, runs in Docker to avoid host toolchain setup):
 ```
 cd desktop
-./dev.sh
+./dev.sh          # run the app
+./dev.sh check    # quick compile check (tsc + cargo check), no app window
 ```
 
 **Smart contracts** ([Foundry](https://book.getfoundry.sh/)):

@@ -2095,6 +2095,13 @@ de preferência dentro da organização.
 - **Fluxo novo** registrado em `OVERVIEW.md` ("CI no GitHub Actions"), `ARCHITECTURE.md`,
   `INDEX.md` e `README.md`: validar código com push + CI verde, não com testes locais. Local fica
   só rodar o app e os testes `#[ignore]` ao vivo.
+- **Ajuste do fluxo, mesma sessão**: o dono do projeto pediu pra manter o `cargo check` local
+  (leve e rápido). Novo `./dev.sh check` (tsc + `cargo check` dentro do container, reaproveitando
+  o volume `anchor_cargo-target`, sem criar `target/` no host). Achado ao testar: o volume
+  recriado nasce com dono root e o container roda como uid 1000 (`Permission denied`), o que
+  quebraria também o `./dev.sh` normal. O script agora faz `chown` antes de compilar. Medido:
+  1ª execução ~1 min, depois ~10 s, cache em 1,3 GB. 86 warnings de código morto no `cargo check`
+  (ex. `DiCurveResponse.meta`), não tratados.
 - **Pendente**: `build.yml` (release) nunca rodou, testar criando uma tag quando fizer sentido.
   Próximo `./dev.sh` recompila o Rust do zero (volume de cache apagado). Teste de tela das Fases
   15/16/17/20/24 continua pendente.

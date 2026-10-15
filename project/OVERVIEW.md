@@ -68,8 +68,9 @@ Testes e builds rodam no GitHub, não na máquina local (pedido do dono do proje
 Todos têm `workflow_dispatch` (botão "Run workflow" na aba Actions).
 
 **Fluxo de desenvolvimento a partir da Sessão 103:**
-- Rodar o app pra testar tela continua local (`desktop/dev.sh`); não tem como sair da máquina.
-- **Não rodar `cargo test`/`tsc`/`flutter test`/`forge test` localmente por padrão.** Commitar, dar push e conferir o resultado com `gh run list` / `gh run watch <id>` (ou na aba Actions). Só rodar local quando precisar iterar rápido num teste específico.
+- **Local, leve:** `cd desktop && ./dev.sh check` roda `tsc --noEmit` + `cargo check` (só confere se compila, não gera binário) dentro do mesmo container/volume do app. Usar enquanto desenvolve e antes de cada push. Medido: primeira vez ~1 min, depois ~10 s; cache em 1,3 GB. **Não rodar `cargo check` no host**: criaria um segundo `target/` fora do volume do Docker e duplicaria o espaço.
+- **Local, rodar o app:** `./dev.sh` (ou `./dev.sh up`) pra testar tela; não tem como sair da máquina. O script acerta o dono do volume `anchor_cargo-target` (nasce root, container roda como uid 1000) antes de compilar.
+- **GitHub, pesado:** `cargo test`, `flutter test`, `forge test` e os builds de instalador. Não rodar localmente por padrão. Commitar, dar push e conferir o resultado com `gh run list` / `gh run watch <id>` (ou na aba Actions). Só rodar local quando precisar iterar rápido num teste específico.
 - Os testes `#[ignore]` (ao vivo contra o Lume) não rodam no CI. Continuam manuais e locais.
 - Uma fase só conta como "verificada" com o CI verde no commit dela.
 
