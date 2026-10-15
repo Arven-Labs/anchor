@@ -2071,3 +2071,5 @@ Itens correspondentes no `ROADMAP.md`. Nada decidido; cada uma será discutida e
 - **Fase 24 (extensão)**: indicador de prejuízo a compensar registrado. Achado: a apuração já
   compensa prejuízo acumulado (só pra frente, sem prazo, por gaveta); falta só exibir o saldo e a
   economia de imposto estimada. Regra de prazo a conferir em pesquisa.
+- **Fases 30 e 31** registradas: mais países/tipos de investimento e indicadores cripto pesados.
+  Ambas futuro, sem escopo definido.

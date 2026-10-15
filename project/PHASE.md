@@ -2112,3 +2112,29 @@ devedor é entidade cadastrada ou só texto livre; vencimento, parcelas e alerta
 nos relatórios quando a flag está ligada.
 
 **Estado**: puro registro de intenção, discussão detalhada fica pra depois.
+
+### Fase 30 — Mais países e mais tipos de investimento (ideia trazida pelo dono do projeto na Sessão 102, puro registro, futuro, não iniciada)
+
+**Objetivo**: dar suporte a cada vez mais países e mais tipos de investimento. Registrado como
+direção de longo prazo ("isso fica para um futuro"), sem escopo, ordem nem prioridade definidos.
+
+**Pontos de contato** (hipóteses): Fase 10 (`AssetClass`, multi-ativos e regiões), Fase 19 (moeda
+base seletiva), Fase 24 (impostos hoje só do Brasil; cada país teria regra própria), Fase 26
+(`DataProvider` plugável pra fontes de dado por país/mercado), Fases 18 e 27 (opções e DeFi seriam
+tipos novos). Em aberto: quais países e classes primeiro, como regras fiscais e fontes de cotação
+variam por país.
+
+**Estado**: puro registro de intenção.
+
+### Fase 31 — Indicadores cripto, trabalho pesado (ideia trazida pelo dono do projeto na Sessão 102, puro registro, futuro, não iniciada)
+
+**Objetivo**: investir forte nos indicadores cripto, expandindo o que existe (score cripto da
+Fase 3 e coleta da Fase 2.3). Dito como "depois vamos trabalhar pesado nisso", sem lista de
+indicadores nem desenho.
+
+**Ponto de partida**: dos 9 indicadores atuais, 8 já são automáticos (CoinMetrics, DefiLlama,
+ultrasound, CoinGecko — ver Fase 2.3) e só `staking_yield` segue manual por falta de fonte gratuita.
+Hoje a cobertura é centrada em ETH. Em aberto: quais indicadores novos, outros ativos além de ETH,
+fontes pagas ou gratuitas, relação com DeFi (Fase 27) e backtesting (Fase 22).
+
+**Estado**: puro registro de intenção.
