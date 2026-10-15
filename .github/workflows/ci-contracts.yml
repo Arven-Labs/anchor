@@ -1,0 +1,28 @@
+name: CI Contracts
+
+# Testes dos contratos Solidity (Foundry) a cada push/PR que mexa em contracts/.
+on:
+  push:
+    branches: [main]
+    paths: ['contracts/**', '.github/workflows/ci-contracts.yml']
+  pull_request:
+    paths: ['contracts/**', '.github/workflows/ci-contracts.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: forge test
+        working-directory: contracts
+        run: forge test -vv

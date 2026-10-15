@@ -44,3 +44,11 @@ ed25519-dalek = "2"
 alloy-primitives = "1.6.1"
 alloy-sol-types = "1.6.1"
 
+# Menos informação de debug no dev: o target/ ocupava ~7 GB. Backtraces continuam
+# com arquivo/linha no nosso código; as dependências ficam sem debug info.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+

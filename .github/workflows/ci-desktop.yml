@@ -1,0 +1,73 @@
+name: CI Desktop
+
+# Testes do app desktop (Rust + frontend) a cada push/PR que mexa em desktop/.
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/ci-desktop.yml']
+  pull_request:
+    paths: ['desktop/**', '.github/workflows/ci-desktop.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      # Mesma lista do build.yml — dependências nativas do Tauri e do keyring
+      - name: Linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libdbus-1-dev \
+            libsecret-1-dev \
+            patchelf \
+            libudev-dev \
+            pkg-config
+
+      - name: npm install
+        working-directory: desktop
+        run: npm ci --legacy-peer-deps
+
+      # `tsc && vite build` — checa os tipos e gera o dist/ que o Tauri exige pra compilar
+      - name: Frontend build
+        working-directory: desktop
+        run: npm run build
+
+      # O tauri-build exige que o sidecar declarado em `externalBin` exista no disco.
+      # Os testes não usam o sidecar, então um arquivo vazio basta (o real só é gerado no build.yml).
+      - name: Sidecar placeholder
+        run: |
+          mkdir -p desktop/src-tauri/binaries
+          touch desktop/src-tauri/binaries/anchor-finance-api-x86_64-unknown-linux-gnu
+
+      # Testes `#[ignore]` (ao vivo contra o Lume) ficam de fora, como no local
+      - name: cargo test
+        working-directory: desktop/src-tauri
+        run: cargo test --lib
