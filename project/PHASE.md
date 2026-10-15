@@ -1937,3 +1937,78 @@ produto separado:
 
 **Estado**: puro registro de intenção — dono do projeto pediu explicitamente pra só registrar e
 debater depois.
+
+### Fase 26 — Anchor autossuficiente: absorver o que era do Lume (spec trazida pelo dono do projeto na Sessão 101, direção decidida, nada explorado nem implementado)
+
+**Origem**: arquivo solto `SPEC-anchor-autossuficiencia.md` na raiz (destinado a "um agente que
+trabalha no repositório do Anchor"), registrado aqui e removido da raiz na Sessão 101. A spec cita
+um `SPEC-lume-desmontagem.md` **que não existe neste repo** (vive em outro lugar — provavelmente no
+repo do Lume ou do ecossistema).
+
+**Regra número um da spec pro agente: não presumir nada.** Nem estrutura de arquivos, nem código,
+nem convenções — a conversa que originou a spec foi de alto nível e o código real pode divergir do
+que foi imaginado. Antes de propor qualquer coisa: (1) explorar o repo e entender o que existe;
+(2) apresentar ao dono do projeto o que foi achado; (3) discutir dúvidas e **confirmar cada decisão
+de arquitetura** ("vai ser assim mesmo?"); (4) com mais de um caminho razoável, apresentar opções
+com prós e contras e deixar ele escolher. Itens **[DIREÇÃO]** são ideias a validar, não decisões.
+
+**Contexto**: hoje o Anchor consome o Lume (API financeira, repo separado) como sidecar (Fases
+14/17/21). **O Lume será desfeito.** O dono do projeto quer poucos repositórios, organização máxima
+e simplicidade ("um aplicativo central por área") — o Anchor é o aplicativo central da área
+financeira, e deve ser um **núcleo robusto de informações financeiras** (quanto mais dado de
+qualidade, melhor). Nenhum projeto dele tem usuários ainda: o momento é de acertar a arquitetura
+agora pra não sofrer na hora de escalar.
+
+**Decisão tomada**: **o Anchor deve ser totalmente autossuficiente, sem depender do repositório do
+Lume.** As capacidades financeiras que viviam no Lume passam a viver no Anchor.
+
+**Requisitos de intenção**:
+1. **Uso sem interface (headless)** — poder usar a API/capacidades de dados financeiros **sem a UI
+   do app**. "API financeira sem o aplicativo" é um caso de uso legítimo e distinto.
+2. **Consumo por outros projetos** — o **Warden** (agente de IA) deve poder consumir as informações
+   financeiras do Anchor. A intenção anterior era via MCP; confirmar se continua fazendo sentido.
+3. **Self-host e hospedagem** — o mesmo código roda localmente (grátis) e, no futuro, hospedado
+   pelo dono do projeto (pago). Princípio do ecossistema: o grátis/self-hosted sempre funciona com
+   qualidade padrão; o pago é conveniência ou qualidade extra, **nunca funcionalidade básica
+   trancada**.
+4. **Fontes de dados plugáveis** — havia a decisão de uma interface `DataProvider` com múltiplas
+   implementações (fonte grátis por padrão, BYO-key pra provedor pago, dado premium reservado ao
+   tier hospedado). Verificar se ainda cabe e como se encaixa (análogo ao `StorageProvider` da
+   Fase 15).
+5. **Sem custo pro dono do projeto na versão gratuita/local.**
+
+**[DIREÇÃO] Organização interna** (hipótese, não decisão): separar, **dentro do mesmo repositório**,
+o núcleo de dados (sem dependência de UI), a camada de API/servidor e o app de interface, de modo
+que uma eventual extração futura de qualquer parte seja simples. O formato real pode ser outro —
+discutir com o dono do projeto dado o código existente.
+
+**Preferências do dono do projeto que guiam as decisões**: mínimo de repositórios possível
+(centralizar por organização, descentralizar só quando necessário); evitar "pontas soltas" e
+desorganização; arquitetura pensada pro futuro, sem retrabalho pra escalar; respostas técnicas e
+diretas, **com tradeoffs apresentados antes de implementar**.
+
+**Questões abertas** (a discutir com o dono do projeto):
+- Como o Anchor expõe suas capacidades pro Warden (e pra quem usar só a API): MCP, HTTP, ambos?
+- Como migrar o que o Lume tem hoje sem quebrar o que já funciona (Fases 14/17/24 dependem dele —
+  `finance_api::*`, `/v1/rates`, `/v1/tax-rules/br`).
+- O que fazer com o mecanismo atual de sidecar e a detecção de instância compartilhada (a spec
+  acha que **provavelmente some**, mas pede confirmação) — afeta diretamente a **Fase 21**.
+- Onde ficam armazenamento e cache de dados financeiros.
+- Quais partes de auth/storage/entitlement são comuns ao Warden e como evitar duplicação sem criar
+  repositório novo.
+
+**Fora de escopo** (da spec): mudanças no Warden ou no TruthID; criar novos repositórios; apagar ou
+arquivar o Lume (decisão exclusiva do dono do projeto, depois de validar).
+
+**Relação com outras fases**:
+- **Fase 21** (sidecar do Lume com fallback pra instância do Warden) — **provavelmente superada**
+  por esta fase; não implementar o fallback antes de decidir aqui.
+- **Fases 14/17/24** — hoje dependem do Lume (Finance API); são o que precisa ser migrado.
+- **Fase 25** (web app/modo servidor) — a camada de API/servidor e o modo headless desta fase se
+  sobrepõem a ela; decidir juntas.
+- **Fase 20** (IA removida) — o Warden consumir dados do Anchor é a "ponte" que ficou pendente lá.
+- **Fase 15** (`StorageProvider`) — mesmo padrão de abstração provável pro `DataProvider`.
+
+**Estado**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
+arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan
+mode, conforme a regra número um acima.

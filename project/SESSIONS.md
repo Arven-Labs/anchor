@@ -2038,3 +2038,17 @@
   (`Arven-Labs/lume@6880b93`), `.lume-version` atualizado pra esse commit, Fase 17 commitada.
 - **Pendente**: teste de tela das Fases 15/16/17/20/24; nova tentativa também pras séries mensais
   do BCB (CDI/IPCA) no Lume.
+
+**Continuação, mesma sessão — registro da spec de autossuficiência (Fase 26).**
+- Dono do projeto pediu pra ler o arquivo solto `SPEC-anchor-autossuficiencia.md` (raiz), levar
+  tudo pro `project/` e remover o arquivo. Só documentação — nenhum código tocado.
+- **Conteúdo**: decisão de que o Anchor fica **totalmente autossuficiente** com o desmonte do Lume
+  (requisitos: headless, consumo pelo Warden, self-host/hospedado, `DataProvider` plugável, custo
+  zero no local; organização interna em núcleo/API/UI como hipótese **[DIREÇÃO]**; 5 questões
+  abertas). Registrado como **Fase 26** em `PHASE.md` (texto completo, incluindo a regra "não
+  presumir nada, confirmar cada decisão de arquitetura"), item novo no `ROADMAP.md` e 2 linhas
+  novas em `ARCHITECTURE.md`.
+- **Achados**: a spec cita um `SPEC-lume-desmontagem.md` que não existe neste repo; e ela torna a
+  **Fase 21** (fallback pra instância do Warden) provavelmente obsoleta — anotado em `PHASE.md` e
+  `ROADMAP.md`, sem alterar a Fase 21.
+- **Pendente**: explorar o código e discutir as decisões com o dono do projeto (plan mode).
