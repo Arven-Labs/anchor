@@ -2043,3 +2043,61 @@ opções com prós e contras; itens **[DIREÇÃO]** são ideias a validar).
 - **Impacto aqui**: os pins (`.lume-version`, `build.yml`), o módulo `finance_api::*` (sidecar +
   client HTTP, Fase 14) e tudo que consome `/v1/*` (Fases 14/17/24) são o que precisa migrar. O
   inventário detalhado deve sair do lado do Lume; este repo executa a metade do Anchor.
+
+### Fase 27 — Suporte a DeFi com maestria (ideia trazida pelo dono do projeto na Sessão 102, puro registro, não iniciada)
+
+**Objetivo**: o dono do projeto "adoraria que o Anchor suportasse DeFi com maestria, gestão
+completa e tudo mais". Intenção registrada em conversa, sem nenhum desenho de escopo, arquitetura
+ou fonte de dado — nada foi explorado nem decidido.
+
+**Pontos a explorar quando for desenhar** (hipóteses, não decisões):
+- Como modelar posições DeFi (staking, liquidity pools, lending/borrowing, yield farming,
+  restaking) frente ao modelo atual de `AssetClass`/transações (Fase 10) — classe nova, ou tipo de
+  posição próprio, já que uma posição DeFi não é só "quantidade × preço".
+- Fontes de dado: leitura on-chain por endereço de carteira, agregadores (DefiLlama já é fonte de
+  TVL na Fase 2.3), preço de LP tokens, APY/APR, impermanent loss, rewards pendentes.
+- Gestão completa: histórico de entradas/saídas, custo base com rewards como renda, saúde de
+  posição alavancada (health factor/liquidação), multi-chain, custos de gas.
+- Relações com outras fases: impostos (Fase 24, tratamento fiscal de rewards/swaps), moeda base
+  (Fase 19), `DataProvider` plugável (Fase 26), TruthID/carteira (Fase 8).
+
+**Estado**: puro registro de intenção. Seguir a regra das specs recentes: explorar e confirmar cada
+decisão com o dono do projeto antes de propor arquitetura.
+
+### Fase 28 — Biblioteca/SDK de integração (ideia trazida pelo dono do projeto na Sessão 102, puro registro, não iniciada)
+
+**Objetivo**: criar uma biblioteca tipo SDK de integração do Anchor. O dono do projeto ainda **não
+tem certeza em que sentido seria útil**, só sente que seria ("depois pensamos nisso"). Nada
+desenhado.
+
+**Pontos em aberto**: quem consumiria (outros apps do dono, como o Warden/TruthID, scripts de
+terceiros?); o que expõe (dados da carteira, cálculos/valuation, coleta de dados); em que forma
+(crate Rust, pacote TS/Python, cliente HTTP); relação com a Fase 25 (Anchor como servidor) e a
+Fase 26 (headless, `DataProvider` plugável, consumo pelo Warden) — possivelmente o SDK nasce
+dessas duas. Só faz sentido definir depois que o caso de uso aparecer.
+
+**Estado**: puro registro de intenção.
+
+### Fase 29 — Controle de empréstimos concedidos a terceiros (ideia trazida pelo dono do projeto na Sessão 102, puro registro, não iniciada)
+
+**Objetivo**: registrar e acompanhar dinheiro que o usuário **emprestou a outra pessoa** (o oposto
+do `Liability` da Fase 12, que é dívida do próprio usuário).
+
+**Requisitos descritos pelo dono do projeto**:
+- **Contabilizar ou não na carteira/patrimônio — escolha por empréstimo.** Caso real: empréstimo
+  pra mãe, que sempre paga, e que o dono **não quer ver no patrimônio**. Então precisa de uma flag
+  por empréstimo (entra / não entra nos totais de net worth).
+- **Juros opcionais.** Pode haver cálculo de juros, mas **não é obrigatório nem tem taxa fixa**: o
+  caso real é sem juros contratado, em que a pessoa às vezes devolve "um pouquinho a mais".
+- **Baixa manual de valor livre.** Cadastrar um pagamento e dar baixa na dívida com o valor que o
+  usuário escolher, maior ou menor que o recebido. Exemplo: recebeu R$ 1.050 sobre uma dívida de
+  R$ 1.000 e dá baixa só de R$ 1.000 (ou outro valor), sem precisar de taxa de juros configurada.
+  Ou seja, **valor recebido e valor baixado do saldo são campos independentes**; a diferença pode
+  ser tratada como juros/bônus informal, ou ignorada.
+
+**Pontos a decidir depois**: tabela própria ou reaproveitar `GeneralTransaction`/`BankAccount` da
+Fase 12; como registrar a diferença entre recebido e baixado (receita, juros, nada); se o
+devedor é entidade cadastrada ou só texto livre; vencimento, parcelas e alertas; como entra
+nos relatórios quando a flag está ligada.
+
+**Estado**: puro registro de intenção, discussão detalhada fica pra depois.

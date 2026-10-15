@@ -2057,3 +2057,14 @@
   Lume; mesma decisão (Lume será desfeito, sem perda, só descartado depois de validado pelo dono do
   projeto). Achado: afirma que a renomeação EasyBusiness → Lume não tinha sido aplicada, mas este
   repo já a usa — conferir o estado real do repo de lá. Só documentação.
+
+### 2026-10-14 — Sessão 102
+
+Só documentação, nenhum código tocado. Três ideias do dono do projeto registradas como puro
+registro de intenção:
+- **Fase 27** — suporte a DeFi com maestria (gestão completa de posições).
+- **Fase 28** — biblioteca/SDK de integração (utilidade ainda incerta, discutir depois).
+- **Fase 29** — controle de empréstimos concedidos a terceiros (contabilizar ou não na carteira,
+  juros opcionais, baixa manual de valor livre independente do valor recebido).
+
+Itens correspondentes no `ROADMAP.md`. Nada decidido; cada uma será discutida em sessão própria.
