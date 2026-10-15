@@ -2100,8 +2100,16 @@ de preferência dentro da organização.
   o volume `anchor_cargo-target`, sem criar `target/` no host). Achado ao testar: o volume
   recriado nasce com dono root e o container roda como uid 1000 (`Permission denied`), o que
   quebraria também o `./dev.sh` normal. O script agora faz `chown` antes de compilar. Medido:
-  1ª execução ~1 min, depois ~10 s, cache em 1,3 GB. 86 warnings de código morto no `cargo check`
-  (ex. `DiCurveResponse.meta`), não tratados.
+  1ª execução ~1 min, depois ~10 s, cache em 1,3 GB.
+- **Warnings zerados (86 → 0)**, com o cuidado pedido pelo dono do projeto ("às vezes é pq ainda
+  não usamos mas vamos"): **mantidos e silenciados** os 50 atalhos do `entity/prelude.rs` (gerado
+  pelo `sea-orm-cli`; `#[allow(unused_imports)]` no `mod entity` do `lib.rs`, pra sobreviver a
+  uma nova geração) e os 32 campos não lidos dos DTOs do `finance_api/client.rs` (espelham o
+  contrato da API; `meta.stale` deve virar aviso de dado desatualizado; `#![allow(dead_code)]` no
+  arquivo, com comentário). **Removidos**: `AppError::CollectorFailed` (do coletor Python, sem
+  uso desde a Fase 14.4, frontend não referencia) e o `EntityTrait` importado à toa em
+  `metals.rs`/`reit.rs`. No `reit.rs` o import era usado só pelo teste via `use super::*`, o que
+  o `cargo check --all-targets` pegou; foi movido pro módulo de teste.
 - **Pendente**: `build.yml` (release) nunca rodou, testar criando uma tag quando fizer sentido.
   Próximo `./dev.sh` recompila o Rust do zero (volume de cache apagado). Teste de tela das Fases
   15/16/17/20/24 continua pendente.

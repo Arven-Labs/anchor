@@ -4,7 +4,7 @@
 // que todo o resto do app já lê — sem Fear & Greed aqui (é coisa cripto).
 use chrono::Utc;
 use sea_orm::sea_query::OnConflict;
-use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection, Set};
 
 use crate::entity::{stock_price_history, stock_quotes};
 use crate::error::AppError;

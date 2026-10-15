@@ -10,6 +10,10 @@ mod db;
 mod dead_drop;
 mod domain;
 mod ecies;
+// `entity/` é gerado pelo `sea-orm-cli`, inclusive o `prelude.rs` com atalhos
+// (`Assets`, `Portfolio`...) que o código não usa. Silenciado aqui e não lá
+// porque uma nova geração sobrescreveria qualquer ajuste dentro de `entity/`.
+#[allow(unused_imports)]
 mod entity;
 mod error;
 mod finance_api;

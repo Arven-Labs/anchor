@@ -8,7 +8,7 @@
 // valuation, que não encaixam bem em imobiliário).
 use chrono::Utc;
 use sea_orm::sea_query::OnConflict;
-use sea_orm::{DatabaseConnection, EntityTrait, Set};
+use sea_orm::{DatabaseConnection, Set};
 
 use crate::entity::reit_fundamentals;
 use crate::error::AppError;
@@ -98,7 +98,7 @@ pub async fn run_reit_collector(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::{ColumnTrait, Database, QueryFilter};
+    use sea_orm::{ColumnTrait, Database, EntityTrait, QueryFilter};
 
     async fn dev_db() -> DatabaseConnection {
         Database::connect("sqlite:///data/anchor.db?mode=rwc")

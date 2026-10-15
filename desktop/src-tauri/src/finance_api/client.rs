@@ -3,6 +3,13 @@
 // de lá, Sessão 88) — schema levantado direto nos 8 routers do easybusiness
 // nesta sessão. Sem chamador real ainda: a Fase 14.4 é quem porta a lógica
 // de fetch+write do coletor Python pra cima disto.
+//
+// Os DTOs espelham o contrato completo de cada endpoint, inclusive campos que
+// o app ainda não lê (`meta.stale`/`meta.cached`, `cvm_code`, `roe`...). Ficam
+// de propósito: documentam a resposta e o `stale` deve virar aviso de "dado
+// desatualizado" na tela. Por isso `dead_code` é silenciado no arquivo todo.
+#![allow(dead_code)]
+
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;

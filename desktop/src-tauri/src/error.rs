@@ -12,8 +12,6 @@ pub enum AppError {
     NotFound(String),
     #[error("data collector is already running")]
     CollectorBusy,
-    #[error("data collector failed: {0}")]
-    CollectorFailed(String),
     #[error("invalid input: {0}")]
     InvalidInput(String),
     #[error("database error: {0}")]
@@ -52,7 +50,6 @@ impl AppError {
             AppError::UnknownIndicator(_) => "UNKNOWN_INDICATOR",
             AppError::NotFound(_) => "NOT_FOUND",
             AppError::CollectorBusy => "COLLECTOR_BUSY",
-            AppError::CollectorFailed(_) => "COLLECTOR_FAILED",
             AppError::InvalidInput(_) => "INVALID_INPUT",
             AppError::Database(_) => "DATABASE_ERROR",
             AppError::Keyring(_) => "KEYRING_ERROR",
