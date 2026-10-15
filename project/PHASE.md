@@ -1894,6 +1894,17 @@ caminho, o pin foi **renomeado** `.easybusiness-version` → `.lume-version` (j�
 do dono do projeto, o nome antigo só sobrevivia por redirect do GitHub. README também. Textos
 históricos neste arquivo mantêm "easybusiness". `build.yml` continua nunca disparado neste repo.
 
+**Ideia nova, Sessão 102 — indicador dedicado de prejuízo a compensar** (pedido do dono do projeto,
+puro registro): um indicador que mostre quanto de imposto dá pra abater usando prejuízos de vendas
+passadas ("se vender no prejuízo, abate de lucro futuro"). O dono não sabia se há prazo e pediu
+pesquisa. **Achado ao registrar**: a apuração já implementada acima compensa prejuízo acumulado
+(só pra frente, **sem prazo**, dentro da gaveta: ações, FII, day trade — ver "Prejuízo compensa só
+pra frente" acima), mas o saldo é só um passo interno do cálculo. O que falta é **exibi-lo**: saldo
+de prejuízo acumulado por gaveta, e uma estimativa de imposto que ele economizaria ("quanto
+posso abater"). Pontos a confirmar na pesquisa/discussão: regra vigente de prazo e de gavetas
+(a Fase 24 assumiu sem prazo, conferir), onde mostrar (aba Taxes e/ou widget na Home), se simula
+uma venda hipotética ("se eu vender X com lucro Y, abato Z"). Não implementado.
+
 ### Fase 25 — Web app auto-hospedado: o próprio Anchor como servidor (ideia trazida pelo dono do projeto na Sessão 100, não iniciada)
 
 **Origem**: pedido em conversa do dono do projeto na Sessão 100, citando o fluxo desejado do

@@ -2068,3 +2068,6 @@ registro de intenção:
   juros opcionais, baixa manual de valor livre independente do valor recebido).
 
 Itens correspondentes no `ROADMAP.md`. Nada decidido; cada uma será discutida em sessão própria.
+- **Fase 24 (extensão)**: indicador de prejuízo a compensar registrado. Achado: a apuração já
+  compensa prejuízo acumulado (só pra frente, sem prazo, por gaveta); falta só exibir o saldo e a
+  economia de imposto estimada. Regra de prazo a conferir em pesquisa.
