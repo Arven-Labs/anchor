@@ -53,6 +53,11 @@ forge build
 forge test
 ```
 
+**CI**: GitHub Actions runs the desktop (`cargo test`, `tsc`), contracts (`forge test`) and mobile
+(`flutter analyze`/`flutter test`) checks on every push to `main` touching each folder. Pushing a
+`v*` tag builds the Linux/Windows/macOS installers into a draft release. See
+[`.github/workflows/`](.github/workflows/).
+
 ## Status
 
 This is a personal project built incrementally, session by session, at a background pace — not

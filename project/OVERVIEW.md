@@ -52,6 +52,27 @@ Criado na Fase 0.5: `desktop/Dockerfile`, `desktop/docker-compose.yml`, `desktop
 
 **⚠️ Cuidado com espaço em disco**: a máquina roda os dois projetos (TruthID + Practice Valuation) e o disco de 32GB vive perto do limite por causa dos caches Docker do TruthID (imagens Flutter/Gradle/NDK, cache do cargo). Antes de builds Docker pesados, checar `df -h /` — na Sessão 1 o disco chegou a 100% (0 disponível) durante o setup inicial e isso **causou perda de arquivos** (os 3 arquivos de Docker recém-criados sumiram no meio de uma operação). `docker image prune -f` remove imagens órfãs com segurança (não mexe em nada usado pelo TruthID); ir além disso (limpar volumes/imagens nomeadas do TruthID) é decisão do usuário, não fazer sem perguntar.
 
+**Limpeza da Sessão 103 (2026-10-15)**: liberados ~45 GB, autorizado pelo dono do projeto. Saíram: cache de build do Docker (13 GB), volume `anchor_cargo-target` (8,6 GB, recriado no próximo `./dev.sh`), imagem `mobile-flutter` (6 GB, os testes do Flutter agora rodam no CI), sobras do TruthID (`desktop-desktop` + volumes `desktop_cargo-*`, só cache, parados havia 3 meses) e o `desktop/src-tauri/target/` do host (8,6 GB). **Ficaram** (são dados ou estão em uso): `anchor_app-data`, `lume_db-data`, `anchor_cargo-registry`, imagens `anchor-desktop`/`lume-api`/`postgres`. O `[profile.dev]` do `Cargo.toml` passou a gerar menos debug info (`line-tables-only` no nosso código, nenhuma nas dependências), pro `target/` crescer bem menos que os ~8 GB de antes.
+
+## CI no GitHub Actions (Sessão 103)
+
+Testes e builds rodam no GitHub, não na máquina local (pedido do dono do projeto: os builds estavam pesando em disco e hardware). O repo é público, então o Actions é grátis e sem limite de minutos nos runners padrão. Os workflows ficam em `.github/workflows/` e os resultados em github.com/Arven-Labs/anchor/actions:
+
+| Workflow | Quando roda | O que faz |
+|---|---|---|
+| `ci-desktop.yml` | push no `main`/PR que mexa em `desktop/` | `npm run build` (`tsc` + vite) e `cargo test --lib` (os `#[ignore]` ao vivo ficam de fora). Cria um sidecar vazio porque o `tauri-build` exige o arquivo do `externalBin` |
+| `ci-contracts.yml` | push/PR em `contracts/` | `forge test` |
+| `ci-mobile.yml` | push/PR em `mobile/` | `flutter analyze` + `flutter test` (substitui `./dev.sh flutter test` no Docker local) |
+| `build.yml` | tag `v*` | instaladores Linux/Windows/macOS num release em rascunho (ainda nunca rodou) |
+
+Todos têm `workflow_dispatch` (botão "Run workflow" na aba Actions).
+
+**Fluxo de desenvolvimento a partir da Sessão 103:**
+- Rodar o app pra testar tela continua local (`desktop/dev.sh`); não tem como sair da máquina.
+- **Não rodar `cargo test`/`tsc`/`flutter test`/`forge test` localmente por padrão.** Commitar, dar push e conferir o resultado com `gh run list` / `gh run watch <id>` (ou na aba Actions). Só rodar local quando precisar iterar rápido num teste específico.
+- Os testes `#[ignore]` (ao vivo contra o Lume) não rodam no CI. Continuam manuais e locais.
+- Uma fase só conta como "verificada" com o CI verde no commit dela.
+
 ---
 
 # Arquitetura de Código

@@ -2073,3 +2073,28 @@ Itens correspondentes no `ROADMAP.md`. Nada decidido; cada uma será discutida e
   economia de imposto estimada. Regra de prazo a conferir em pesquisa.
 - **Fases 30 e 31** registradas: mais países/tipos de investimento e indicadores cripto pesados.
   Ambas futuro, sem escopo definido.
+
+### 2026-10-15 — Sessão 103
+
+**Testes e builds migrados pro GitHub Actions + limpeza de disco.** Pedido do dono do projeto:
+os builds e testes estavam sobrecarregando as máquinas (disco e hardware); queria isso no GitHub,
+de preferência dentro da organização.
+- **Achado**: o único workflow existente era o `build.yml`, de release, só disparado por tag `v*`
+  e nunca executado. Todo teste rodava localmente.
+- **Feito** (`4fd3ae5`): 3 workflows de CI por pasta, em push no `main`/PR/manual:
+  `ci-desktop.yml` (`npm run build` + `cargo test --lib`, com sidecar vazio pra satisfazer o
+  `externalBin` do `tauri-build`), `ci-contracts.yml` (`forge test`) e `ci-mobile.yml`
+  (`flutter analyze` + `flutter test`). Repo público, então os minutos são grátis.
+  `[profile.dev]` no `Cargo.toml` com `debug = "line-tables-only"` (dependências sem debug info).
+- **Verificado**: primeira execução dos 3 verde no GitHub. Desktop: 202 passaram, 26 ignorados,
+  ~4 min. Mobile ~2 min. Contracts 13 s.
+- **Limpeza** (autorizada pelo dono do projeto): ~45 GB liberados. `target/` do host (8,6 GB),
+  cache de build do Docker (13 GB), volume `anchor_cargo-target` (8,6 GB), imagem
+  `mobile-flutter` (6 GB) e sobras de cache do TruthID (`desktop-desktop`, `desktop_cargo-*`).
+  Mantidos todos os volumes de dados (`anchor_app-data`, `lume_db-data`) e as imagens em uso.
+- **Fluxo novo** registrado em `OVERVIEW.md` ("CI no GitHub Actions"), `ARCHITECTURE.md`,
+  `INDEX.md` e `README.md`: validar código com push + CI verde, não com testes locais. Local fica
+  só rodar o app e os testes `#[ignore]` ao vivo.
+- **Pendente**: `build.yml` (release) nunca rodou, testar criando uma tag quando fizer sentido.
+  Próximo `./dev.sh` recompila o Rust do zero (volume de cache apagado). Teste de tela das Fases
+  15/16/17/20/24 continua pendente.
