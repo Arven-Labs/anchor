@@ -51,6 +51,46 @@ export async function enterWorkspace(name) {
 }
 
 /**
+ * Semeia o cenário fiscal usado pelos specs de impostos: uma carteira, dois
+ * ETFs e, em jan/2026, um prejuízo de R$ 1.000 no BOVA11 (compra 10.000,
+ * venda 9.000) mais 10 IVVB11 comprados por R$ 3.000. Vender os 10 IVVB11 a
+ * R$ 450 dá lucro de 1.500, compensa os 1.000 e tributa os 500 restantes.
+ * Precisa ser chamado depois de `enterWorkspace(workspaceName)`.
+ */
+export function seedLossScenario(workspaceName) {
+  const workspace = sql(`SELECT id FROM workspace WHERE name = '${workspaceName}'`);
+  sql(
+    `INSERT INTO portfolio (workspace_id, name, created_at) VALUES (${workspace}, 'Main', '2026-01-01T00:00:00Z')`,
+  );
+  const portfolio = sql(`SELECT id FROM portfolio WHERE workspace_id = ${workspace}`);
+  for (const ticker of ["BOVA11", "IVVB11"]) {
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        `VALUES ('${ticker}', '${ticker}', 'etf_br', 'BRL', 'pais', 'BR', '2026-01-01T00:00:00Z')`,
+    );
+  }
+  const bova = sql("SELECT id FROM assets WHERE ticker = 'BOVA11'");
+  const ivvb = sql("SELECT id FROM assets WHERE ticker = 'IVVB11'");
+
+  const trade = (asset, type, quantity, total, date) =>
+    sql(
+      "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+        `VALUES (${portfolio}, ${asset}, '${type}', ${quantity}, ${total / quantity}, ${total}, 0, '${date}', '${date}T00:00:00Z')`,
+    );
+  trade(bova, "compra", 100, 10000, "2026-01-02");
+  trade(bova, "venda", 100, 9000, "2026-01-20");
+  trade(ivvb, "compra", 10, 3000, "2026-01-02");
+}
+
+/** Vende 10 IVVB11 a R$ 450 na simulação da aba Taxes. */
+export async function simulateIvvbSale() {
+  await pickOption(byId("sim-asset"), "IVVB11");
+  await byId("sim-quantity").setValue("10");
+  await byId("sim-price").setValue("450");
+  await byId("sim-submit").click();
+}
+
+/**
  * Roda SQL direto no banco do teste (`ANCHOR_DB_PATH`), pra semear o que o
  * app só obtém por rede ou por telas longas (cotações, transações). O app já
  * migrou o banco ao abrir, então as tabelas existem. Devolve a saída do

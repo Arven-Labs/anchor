@@ -24,7 +24,7 @@ function SettingsPage({ onBack }: { onBack: () => void }) {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" onClick={onBack}>
+          <Button variant="outline" size="sm" data-testid="settings-back" onClick={onBack}>
             ← Back
           </Button>
           <CardTitle>Settings</CardTitle>
@@ -36,6 +36,7 @@ function SettingsPage({ onBack }: { onBack: () => void }) {
             <button
               key={s}
               type="button"
+              data-testid={`settings-section-${s}`}
               onClick={() => setSection(s)}
               className={`rounded-md px-3 py-2 text-left text-sm ${
                 section === s

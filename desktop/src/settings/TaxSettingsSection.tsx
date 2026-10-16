@@ -193,7 +193,7 @@ function TaxSettingsSection() {
         </TableHeader>
         <TableBody>
           {rules.map((rule) => (
-            <TableRow key={rule.id}>
+            <TableRow key={rule.id} data-testid={`tax-rule-${rule.id}`}>
               <TableCell className="max-w-xs">
                 <p className="font-medium">{RULE_META[rule.rule_key]?.label ?? rule.rule_key}</p>
                 <p className="text-xs whitespace-normal text-muted-foreground">
@@ -206,6 +206,7 @@ function TaxSettingsSection() {
                   <div className="flex items-center gap-1">
                     <Input
                       autoFocus
+                      data-testid={`tax-input-${rule.id}`}
                       className="h-8 w-28"
                       value={draft}
                       onChange={(e) => setDraft(e.currentTarget.value)}
@@ -220,7 +221,9 @@ function TaxSettingsSection() {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-1">
-                    <span>{formatValue(rule.rule_key, rule.value)}</span>
+                    <span data-testid={`tax-value-${rule.id}`}>
+                      {formatValue(rule.rule_key, rule.value)}
+                    </span>
                     {rule.user_edited && (
                       <Badge variant="secondary" className="w-fit">
                         edited by you · official {formatValue(rule.rule_key, rule.default_value)}
@@ -253,7 +256,12 @@ function TaxSettingsSection() {
               <TableCell className="text-right">
                 {editingId === rule.id ? (
                   <div className="flex justify-end gap-1">
-                    <Button size="sm" onClick={() => saveEdit(rule)} disabled={updateMutation.isPending}>
+                    <Button
+                      size="sm"
+                      data-testid={`tax-save-${rule.id}`}
+                      onClick={() => saveEdit(rule)}
+                      disabled={updateMutation.isPending}
+                    >
                       Save
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
@@ -262,13 +270,19 @@ function TaxSettingsSection() {
                   </div>
                 ) : (
                   <div className="flex justify-end gap-1">
-                    <Button size="sm" variant="outline" onClick={() => startEdit(rule)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      data-testid={`tax-edit-${rule.id}`}
+                      onClick={() => startEdit(rule)}
+                    >
                       Edit
                     </Button>
                     {rule.user_edited && (
                       <Button
                         size="sm"
                         variant="ghost"
+                        data-testid={`tax-reset-${rule.id}`}
                         onClick={() => resetMutation.mutate(rule.id)}
                         disabled={resetMutation.isPending}
                       >

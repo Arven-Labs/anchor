@@ -150,6 +150,7 @@ function App() {
               type="button"
               variant="ghost"
               size="icon-sm"
+              data-testid="open-settings"
               onClick={() => setView("settings")}
             >
               <SettingsIcon />

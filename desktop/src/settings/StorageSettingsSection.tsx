@@ -99,7 +99,7 @@ function StorageSettingsSection() {
           value={provider}
           onValueChange={(value) => setProvider(value as StorageProvider)}
         >
-          <SelectTrigger className="w-full">
+          <SelectTrigger className="w-full" data-testid="storage-provider">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -125,6 +125,7 @@ function StorageSettingsSection() {
       <Button
         type="button"
         className="w-fit"
+        data-testid="storage-save"
         disabled={saveMutation.isPending}
         onClick={() => saveMutation.mutate()}
       >
