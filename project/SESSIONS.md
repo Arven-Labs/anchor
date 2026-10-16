@@ -2267,5 +2267,31 @@ plan mode; escolha dele: E2E real no CI + testes de fluxo Rust (a fase B, E2E, v
   simulação de venda com as regras reais, ativo fora do escopo e score cripto reagindo ao editor.
   `dev.sh check` agora usa `cargo check --all-targets`.
 - **Verificado**: `./dev.sh check` limpo (já com `--all-targets`).
-- **Pendente**: push e CI verde (os testes novos só rodam lá); depois a fase B (E2E com
-  tauri-driver sob xvfb em `ci-desktop-e2e.yml`, spike de 3 fluxos).
+- **Verificado**: commit `938d2a0`, CI Rust (261 testes, **10 de fluxo**, não 9 como escrevi
+  acima) e Frontend verdes. O push desse commit não disparou o CI sozinho (falha do lado do
+  GitHub, `check-suites` vazio); disparei os dois à mão com `gh workflow run`.
+
+**Testes automatizados, fase B: E2E real no CI (spike aprovado).** Autorização do dono do projeto
+para até 3 rodadas de depuração; passou na 2ª.
+- **Feito**: `desktop/e2e/` (WebdriverIO 9 + mocha, `package.json` e lockfile próprios),
+  `wdio.conf.mjs` (sobe o `tauri-driver`, abre `src-tauri/target/debug/anchor` com
+  `ANCHOR_DB_PATH` descartável, screenshot em falha), `specs/loans.e2e.mjs` (3 testes: criar
+  Workspace e entrar; devedor + empréstimo de 1000 + baixa de 1050 recebidos/1000 baixados, saldo
+  `0.00` e extra `50.00`; persistência ao trocar de aba) e o workflow `ci-desktop-e2e.yml`
+  (ubuntu-24.04, `tauri build --debug --no-bundle`, `xvfb-run` + `dbus-run-session`).
+  `data-testid` só nos controles tocados (navegação, formulário de Workspace, fluxo de Loans).
+- **Rodada 1** (`1e69fde`): tudo funcionou até o teste, ou seja, **o app sobe headless** (build
+  debug, `tauri-driver`, WebKitWebDriver, migrations no startup, IPC real). Falhou 1 asserção:
+  `getText()` do WebKitWebDriver devolve vazio pro texto do Select do Radix (vem num portal). A
+  captura de tela do artefato mostrou "Mom" selecionado, então era artefato do teste. Os outros
+  2 falharam em cascata (o diálogo aberto bloqueou o clique na navegação).
+- **Rodada 2** (`c509819`): lendo `textContent` em vez de `getText`, **3 passing em 2,9 s**, job
+  inteiro em ~5 min com cache. Dica para os próximos specs: em controle do Radix, ler
+  `getProperty("textContent")`; `getText()` não é confiável.
+- **Gatilho**: o workflow agora roda em push/PR que mudem `desktop/src`, `desktop/src-tauri`,
+  `desktop/e2e` ou `desktop/package*.json`, e à mão.
+- **Fora do E2E**: o que depende de rede externa ou do sidecar do Lume (botão "Run crypto
+  collector", `sync_tax_rules`), que seguem nos testes `#[ignore]` ao vivo.
+- **Pendente**: expandir os fluxos (thresholds cripto, Taxes com transações semeadas, Backup,
+  Settings → Storage, as telas das Fases 15/16/17/20/24); confirmar com um build de release que
+  o banco novo agora abre com as tabelas.

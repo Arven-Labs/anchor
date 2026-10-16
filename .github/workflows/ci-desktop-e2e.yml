@@ -3,9 +3,24 @@ name: CI Desktop E2E
 # E2E do app real: o binário debug (Rust + React embutido + SQLite descartável)
 # dirigido por tauri-driver/WebDriver sob xvfb. Testes em desktop/e2e/.
 #
-# Por enquanto só manual (workflow_dispatch) enquanto o spike não prova que o app
-# sobe headless; depois ganha o gatilho de push/PR em desktop/**.
+# Roda quando muda o frontend, o backend Rust ou os próprios testes (o app real
+# usa os dois lados). Com cache do Rust leva ~5 min; sem cache, bem mais.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/src/**'
+      - 'desktop/src-tauri/**'
+      - 'desktop/e2e/**'
+      - 'desktop/package*.json'
+      - '.github/workflows/ci-desktop-e2e.yml'
+  pull_request:
+    paths:
+      - 'desktop/src/**'
+      - 'desktop/src-tauri/**'
+      - 'desktop/e2e/**'
+      - 'desktop/package*.json'
+      - '.github/workflows/ci-desktop-e2e.yml'
   workflow_dispatch:
 
 concurrency:
