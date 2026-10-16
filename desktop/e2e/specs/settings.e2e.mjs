@@ -10,8 +10,14 @@ import {
   waitForText,
 } from "./helpers.mjs";
 
+// `$$` devolve um objeto cujo `.map` não é o de array (devolve uma promessa
+// encadeada), então vira array de verdade antes de mapear.
+async function elementsOf(selector) {
+  return Array.from(await $$(selector));
+}
+
 async function testIds(selector) {
-  const elements = await $$(selector);
+  const elements = await elementsOf(selector);
   const ids = await Promise.all(elements.map((el) => el.getAttribute("data-testid")));
   return ids.sort();
 }
@@ -44,7 +50,7 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
     await byId("open-settings").click();
     await byId("settings-back").waitForDisplayed({ timeout: 20_000 });
 
-    const sections = await $$('[data-testid^="settings-section-"]');
+    const sections = await elementsOf('[data-testid^="settings-section-"]');
     const names = await Promise.all(sections.map((el) => textOf(el)));
     expect(names).toEqual(["TruthID", "Finance API", "Storage", "Backup", "Taxes"]);
   });
@@ -58,7 +64,7 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
     );
 
     await byId("storage-provider").click();
-    const options = await $$('[role="option"]');
+    const options = await elementsOf('[role="option"]');
     expect(options.length).toBe(4);
     const disabled = await Promise.all(options.map((o) => o.getAttribute("aria-disabled")));
     expect(disabled.filter((d) => d === "true").length).toBe(3);

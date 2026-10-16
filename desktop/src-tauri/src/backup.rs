@@ -240,9 +240,18 @@ pub async fn import_snapshot(
 
     txn.execute_unprepared("PRAGMA defer_foreign_keys = ON").await?;
 
-    for (table, rows) in &snapshot.tables {
+    // Duas fases: primeiro apaga TODAS as tabelas, depois insere. O sqlx liga as FKs do
+    // SQLite por padrão, e `ON DELETE CASCADE` age na hora (o `defer_foreign_keys` só adia a
+    // checagem de violação, não o cascade). Apagando e inserindo tabela por tabela, o `DELETE`
+    // de uma tabela "mãe" que vem depois na ordem alfabética (ex.: `workspace`) apagava as
+    // linhas filhas já restauradas (`bank_accounts`, `borrowers`...), e o backup voltava
+    // incompleto sem dar erro. Com tudo apagado antes, nenhum cascade atinge linha restaurada.
+    for table in snapshot.tables.keys() {
         txn.execute_unprepared(&format!("DELETE FROM \"{table}\""))
             .await?;
+    }
+
+    for (table, rows) in &snapshot.tables {
         if rows.is_empty() {
             continue;
         }
