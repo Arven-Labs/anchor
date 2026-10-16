@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use notify_rust::{Notification as DesktopNotification, Urgency};
+use notify_rust::Notification as DesktopNotification;
+#[cfg(all(unix, not(target_os = "macos")))]
+use notify_rust::Urgency;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
 
 use crate::domain::alert_check;
@@ -127,12 +129,12 @@ pub async fn check_active_rules(db: &DatabaseConnection) -> Result<(), AppError>
                 // Critical urgency, not just cosmetic: some desktop environments (confirmed on
                 // KDE Plasma 6/Wayland) silently drop normal-urgency notifications from apps
                 // without a registered .desktop file into the history panel only, no popup.
-                if let Err(err) = DesktopNotification::new()
-                    .summary("Anchor")
-                    .body(&message)
-                    .urgency(Urgency::Critical)
-                    .show()
-                {
+                // `urgency` only exists on Linux/BSD in notify-rust (not macOS/Windows).
+                let mut notification = DesktopNotification::new();
+                notification.summary("Anchor").body(&message);
+                #[cfg(all(unix, not(target_os = "macos")))]
+                notification.urgency(Urgency::Critical);
+                if let Err(err) = notification.show() {
                     eprintln!("failed to show notification: {err}");
                 }
             }

@@ -86,7 +86,8 @@ jobs:
       # `_run_migrations` lê `migrations/`/`alembic.ini` direto do disco em runtime (Alembic),
       # não via `import` — sem isso o binário quebra com "Path doesn't exist: .../migrations"
       # (achado ao vivo na Fase 14.2, Sessão 90). O separador do `--add-data` muda por SO
-      # (`matrix.pyinstaller_data_sep`): `:` no Linux/macOS, `;` no Windows.
+      # (`matrix.pyinstaller_data_sep`): `:` no Linux/macOS, `;` no Windows. Caminhos relativos
+      # (não `$(pwd)`): no Windows o bash devolve `/d/a/...`, que o PyInstaller nativo lê como `\d\a\...`.
       - name: Read Lume pinned ref
         id: lume-ref
         shell: bash
@@ -105,8 +106,8 @@ jobs:
         run: |
           pip install -r requirements.txt -r requirements-sidecar-build.txt
           pyinstaller --onefile --name anchor-finance-api-${{ matrix.rust_target }} \
-            --add-data "$(pwd)/migrations${{ matrix.pyinstaller_data_sep }}migrations" \
-            --add-data "$(pwd)/alembic.ini${{ matrix.pyinstaller_data_sep }}." \
+            --add-data "migrations${{ matrix.pyinstaller_data_sep }}migrations" \
+            --add-data "alembic.ini${{ matrix.pyinstaller_data_sep }}." \
             --distpath dist --workpath build --specpath . sidecar_main.py
           mkdir -p ../../desktop/src-tauri/binaries
           mv dist/anchor-finance-api-${{ matrix.rust_target }}${{ matrix.sidecar_ext }} ../../desktop/src-tauri/binaries/
