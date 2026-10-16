@@ -2161,3 +2161,14 @@ desenvolvido de verdade. Antes disso o CI só rodava `flutter analyze`/`flutter 
   (Backup: export/import real, com anexo), 17 (widget Interest rates na Home, seção de juros em
   Research, linha Selic na Rentabilidade), 20 (sem chat/aba de IA/botão de PDF no RNAV/"Check CVM
   notices") e 24 (Settings → Taxes e Portfolio → Taxes, marcar/desmarcar DARF pago).
+
+### 2026-10-16 — Sessão 106
+
+**Indicador de prejuízo a compensar (Fase 24).** Escolhido pelo dono do projeto entre as frentes
+em aberto do ROADMAP.
+- **Feito**: `Assessment.loss_balances` no backend (saldo de prejuízo, alíquota e economia
+  estimada por gaveta) e card "Losses to offset" em Portfolio → Taxes. Sem migration nem comando
+  novo, o saldo já existia mês a mês em `BucketResult.loss_carried`. 2 testes novos.
+- **Fora desta fatia**: simulação de venda hipotética e widget na Home.
+- **Pendente**: validar com push e CI verde; teste de clique do card junto com o das Fases
+  15/16/17/20/24.

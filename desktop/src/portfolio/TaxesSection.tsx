@@ -99,8 +99,15 @@ type TaxPayment = {
   created_at: string;
 };
 
+type LossBalance = {
+  bucket: Bucket;
+  balance: number;
+  rate: number;
+  tax_saved: number;
+};
+
 type TaxAssessmentView = {
-  assessment: { months: MonthAssessment[]; warnings: TaxWarning[] };
+  assessment: { months: MonthAssessment[]; warnings: TaxWarning[]; loss_balances: LossBalance[] };
   payments: TaxPayment[];
 };
 
@@ -206,6 +213,8 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
 
   const months = assessmentQuery.data?.assessment.months ?? [];
   const warnings = assessmentQuery.data?.assessment.warnings ?? [];
+  const lossBalances = assessmentQuery.data?.assessment.loss_balances ?? [];
+  const totalTaxSaved = lossBalances.reduce((sum, l) => sum + l.tax_saved, 0);
   const payments = assessmentQuery.data?.payments ?? [];
   const paymentByPeriod = new Map(payments.map((p) => [p.period, p]));
   const today = todayIso();
@@ -298,6 +307,38 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
           )}
         </CardContent>
       </Card>
+
+      {lossBalances.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Losses to offset</CardTitle>
+            <CardDescription>
+              Losses from past sales offset future gains in the same group only — regular trades,
+              day trade and real estate funds don't mix. They carry forward with no expiry. Savings
+              are the balance times the group's current rate, if you later realize a gain of the
+              same size.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {lossBalances.map((l) => (
+                <div key={l.bucket} className="rounded-lg border border-border p-4">
+                  <p className="text-sm text-muted-foreground">{BUCKET_LABELS[l.bucket]}</p>
+                  <p className="text-2xl font-semibold">{formatBrl(l.balance)}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Saves up to {formatBrl(l.tax_saved)} at {(l.rate * 100).toFixed(0)}%
+                  </p>
+                </div>
+              ))}
+            </div>
+            {lossBalances.length > 1 && (
+              <p className="text-sm text-muted-foreground">
+                Total potential savings: {formatBrl(totalTaxSaved)}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {months.length > 0 && (
         <Card>

@@ -1905,6 +1905,14 @@ posso abater"). Pontos a confirmar na pesquisa/discussão: regra vigente de praz
 (a Fase 24 assumiu sem prazo, conferir), onde mostrar (aba Taxes e/ou widget na Home), se simula
 uma venda hipotética ("se eu vender X com lucro Y, abato Z"). Não implementado.
 
+**Implementado na Sessão 106 (fatia 1, exibição do saldo)**: `assess` devolve `loss_balances`
+(`LossBalance`: gaveta, saldo, alíquota, `tax_saved` = saldo × alíquota), lido do `loss_carried`
+do último mês em que cada gaveta teve vendas; só gavetas com saldo > 0. Card "Losses to offset"
+na aba Portfolio → Taxes, com a regra no texto (gavetas não se misturam, sem prazo). 2 testes
+novos em `domain::tax::assessment`. **Segue de fora**: simulação de venda hipotética e widget na
+Home. A regra de prazo/gavetas é a já implementada na Fase 24, não foi reconferida na Receita
+nesta sessão.
+
 ### Fase 25 — Web app auto-hospedado: o próprio Anchor como servidor (ideia trazida pelo dono do projeto na Sessão 100, não iniciada)
 
 **Origem**: pedido em conversa do dono do projeto na Sessão 100, citando o fluxo desejado do

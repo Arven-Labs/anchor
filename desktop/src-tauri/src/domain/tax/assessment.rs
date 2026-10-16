@@ -114,10 +114,23 @@ pub enum TaxWarning {
     ForeignSales { year: i32 },
 }
 
+/// Prejuízo acumulado de uma gaveta depois do último mês apurado, e quanto
+/// de imposto ele abateria se virasse lucro tributável na mesma gaveta.
+#[derive(Clone, Debug, Serialize)]
+pub struct LossBalance {
+    pub bucket: Bucket,
+    pub balance: f64,
+    /// Alíquota vigente no último mês em que a gaveta teve vendas.
+    pub rate: f64,
+    pub tax_saved: f64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Assessment {
     pub months: Vec<MonthAssessment>,
     pub warnings: Vec<TaxWarning>,
+    /// Só gavetas com saldo de prejuízo > 0.
+    pub loss_balances: Vec<LossBalance>,
 }
 
 #[derive(Default)]
@@ -403,7 +416,26 @@ pub fn assess(trades: &[Trade], rules: &RuleSet) -> Result<Assessment, AppError>
         });
     }
 
-    Ok(Assessment { months, warnings })
+    // Saldo atual = `loss_carried` do último mês em que cada gaveta apareceu.
+    let mut loss_balances = Vec::new();
+    for bucket in [Bucket::Common, Bucket::DayTrade, Bucket::Fii] {
+        let last = months
+            .iter()
+            .rev()
+            .find_map(|m: &MonthAssessment| m.buckets.iter().find(|b| b.bucket == bucket));
+        if let Some(b) = last {
+            if b.loss_carried > EPS {
+                loss_balances.push(LossBalance {
+                    bucket,
+                    balance: b.loss_carried,
+                    rate: b.rate,
+                    tax_saved: b.loss_carried * b.rate,
+                });
+            }
+        }
+    }
+
+    Ok(Assessment { months, warnings, loss_balances })
 }
 
 fn collect_out_of_scope_warnings(
@@ -654,6 +686,41 @@ mod tests {
         assert!(close(common.taxable, 500.0));
         assert!(close(fii.loss_used, 0.0));
         assert!(close(fii.taxable, 1000.0));
+    }
+
+    #[test]
+    fn loss_balances_report_remaining_loss_per_bucket() {
+        // Jan: prejuízo de 1.000 em ETF e de 300 em FII. Fev: lucro de 400
+        // em ETF (consome 400, sobram 600) → FII segue com 300 (último mês
+        // dela foi janeiro). Economia = saldo × alíquota da gaveta.
+        let a = Builder::new()
+            .buy(1, "BOVA11", "etf_br", "2026-01-02", 100.0, 10000.0, 0.0)
+            .sell(1, "BOVA11", "etf_br", "2026-01-20", 100.0, 9000.0, 0.0)
+            .buy(2, "HGLG11", "fii", "2026-01-02", 10.0, 1000.0, 0.0)
+            .sell(2, "HGLG11", "fii", "2026-01-25", 10.0, 700.0, 0.0)
+            .buy(3, "IVVB11", "etf_br", "2026-01-02", 10.0, 3000.0, 0.0)
+            .sell(3, "IVVB11", "etf_br", "2026-02-10", 10.0, 3400.0, 0.0)
+            .assess();
+
+        let common = a.loss_balances.iter().find(|l| l.bucket == Bucket::Common).unwrap();
+        let fii = a.loss_balances.iter().find(|l| l.bucket == Bucket::Fii).unwrap();
+        assert!(close(common.balance, 600.0));
+        assert!(close(common.tax_saved, 600.0 * common.rate));
+        assert!(close(fii.balance, 300.0));
+        assert!(close(fii.tax_saved, 300.0 * fii.rate));
+        assert!(a.loss_balances.iter().all(|l| l.bucket != Bucket::DayTrade));
+    }
+
+    #[test]
+    fn loss_balances_empty_when_loss_fully_used() {
+        let a = Builder::new()
+            .buy(1, "BOVA11", "etf_br", "2026-01-02", 10.0, 1500.0, 0.0)
+            .sell(1, "BOVA11", "etf_br", "2026-01-20", 10.0, 1000.0, 0.0)
+            .buy(2, "IVVB11", "etf_br", "2026-01-02", 10.0, 1000.0, 0.0)
+            .sell(2, "IVVB11", "etf_br", "2026-02-10", 10.0, 1700.0, 0.0)
+            .assess();
+
+        assert!(a.loss_balances.is_empty());
     }
 
     #[test]
