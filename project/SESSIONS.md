@@ -2195,4 +2195,23 @@ sem uma venda hipotética e devolve a diferença (ganho, imposto do mês antes/d
 consumido, lucro isento, saldos de prejuízo, variação total do imposto). Card "Simulate a sale"
 em Portfolio → Taxes (`SaleSimulationCard.tsx`). `load_trades` extraído de `assess_workspace`.
 3 testes novos em `domain::tax::assessment`. `./dev.sh check` limpo.
-- **Pendente**: push e CI verde; teste de clique. Fora: widget de prejuízo na Home.
+- **Verificado**: push `22ff2a7`, CI Desktop Rust e Frontend verdes.
+- **Pendente**: teste de clique. Fora: widget de prejuízo na Home.
+
+**Indicadores cripto, estudo e 1º lote (Fase 31).** Pedido: "estudar mais indicadores cripto".
+- **Estudo** (APIs testadas ao vivo, resultados na Fase 31 do `PHASE.md`): Binance (derivativos),
+  Deribit (opções), DefiLlama (stablecoins e yields), CoinMetrics Community (31 métricas ainda
+  liberadas, mas a Talos vai aposentar algumas e a licença é não comercial), bitcoin-data.com
+  (BTC, 15 req/dia e atraso de 7 dias). Sem fonte grátis para fluxo de ETFs e liquidações.
+- **Decisões do dono do projeto**: subscores por grupo, 1º lote = `staking_yield` automático +
+  derivativos de ETH, coleta em Rust no Anchor. Descoberto no caminho: os 8 automáticos de hoje
+  rodam no repo irmão `lume`, o Anchor só consome o sidecar.
+- **Feito** (em plan mode): `crypto_sources.rs`, 3 seeds novos (migration `m20261016_130000`,
+  calibrados com valores reais do dia), `compute_score` e `get_crypto_score` no backend, coletor
+  tolerante a falha parcial, `AppError::CryptoSource`, UI com tiles por grupo e subscores.
+  Erro meu corrigido no meio: o total é **12** (9 + 3), não 13, o `staking_yield` já era um dos 9.
+- **Verificado**: `./dev.sh check` limpo, 0 warnings. Testes novos em `crypto_sources` (JSON real)
+  e `domain::crypto_score` (grupos, subscores, veredito, direção dos seeds).
+- **Pendente**: push e CI verde; teste de clique (Research → ETH → "Run crypto collector"). Esperar
+  3 grupos, `staking_yield` sozinho (~1,4%) e conferir o funding contra a Binance. Um teste
+  `#[ignore]` ao vivo cobre as 4 fontes (`cargo test --lib -- --ignored crypto_sources`).

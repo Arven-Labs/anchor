@@ -49,6 +49,39 @@ pub async fn record_crypto_indicator(
     Ok(reading)
 }
 
+/// Score da moeda: última leitura de cada indicador, agrupada em subscores
+/// (`domain::crypto_score::compute_score`). Desempate no mesmo dia: a leitura
+/// criada por último (`crypto_indicators` é append-only, sem índice único).
+#[tauri::command]
+pub async fn get_crypto_score(
+    db: tauri::State<'_, DatabaseConnection>,
+    coin: String,
+) -> Result<crypto_score::CryptoScore, AppError> {
+    let readings = crypto_indicators::Entity::find()
+        .filter(crypto_indicators::Column::Coin.eq(coin))
+        .order_by_desc(crypto_indicators::Column::ReadingDate)
+        .order_by_desc(crypto_indicators::Column::CreatedAt)
+        .order_by_desc(crypto_indicators::Column::Id)
+        .all(db.inner())
+        .await?;
+
+    let mut latest: Vec<crypto_score::LatestReading> = Vec::new();
+    for r in readings {
+        if latest.iter().any(|l| l.indicator == r.indicator) {
+            continue;
+        }
+        latest.push(crypto_score::LatestReading {
+            indicator: r.indicator,
+            raw_value: r.raw_value,
+            signal: r.signal,
+            reading_date: r.reading_date,
+            source: r.source,
+        });
+    }
+
+    Ok(crypto_score::compute_score(&latest))
+}
+
 #[tauri::command]
 pub async fn list_crypto_indicators(
     db: tauri::State<'_, DatabaseConnection>,

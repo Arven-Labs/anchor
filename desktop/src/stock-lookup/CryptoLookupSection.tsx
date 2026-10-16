@@ -71,20 +71,38 @@ function formatPercentChange(value: number | null): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-// Readings come back as a flat time series (one row per logged date); the
-// score only cares about the most recent reading per indicator.
-function latestPerIndicator(
-  readings: CryptoIndicatorReading[],
-): Map<string, CryptoIndicatorReading> {
-  const latest = new Map<string, CryptoIndicatorReading>();
-  for (const reading of readings) {
-    const current = latest.get(reading.indicator);
-    if (!current || reading.reading_date > current.reading_date) {
-      latest.set(reading.indicator, reading);
-    }
-  }
-  return latest;
-}
+// Fase 31 — the score (latest reading per indicator, grouped into subscores)
+// is computed by the backend (`get_crypto_score`), not here.
+type ScoreReading = {
+  indicator: string;
+  raw_value: number;
+  signal: CryptoIndicatorReading["signal"];
+  reading_date: string;
+  source: string;
+};
+
+type GroupScore = {
+  group: string;
+  label: string;
+  green: number;
+  logged: number;
+  total: number;
+  indicators: { indicator: IndicatorKey; reading: ScoreReading | null }[];
+};
+
+type CryptoScore = {
+  groups: GroupScore[];
+  green: number;
+  logged: number;
+  total: number;
+  verdict: "intact" | "neutral" | "reduce_risk";
+};
+
+const VERDICT_LABEL: Record<CryptoScore["verdict"], string> = {
+  intact: "Thesis intact — hold / keep adding",
+  neutral: "Neutral — watch closely",
+  reduce_risk: "Consider reducing risk",
+};
 
 // % change from N calendar days ago to the most recent point in the series
 // (sorted ascending by date) — closest available point wins, same tolerance
@@ -123,7 +141,7 @@ function IndicatorTile({
   reading,
 }: {
   indicatorKey: IndicatorKey;
-  reading?: CryptoIndicatorReading;
+  reading?: ScoreReading | null;
 }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -222,15 +240,15 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
 
   // --- Score de ciclo (antigo CryptoScorePanel), agora keyed pelo ticker
   // buscado em vez de um campo "Coin" próprio.
-  const readingsQuery = useQuery<CryptoIndicatorReading[], AppError>({
-    queryKey: ["crypto-indicators", ticker],
-    queryFn: () => invoke("list_crypto_indicators", { coin: ticker }),
+  const scoreQuery = useQuery<CryptoScore, AppError>({
+    queryKey: ["crypto-score", ticker],
+    queryFn: () => invoke("get_crypto_score", { coin: ticker }),
   });
 
   const runCryptoCollectorMutation = useMutation<CollectorSummary, AppError, void>({
     mutationFn: () => invoke("run_crypto_collector"),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["crypto-indicators", ticker] });
+      queryClient.invalidateQueries({ queryKey: ["crypto-score", ticker] });
     },
   });
 
@@ -251,7 +269,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
       );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["crypto-indicators", ticker] });
+      queryClient.invalidateQueries({ queryKey: ["crypto-score", ticker] });
       setDrafts(emptyDrafts());
     },
   });
@@ -267,8 +285,12 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
 
   const price = quoteQuery.data?.price ?? null;
   const history = historyQuery.data ?? [];
-  const latest = latestPerIndicator(readingsQuery.data ?? []);
-  const greenCount = [...latest.values()].filter((r) => r.signal === "GREEN").length;
+  const score = scoreQuery.data;
+  // Collector output: one line per reading, failures start with "ERROR ".
+  const collectorErrors =
+    runCryptoCollectorMutation.data?.output
+      .split("\n")
+      .filter((line) => line.startsWith("ERROR ")) ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -358,12 +380,16 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
 
           <div className="border-t border-border pt-6">
             <h3 className="mb-1 text-sm font-semibold text-muted-foreground">
-              Cycle-top score ({greenCount}/9 green, {latest.size} of 9 logged)
+              Cycle-top score ({score?.green ?? 0}/{score?.total ?? 12} green,{" "}
+              {score?.logged ?? 0} of {score?.total ?? 12} logged)
             </h3>
+            {score && (
+              <p className="mb-1 text-sm font-medium">{VERDICT_LABEL[score.verdict]}</p>
+            )}
             <p className="mb-4 text-sm text-muted-foreground">
-              These 9 indicators (Fase 3) were spec'd and calibrated for Ethereum specifically —
-              logging them under {ticker} is fine, but the green/red thresholds below are ETH's,
-              not {ticker}'s.
+              These indicators (Fase 3 and 31) are split into groups, each with its own subscore,
+              and were calibrated for Ethereum specifically — logging them under {ticker} is
+              fine, but the green/red thresholds are ETH's, not {ticker}'s.
             </p>
 
             {ticker === "ETH" && (
@@ -377,29 +403,47 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
                 >
                   {runCryptoCollectorMutation.isPending
                     ? "Running..."
-                    : "Run crypto collector (TVL Trend, Net Issuance, Fees vs Emission, NVT Ratio)"}
+                    : "Run crypto collector (all 12 indicators)"}
                 </Button>
-                {runCryptoCollectorMutation.isSuccess &&
-                  !runCryptoCollectorMutation.data.success && (
-                    <p className="whitespace-pre-wrap text-red-600">
-                      {runCryptoCollectorMutation.data.output}
-                    </p>
-                  )}
+                {collectorErrors.length > 0 && (
+                  <p className="whitespace-pre-wrap text-red-600">
+                    Some sources failed — the rest were saved:
+                    {"\n"}
+                    {collectorErrors.join("\n")}
+                  </p>
+                )}
                 {runCryptoCollectorMutation.isError && (
                   <p className="text-red-600">{runCryptoCollectorMutation.error.message}</p>
                 )}
               </div>
             )}
 
-            {readingsQuery.isError && (
-              <p className="mb-3 text-red-600">{readingsQuery.error.message}</p>
+            {scoreQuery.isError && (
+              <p className="mb-3 text-red-600">{scoreQuery.error.message}</p>
             )}
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {INDICATOR_KEYS.map((key) => (
-                <IndicatorTile key={key} indicatorKey={key} reading={latest.get(key)} />
-              ))}
-            </div>
+            {(score?.groups ?? []).map((group) => (
+              <div key={group.group} className="mb-5">
+                <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                  {group.label}
+                  <Badge variant="secondary">
+                    {group.green}/{group.total} green
+                  </Badge>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {group.logged} of {group.total} logged
+                  </span>
+                </h4>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  {group.indicators.map((item) => (
+                    <IndicatorTile
+                      key={item.indicator}
+                      indicatorKey={item.indicator}
+                      reading={item.reading}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
 
             <h4 className="mt-6 mb-3 text-sm font-semibold text-muted-foreground">
               Update readings manually

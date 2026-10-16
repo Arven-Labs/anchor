@@ -5,12 +5,14 @@
 // `coin="ETH"`, usados só na tela de score cripto — sem relação com o
 // primeiro). Eram 4 automatizados (Sessão 91); mais 4 se juntaram na
 // automação depois que a Fase 1.12 do easybusiness achou fonte gratuita
-// pra eles (CoinMetrics, ver `ETH_INDICATORS` abaixo) — só `staking_yield`
-// (dos 9 originais da Fase 3) segue manual.
+// pra eles (CoinMetrics, ver `ETH_INDICATORS` abaixo). Na Fase 31 o
+// `staking_yield` também virou automático e entraram 3 de derivativos,
+// todos coletados direto pelo Anchor (`crypto_sources`), sem o Lume.
 use chrono::Utc;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
+use crate::crypto_sources;
 use crate::domain::crypto_score::{self, Threshold};
 use crate::entity::{crypto_fear_greed, crypto_indicators, indicator_thresholds, stock_price_history, stock_quotes};
 use crate::error::AppError;
@@ -113,9 +115,9 @@ pub async fn collect_ticker(
 
 // Os 4 primeiros são automatizados desde a Fase 1.6 do easybusiness (Sessão
 // 91 deste repo); os 4 últimos foram desbloqueados na Fase 1.12 dele
-// (CoinMetrics Community API, sem chave, achado ao vivo nesta sessão) — o
-// 5º indicador manual (`staking_yield`) segue sem fonte gratuita conhecida,
-// fica de fora deste array de propósito.
+// (CoinMetrics Community API, sem chave, achado ao vivo nesta sessão). Este
+// array só tem os que vêm do Lume; os coletados direto pelo Anchor estão em
+// `collect_eth_indicators`.
 const ETH_INDICATORS: [(&str, &str, &str); 8] = [
     // (nome interno / chave de indicator_thresholds, código na Finance API, source)
     ("tvl_trend", "tvl-trend", "defillama"),
@@ -164,18 +166,64 @@ async fn record_crypto_indicator(
     Ok(model)
 }
 
-/// Os 4 indicadores do ciclo ETH (`run_crypto_collector`) — sempre os
-/// mesmos 4, sempre `coin = "ETH"`, mesma ordem de `main_crypto()`.
+/// Resultado de uma rodada de coleta: o que foi gravado e o que falhou. Uma
+/// fonte fora do ar (ex.: Binance bloqueada na região) não derruba as demais.
+pub struct EthCollection {
+    pub readings: Vec<crypto_indicators::Model>,
+    /// Uma linha por indicador que falhou, já com o nome dele.
+    pub errors: Vec<String>,
+}
+
+/// Indicadores do score ETH (`run_crypto_collector`), sempre `coin = "ETH"`:
+/// os 8 do Lume (Finance API) e, desde a Fase 31, 4 coletados direto pelo
+/// Anchor (`crypto_sources`) — derivativos na Binance e `staking_yield` real.
+/// Só devolve erro se **nenhum** indicador foi coletado.
 pub async fn collect_eth_indicators(
     db: &DatabaseConnection,
     handle: &FinanceApiHandle,
-) -> Result<Vec<crypto_indicators::Model>, AppError> {
-    let mut results = Vec::with_capacity(ETH_INDICATORS.len());
+) -> Result<EthCollection, AppError> {
+    let mut readings = Vec::with_capacity(ETH_INDICATORS.len() + 4);
+    let mut errors = Vec::new();
+
     for (internal_name, api_code, source) in ETH_INDICATORS {
-        let raw_value = client::fetch_eth_indicator(handle, api_code).await?.raw_value;
-        results.push(record_crypto_indicator(db, internal_name, raw_value, source).await?);
+        let fetched = client::fetch_eth_indicator(handle, api_code)
+            .await
+            .map(|response| response.raw_value);
+        record_or_collect_error(db, internal_name, source, fetched, &mut readings, &mut errors).await;
     }
-    Ok(results)
+
+    let direct = [
+        ("funding_rate_7d", "binance", crypto_sources::fetch_funding_rate_7d().await),
+        ("open_interest_change_30d", "binance", crypto_sources::fetch_open_interest_change_30d().await),
+        ("long_short_ratio", "binance", crypto_sources::fetch_long_short_ratio().await),
+        ("staking_yield", "defillama+coinmetrics", crypto_sources::fetch_staking_yield_real().await),
+    ];
+    for (internal_name, source, fetched) in direct {
+        record_or_collect_error(db, internal_name, source, fetched, &mut readings, &mut errors).await;
+    }
+
+    if readings.is_empty() && !errors.is_empty() {
+        return Err(AppError::CryptoSource(errors.join("; ")));
+    }
+    Ok(EthCollection { readings, errors })
+}
+
+async fn record_or_collect_error(
+    db: &DatabaseConnection,
+    indicator: &str,
+    source: &str,
+    fetched: Result<f64, AppError>,
+    readings: &mut Vec<crypto_indicators::Model>,
+    errors: &mut Vec<String>,
+) {
+    let outcome = match fetched {
+        Ok(raw_value) => record_crypto_indicator(db, indicator, raw_value, source).await,
+        Err(e) => Err(e),
+    };
+    match outcome {
+        Ok(model) => readings.push(model),
+        Err(e) => errors.push(format!("{indicator}: {e}")),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -214,13 +262,13 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn live_collect_eth_indicators_writes_eight_readings() {
+    async fn live_collect_eth_indicators_writes_twelve_readings() {
         let db = dev_db().await;
         let handle = handle();
 
-        let readings = collect_eth_indicators(&db, &handle).await.unwrap();
-        assert_eq!(readings.len(), 8);
-        for reading in &readings {
+        let collection = collect_eth_indicators(&db, &handle).await.unwrap();
+        assert_eq!(collection.readings.len() + collection.errors.len(), 12);
+        for reading in &collection.readings {
             assert!(matches!(reading.signal.as_str(), "GREEN" | "NEUTRAL" | "RED"));
         }
     }

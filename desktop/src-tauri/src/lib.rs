@@ -6,6 +6,7 @@ mod alert_checker;
 mod arweave;
 mod backup;
 mod commands;
+mod crypto_sources;
 mod db;
 mod dead_drop;
 mod domain;
@@ -70,6 +71,7 @@ pub fn run() {
             commands::projected_ceiling::save_projected_ceiling,
             commands::crypto_indicator::record_crypto_indicator,
             commands::crypto_indicator::list_crypto_indicators,
+            commands::crypto_indicator::get_crypto_score,
             commands::valuation::list_valuations,
             commands::valuation::get_valuation_inputs,
             commands::valuation::update_valuation,

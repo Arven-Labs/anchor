@@ -311,7 +311,7 @@ Diferente de ação (1x/ano), aqui é um **score contínuo**: cada indicador vir
 | 2 | NVT Ratio | "P/L" da rede (valor de mercado / volume transacionado) | Calculável com dado on-chain | Parcial | Verde se abaixo da média móvel de 90d · Vermelho se muito acima |
 | 3 | Puell Multiple | Emissão diária (USD) vs média histórica | Glassnode (pago) | Não (fallback manual) | Verde se < 0.5 · Vermelho se > 4 |
 | 4 | Emissão Líquida (issuance − burn) | ETH é deflacionário ou não no período | ultrasound.money | Sim | Verde se negativa (deflacionário) · Vermelho se fortemente positiva |
-| 5 | Staking Yield Líquido | Retorno real do staking, descontada a diluição | stakingrewards.com | Sim (free tier) | Verde se yield real > 2% · Vermelho se perto de 0 ou negativo |
+| 5 | Staking Yield Líquido | Retorno real do staking, descontada a diluição | DefiLlama (APY do stETH) menos inflação do CoinMetrics, Sessão 106 (stakingrewards.com não foi usado) | Sim | Verde se yield real > 2% · Vermelho se perto de 0 ou negativo |
 | 6 | TVL DeFi (Ethereum) | Uso real da rede em DeFi | DefiLlama | Sim | Verde se em tendência de alta (MoM) · Vermelho se queda consistente |
 | 7 | Endereços Ativos / Transações Diárias | Adoção/atividade da rede | Etherscan | Sim | Verde se crescendo (MoM/YoY) · Vermelho se caindo |
 | 8 | Exchange Netflow | Saída (acumulação) ou entrada (venda) líquida das corretoras | CryptoQuant/Glassnode (pago) | Não (fallback manual) | Verde se saída líquida (negativo) · Vermelho se entrada líquida forte |
@@ -2169,8 +2169,44 @@ Fase 3 e coleta da Fase 2.3). Dito como "depois vamos trabalhar pesado nisso", s
 indicadores nem desenho.
 
 **Ponto de partida**: dos 9 indicadores atuais, 8 já são automáticos (CoinMetrics, DefiLlama,
-ultrasound, CoinGecko — ver Fase 2.3) e só `staking_yield` segue manual por falta de fonte gratuita.
+ultrasound, CoinGecko — ver Fase 2.3) e só `staking_yield` seguia manual por falta de fonte
+gratuita (**automatizado na Sessão 106**, ver "Implementado" abaixo).
 Hoje a cobertura é centrada em ETH. Em aberto: quais indicadores novos, outros ativos além de ETH,
 fontes pagas ou gratuitas, relação com DeFi (Fase 27) e backtesting (Fase 22).
 
-**Estado**: puro registro de intenção.
+**Estado**: puro registro de intenção até a Sessão 106 (ver abaixo).
+
+**Estudo de fontes, Sessão 106 (2026-10-16)**, testado ao vivo, todas sem chave:
+- **Binance Futures** (OKX e Bybit também respondem): funding atual e histórico, open interest
+  histórico (só ~30 dias), razão long/short de contas (só ~30 dias).
+- **Deribit** (opções): DVOL em série diária e put/call por open interest.
+- **DefiLlama**: oferta de stablecoins; yields (APY do stETH 2,26%, rETH 2,06%, cbETH 2,31%).
+- **CoinMetrics Community**: 31 métricas liberadas para ETH e BTC, incluindo `CapMVRVCur`,
+  `FlowIn/OutEx`, `IssTotUSD/Ntv`, `AdrActCnt`, `TxCnt`, `HashRate`, `SplyExNtv/USD`, `PriceBTC`.
+  **Não tem** SOPR, realized cap nem NVT ajustado. A Talos (dona) avisou que vai aposentar
+  métricas do Community sem dizer quais, vale health check. **Licença não comercial**, relevante
+  para a versão hospedada paga da spec de autossuficiência.
+- **bitcoin-data.com** (só BTC): SOPR (geral/STH/LTH), NUPL, realized price, MVRV Z, Puell,
+  reserve risk, NVTS. Plano grátis: 10 req/h e 15/dia, 4 anos de histórico e **atraso de 7 dias**;
+  uso comercial não esclarecido.
+- **Sem fonte grátis**: fluxo de ETFs de BTC/ETH (Farside e SoSoValue atrás de Cloudflare),
+  liquidações (Coinglass, pago).
+
+**Implementado na Sessão 106 (1º lote)**, decisões do dono do projeto: subscores por grupo,
+primeiro lote = `staking_yield` automático + derivativos de ETH, coleta **em Rust no Anchor** (os
+8 do Lume seguem pelo sidecar; a spec manda desfazer o Lume):
+- Novo `crypto_sources.rs` com cálculos puros testados contra JSON real e `fetch_*` finos:
+  `funding_rate_7d` (média de 21 funding de 8h anualizada em %), `open_interest_change_30d`
+  (variação % do OI **em ETH**, sem efeito preço), `long_short_ratio` (média 7d) e
+  `staking_yield` real (APY do stETH menos a inflação bruta `IssTotNtv`×365÷`SplyCur`).
+- Seeds calibrados com valores reais do dia (migration `m20261016_130000`): funding 5/20, OI
+  0/25, long/short 2,0/3,5, todos "menor é melhor". São ponto de partida, **não há editor de
+  thresholds na UI** (só SQL), vale uma fatia própria.
+- Score agora vive no backend (`domain::crypto_score::compute_score`, antes só no TS): 3 grupos
+  (On-chain 5, Network fundamentals 4, Derivatives 3 = **12** indicadores), subscore por grupo e
+  veredito por percentual (≥70% tese intacta, 40–70% neutro, <40% reduzir risco, equivalente às
+  faixas 7-9/4-6/0-3 dos 9 originais). Novo comando `get_crypto_score`.
+- `collect_eth_indicators` agora tolera falha parcial (uma fonte fora do ar, ex. Binance
+  bloqueada na região, não derruba as outras) e só dá erro se nada foi coletado.
+- **Fora desta fatia**: editor de thresholds, fallback OKX/Bybit, DVOL/put-call, stablecoins,
+  suporte a BTC. Teste de clique pendente.

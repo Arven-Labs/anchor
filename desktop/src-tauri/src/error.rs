@@ -40,6 +40,8 @@ pub enum AppError {
     Decryption(String),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("crypto data source error: {0}")]
+    CryptoSource(String),
 }
 
 impl AppError {
@@ -64,6 +66,7 @@ impl AppError {
             AppError::Arweave(_) => "ARWEAVE_ERROR",
             AppError::Decryption(_) => "DECRYPTION_ERROR",
             AppError::Json(_) => "JSON_ERROR",
+            AppError::CryptoSource(_) => "CRYPTO_SOURCE_ERROR",
         }
     }
 }
