@@ -2417,3 +2417,14 @@ Plano completo em `~/.claude/plans/fuzzy-humming-crystal.md` e resumo na Fase 26
 - **Pendente**: teste de clique (Research → cripto, "Run crypto collector", Portfolio → adicionar
   moeda); domínio 5.
 
+**Fase 26, domínio 5 (CVM DFP).** Começou em plan mode, a pedido ("começa a rodar plan q editar código").
+- **Feito**: `finance_core/{cvm_dfp,disk_cache}.rs`, `http::get_bytes`, dependência `csv`, `disk_cache::init`
+  no `setup`; 3 métodos do `client.rs` nativos. 22 testes novos (zips sintéticos nas colunas reais).
+- **Verificado**: `check` sem warnings; suíte inteira 360 passam, 0 falham; **paridade exata com o Python do
+  Lume** em PETR, VALE, BBAS e ITUB (roe, payout e DCF). Rust em build de debug fez as 4 empresas em
+  ~60 s com a primeira carga de zips; o Python levou 92 s.
+- **Achado (bug do Lume)**: `abs()` em lucro e patrimônio fazia prejuízo virar lucro; corrigi com
+  `Sign::Keep` e deixei um teste. Dois testes meus pegaram isso ao falhar (eu supunha o guarda funcionando).
+- **Pendente**: teste de clique (Research → ação B3 coleta fundamentos, precisa da chave da bolsai);
+  domínio 6.
+

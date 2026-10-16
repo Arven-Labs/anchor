@@ -55,6 +55,19 @@ pub async fn get_text_with_headers(
     check_status(source, status, body)
 }
 
+/// Baixa um corpo binário (zips). Erros seguem o mesmo contrato de `get_text`.
+pub async fn get_bytes(source: &str, url: &str, timeout: Duration) -> Result<Vec<u8>, AppError> {
+    let unavailable = |detail: reqwest::Error| AppError::ProviderUnavailable(format!("{source}: {detail}"));
+    let client = reqwest::Client::builder().timeout(timeout).user_agent(USER_AGENT).build().map_err(unavailable)?;
+    let response = client.get(url).send().await.map_err(unavailable)?;
+    let status = response.status().as_u16();
+    let body = response.bytes().await.map_err(unavailable)?;
+    if (200..300).contains(&status) {
+        return Ok(body.to_vec());
+    }
+    check_status(source, status, String::from_utf8_lossy(&body).into_owned()).map(|_| Vec::new())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

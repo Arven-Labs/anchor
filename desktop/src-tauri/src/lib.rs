@@ -47,6 +47,12 @@ pub fn run() {
             alert_checker::spawn_periodic_check(db.clone());
             app.manage(db);
 
+            // Fase 26 — zips grandes das fontes públicas (CVM, SEC) ficam no
+            // diretório de cache do SO; sem ele o cache cai em `temp_dir()`.
+            if let Ok(cache_dir) = app.path().app_cache_dir() {
+                finance_core::disk_cache::init(cache_dir);
+            }
+
             // Fase 14.2 — em dev, aponta pro `docker compose up` manual do
             // easybusiness; em release, spawna o sidecar compilado. Ver
             // `finance_api::sidecar::init`.

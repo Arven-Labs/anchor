@@ -19,8 +19,8 @@ use crate::error::AppError;
 use crate::finance_api::{selic_store, FinanceApiHandle};
 use crate::finance_core::market::{self, Instrument};
 use crate::finance_core::{
-    b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, coingecko, eth_indicators, fear_greed, metals, tax_rules,
-    yahoo,
+    b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, coingecko, cvm_dfp, eth_indicators, fear_greed, metals,
+    tax_rules, yahoo,
 };
 
 /// Campos presentes em toda resposta da Finance API — achatado (`flatten`)
@@ -280,10 +280,16 @@ pub struct CompanyRoeResponse {
 }
 
 pub async fn fetch_company_roe(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     cvm_code: i32,
 ) -> Result<CompanyRoeResponse, AppError> {
-    get(handle, &format!("/v1/companies/{cvm_code}/roe")).await
+    let roe = cvm_dfp::roe(cvm_code).await?;
+    Ok(CompanyRoeResponse {
+        cvm_code,
+        meta: now_meta(roe.source),
+        reference_year: roe.value.reference_year,
+        roe: roe.value.roe,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -295,10 +301,11 @@ pub struct CompanyPayoutResponse {
 }
 
 pub async fn fetch_company_payout(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     cvm_code: i32,
 ) -> Result<CompanyPayoutResponse, AppError> {
-    get(handle, &format!("/v1/companies/{cvm_code}/payout")).await
+    let payout = cvm_dfp::payout(cvm_code).await?;
+    Ok(CompanyPayoutResponse { cvm_code, meta: now_meta(payout.source), payout_avg_5y: payout.value })
 }
 
 #[derive(Debug, Deserialize)]
@@ -325,10 +332,27 @@ pub struct CompanyDcfFundamentalsResponse {
 }
 
 pub async fn fetch_company_dcf_fundamentals(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     cvm_code: i32,
 ) -> Result<CompanyDcfFundamentalsResponse, AppError> {
-    get(handle, &format!("/v1/companies/{cvm_code}/dcf-fundamentals")).await
+    let dcf = cvm_dfp::dcf_fundamentals(cvm_code).await?;
+    let f = dcf.value;
+    Ok(CompanyDcfFundamentalsResponse {
+        cvm_code,
+        fundamentals: DcfFundamentals {
+            meta: now_meta(dcf.source),
+            reference_year: f.reference_year,
+            ebit: f.ebit,
+            tax_rate: f.tax_rate,
+            depreciation_amortization: f.depreciation_amortization,
+            capex: f.capex,
+            nwc_change: f.nwc_change,
+            total_debt: f.total_debt,
+            cash: f.cash,
+            revenue: f.revenue,
+            inventory: f.inventory,
+        },
+    })
 }
 
 // ---------------------------------------------------------------------------

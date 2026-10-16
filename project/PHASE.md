@@ -2104,8 +2104,20 @@ grátis limita as chamadas) e resolução símbolo→id em cache de 24 h; símbo
 é `NoData`. **Paridade com o Python do Lume conferida**: os 8 indicadores batem até o último dígito
 (ex.: MVRV Z 0,12189, Puell 1,06706, TVL 1,91299%) e o Fear & Greed lê o mesmo dia. **O Lume já não é
 chamado por nenhum caminho de cripto.** `crypto_sources.rs` (Fase 31) segue com seu próprio
-`get_text`; unificar com `finance_core::http` fica como arrumação futura. **Próximo**: domínio 5 (CVM
-DFP/IPE).
+`get_text`; unificar com `finance_core::http` fica como arrumação futura. **Domínio 5 feito (Sessão 107)**: `finance_core::{cvm_dfp, disk_cache}`. `fetch_company_roe`,
+`fetch_company_payout` e `fetch_company_dcf_fundamentals` do `client.rs` agora são nativos, lendo os
+zips anuais da CVM com a crate `csv` (linhas filtradas por `CD_CVM` na leitura, parsing em
+`spawn_blocking`, download atrás de `ZipFetcher` pra os testes montarem zips em memória). Os zips ficam
+em disco (`app_cache_dir()` do SO, definido no `setup` por `disk_cache::init`; escrita atômica; os dois
+anos fiscais mais recentes expiram em 30 dias, os mais antigos nunca; cópia velha serve se o download
+falhar). A primeira coleta baixa até 6 zips (~13 MB cada). `dividend-notices` (IPE) **não foi portado**:
+o Anchor nunca teve método nem chamador. **Paridade com o Python do Lume**: PETR, VALE, BBAS e ITUB
+com `roe`, `payout_avg_5y` e os 9 campos do DCF **idênticos até o último dígito** (inclusive bancos
+dando "sem DCF"). **Divergência consciente, bug do Lume corrigido**: o `_find_by_keyword` do Python
+aplicava `abs()` sempre, então um prejuízo virava lucro (ROE positivo pra empresa com prejuízo) e os
+guardas `lucro <= 0` e `patrimônio <= 0` nunca disparavam; lucro e patrimônio agora mantêm o sinal
+(`Sign::Keep`) e o módulo fica só pras saídas de caixa (dividendos, capex, D&A). Só muda o resultado
+em empresas com prejuízo ou patrimônio negativo. **Próximo**: domínio 6 (FII).
 
 **Estado anterior**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
 arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan
