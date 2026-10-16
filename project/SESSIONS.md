@@ -2334,4 +2334,13 @@ pode pegar" o que sobrava.
 - **Teste de clique manual que de fato sobra**: o botão "Run crypto collector" e `sync_tax_rules`
   (rede/Lume), os botões de Backup que abrem o diálogo nativo de arquivo (a lógica está coberta),
   os dados reais dos widgets de juros da Home (vêm do Lume) e conferência visual.
-- **Pendente**: confirmar com um build de release que o banco novo agora abre com as tabelas.
+- **Release verificado** (tag de teste `v0.0.0-ci-test` no `c8b96be`, apagada depois junto com a
+  release em rascunho, como na Sessão 105): `build.yml` passou nas **3 plataformas e no APK**, então
+  o crate `migration` (que puxa o `sea-orm-cli`) como dependência do app não quebrou macOS nem
+  Windows. Instalei o `.deb` gerado num **Ubuntu 24.04 limpo** (`apt install ./Anchor_0.1.0_amd64.deb`,
+  com as dependências), abri sob `xvfb` com `HOME` novo: o app criou
+  `~/.local/share/com.masterlxz.anchor/anchor.db` com **56 tabelas, 64 migrations aplicadas** (até
+  `m20261016_140000`), 15 thresholds e 11 regras fiscais semeados, sem panic no log. Isso
+  confirma, no instalador, que o banco de release agora abre com schema (o bug anterior era
+  provável só por leitura de código; não rodei o instalador antigo para vê-lo falhar).
+- **Pendente**: nada de infraestrutura de teste; o que resta de clique manual está listado acima.
