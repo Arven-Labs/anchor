@@ -2252,3 +2252,135 @@ fábrica do Reset ficam em `domain::crypto_score::DEFAULT_THRESHOLDS`, **duplica
 migrations (mudar um seed exige mudar os dois). Testes: domínio (defaults válidos e cobrindo os 12
 indicadores, validação, direção) e 3 testes com SQLite em memória da reclassificação, do erro sem
 efeito e do Reset.
+
+
+### Fase 32 — Inventário de ideias herdadas do Lume (levantado na Sessão 107, puro registro, nada decidido nem iniciado)
+
+**Origem**: o dono do projeto pediu pra ler o repo do Lume (`../lume`, `git pull` já em dia) e
+registrar aqui tudo de interessante na linha financeira, pra não se perder com a desmontagem. Lidos:
+`project/OVERVIEW.md`, `ROADMAP.md`, `DESMONTAGEM.md`, `PENDING.md` e trechos de `ARCHITECTURE.md` e
+`PHASE.md`. **Tudo abaixo é ideia a debater**; várias já têm o dado pronto no Lume e só falta
+consumir ou portar. Ligada à **Fase 26** (decisão de migração) e à **Fase 31** (cripto).
+
+**Estado da desmontagem no Lume (para a Fase 26 não recomeçar do zero)**: o Lume registrou em
+`DESMONTAGEM.md` um inventário completo (13 routers, ~25 fontes, 38 tabelas, 41 arquivos de teste,
+13 hosts externos) e a **Opção C (híbrido faseado) foi escolhida na Sessão 23 do Lume**: (1) mover o
+`api/` Python pro repo do Anchor, (2) reescrever em Rust por domínio na ordem de uso (macro/BCB →
+ações BR → CVM/FII → EUA/SEC → cripto/metais/índices), cada um com teste de paridade contra o
+sidecar Python, (3) aposentar o sidecar. A execução foi **adiada** ("não vamos fazer agora", Sessão
+24 do Lume). As decisões ortogonais seguem em aberto: onde guardar o cache (`finance_api.db` próprio
+vs. dentro do `anchor.db`), como expor ao Warden (MCP, HTTP ou ambos), o que fazer com os domínios
+sem consumidor e se o `DataProvider` nasce já na migração. **Atenção**: a tabela de "quem consome o
+quê" do Lume (Sessão 22) marca taxas/DI, câmbio e tax-rules como ❌ sem consumidor no Anchor, mas
+as Fases 17 e 24 daqui usam `/v1/rates` e `/v1/tax-rules/br`; **conferir no código antes de
+descartar qualquer domínio**.
+
+#### A. Dados que o Lume já tem e o Anchor ainda não usa (ganho barato, o dado existe)
+
+- **Opções: catálogo de séries + último preço EOD + gregas** (`options/{underlying}/series`,
+  `options/{series}/greeks`; B3 Séries Autorizadas + COTAHIST, Black-Scholes próprio em `math` puro).
+  É a base de dados da **Fase 18** (gestão de opções). Limites confirmados: não existe fonte grátis
+  pra bid/ask, open interest nem IV; o preço do ativo-objeto é informado por quem chama (decisão
+  pra evitar grega errada por classe de ação). O COTAHIST anual leva ~2 min na primeira chamada.
+  **Pendência P2 do Lume**: a raiz da opção nem sempre é o ticker sem o dígito (Embraer: `EMBR3` →
+  raiz `EMBJ`); sem mapa genérico, tratado caso a caso. Ao portar, trazer esse mapa.
+- **Curva DI futuro (PRE) e Meta Selic diária** (`rates/di-futures-curve/{data}`, `rates/selic/{code}`;
+  B3 "Pesquisa por Pregão" + BCB 432): alimenta marcação a mercado de renda fixa prefixada, desconto
+  de DCF com taxa livre de risco e o widget de juros da Home.
+- **Câmbio multi-moeda** (`currencies/{par}/quote`, `price-history`; Yahoo `{BASE}{QUOTE}=X`,
+  validado até em cross não-BRL como `GBPJPY=X`): base da **Fase 19** (moeda base seletiva) e da
+  **Fase 30** (mais países).
+- **Índices B3** (IFIX, SMLL, IDIV) e **metais** (ouro, prata etc.): benchmarks e classe de ativo.
+- **FII**: indicadores mensais e imóveis por CNPJ (CVM) e `resolve/{ticker}` (bolsai + CVM). Pendência
+  P1: `properties` devolve `data: []` tanto pra CNPJ desconhecido quanto pra FII de papel; o consumidor
+  trata `[]` como "sem imóvel", nunca como erro.
+- **EUA/SEC EDGAR**: fundamentos, DCF, payout e `reit-fundamentals` (FFO/AFFO não existem como tag
+  XBRL, mas receita/patrimônio/LPA/lucro dão pra automatizar). Exige `SEC_EDGAR_CONTACT_EMAIL` no
+  User-Agent. Útil à **Fase 30**.
+- **Avisos de dividendos da CVM (IPE)** (`companies/{cvm}/dividend-notices`): fonte natural pra
+  alimentar o "provento esperado" (Sessão 77.2) sem depender de plano pago.
+
+#### B. Ideias de produto novas, do `ROADMAP.md` do Lume
+
+- **`DataProvider` + `ProviderRegistry`** (grátis por padrão → BYO-key → premium só no hospedado).
+  Interfaces por categoria (`QuoteProvider`, `FundamentalsProvider`, `CryptoScoreProvider`), cascata
+  por prioridade, chave do usuário no keyring do SO, cache ortogonal ao provider, e contrato de erro
+  que separa **"sem dado"** de **"provider caiu"**. Hoje cada service chama a fonte direto; já existem
+  cascatas hardcoded (bolsai × Yahoo pra ação B3; CoinGecko/CoinMetrics/DefiLlama em cripto; Binance
+  × Bybit, que a Fase 31 acabou de fazer). **Proveniência**: gravar qual provider gerou cada linha e
+  nunca sobrescrever dado premium por grátis. Mesmo padrão do `StorageProvider` (Fase 15).
+- **Ingestão proativa por agendamento**: separar *ingestão* (buscar e gravar em cadência própria) de
+  *serving* (a UI só lê do banco). Cadências: intraday pra cotação (1–5 min), diária pós-pregão pra
+  EOD/curva DI/índices, baixa frequência pra fundamentos e macro mensal. Cache-through vira rede de
+  segurança pra ticker nunca visto. Pede tabela de observabilidade (`ingestion_runs`: fonte, início,
+  fim, status, linhas, erro) pra detectar fonte que parou sem ninguém reclamar. No Anchor desktop o
+  "agendador" seria uma tarefa Tokio em segundo plano, não um worker separado.
+- **Hierarquia comum de erros** (`NoData` × `ProviderUnavailable`): hoje espalhada por service no Lume
+  (`NoDividendDataError`, `TickerNotFoundError`, `FundNotFoundError` × `YahooFinanceError`,
+  `B3TaxaSwapError`); no Anchor, 404 vira `FinanceApiNotFound` e o resto propaga. Vale já nascer
+  certo no Rust (`error.rs`).
+- **Cache com `stale`**: resposta sempre traz `source`, `cached`, `stale`, `fetched_at`; com fonte
+  fora do ar e cache vencido devolve o dado velho marcado como `stale`. Dá pra exibir "dado de ontem"
+  na UI em vez de erro. TTLs do Lume: 1 h padrão, cotação ação/cripto 5 min, fundamentos 24 h, opções 24 h.
+- **Regra de escopo ("régua")** pra decidir o que entra no núcleo de dados: público, somente leitura,
+  precisa de normalização/cache, ≥ 2 consumidores. Fora: qualquer coisa com credencial, certificado
+  ou estado do usuário (Open Finance, custódia B3 ficam fora).
+- **Princípio do ecossistema**: "grátis + self-hosted sempre funciona com qualidade padrão; pago é
+  conveniência ou qualidade extra, nunca funcionalidade básica trancada". Já na Fase 26; vale copiar
+  pro `GUIDELINES.md` quando a Fase 26 for decidida.
+- **Instância local compartilhada com o Warden** (daemon com handshake em `/health` com nome e
+  versão, lockfile de descoberta com porta+PID+versão, regra de versão mínima, ciclo de vida
+  independente do Anchor). É a Fase 21; o Lume já listou os pontos a resolver. **Some** se o Anchor
+  absorver o núcleo de dados.
+- **Namespaces por domínio** no núcleo (`finance/`, `weather/`, `geo/`, `sec/`) com cache e
+  rate-limit compartilhados. Só faz sentido se o núcleo aceitar domínios não financeiros.
+- **Expor o catálogo de fontes como SDK** (Python/Node): é a Fase 28.
+- **Documentação pública gerada do OpenAPI** (site Fumadocs): se a API headless da Fase 26 virar
+  produto, precisa de algo equivalente.
+- **Auth por consumidor**: o Lume só tem lista estática em `API_KEYS`. O tier hospedado pago exigiria
+  chave por consumidor, limite por plano e entitlement (mesmo desenho do TruthID).
+
+#### C. Fontes e domínios novos sugeridos (o Lume só listou, nenhum foi pesquisado)
+
+Financeiros, na ordem do que mais ajuda o Anchor:
+1. **Calendário B3**: feriados e dias úteis (pro vencimento de opção, DARF, prazo de proventos).
+2. **Calendário de resultados e fatos relevantes** (CVM IPE): alerta e atualização do preço-teto
+   quando sai balanço novo; casa com o "ano_ref desatualizado" da Fase 1.
+3. **Commodities e setor**: celulose, minério, clima e safra, pro módulo de commodities (Suzano,
+   Klabin, Vale).
+4. **Cadastros públicos**: CNPJ, CEP, CNAE, municípios e códigos IBGE, pra custódia por titular,
+   empresa não listada e cadastro de imóvel.
+5. **On-chain**: preço de token, dados da Base, saldo de endereço público, sem o app falar direto
+   com RPC. Base da **Fase 27** (DeFi).
+6. **Notícias por ativo** com dedupe: deixar por último, manutenção alta; só com caso de uso claro.
+7. **Open Finance** (extratos): fica **fora** do núcleo pela régua; se vier, entra como integração
+   com consentimento, não como dado público.
+
+Não financeiros (o Lume sugeriu como utilidades do ecossistema; só entram se houver ≥ 2 consumidores,
+senão moram no Warden): clima e astronomia (INMET, Open-Meteo), dados abertos do governo (Querido
+Diário, PNCP), CVEs e releases (NVD, GitHub advisories), calendários (ENEM, SISU), status de serviços
+(uptime de BCB, CVM, RPC da Base). Ordem sugerida pelo Lume: clima, geo, releases/CVEs.
+
+#### D. Cuidados ao portar (achados que o Lume acumulou e não podem se perder)
+
+- Regras de negócio sutis nos 41 testes: CNPJ só dígitos, retry por janela no BCB, mapeamento de
+  taxonomia SEC, travas de catálogo. **Portar os testes junto**, senão os achados somem.
+- `fetched_at` precisa ser **UTC** (bug de serde+chrono achado ao vivo no Anchor).
+- Contrato de erro que o Anchor depende: **404 = "não tem esse dado"**, pulado por ticker; o resto propaga.
+- Licenças: **CoinMetrics Community é não comercial** (Fase 31) e a bolsai é a única fonte com chave.
+  Ambos pesam no tier hospedado pago.
+- Resíduos de nome: o CI do Anchor ainda usa `.easybusiness-version` e há comentários "easybusiness";
+  o repo já migrou no GitHub pra `Arven-Labs/lume`.
+- Dev e CI acoplados: dev assume `docker compose up` do Lume em `localhost:8000` com chave fixa; o
+  `build.yml` faz checkout do Lume por SHA. Qualquer caminho da Fase 26 precisa mexer nisso.
+
+#### E. Fases 2–4 do Lume (visão original, hoje fora de escopo)
+
+Engine fiscal SEFAZ (NF-e), WhatsApp/Meta e Workspace web do empreendedor, mais Unified Payment API
+(Asaas, Mercado Pago, Pagar.me, Stripe) e baixa automática de boleto/Pix. **Ficaram de fora** na
+reorientação do Lume (iriam pro projeto de integrações burocráticas, parado) e **não pertencem ao
+Anchor**. Registradas só pra não serem esquecidas; a única que toca o Anchor é conciliação de caixa
+de empresa (módulo B3 corporativo), e só se o dono do projeto quiser a linha de empresário.
+
+**Estado**: registro. Próximo passo natural: na decisão da Fase 26, passar por A e B e marcar o que
+migra, o que adia e o que descarta.

@@ -2344,3 +2344,21 @@ pode pegar" o que sobrava.
   confirma, no instalador, que o banco de release agora abre com schema (o bug anterior era
   provável só por leitura de código; não rodei o instalador antigo para vê-lo falhar).
 - **Pendente**: nada de infraestrutura de teste; o que resta de clique manual está listado acima.
+
+### 2026-10-16 — Sessão 107
+
+**Inventário de ideias do Lume (Fase 32).** Pedido do dono do projeto: ir no repo do Lume, dar
+`git pull` e registrar aqui tudo de interessante na linha financeira.
+- **Feito**: `git pull` no Lume (já em dia). Lidos `OVERVIEW`, `ROADMAP`, `DESMONTAGEM`, `PENDING` e
+  trechos de `ARCHITECTURE`/`PHASE`/`SESSIONS`. Registrada a **Fase 32** no `PHASE.md` (A: dados que o
+  Lume tem e o Anchor não usa; B: ideias de produto e arquitetura; C: fontes novas sugeridas; D: cuidados
+  ao portar; E: Fases 2–4 do Lume, fora de escopo) e uma linha no `ROADMAP.md`. Só documentação, nenhum
+  código alterado.
+- **Achado**: o Lume já escolheu a **Opção C** da desmontagem (Sessão 23 do Lume: mover o Python pro
+  Anchor e reescrever em Rust por domínio) e adiou a execução. A Fase 26 daqui estava marcada como
+  "nada explorado", então deve partir desse `DESMONTAGEM.md`, não de zero.
+- **Divergência a conferir**: o inventário do Lume (Sessão 22) diz que taxas/DI, câmbio e tax-rules não
+  têm consumidor no Anchor, mas as Fases 17 e 24 daqui usam `/v1/rates` e `/v1/tax-rules/br`. Verificar
+  no código antes de descartar qualquer domínio.
+- **Pendente**: decisões da Fase 26 (banco do cache, exposição ao Warden, domínios sem consumidor,
+  `DataProvider`), em plan mode.
