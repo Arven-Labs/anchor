@@ -2208,5 +2208,17 @@ primeiro lote = `staking_yield` automático + derivativos de ETH, coleta **em Ru
   faixas 7-9/4-6/0-3 dos 9 originais). Novo comando `get_crypto_score`.
 - `collect_eth_indicators` agora tolera falha parcial (uma fonte fora do ar, ex. Binance
   bloqueada na região, não derruba as outras) e só dá erro se nada foi coletado.
-- **Fora desta fatia**: editor de thresholds, fallback OKX/Bybit, DVOL/put-call, stablecoins,
-  suporte a BTC. Teste de clique pendente.
+- **Fora desta fatia**: fallback OKX/Bybit, DVOL/put-call, stablecoins, suporte a BTC. Teste de
+  clique pendente.
+
+**Editor de thresholds (Sessão 106, fatia 2)**: botão "Edit thresholds" na seção do score cripto
+abre `ThresholdEditorDialog` com uma linha por indicador (verde, vermelho, direção inferida ao
+vivo, Save e Reset). Comandos `list_indicator_thresholds`, `update_indicator_threshold` e
+`reset_indicator_threshold`. **Decisão de projeto**: salvar **reclassifica todas as leituras já
+guardadas** daquele indicador numa transação (`raw_value` intacto, só o `signal` muda), porque o
+score e os alertas (`alert_checker`) leem o sinal gravado; sem isso ficariam com a regra antiga
+até a próxima coleta. Valida limites finitos e diferentes (`EqualThresholds`). Os valores de
+fábrica do Reset ficam em `domain::crypto_score::DEFAULT_THRESHOLDS`, **duplicando** os seeds das
+migrations (mudar um seed exige mudar os dois). Testes: domínio (defaults válidos e cobrindo os 12
+indicadores, validação, direção) e 3 testes com SQLite em memória da reclassificação, do erro sem
+efeito e do Reset.

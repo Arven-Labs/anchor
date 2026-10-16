@@ -56,6 +56,52 @@ pub fn classify(raw_value: f64, threshold: &Threshold) -> Result<Signal, AppErro
 }
 
 // ---------------------------------------------------------------------------
+// Thresholds editáveis (Fase 31). Os valores de fábrica espelham o que as
+// migrations semeiam em `indicator_thresholds` (`m20260709_212958` e
+// `m20261016_130000`) — duplicados aqui só pra "Reset" funcionar sem consultar
+// o histórico de migrations. Ao mudar um seed, mude os dois.
+// ---------------------------------------------------------------------------
+
+pub const DEFAULT_THRESHOLDS: [(&str, f64, f64); 12] = [
+    ("mvrv_z_score", 0.0, 7.0),
+    ("puell_multiple", 0.5, 4.0),
+    ("staking_yield", 2.0, 0.0),
+    ("nvt_ratio", 0.9, 1.3),
+    ("net_issuance", 0.0, 2.0),
+    ("tvl_trend", 0.0, -10.0),
+    ("active_addresses_trend", 0.0, -10.0),
+    ("exchange_netflow", 0.0, 0.5),
+    ("fees_vs_emission", 0.5, 0.1),
+    ("funding_rate_7d", 5.0, 20.0),
+    ("open_interest_change_30d", 0.0, 25.0),
+    ("long_short_ratio", 2.0, 3.5),
+];
+
+/// `(green, red)` de fábrica de um indicador.
+pub fn default_threshold(indicator: &str) -> Option<(f64, f64)> {
+    DEFAULT_THRESHOLDS
+        .iter()
+        .find(|(name, _, _)| *name == indicator)
+        .map(|(_, green, red)| (*green, *red))
+}
+
+/// Direção inferida dos limites (mesma regra de `classify`).
+pub fn higher_is_better(green_boundary: f64, red_boundary: f64) -> bool {
+    green_boundary > red_boundary
+}
+
+/// Limites válidos: números finitos e diferentes (iguais não definem direção).
+pub fn validate_boundaries(green_boundary: f64, red_boundary: f64) -> Result<(), AppError> {
+    if !green_boundary.is_finite() || !red_boundary.is_finite() {
+        return Err(AppError::InvalidGuard("thresholds must be finite numbers".to_string()));
+    }
+    if green_boundary == red_boundary {
+        return Err(AppError::EqualThresholds);
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Score por grupo (Fase 31). Antes a contagem "verdes / 9" só existia no
 // frontend; agora mora aqui, com teste, e cada grupo ganha o próprio subscore
 // pra 12 indicadores não diluírem o sinal.
@@ -268,6 +314,40 @@ mod tests {
         assert_eq!(verdict_for(5, 12), ScoreVerdict::Neutral);
         assert_eq!(verdict_for(4, 12), ScoreVerdict::ReduceRisk);
         assert_eq!(verdict_for(0, 0), ScoreVerdict::ReduceRisk);
+    }
+
+    #[test]
+    fn every_grouped_indicator_has_a_valid_default() {
+        for group in IndicatorGroup::ALL {
+            for name in group.indicators() {
+                let (green, red) = default_threshold(name)
+                    .unwrap_or_else(|| panic!("no default threshold for {name}"));
+                assert!(validate_boundaries(green, red).is_ok(), "{name}");
+            }
+        }
+        assert!(default_threshold("made_up").is_none());
+    }
+
+    #[test]
+    fn defaults_have_no_unknown_indicator() {
+        let grouped: Vec<&str> =
+            IndicatorGroup::ALL.iter().flat_map(|g| g.indicators().iter().copied()).collect();
+        assert!(DEFAULT_THRESHOLDS.iter().all(|(name, _, _)| grouped.contains(name)));
+    }
+
+    #[test]
+    fn validate_boundaries_rejects_equal_and_non_finite() {
+        assert!(validate_boundaries(1.0, 2.0).is_ok());
+        assert!(validate_boundaries(2.0, 1.0).is_ok());
+        assert!(matches!(validate_boundaries(3.0, 3.0), Err(AppError::EqualThresholds)));
+        assert!(validate_boundaries(f64::NAN, 1.0).is_err());
+        assert!(validate_boundaries(1.0, f64::INFINITY).is_err());
+    }
+
+    #[test]
+    fn direction_follows_the_boundaries() {
+        assert!(higher_is_better(2.0, 0.0));
+        assert!(!higher_is_better(0.0, 7.0));
     }
 
     // Os 3 seeds de derivativos (migration da Fase 31): direção e sinais.

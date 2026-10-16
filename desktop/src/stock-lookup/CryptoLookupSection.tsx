@@ -7,6 +7,7 @@ import type { StockPriceHistory, StockQuote } from "../collector/types";
 import { INDICATORS, INDICATOR_KEYS, type IndicatorKey } from "./cryptoIndicators";
 import { AddToAssetsButton, CryptoFearGreedGauge, StatTile, type StockNote } from "./shared";
 import PriceHistoryChart from "./PriceHistoryChart";
+import ThresholdEditorDialog from "./ThresholdEditorDialog";
 import Field from "../components/Field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -180,6 +181,7 @@ function IndicatorTile({
 function CryptoLookupSection({ ticker }: { ticker: string }) {
   const [readingDate, setReadingDate] = useState(today());
   const [drafts, setDrafts] = useState<Drafts>(emptyDrafts());
+  const [thresholdsOpen, setThresholdsOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const autoFetchedTickerRef = useRef<string | null>(null);
 
@@ -391,6 +393,16 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
               and were calibrated for Ethereum specifically — logging them under {ticker} is
               fine, but the green/red thresholds are ETH's, not {ticker}'s.
             </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mb-4 w-fit"
+              onClick={() => setThresholdsOpen(true)}
+            >
+              Edit thresholds
+            </Button>
+            <ThresholdEditorDialog open={thresholdsOpen} onOpenChange={setThresholdsOpen} />
 
             {ticker === "ETH" && (
               <div className="mb-4 flex flex-col gap-2">

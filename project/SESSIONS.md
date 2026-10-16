@@ -2212,6 +2212,20 @@ em Portfolio → Taxes (`SaleSimulationCard.tsx`). `load_trades` extraído de `a
   Erro meu corrigido no meio: o total é **12** (9 + 3), não 13, o `staking_yield` já era um dos 9.
 - **Verificado**: `./dev.sh check` limpo, 0 warnings. Testes novos em `crypto_sources` (JSON real)
   e `domain::crypto_score` (grupos, subscores, veredito, direção dos seeds).
-- **Pendente**: push e CI verde; teste de clique (Research → ETH → "Run crypto collector"). Esperar
+- **Verificado**: push `85e0b4a`, CI Desktop Rust e Frontend verdes.
+- **Pendente**: teste de clique (Research → ETH → "Run crypto collector"). Esperar
   3 grupos, `staking_yield` sozinho (~1,4%) e conferir o funding contra a Binance. Um teste
   `#[ignore]` ao vivo cobre as 4 fontes (`cargo test --lib -- --ignored crypto_sources`).
+
+**Editor de thresholds dos indicadores cripto (Fase 31, fatia 2).** Pedido: era o follow-up
+deixado na fatia anterior (thresholds só por SQL).
+- **Feito**: comandos `list/update/reset_indicator_threshold`, `ThresholdEditorDialog.tsx`
+  (botão "Edit thresholds" no score) e `DEFAULT_THRESHOLDS` no domínio para o Reset.
+- **Decisão**: salvar um threshold **reclassifica as leituras já guardadas** do indicador (só o
+  `signal`, numa transação), porque o score e o `alert_checker` leem o sinal gravado. Efeito
+  colateral aceito: o histórico passa a refletir a regra atual, não a da época.
+- **Risco anotado**: os valores de fábrica do Reset duplicam os seeds das migrations.
+- **Verificado**: `./dev.sh check` limpo, 0 warnings. 3 testes com SQLite em memória
+  (reclassificação, erro sem efeito, Reset) + 4 de domínio.
+- **Pendente**: push e CI verde; teste de clique (Research → ETH → Edit thresholds: mudar o
+  funding, ver o sinal e o score mudarem, Reset voltar).
