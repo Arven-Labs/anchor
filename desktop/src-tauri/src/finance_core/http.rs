@@ -55,11 +55,21 @@ pub async fn get_text_with_headers(
     check_status(source, status, body)
 }
 
-/// Baixa um corpo binário (zips). Erros seguem o mesmo contrato de `get_text`.
-pub async fn get_bytes(source: &str, url: &str, timeout: Duration) -> Result<Vec<u8>, AppError> {
+/// Baixa um corpo binário (zips, JSON grande), com cabeçalhos extras (ex.: o
+/// `User-Agent` com e-mail de contato da SEC). Erros seguem o contrato de `get_text`.
+pub async fn get_bytes_with_headers(
+    source: &str,
+    url: &str,
+    timeout: Duration,
+    headers: &[(&str, &str)],
+) -> Result<Vec<u8>, AppError> {
     let unavailable = |detail: reqwest::Error| AppError::ProviderUnavailable(format!("{source}: {detail}"));
     let client = reqwest::Client::builder().timeout(timeout).user_agent(USER_AGENT).build().map_err(unavailable)?;
-    let response = client.get(url).send().await.map_err(unavailable)?;
+    let mut request = client.get(url);
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    let response = request.send().await.map_err(unavailable)?;
     let status = response.status().as_u16();
     let body = response.bytes().await.map_err(unavailable)?;
     if (200..300).contains(&status) {

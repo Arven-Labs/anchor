@@ -17,6 +17,14 @@ pub struct ApiKeySpec {
 pub const BOLSAI: ApiKeySpec =
     ApiKeySpec { provider: "bolsai", keyring_user: "bolsai_api_key", env_var: "BOLSAI_API_KEY" };
 
+/// A SEC não pede chave, mas exige um e-mail de contato no `User-Agent`. Tem que
+/// ser de quem opera o app, então não há valor embutido no código.
+pub const SEC_EDGAR_EMAIL: ApiKeySpec = ApiKeySpec {
+    provider: "SEC EDGAR",
+    keyring_user: "sec_edgar_contact_email",
+    env_var: "SEC_EDGAR_CONTACT_EMAIL",
+};
+
 fn non_empty(value: Option<String>) -> Option<String> {
     value.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }

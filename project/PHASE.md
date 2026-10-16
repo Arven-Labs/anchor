@@ -2131,7 +2131,25 @@ candidatos são contados por CNPJ distinto. **Paridade com o Python do Lume** no
 mensais idênticos campo a campo e os mesmos 37 imóveis (a ordem muda: o Rust ordena por nome, como
 o serviço do Lume fazia). **Achado**: o HGLG11 hoje se chama "PÁTRIA LOG" no cadastro da CVM; o nome
 das fixtures do Lume ("CSHG LOGISTICA") está desatualizado. A resolução com a bolsai não foi testada
-ao vivo (sem chave); o casamento contra o `geral` real foi. **Próximo**: domínio 7 (SEC/EUA).
+ao vivo (sem chave); o casamento contra o `geral` real foi.
+
+**Domínio 7 feito (Sessão 107)**: `finance_core::sec_edgar`. `fetch_us_stock_fundamentals`,
+`fetch_us_stock_dcf_fundamentals`, `fetch_us_stock_payout` e `fetch_reit_fundamentals` do `client.rs`
+agora são nativos, lendo o XBRL da SEC por tag (`companyconcept`), com throttle global de 0,11 s (um
+`Mutex<Instant>` reserva o horário e a espera fica fora do lock), cache de 1 h por `(cik, tag)` em
+`TtlCache` (fundamentos, payout e DCF do mesmo ticker repetem tags) e a lista de tickers em disco por 7
+dias. Regras do Lume mantidas: linha anual = 10-K/FY com janela de 350 a 380 dias, retificação pelo
+`filed` mais recente, `try_tags` pela linha mais recente entre todas as tags, instantâneos com rank 0 e
+1, milhões de dólares. **Credencial nova**: a SEC exige um e-mail de contato no `User-Agent`; ele vem do
+keyring (`anchor` / `sec_edgar_contact_email`) ou de `SEC_EDGAR_CONTACT_EMAIL`, nunca embutido no
+código. O sidecar de release nunca recebia essa variável, então os fundamentos dos EUA só funcionavam em
+dev; agora sem o e-mail o erro diz o que configurar. **Paridade com o Python do Lume**: AAPL, JPM e O
+(fundamentos, payout, DCF e REIT) idênticos até o último dígito, inclusive JPM e O dando "sem DCF" e o
+REIT devolvendo imóveis só para o O. Cerca de 6 s por ticker em build de debug (14 s no primeiro, com a
+lista de tickers). **Todos os 7 domínios de dados estão nativos; o Lume só é chamado por código que
+ainda não foi apagado.** **Próximo**: domínio 8, aposentar o sidecar (`sidecar.rs`, `externalBin`,
+passos Python do `build.yml`, `.lume-version`), a tela de credenciais (bolsai + e-mail da SEC) e a
+limpeza das menções ao Lume.
 
 **Estado anterior**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
 arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan

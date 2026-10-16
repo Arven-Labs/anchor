@@ -56,12 +56,24 @@ pub async fn get_or_download(
     url: &str,
     max_age: Option<Duration>,
 ) -> Result<PathBuf, AppError> {
+    get_or_download_with_headers(source, relative_path, url, max_age, &[]).await
+}
+
+/// Igual a `get_or_download`, com cabeçalhos no download (ex.: o `User-Agent`
+/// com e-mail de contato que a SEC exige).
+pub async fn get_or_download_with_headers(
+    source: &str,
+    relative_path: &str,
+    url: &str,
+    max_age: Option<Duration>,
+    headers: &[(&str, &str)],
+) -> Result<PathBuf, AppError> {
     let path = dir().join(relative_path);
     let age = age_of(&path);
     if !needs_download(age, max_age) {
         return Ok(path);
     }
-    match http::get_bytes(source, url, DOWNLOAD_TIMEOUT).await {
+    match http::get_bytes_with_headers(source, url, DOWNLOAD_TIMEOUT, headers).await {
         Ok(bytes) => {
             write_atomic(&path, &bytes)?;
             Ok(path)

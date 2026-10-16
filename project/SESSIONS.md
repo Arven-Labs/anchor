@@ -2441,3 +2441,16 @@ a regra na memória). Os domínios 1 a 5 e o começo deste foram escritos desse 
   o teste ao vivo herdado do Lume usava o nome antigo e falhou até eu conferir o cadastro real.
 - **Pendente**: teste de clique (Research → FII); domínio 7 (SEC/EUA), o último.
 
+**Fase 26, domínio 7 (SEC/EUA).** Plan mode primeiro; desta vez todo o código e os docs foram escritos
+com Write e Edit.
+- **Feito**: `finance_core/sec_edgar.rs`, credencial `SEC_EDGAR_EMAIL` em `api_keys.rs`, cabeçalhos
+  em `http::get_bytes_with_headers` e `disk_cache::get_or_download_with_headers` (removi o `get_bytes` sem
+  uso); 4 métodos do `client.rs` nativos. 21 testes novos (fonte falsa de fatos, sem rede).
+- **Verificado**: `check` sem warnings; suíte inteira 393 passam, 0 falham; teste ao vivo e **paridade
+  exata com o Python do Lume** em AAPL, JPM e O. O e-mail do `User-Agent` nesses testes foi o do dono do
+  projeto, **autorizado por ele na hora** e passado só por variável de ambiente (conferi que nenhum
+  arquivo versionado o contém).
+- **Achado**: o payout do Realty Income dá 266%, nos dois lados (dividendos acima do lucro contábil é
+  normal em REIT; o indicador não faz sentido para esse tipo de empresa).
+- **Pendente**: teste de clique (Research → ação dos EUA, REIT); domínio 8 (aposentar o sidecar).
+

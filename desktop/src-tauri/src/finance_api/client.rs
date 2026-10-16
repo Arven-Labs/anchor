@@ -20,7 +20,7 @@ use crate::finance_api::{selic_store, FinanceApiHandle};
 use crate::finance_core::market::{self, Instrument};
 use crate::finance_core::{
     b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, coingecko, cvm_dfp, cvm_fii, eth_indicators, fear_greed,
-    metals, tax_rules, yahoo,
+    metals, sec_edgar, tax_rules, yahoo,
 };
 
 /// Campos presentes em toda resposta da Finance API — achatado (`flatten`)
@@ -668,10 +668,19 @@ pub struct UsStockFundamentalsResponse {
 }
 
 pub async fn fetch_us_stock_fundamentals(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockFundamentalsResponse, AppError> {
-    get(handle, &format!("/v1/us-stocks/{ticker}/fundamentals")).await
+    let ticker = ticker.to_uppercase();
+    let f = sec_edgar::fundamentals(&ticker).await?;
+    Ok(UsStockFundamentalsResponse {
+        ticker,
+        meta: now_meta(f.source),
+        lpa: f.value.lpa,
+        vpa: f.value.vpa,
+        roe: f.value.roe,
+        shares_outstanding: f.value.shares_outstanding,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -682,10 +691,28 @@ pub struct UsStockDcfFundamentalsResponse {
 }
 
 pub async fn fetch_us_stock_dcf_fundamentals(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockDcfFundamentalsResponse, AppError> {
-    get(handle, &format!("/v1/us-stocks/{ticker}/dcf-fundamentals")).await
+    let ticker = ticker.to_uppercase();
+    let dcf = sec_edgar::dcf_fundamentals(&ticker).await?;
+    let f = dcf.value;
+    Ok(UsStockDcfFundamentalsResponse {
+        ticker,
+        fundamentals: DcfFundamentals {
+            meta: now_meta(dcf.source),
+            reference_year: f.reference_year,
+            ebit: f.ebit,
+            tax_rate: f.tax_rate,
+            depreciation_amortization: f.depreciation_amortization,
+            capex: f.capex,
+            nwc_change: f.nwc_change,
+            total_debt: f.total_debt,
+            cash: f.cash,
+            revenue: f.revenue,
+            inventory: f.inventory,
+        },
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -697,10 +724,12 @@ pub struct UsStockPayoutResponse {
 }
 
 pub async fn fetch_us_stock_payout(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockPayoutResponse, AppError> {
-    get(handle, &format!("/v1/us-stocks/{ticker}/payout")).await
+    let ticker = ticker.to_uppercase();
+    let payout = sec_edgar::payout(&ticker).await?;
+    Ok(UsStockPayoutResponse { ticker, meta: now_meta(payout.source), payout_avg_5y: payout.value })
 }
 
 // Fase 1.11.1 do easybusiness (Sessão 92 do Anchor) — mesmos 5 recursos de
@@ -842,10 +871,28 @@ pub struct ReitFundamentalsResponse {
 }
 
 pub async fn fetch_reit_fundamentals(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<ReitFundamentalsResponse, AppError> {
-    get(handle, &format!("/v1/us-stocks/{ticker}/reit-fundamentals")).await
+    let ticker = ticker.to_uppercase();
+    let reit = sec_edgar::reit_fundamentals(&ticker).await?;
+    Ok(ReitFundamentalsResponse {
+        ticker,
+        meta: now_meta(reit.source),
+        data: reit
+            .value
+            .into_iter()
+            .map(|r| ReitFundamentalsPoint {
+                reference_year: r.reference_year,
+                revenue: r.revenue,
+                real_estate_property_net: r.real_estate_property_net,
+                real_estate_property_at_cost: r.real_estate_property_at_cost,
+                stockholders_equity: r.stockholders_equity,
+                net_income: r.net_income,
+                eps_diluted: r.eps_diluted,
+            })
+            .collect(),
+    })
 }
 
 // ---------------------------------------------------------------------------

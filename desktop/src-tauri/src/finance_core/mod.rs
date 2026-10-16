@@ -19,6 +19,8 @@
 // - `cvm_fii`: domínio 6 (indicadores mensais, imóveis e ticker→CNPJ dos FIIs).
 // - `cvm_dfp`, `disk_cache`: domínio 5 (ROE, payout e fundamentos de DCF das
 //   empresas, direto dos zips anuais da CVM; cache em disco compartilhado).
+// - `sec_edgar`: domínio 7 (fundamentos, DCF, payout e REITs dos EUA, direto do
+//   XBRL da SEC; o e-mail de contato exigido por eles vem do keyring/ambiente).
 pub mod api_keys;
 pub mod b3_index_stats;
 pub mod b3_taxa_swap;
@@ -35,5 +37,6 @@ pub mod http;
 pub mod market;
 pub mod metals;
 pub mod provider;
+pub mod sec_edgar;
 pub mod tax_rules;
 pub mod yahoo;
