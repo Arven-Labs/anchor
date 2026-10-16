@@ -1,18 +1,9 @@
-import { $, browser, expect } from "@wdio/globals";
-
-// Seletores por `data-testid` (os que o app expõe de propósito pro E2E).
-const byId = (id) => $(`[data-testid="${id}"]`);
-const byIdPrefix = (prefix) => $(`[data-testid^="${prefix}"]`);
+import { $, expect } from "@wdio/globals";
+import { byId, byIdPrefix, enterWorkspace, waitForText } from "./helpers.mjs";
 
 describe("Anchor — Loans, de ponta a ponta", () => {
   it("cria um Workspace e entra nele", async () => {
-    const name = await byId("workspace-name");
-    await name.waitForDisplayed({ timeout: 60_000 });
-    await name.setValue("E2E Family");
-    await byId("workspace-create").click();
-
-    // Dentro do Workspace a navegação principal aparece.
-    await byId("nav-finances").waitForDisplayed({ timeout: 30_000 });
+    await enterWorkspace("E2E Family");
   });
 
   it("registra um empréstimo e uma baixa com recebido diferente do baixado", async () => {
@@ -26,13 +17,10 @@ describe("Anchor — Loans, de ponta a ponta", () => {
     await newLoan.waitForEnabled({ timeout: 20_000 });
     await newLoan.click();
 
-    // O texto do Select do Radix vem num portal e o `getText()` do WebKitWebDriver
-    // devolve vazio pra ele; o `textContent` é confiável (a captura de tela do CI
-    // confirma que "Mom" aparece selecionado).
-    const borrowerSelect = await byId("loan-borrower-select");
-    await browser.waitUntil(
-      async () => (await borrowerSelect.getProperty("textContent")).includes("Mom"),
-      { timeoutMsg: "o devedor recém-criado deveria vir selecionado no empréstimo" },
+    await waitForText(
+      byId("loan-borrower-select"),
+      (text) => text.includes("Mom"),
+      "o devedor recém-criado deveria vir selecionado no empréstimo",
     );
     await byId("loan-principal").setValue("1000");
     await byId("loan-create").click();
@@ -60,5 +48,6 @@ describe("Anchor — Loans, de ponta a ponta", () => {
 
     await expect(byIdPrefix("loan-receivable-")).toHaveText("0.00");
     await expect(byIdPrefix("loan-extra-")).toHaveText("50.00");
+    await expect($("body")).toBeDisplayed();
   });
 });

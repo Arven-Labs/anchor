@@ -107,6 +107,7 @@ function ThresholdRow({
           step="any"
           className="w-24"
           aria-label={`${label(threshold.indicator)} green boundary`}
+          data-testid={`threshold-green-${threshold.indicator}`}
           value={green}
           onChange={(e) => setDraft({ green: e.currentTarget.value, red })}
         />
@@ -117,6 +118,7 @@ function ThresholdRow({
           step="any"
           className="w-24"
           aria-label={`${label(threshold.indicator)} red boundary`}
+          data-testid={`threshold-red-${threshold.indicator}`}
           value={red}
           onChange={(e) => setDraft({ green, red: e.currentTarget.value })}
         />
@@ -124,6 +126,7 @@ function ThresholdRow({
       <TableCell className="flex gap-2">
         <Button
           size="sm"
+          data-testid={`threshold-save-${threshold.indicator}`}
           disabled={!dirty || !valid || saveMutation.isPending}
           onClick={() => saveMutation.mutate()}
         >
@@ -132,6 +135,7 @@ function ThresholdRow({
         <Button
           size="sm"
           variant="outline"
+          data-testid={`threshold-reset-${threshold.indicator}`}
           disabled={threshold.is_default || resetMutation.isPending}
           title={
             threshold.default_green !== null

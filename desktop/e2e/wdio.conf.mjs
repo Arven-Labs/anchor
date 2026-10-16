@@ -23,7 +23,22 @@ process.env.ANCHOR_DB_PATH = path.join(dbDir, "anchor.db");
 
 let tauriDriver;
 
+// Cada spec roda num worker próprio (app novo, banco novo) e reaproveita a
+// porta 4444, então o driver do spec anterior precisa ter terminado antes do
+// próximo subir.
 function stopTauriDriver() {
+  const driver = tauriDriver;
+  tauriDriver = undefined;
+  if (!driver) return Promise.resolve();
+  return new Promise((resolve) => {
+    driver.once("exit", resolve);
+    driver.kill();
+    setTimeout(resolve, 5_000);
+  });
+}
+
+// Versão síncrona pros hooks de saída do processo.
+function killTauriDriver() {
   tauriDriver?.kill();
   tauriDriver = undefined;
 }
@@ -66,12 +81,12 @@ export const config = {
   afterSession: () => stopTauriDriver(),
 };
 
-process.on("exit", stopTauriDriver);
+process.on("exit", killTauriDriver);
 process.on("SIGINT", () => {
-  stopTauriDriver();
+  killTauriDriver();
   process.exit();
 });
 process.on("SIGTERM", () => {
-  stopTauriDriver();
+  killTauriDriver();
   process.exit();
 });

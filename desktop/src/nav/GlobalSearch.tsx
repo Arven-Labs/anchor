@@ -84,6 +84,7 @@ function GlobalSearch({
           onValueChange={(value) => setSelectedClass(value as AssetClass)}
         >
           <SelectTrigger
+            data-testid="global-search-class"
             size="sm"
             className="h-9 w-24 shrink-0 rounded-r-none border-none bg-transparent text-muted-foreground shadow-none focus-visible:ring-0"
           >
@@ -99,13 +100,20 @@ function GlobalSearch({
         </Select>
         <div className="h-4 w-px shrink-0 bg-border" />
         <Input
+          data-testid="global-search-ticker"
           value={tickerInput}
           onChange={(e) => setTickerInput(e.currentTarget.value)}
           placeholder={PLACEHOLDER_BY_CLASS[selectedClass] ?? "PETR4"}
           className="h-9 w-full min-w-0 flex-1 rounded-l-none border-none bg-transparent shadow-none focus-visible:ring-0"
         />
       </div>
-      <Button type="submit" variant="ghost" size="icon-sm" className="ml-1 shrink-0">
+      <Button
+        type="submit"
+        variant="ghost"
+        size="icon-sm"
+        className="ml-1 shrink-0"
+        data-testid="global-search-submit"
+      >
         <SearchIcon />
         <span className="sr-only">Search</span>
       </Button>

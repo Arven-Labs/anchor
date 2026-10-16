@@ -145,14 +145,22 @@ function IndicatorTile({
   reading?: ScoreReading | null;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div
+      className="rounded-lg border border-border bg-card p-4"
+      data-testid={`indicator-tile-${indicatorKey}`}
+    >
       <p className="text-sm text-muted-foreground">{INDICATORS[indicatorKey]}</p>
       <p className="mt-1 text-2xl font-semibold">
         {reading ? reading.raw_value.toFixed(2) : "—"}
       </p>
       <div className="mt-2 flex items-center justify-between gap-2">
         {reading ? (
-          <Badge className={SIGNAL_STYLE[reading.signal]}>{reading.signal}</Badge>
+          <Badge
+            className={SIGNAL_STYLE[reading.signal]}
+            data-testid={`indicator-signal-${indicatorKey}`}
+          >
+            {reading.signal}
+          </Badge>
         ) : (
           <span className="text-sm text-muted-foreground">not logged</span>
         )}
@@ -381,7 +389,10 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
           </div>
 
           <div className="border-t border-border pt-6">
-            <h3 className="mb-1 text-sm font-semibold text-muted-foreground">
+            <h3
+              className="mb-1 text-sm font-semibold text-muted-foreground"
+              data-testid="crypto-score-header"
+            >
               Cycle-top score ({score?.green ?? 0}/{score?.total ?? 15} green,{" "}
               {score?.logged ?? 0} of {score?.total ?? 15} logged)
             </h3>
@@ -398,6 +409,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
               variant="outline"
               size="sm"
               className="mb-4 w-fit"
+              data-testid="edit-thresholds"
               onClick={() => setThresholdsOpen(true)}
             >
               Edit thresholds
@@ -485,6 +497,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
                       <TableCell className="whitespace-normal">{INDICATORS[key]}</TableCell>
                       <TableCell>
                         <Input
+                          data-testid={`manual-${key}`}
                           type="number"
                           step="any"
                           value={drafts[key].rawValue}
@@ -507,7 +520,12 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
                 <p className="text-red-600">{updateAllMutation.error.message}</p>
               )}
 
-              <Button type="submit" disabled={updateAllMutation.isPending} className="w-fit">
+              <Button
+                type="submit"
+                data-testid="manual-submit"
+                disabled={updateAllMutation.isPending}
+                className="w-fit"
+              >
                 {updateAllMutation.isPending ? "Updating..." : "Update all"}
               </Button>
             </form>

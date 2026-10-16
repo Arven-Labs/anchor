@@ -325,7 +325,9 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
               {lossBalances.map((l) => (
                 <div key={l.bucket} className="rounded-lg border border-border p-4">
                   <p className="text-sm text-muted-foreground">{BUCKET_LABELS[l.bucket]}</p>
-                  <p className="text-2xl font-semibold">{formatBrl(l.balance)}</p>
+                  <p className="text-2xl font-semibold" data-testid={`loss-balance-${l.bucket}`}>
+                    {formatBrl(l.balance)}
+                  </p>
                   <p className="text-sm text-muted-foreground">
                     Saves up to {formatBrl(l.tax_saved)} at {(l.rate * 100).toFixed(0)}%
                   </p>

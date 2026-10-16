@@ -118,7 +118,7 @@ export default function SaleSimulationCard({ workspaceId }: { workspaceId: numbe
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-5">
             <Field label="Asset">
               <Select value={assetId} onValueChange={setAssetId}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" data-testid="sim-asset">
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent>
@@ -133,6 +133,7 @@ export default function SaleSimulationCard({ workspaceId }: { workspaceId: numbe
             <Field label="Quantity">
               <Input
                 required
+                data-testid="sim-quantity"
                 type="number"
                 step="any"
                 min="0"
@@ -143,6 +144,7 @@ export default function SaleSimulationCard({ workspaceId }: { workspaceId: numbe
             <Field label="Sale price (each)">
               <Input
                 required
+                data-testid="sim-price"
                 type="number"
                 step="any"
                 min="0"
@@ -170,6 +172,7 @@ export default function SaleSimulationCard({ workspaceId }: { workspaceId: numbe
           </div>
           <Button
             type="submit"
+            data-testid="sim-submit"
             disabled={!canSubmit || simulateMutation.isPending}
             className="w-fit"
           >
@@ -199,20 +202,26 @@ export default function SaleSimulationCard({ workspaceId }: { workspaceId: numbe
                 <p className="text-sm text-muted-foreground">
                   {gain >= 0 ? "Gain" : "Loss"} on this sale
                 </p>
-                <p className="text-2xl font-semibold">{formatBrl(gain)}</p>
+                <p className="text-2xl font-semibold" data-testid="sim-gain">
+                  {formatBrl(gain)}
+                </p>
               </div>
               <div className="rounded-lg border border-border p-4">
                 <p className="text-sm text-muted-foreground">
                   Tax in {formatPeriod(result.period)}
                 </p>
-                <p className="text-2xl font-semibold">{formatBrl(result.month_tax_after)}</p>
+                <p className="text-2xl font-semibold" data-testid="sim-month-tax">
+                  {formatBrl(result.month_tax_after)}
+                </p>
                 <p className="text-sm text-muted-foreground">
                   was {formatBrl(result.month_tax_before)}
                 </p>
               </div>
               <div className="rounded-lg border border-border p-4">
                 <p className="text-sm text-muted-foreground">Loss offset used</p>
-                <p className="text-2xl font-semibold">{formatBrl(result.loss_used)}</p>
+                <p className="text-2xl font-semibold" data-testid="sim-loss-used">
+                  {formatBrl(result.loss_used)}
+                </p>
                 <p className="text-sm text-muted-foreground">
                   balance {formatBrl(totalBalance(result.loss_balances_before))} →{" "}
                   {formatBrl(totalBalance(result.loss_balances_after))}

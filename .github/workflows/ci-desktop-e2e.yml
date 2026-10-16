@@ -71,7 +71,8 @@ jobs:
             pkg-config \
             webkit2gtk-driver \
             xvfb \
-            dbus
+            dbus \
+            sqlite3
 
       # `tauri-build` exige o binário do sidecar no disco; em build debug o
       # sidecar não é usado (ver `finance_api::sidecar::init`), então um

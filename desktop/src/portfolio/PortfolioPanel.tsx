@@ -211,7 +211,7 @@ function PortfolioPanel({ workspaceId }: { workspaceId: number }) {
         <Tabs value={section} onValueChange={(value) => setSection(value as PortfolioSection)}>
           <TabsList className="mb-4">
             {Object.entries(PORTFOLIO_SECTIONS).map(([key, label]) => (
-              <TabsTrigger key={key} value={key}>
+              <TabsTrigger key={key} value={key} data-testid={`portfolio-tab-${key}`}>
                 {label}
               </TabsTrigger>
             ))}
