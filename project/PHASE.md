@@ -1909,9 +1909,18 @@ uma venda hipotética ("se eu vender X com lucro Y, abato Z"). Não implementado
 (`LossBalance`: gaveta, saldo, alíquota, `tax_saved` = saldo × alíquota), lido do `loss_carried`
 do último mês em que cada gaveta teve vendas; só gavetas com saldo > 0. Card "Losses to offset"
 na aba Portfolio → Taxes, com a regra no texto (gavetas não se misturam, sem prazo). 2 testes
-novos em `domain::tax::assessment`. **Segue de fora**: simulação de venda hipotética e widget na
-Home. A regra de prazo/gavetas é a já implementada na Fase 24, não foi reconferida na Receita
+novos em `domain::tax::assessment`. **Segue de fora**: widget na Home. A regra de prazo/gavetas é a já implementada na Fase 24, não foi reconferida na Receita
 nesta sessão.
+
+**Simulação de venda (Sessão 106, fatia 2)**: comando `simulate_tax_sale` + card "Simulate a
+sale" na aba Taxes. Escolhe ativo B3 (ação, unit, ETF, BDR, FII), quantidade, preço, taxas e
+data. O backend (`domain::tax::assessment::simulate_sale`) apura as transações reais **com e sem**
+a venda hipotética e devolve a diferença: ganho/prejuízo, imposto do mês antes e depois, prejuízo
+consumido, lucro isento, saldos de prejuízo antes e depois e a variação total do imposto (pega o
+efeito nos meses seguintes). Nada é gravado. Reaproveita a apuração real, então isenção, custo
+médio e compensação seguem as mesmas regras. Limites: a venda simulada nunca casa como day trade
+(sem corretora); ativo sem compras registradas dá erro; venda maior que a posição marca
+`cost_unknown`. Refatoração: `load_trades` extraído de `assess_workspace` em `commands/tax.rs`.
 
 ### Fase 25 — Web app auto-hospedado: o próprio Anchor como servidor (ideia trazida pelo dono do projeto na Sessão 100, não iniciada)
 

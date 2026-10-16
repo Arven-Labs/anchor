@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import type { BankAccountView } from "../finances/types";
 import Field from "../components/Field";
+import SaleSimulationCard from "./SaleSimulationCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -339,6 +340,8 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
           </CardContent>
         </Card>
       )}
+
+      <SaleSimulationCard workspaceId={workspaceId} />
 
       {months.length > 0 && (
         <Card>

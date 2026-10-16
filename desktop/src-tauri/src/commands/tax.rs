@@ -15,6 +15,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 
 use crate::domain::tax::assessment::{self, Assessment, Side, Trade};
+use crate::domain::tax::classify::{treatment, TaxTreatment};
 use crate::domain::tax::rules::{self, Rule, RuleSet};
 use crate::entity::{
     assets, bank_account, general_transaction, general_transaction_category, portfolio, tax_payments,
@@ -62,14 +63,12 @@ async fn workspace_portfolio_ids(db: &DatabaseConnection, workspace_id: i32) -> 
         .collect())
 }
 
-pub(crate) async fn assess_workspace(
-    db: &DatabaseConnection,
-    workspace_id: i32,
-) -> Result<Assessment, AppError> {
-    let rules = load_rule_set(db).await?;
+/// Compras e vendas de todas as carteiras do Workspace, já resolvidas com os
+/// dados do ativo (transação sem ativo é ignorada).
+async fn load_trades(db: &DatabaseConnection, workspace_id: i32) -> Result<Vec<Trade>, AppError> {
     let portfolio_ids = workspace_portfolio_ids(db, workspace_id).await?;
     if portfolio_ids.is_empty() {
-        return assessment::assess(&[], &rules);
+        return Ok(Vec::new());
     }
 
     let txs = transactions::Entity::find()
@@ -112,7 +111,90 @@ pub(crate) async fn assess_workspace(
         });
     }
 
+    Ok(trades)
+}
+
+pub(crate) async fn assess_workspace(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+) -> Result<Assessment, AppError> {
+    let rules = load_rule_set(db).await?;
+    let trades = load_trades(db, workspace_id).await?;
     assessment::assess(&trades, &rules)
+}
+
+#[derive(Deserialize)]
+pub struct SimulateTaxSaleRequest {
+    pub workspace_id: i32,
+    pub asset_id: i32,
+    pub quantity: f64,
+    pub unit_price: f64,
+    pub fee: Option<f64>,
+    /// `YYYY-MM-DD`
+    pub date: String,
+}
+
+/// Simula uma venda sem gravar nada: mostra quanto de prejuízo ela consome,
+/// o imposto que geraria e o efeito nos meses seguintes. Só ativos do escopo
+/// B3 (ações, units, ETF, BDR, FII).
+#[tauri::command]
+pub async fn simulate_tax_sale(
+    db: tauri::State<'_, DatabaseConnection>,
+    request: SimulateTaxSaleRequest,
+) -> Result<assessment::SaleSimulation, AppError> {
+    let db = db.inner();
+    if !request.quantity.is_finite() || request.quantity <= 0.0 {
+        return Err(AppError::InvalidGuard("quantity must be greater than zero".to_string()));
+    }
+    if !request.unit_price.is_finite() || request.unit_price <= 0.0 {
+        return Err(AppError::InvalidGuard("price must be greater than zero".to_string()));
+    }
+    let fee = request.fee.unwrap_or(0.0);
+    if !fee.is_finite() || fee < 0.0 {
+        return Err(AppError::InvalidGuard("fee cannot be negative".to_string()));
+    }
+    let date = parse_date(&request.date)?;
+
+    let asset = assets::Entity::find_by_id(request.asset_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("asset {}", request.asset_id)))?;
+    if !matches!(
+        treatment(&asset.asset_class, &asset.ticker),
+        TaxTreatment::StockExemptEligible | TaxTreatment::CommonNoExemption | TaxTreatment::Fii
+    ) {
+        return Err(AppError::InvalidInput(format!(
+            "{} is outside the B3 capital gains scope Anchor calculates",
+            asset.ticker
+        )));
+    }
+
+    let rules = load_rule_set(db).await?;
+    let trades = load_trades(db, request.workspace_id).await?;
+    // Carteira da venda: a da última operação do ativo (a posição que
+    // provavelmente seria vendida).
+    let portfolio_id = trades
+        .iter()
+        .filter(|t| t.asset_id == asset.id)
+        .max_by_key(|t| (t.date, t.tx_id))
+        .map(|t| t.portfolio_id)
+        .ok_or_else(|| AppError::InvalidGuard("this asset has no recorded purchases to sell".to_string()))?;
+
+    let sale = Trade {
+        tx_id: assessment::SIMULATED_TX_ID,
+        portfolio_id,
+        asset_id: asset.id,
+        ticker: asset.ticker,
+        asset_class: asset.asset_class,
+        currency: asset.currency,
+        custodia_id: None,
+        date,
+        side: Side::Sell,
+        quantity: request.quantity,
+        gross_value: request.quantity * request.unit_price,
+        fee,
+    };
+    assessment::simulate_sale(&trades, &rules, sale)
 }
 
 // ---------------------------------------------------------------------------

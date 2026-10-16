@@ -438,6 +438,82 @@ pub fn assess(trades: &[Trade], rules: &RuleSet) -> Result<Assessment, AppError>
     Ok(Assessment { months, warnings, loss_balances })
 }
 
+/// `tx_id` reservado da venda hipotética (maior que qualquer id real, então
+/// ela é a última do dia).
+pub const SIMULATED_TX_ID: i32 = i32::MAX;
+
+/// Efeito de uma venda hipotética na apuração.
+#[derive(Clone, Debug, Serialize)]
+pub struct SaleSimulation {
+    /// Mês da venda, `YYYY-MM`.
+    pub period: String,
+    /// Partes da venda simulada (duas se parte casar como day trade).
+    pub sales: Vec<SaleResult>,
+    /// Imposto bruto do mês da venda sem e com ela.
+    pub month_tax_before: f64,
+    pub month_tax_after: f64,
+    /// Variação do imposto bruto somando todos os meses — pega o efeito nos
+    /// meses seguintes, que perdem (ou ganham) prejuízo a compensar.
+    pub total_tax_delta: f64,
+    /// Prejuízo acumulado que a venda consome no mês dela.
+    pub loss_used: f64,
+    /// Lucro que a venda deixa isento no mês (limite de vendas de ações).
+    pub exempt_gain: f64,
+    pub loss_balances_before: Vec<LossBalance>,
+    pub loss_balances_after: Vec<LossBalance>,
+}
+
+/// Simula uma venda: apura as transações reais com e sem `sale` e compara.
+/// Usa `custodia_id` da própria venda — com `None` ela nunca casa como day
+/// trade com compra do mesmo dia (a simulação é de swing trade).
+pub fn simulate_sale(trades: &[Trade], rules: &RuleSet, sale: Trade) -> Result<SaleSimulation, AppError> {
+    let mut sale = sale;
+    sale.tx_id = SIMULATED_TX_ID;
+    sale.side = Side::Sell;
+    let period = period_of(sale.date);
+
+    let before = assess(trades, rules)?;
+    let mut with_sale = trades.to_vec();
+    with_sale.push(sale);
+    let after = assess(&with_sale, rules)?;
+
+    let after_month = after
+        .months
+        .iter()
+        .find(|m| m.period == period)
+        .ok_or_else(|| AppError::InvalidGuard("this asset has no recorded purchases to sell".to_string()))?;
+    let sales: Vec<SaleResult> = after_month
+        .sales
+        .iter()
+        .filter(|s| s.tx_id == SIMULATED_TX_ID)
+        .cloned()
+        .collect();
+    // Sem compras registradas a venda sai com quantidade coberta 0.
+    if sales.iter().all(|s| s.quantity <= EPS) {
+        return Err(AppError::InvalidGuard(
+            "this asset has no recorded purchases to sell".to_string(),
+        ));
+    }
+
+    let before_month = before.months.iter().find(|m| m.period == period);
+    let loss_used_of = |m: Option<&MonthAssessment>| -> f64 {
+        m.map(|m| m.buckets.iter().map(|b| b.loss_used).sum()).unwrap_or(0.0)
+    };
+    let total = |a: &Assessment| -> f64 { a.months.iter().map(|m| m.gross_tax).sum() };
+
+    Ok(SaleSimulation {
+        period,
+        sales,
+        month_tax_before: before_month.map(|m| m.gross_tax).unwrap_or(0.0),
+        month_tax_after: after_month.gross_tax,
+        total_tax_delta: total(&after) - total(&before),
+        loss_used: loss_used_of(Some(after_month)) - loss_used_of(before_month),
+        exempt_gain: after_month.exempt_gain - before_month.map(|m| m.exempt_gain).unwrap_or(0.0),
+        loss_balances_before: before.loss_balances,
+        loss_balances_after: after.loss_balances,
+    })
+}
+
 fn collect_out_of_scope_warnings(
     trades: &[Trade],
     rules: &RuleSet,
@@ -709,6 +785,57 @@ mod tests {
         assert!(close(fii.balance, 300.0));
         assert!(close(fii.tax_saved, 300.0 * fii.rate));
         assert!(a.loss_balances.iter().all(|l| l.bucket != Bucket::DayTrade));
+    }
+
+    fn hypothetical(b: &Builder, asset_id: i32, ticker: &str, class: &str, date: &str, qty: f64, gross: f64) -> Trade {
+        let mut t = b.trades[0].clone();
+        t.asset_id = asset_id;
+        t.ticker = ticker.to_string();
+        t.asset_class = class.to_string();
+        t.date = d(date);
+        t.quantity = qty;
+        t.gross_value = gross;
+        t.fee = 0.0;
+        t
+    }
+
+    #[test]
+    fn simulate_sale_uses_carried_loss_and_reports_tax_delta() {
+        // Jan: prejuízo de 1.000 em ETF (comum). Simula vender 10 IVVB11
+        // (custo 3.000) por 4.500 em fev: lucro 1.500, compensa 1.000, paga
+        // 15% × 500 = 75.
+        let b = Builder::new()
+            .buy(1, "BOVA11", "etf_br", "2026-01-02", 100.0, 10000.0, 0.0)
+            .sell(1, "BOVA11", "etf_br", "2026-01-20", 100.0, 9000.0, 0.0)
+            .buy(3, "IVVB11", "etf_br", "2026-01-02", 10.0, 3000.0, 0.0);
+        let sale = hypothetical(&b, 3, "IVVB11", "etf_br", "2026-02-10", 10.0, 4500.0);
+        let sim = simulate_sale(&b.trades, &test_rule_set(), sale).unwrap();
+
+        assert_eq!(sim.period, "2026-02");
+        assert!(close(sim.sales[0].gain, 1500.0));
+        assert!(close(sim.loss_used, 1000.0));
+        assert!(close(sim.month_tax_before, 0.0));
+        assert!(close(sim.month_tax_after, 75.0));
+        assert!(close(sim.total_tax_delta, 75.0));
+        assert_eq!(sim.loss_balances_before.len(), 1);
+        assert!(sim.loss_balances_after.is_empty());
+    }
+
+    #[test]
+    fn simulate_sale_of_stocks_under_exemption_pays_nothing() {
+        let b = Builder::new().buy(2, "PETR4", "acao_br", "2026-01-02", 100.0, 3000.0, 0.0);
+        let sale = hypothetical(&b, 2, "PETR4", "acao_br", "2026-02-10", 100.0, 5000.0);
+        let sim = simulate_sale(&b.trades, &test_rule_set(), sale).unwrap();
+
+        assert!(close(sim.month_tax_after, 0.0));
+        assert!(close(sim.exempt_gain, 2000.0));
+    }
+
+    #[test]
+    fn simulate_sale_without_purchases_is_an_error() {
+        let b = Builder::new().buy(1, "BOVA11", "etf_br", "2026-01-02", 10.0, 1000.0, 0.0);
+        let sale = hypothetical(&b, 9, "HGLG11", "fii", "2026-02-10", 10.0, 1500.0);
+        assert!(simulate_sale(&b.trades, &test_rule_set(), sale).is_err());
     }
 
     #[test]

@@ -2188,3 +2188,11 @@ dono do projeto: lançamento em conta **opcional**, diferença recebido × baixa
   do patrimônio, baixa de 1.050 recebidos / 1.000 baixados, saldo da conta e net worth). Como a
   migration é nova, o primeiro `./dev.sh` aplica ela no banco real de dev.
 - **Fora da fatia**: parcelas/vencimento/alertas, juros compostos, edição de principal/data.
+- **Verificado**: push `4902917`, CI Desktop Rust e Frontend verdes.
+
+**Simulação de venda (Fase 24, fatia 2).** `simulate_tax_sale` apura as transações reais com e
+sem uma venda hipotética e devolve a diferença (ganho, imposto do mês antes/depois, prejuízo
+consumido, lucro isento, saldos de prejuízo, variação total do imposto). Card "Simulate a sale"
+em Portfolio → Taxes (`SaleSimulationCard.tsx`). `load_trades` extraído de `assess_workspace`.
+3 testes novos em `domain::tax::assessment`. `./dev.sh check` limpo.
+- **Pendente**: push e CI verde; teste de clique. Fora: widget de prejuízo na Home.

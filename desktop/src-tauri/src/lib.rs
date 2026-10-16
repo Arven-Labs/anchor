@@ -134,6 +134,7 @@ pub fn run() {
             commands::tax::reset_tax_rule,
             commands::tax::sync_tax_rules,
             commands::tax::get_tax_assessment,
+            commands::tax::simulate_tax_sale,
             commands::tax::mark_tax_paid,
             commands::tax::unmark_tax_paid,
             commands::rates::get_interest_rates,
