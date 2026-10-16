@@ -2144,3 +2144,13 @@ desenvolvido de verdade. Antes disso o CI só rodava `flutter analyze`/`flutter 
 - **Limpeza de cache local** (autorizada): imagens e volumes de cache do Docker, `~/.cache`,
   `~/.npm`, `~/.cargo/registry`, `~/.gradle`, `~/.pub-cache` e `desktop/node_modules`. Mantidos
   volumes de dados e `~/.rustup`. Próximo `./dev.sh` reconstrói tudo.
+- **Runners fixados** em `ubuntu-24.04` (`ubuntu-latest` migra pro 26 em 19/10): `ci-contracts`,
+  `ci-mobile`, `ci-desktop-frontend` e `build.yml`. CI verde.
+- **`build.yml` testado pela primeira vez** com a tag `v0.0.0-ci-test`. A 1ª execução falhou em
+  Windows e macOS (Linux passou), dois bugs reais corrigidos: (1) `alert_checker.rs` usava
+  `Notification::urgency()`, que no `notify-rust` só existe em Linux/BSD, então quebrava a
+  compilação no macOS/Windows (agora `#[cfg(all(unix, not(target_os = "macos")))]`); (2)
+  `--add-data "$(pwd)/..."` no Windows virava `\d\a\...` no PyInstaller nativo (agora caminhos
+  relativos). 2ª execução: 3 instaladores + APK, tudo verde. Release em rascunho
+  `v0.0.0-ci-test` ainda existe (apagar com `gh release delete v0.0.0-ci-test --cleanup-tag`).
+- **Pendência encerrada**: `build.yml` e o job `apk` já rodaram e funcionam.
