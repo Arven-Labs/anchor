@@ -2227,5 +2227,23 @@ deixado na fatia anterior (thresholds só por SQL).
 - **Risco anotado**: os valores de fábrica do Reset duplicam os seeds das migrations.
 - **Verificado**: `./dev.sh check` limpo, 0 warnings. 3 testes com SQLite em memória
   (reclassificação, erro sem efeito, Reset) + 4 de domínio.
-- **Pendente**: push e CI verde; teste de clique (Research → ETH → Edit thresholds: mudar o
-  funding, ver o sinal e o score mudarem, Reset voltar).
+- **Verificado**: push `27b2d43`, CI Desktop Rust e Frontend verdes.
+- **Pendente**: teste de clique (Research → ETH → Edit thresholds: mudar o funding, ver o sinal e
+  o score mudarem, Reset voltar).
+
+**Indicadores cripto, lote 2 (Fase 31).** Escolhido pelo dono do projeto entre as frentes que
+sobraram. Feito em plan mode, com as fontes testadas ao vivo antes.
+- **Feito**: `dvol` e `put_call_ratio` (Deribit), `stablecoin_supply_change_30d` (DefiLlama),
+  fallback Bybit nos 3 de derivativos (`binance_then_bybit`, `source` mostra quem respondeu),
+  novo grupo "Market liquidity", migration `m20261016_140000` e 15 `DEFAULT_THRESHOLDS`. Total:
+  15 indicadores em 4 grupos.
+- **Achados**: a Bybit devolve as séries em ordem inversa da Binance (parser inverte, com teste)
+  e manda `result: {}` nos erros (`list` ganhou valor padrão; `#[serde(default)]` não compila em
+  tipo genérico, precisou de `default = "Vec::new"`). Seeds calibrados com a faixa real: DVOL
+  46–75, put/call 0,52, stablecoins −2,8% a +5,8% no ano.
+- **Verificado**: `./dev.sh check` limpo. **Lacuna do `check`**: ele roda `cargo check` sem
+  `--all-targets`, então não compila o código de teste; rodei `cargo check --all-targets` à
+  parte (limpo, 0 warnings). Vale colocar `--all-targets` no `dev.sh check`.
+- **Pendente**: push e CI verde; teste de clique (Research → ETH → "Run crypto collector" deve
+  mostrar 4 grupos e 15 tiles; conferir DVOL contra a Deribit). Testes `#[ignore]` ao vivo:
+  `cargo test --lib -- --ignored crypto_sources` (inclui a Bybit sozinha).

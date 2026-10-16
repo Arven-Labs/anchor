@@ -175,8 +175,9 @@ pub struct EthCollection {
 }
 
 /// Indicadores do score ETH (`run_crypto_collector`), sempre `coin = "ETH"`:
-/// os 8 do Lume (Finance API) e, desde a Fase 31, 4 coletados direto pelo
-/// Anchor (`crypto_sources`) — derivativos na Binance e `staking_yield` real.
+/// os 8 do Lume (Finance API) e, desde a Fase 31, 7 coletados direto pelo
+/// Anchor (`crypto_sources`) — derivativos (Binance, com fallback Bybit),
+/// opções (Deribit), stablecoins (DefiLlama) e `staking_yield` real.
 /// Só devolve erro se **nenhum** indicador foi coletado.
 pub async fn collect_eth_indicators(
     db: &DatabaseConnection,
@@ -192,14 +193,31 @@ pub async fn collect_eth_indicators(
         record_or_collect_error(db, internal_name, source, fetched, &mut readings, &mut errors).await;
     }
 
-    let direct = [
-        ("funding_rate_7d", "binance", crypto_sources::fetch_funding_rate_7d().await),
-        ("open_interest_change_30d", "binance", crypto_sources::fetch_open_interest_change_30d().await),
-        ("long_short_ratio", "binance", crypto_sources::fetch_long_short_ratio().await),
-        ("staking_yield", "defillama+coinmetrics", crypto_sources::fetch_staking_yield_real().await),
+    // Cada fonte devolve o valor e quem respondeu (os de derivativos tentam
+    // a Binance e caem pra Bybit; os demais têm fonte única).
+    let direct: [(&str, Result<crypto_sources::Sourced, AppError>); 7] = [
+        ("funding_rate_7d", crypto_sources::fetch_funding_rate_7d().await),
+        ("open_interest_change_30d", crypto_sources::fetch_open_interest_change_30d().await),
+        ("long_short_ratio", crypto_sources::fetch_long_short_ratio().await),
+        (
+            "staking_yield",
+            crypto_sources::fetch_staking_yield_real().await.map(|v| (v, "defillama+coinmetrics")),
+        ),
+        ("dvol", crypto_sources::fetch_dvol().await.map(|v| (v, "deribit"))),
+        ("put_call_ratio", crypto_sources::fetch_put_call_ratio().await.map(|v| (v, "deribit"))),
+        (
+            "stablecoin_supply_change_30d",
+            crypto_sources::fetch_stablecoin_supply_change_30d().await.map(|v| (v, "defillama")),
+        ),
     ];
-    for (internal_name, source, fetched) in direct {
-        record_or_collect_error(db, internal_name, source, fetched, &mut readings, &mut errors).await;
+    for (internal_name, fetched) in direct {
+        match fetched {
+            Ok((raw_value, source)) => {
+                record_or_collect_error(db, internal_name, source, Ok(raw_value), &mut readings, &mut errors)
+                    .await;
+            }
+            Err(e) => errors.push(format!("{internal_name}: {e}")),
+        }
     }
 
     if readings.is_empty() && !errors.is_empty() {
@@ -262,12 +280,12 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn live_collect_eth_indicators_writes_twelve_readings() {
+    async fn live_collect_eth_indicators_writes_fifteen_readings() {
         let db = dev_db().await;
         let handle = handle();
 
         let collection = collect_eth_indicators(&db, &handle).await.unwrap();
-        assert_eq!(collection.readings.len() + collection.errors.len(), 12);
+        assert_eq!(collection.readings.len() + collection.errors.len(), 15);
         for reading in &collection.readings {
             assert!(matches!(reading.signal.as_str(), "GREEN" | "NEUTRAL" | "RED"));
         }

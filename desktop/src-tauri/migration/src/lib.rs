@@ -63,6 +63,7 @@ mod m20261014_110000_create_tax_rules;
 mod m20261014_120000_create_tax_payments;
 mod m20261016_120000_create_loans;
 mod m20261016_130000_seed_crypto_derivatives_thresholds;
+mod m20261016_140000_seed_crypto_options_liquidity_thresholds;
 
 pub struct Migrator;
 
@@ -133,6 +134,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261014_120000_create_tax_payments::Migration),
             Box::new(m20261016_120000_create_loans::Migration),
             Box::new(m20261016_130000_seed_crypto_derivatives_thresholds::Migration),
+            Box::new(m20261016_140000_seed_crypto_options_liquidity_thresholds::Migration),
         ]
     }
 }

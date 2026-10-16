@@ -2208,8 +2208,28 @@ primeiro lote = `staking_yield` automático + derivativos de ETH, coleta **em Ru
   faixas 7-9/4-6/0-3 dos 9 originais). Novo comando `get_crypto_score`.
 - `collect_eth_indicators` agora tolera falha parcial (uma fonte fora do ar, ex. Binance
   bloqueada na região, não derruba as outras) e só dá erro se nada foi coletado.
-- **Fora desta fatia**: fallback OKX/Bybit, DVOL/put-call, stablecoins, suporte a BTC. Teste de
-  clique pendente.
+- **Fora desta fatia**: suporte a BTC e o que o lote 2 cobriu (ver abaixo). Teste de clique
+  pendente.
+
+**Lote 2 (Sessão 106)**: opções, stablecoins e fallback de região. Total vira **15 indicadores em
+4 grupos** (On-chain 5, Network fundamentals 4, Derivatives & options 5, Market liquidity 1).
+- `dvol`: último fechamento do DVOL do ETH (Deribit). Menor é melhor, seed 55/75 (faixa real
+  46–75 em 200 dias, mediana 53).
+- `put_call_ratio`: Σ open interest de puts ÷ Σ de calls das opções ETH (Deribit). Maior é
+  melhor (medo é oportunidade, calma demais é topo), seed 0,7/0,4 (hoje 0,52).
+- `stablecoin_supply_change_30d`: variação % em 30 dias da oferta total de stablecoins
+  (DefiLlama). Maior é melhor, seed 2/0 (faixa de 1 ano: −2,8% a +5,8%). Base = último ponto
+  **até** 30 dias antes do mais recente (a série tem falhas, não dá pra contar 30 posições).
+- **Fallback Bybit** para funding, open interest e long/short: tenta a Binance e, se falhar (rede,
+  HTTP ou bloqueio de região), a Bybit; o `source` gravado na leitura diz qual respondeu e o erro
+  só sobe se as duas falharem. **Armadilha achada ao vivo**: a Bybit devolve as séries do mais
+  novo pro mais antigo (a Binance é o contrário), o parser inverte, com teste. Erros da Bybit
+  vêm com `result: {}`, então `list` tem valor padrão pra mensagem do `retMsg` aparecer. OKX ficou
+  de fora de propósito (um fallback já cobre o risco de região).
+- Migration `m20261016_140000_seed_crypto_options_liquidity_thresholds`; `DEFAULT_THRESHOLDS`
+  (Reset do editor) passou a 15, **duplicando os seeds** das 3 migrations.
+- Fixtures dos testes: Bybit, DVOL e stablecoins no formato real de 2026-10-16; a lista de opções
+  e os pontos de stablecoin do teste de janela têm valores de exemplo na forma real.
 
 **Editor de thresholds (Sessão 106, fatia 2)**: botão "Edit thresholds" na seção do score cripto
 abre `ThresholdEditorDialog` com uma linha por indicador (verde, vermelho, direção inferida ao

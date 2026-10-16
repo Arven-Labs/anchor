@@ -57,12 +57,12 @@ pub fn classify(raw_value: f64, threshold: &Threshold) -> Result<Signal, AppErro
 
 // ---------------------------------------------------------------------------
 // Thresholds editáveis (Fase 31). Os valores de fábrica espelham o que as
-// migrations semeiam em `indicator_thresholds` (`m20260709_212958` e
-// `m20261016_130000`) — duplicados aqui só pra "Reset" funcionar sem consultar
+// migrations semeiam em `indicator_thresholds` (`m20260709_212958`,
+// `m20261016_130000` e `m20261016_140000`) — duplicados aqui só pra "Reset" funcionar sem consultar
 // o histórico de migrations. Ao mudar um seed, mude os dois.
 // ---------------------------------------------------------------------------
 
-pub const DEFAULT_THRESHOLDS: [(&str, f64, f64); 12] = [
+pub const DEFAULT_THRESHOLDS: [(&str, f64, f64); 15] = [
     ("mvrv_z_score", 0.0, 7.0),
     ("puell_multiple", 0.5, 4.0),
     ("staking_yield", 2.0, 0.0),
@@ -75,6 +75,9 @@ pub const DEFAULT_THRESHOLDS: [(&str, f64, f64); 12] = [
     ("funding_rate_7d", 5.0, 20.0),
     ("open_interest_change_30d", 0.0, 25.0),
     ("long_short_ratio", 2.0, 3.5),
+    ("dvol", 55.0, 75.0),
+    ("put_call_ratio", 0.7, 0.4),
+    ("stablecoin_supply_change_30d", 2.0, 0.0),
 ];
 
 /// `(green, red)` de fábrica de um indicador.
@@ -104,7 +107,7 @@ pub fn validate_boundaries(green_boundary: f64, red_boundary: f64) -> Result<(),
 // ---------------------------------------------------------------------------
 // Score por grupo (Fase 31). Antes a contagem "verdes / 9" só existia no
 // frontend; agora mora aqui, com teste, e cada grupo ganha o próprio subscore
-// pra 12 indicadores não diluírem o sinal.
+// pra 15 indicadores não diluírem o sinal.
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -113,17 +116,23 @@ pub enum IndicatorGroup {
     OnChain,
     Fundamentals,
     Derivatives,
+    Liquidity,
 }
 
 impl IndicatorGroup {
-    pub const ALL: [IndicatorGroup; 3] =
-        [IndicatorGroup::OnChain, IndicatorGroup::Fundamentals, IndicatorGroup::Derivatives];
+    pub const ALL: [IndicatorGroup; 4] = [
+        IndicatorGroup::OnChain,
+        IndicatorGroup::Fundamentals,
+        IndicatorGroup::Derivatives,
+        IndicatorGroup::Liquidity,
+    ];
 
     pub fn label(&self) -> &'static str {
         match self {
             IndicatorGroup::OnChain => "On-chain",
             IndicatorGroup::Fundamentals => "Network fundamentals",
-            IndicatorGroup::Derivatives => "Derivatives",
+            IndicatorGroup::Derivatives => "Derivatives & options",
+            IndicatorGroup::Liquidity => "Market liquidity",
         }
     }
 
@@ -140,9 +149,14 @@ impl IndicatorGroup {
             IndicatorGroup::Fundamentals => {
                 &["net_issuance", "fees_vs_emission", "staking_yield", "tvl_trend"]
             }
-            IndicatorGroup::Derivatives => {
-                &["funding_rate_7d", "open_interest_change_30d", "long_short_ratio"]
-            }
+            IndicatorGroup::Derivatives => &[
+                "funding_rate_7d",
+                "open_interest_change_30d",
+                "long_short_ratio",
+                "dvol",
+                "put_call_ratio",
+            ],
+            IndicatorGroup::Liquidity => &["stablecoin_supply_change_30d"],
         }
     }
 }
@@ -264,20 +278,20 @@ mod tests {
     }
 
     #[test]
-    fn groups_cover_twelve_distinct_indicators() {
+    fn groups_cover_fifteen_distinct_indicators() {
         let all: Vec<&str> =
             IndicatorGroup::ALL.iter().flat_map(|g| g.indicators().iter().copied()).collect();
-        assert_eq!(all.len(), 12);
+        assert_eq!(all.len(), 15);
         let mut unique = all.clone();
         unique.sort_unstable();
         unique.dedup();
-        assert_eq!(unique.len(), 12);
+        assert_eq!(unique.len(), 15);
     }
 
     #[test]
     fn empty_score_has_full_total_and_nothing_logged() {
         let score = compute_score(&[]);
-        assert_eq!((score.green, score.logged, score.total), (0, 0, 12));
+        assert_eq!((score.green, score.logged, score.total), (0, 0, 15));
         assert_eq!(score.verdict, ScoreVerdict::ReduceRisk);
         assert!(score.groups.iter().all(|g| g.indicators.iter().all(|i| i.reading.is_none())));
     }
@@ -295,7 +309,9 @@ mod tests {
         let fundamentals = &score.groups[1];
         assert_eq!((fundamentals.green, fundamentals.logged, fundamentals.total), (0, 0, 4));
         let derivatives = &score.groups[2];
-        assert_eq!((derivatives.green, derivatives.logged, derivatives.total), (1, 2, 3));
+        assert_eq!((derivatives.green, derivatives.logged, derivatives.total), (1, 2, 5));
+        let liquidity = &score.groups[3];
+        assert_eq!((liquidity.green, liquidity.logged, liquidity.total), (0, 0, 1));
         assert_eq!((score.green, score.logged), (2, 4));
     }
 
@@ -307,12 +323,12 @@ mod tests {
 
     #[test]
     fn verdict_bands_match_the_original_nine_indicator_ranges() {
-        // Com 12 indicadores: 9/12 = 75% → tese intacta; 8/12 = 67% e
-        // 5/12 = 42% → neutro; 4/12 = 33% → reduzir risco.
-        assert_eq!(verdict_for(9, 12), ScoreVerdict::Intact);
-        assert_eq!(verdict_for(8, 12), ScoreVerdict::Neutral);
-        assert_eq!(verdict_for(5, 12), ScoreVerdict::Neutral);
-        assert_eq!(verdict_for(4, 12), ScoreVerdict::ReduceRisk);
+        // Com 15 indicadores: 11/15 = 73% → tese intacta; 10/15 = 67% e
+        // 7/15 = 47% → neutro; 5/15 = 33% → reduzir risco.
+        assert_eq!(verdict_for(11, 15), ScoreVerdict::Intact);
+        assert_eq!(verdict_for(10, 15), ScoreVerdict::Neutral);
+        assert_eq!(verdict_for(7, 15), ScoreVerdict::Neutral);
+        assert_eq!(verdict_for(5, 15), ScoreVerdict::ReduceRisk);
         assert_eq!(verdict_for(0, 0), ScoreVerdict::ReduceRisk);
     }
 
@@ -351,6 +367,27 @@ mod tests {
     }
 
     // Os 3 seeds de derivativos (migration da Fase 31): direção e sinais.
+    #[test]
+    fn options_and_liquidity_seeds_have_the_documented_direction() {
+        // DVOL: menor é melhor. Hoje 51 → verde; 60 → neutro; 80 → vermelho.
+        let dvol = Threshold { green_boundary: 55.0, red_boundary: 75.0 };
+        assert_eq!(classify(51.0, &dvol).unwrap().as_str(), "GREEN");
+        assert_eq!(classify(60.0, &dvol).unwrap().as_str(), "NEUTRAL");
+        assert_eq!(classify(80.0, &dvol).unwrap().as_str(), "RED");
+
+        // Put/call: maior é melhor (medo é oportunidade, calma demais é topo).
+        let put_call = Threshold { green_boundary: 0.7, red_boundary: 0.4 };
+        assert_eq!(classify(0.516, &put_call).unwrap().as_str(), "NEUTRAL");
+        assert_eq!(classify(0.8, &put_call).unwrap().as_str(), "GREEN");
+        assert_eq!(classify(0.3, &put_call).unwrap().as_str(), "RED");
+
+        // Stablecoins: maior é melhor (liquidez entrando).
+        let stable = Threshold { green_boundary: 2.0, red_boundary: 0.0 };
+        assert_eq!(classify(0.77, &stable).unwrap().as_str(), "NEUTRAL");
+        assert_eq!(classify(3.0, &stable).unwrap().as_str(), "GREEN");
+        assert_eq!(classify(-1.0, &stable).unwrap().as_str(), "RED");
+    }
+
     #[test]
     fn derivatives_seeds_are_lower_is_better() {
         let funding = Threshold { green_boundary: 5.0, red_boundary: 20.0 };

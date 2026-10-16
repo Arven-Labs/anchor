@@ -382,8 +382,8 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
 
           <div className="border-t border-border pt-6">
             <h3 className="mb-1 text-sm font-semibold text-muted-foreground">
-              Cycle-top score ({score?.green ?? 0}/{score?.total ?? 12} green,{" "}
-              {score?.logged ?? 0} of {score?.total ?? 12} logged)
+              Cycle-top score ({score?.green ?? 0}/{score?.total ?? 15} green,{" "}
+              {score?.logged ?? 0} of {score?.total ?? 15} logged)
             </h3>
             {score && (
               <p className="mb-1 text-sm font-medium">{VERDICT_LABEL[score.verdict]}</p>
@@ -415,7 +415,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
                 >
                   {runCryptoCollectorMutation.isPending
                     ? "Running..."
-                    : "Run crypto collector (all 12 indicators)"}
+                    : "Run crypto collector (all 15 indicators)"}
                 </Button>
                 {collectorErrors.length > 0 && (
                   <p className="whitespace-pre-wrap text-red-600">

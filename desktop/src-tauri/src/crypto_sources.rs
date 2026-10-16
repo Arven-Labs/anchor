@@ -8,13 +8,18 @@
 // Binance restringe por região: se uma chamada falhar, o erro diz qual
 // fonte caiu, e o coletor segue com os demais indicadores.
 
+use std::future::Future;
 use std::time::Duration;
 
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
 use crate::error::AppError;
 
 const BINANCE_FAPI: &str = "https://fapi.binance.com";
+const BYBIT_API: &str = "https://api.bybit.com";
+const DERIBIT_API: &str = "https://www.deribit.com/api/v2";
+const DEFILLAMA_STABLECOINS: &str = "https://stablecoins.llama.fi";
 const DEFILLAMA_YIELDS: &str = "https://yields.llama.fi";
 const COINMETRICS_COMMUNITY: &str = "https://community-api.coinmetrics.io/v4";
 /// Pool stETH (Lido, Ethereum) na DefiLlama — o id é estável.
@@ -160,6 +165,192 @@ pub fn parse_issuance_and_supply(body: &str) -> Result<(f64, f64), AppError> {
     ))
 }
 
+/// Razão entre o open interest de puts e o de calls. `None` sem calls.
+pub fn put_call_ratio(open_interest: &[(bool, f64)]) -> Option<f64> {
+    let puts: f64 = open_interest.iter().filter(|(is_put, _)| *is_put).map(|(_, oi)| oi).sum();
+    let calls: f64 = open_interest.iter().filter(|(is_put, _)| !*is_put).map(|(_, oi)| oi).sum();
+    if calls <= 0.0 {
+        return None;
+    }
+    Some(puts / calls)
+}
+
+// ---------------------------------------------------------------------------
+// Parsers — Bybit (fallback da Binance)
+// ---------------------------------------------------------------------------
+//
+// ATENÇÃO: a Bybit devolve as séries do mais NOVO pro mais antigo (a Binance
+// é o contrário). Todos os parsers abaixo devolvem em ordem cronológica.
+
+#[derive(Deserialize)]
+struct BybitEnvelope<T> {
+    #[serde(rename = "retCode")]
+    ret_code: i64,
+    #[serde(rename = "retMsg")]
+    ret_msg: String,
+    result: Option<BybitList<T>>,
+}
+
+#[derive(Deserialize)]
+struct BybitList<T> {
+    /// Em resposta de erro o `result` vem `{}`, sem `list`.
+    #[serde(default = "Vec::new")]
+    list: Vec<T>,
+}
+
+/// Linhas da Bybit já em ordem cronológica (do mais antigo ao mais novo).
+fn bybit_rows<T: DeserializeOwned>(source: &str, body: &str) -> Result<Vec<T>, AppError> {
+    let envelope: BybitEnvelope<T> =
+        serde_json::from_str(body).map_err(|e| source_err(source, e))?;
+    if envelope.ret_code != 0 {
+        return Err(source_err(source, envelope.ret_msg));
+    }
+    let mut rows = envelope.result.map(|r| r.list).unwrap_or_default();
+    rows.reverse();
+    Ok(rows)
+}
+
+#[derive(Deserialize)]
+struct BybitFundingRow {
+    #[serde(rename = "fundingRate")]
+    funding_rate: String,
+}
+
+#[derive(Deserialize)]
+struct BybitOpenInterestRow {
+    #[serde(rename = "openInterest")]
+    open_interest: String,
+}
+
+#[derive(Deserialize)]
+struct BybitRatioRow {
+    #[serde(rename = "buyRatio")]
+    buy_ratio: String,
+    #[serde(rename = "sellRatio")]
+    sell_ratio: String,
+}
+
+pub fn parse_bybit_funding(body: &str) -> Result<Vec<f64>, AppError> {
+    bybit_rows::<BybitFundingRow>("Bybit funding", body)?
+        .iter()
+        .map(|r| parse_f64("Bybit funding", "fundingRate", &r.funding_rate))
+        .collect()
+}
+
+pub fn parse_bybit_open_interest(body: &str) -> Result<Vec<f64>, AppError> {
+    bybit_rows::<BybitOpenInterestRow>("Bybit open interest", body)?
+        .iter()
+        .map(|r| parse_f64("Bybit open interest", "openInterest", &r.open_interest))
+        .collect()
+}
+
+/// Razão long/short = proporção de contas compradas ÷ vendidas.
+pub fn parse_bybit_long_short(body: &str) -> Result<Vec<f64>, AppError> {
+    bybit_rows::<BybitRatioRow>("Bybit long/short", body)?
+        .iter()
+        .map(|r| {
+            let buy = parse_f64("Bybit long/short", "buyRatio", &r.buy_ratio)?;
+            let sell = parse_f64("Bybit long/short", "sellRatio", &r.sell_ratio)?;
+            if sell <= 0.0 {
+                return Err(source_err("Bybit long/short", "sellRatio is zero"));
+            }
+            Ok(buy / sell)
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Parsers — Deribit (opções) e DefiLlama (stablecoins)
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct DeribitEnvelope<T> {
+    result: T,
+}
+
+#[derive(Deserialize)]
+struct DvolResult {
+    /// Linhas `[timestamp, open, high, low, close]`, do mais antigo ao mais novo.
+    data: Vec<Vec<f64>>,
+}
+
+/// Fechamento mais recente do DVOL.
+pub fn parse_dvol_latest(body: &str) -> Result<f64, AppError> {
+    let envelope: DeribitEnvelope<DvolResult> =
+        serde_json::from_str(body).map_err(|e| source_err("Deribit DVOL", e))?;
+    envelope
+        .result
+        .data
+        .last()
+        .and_then(|row| row.get(4).copied())
+        .ok_or_else(|| source_err("Deribit DVOL", "empty volatility index series"))
+}
+
+#[derive(Deserialize)]
+struct OptionSummary {
+    instrument_name: String,
+    open_interest: f64,
+}
+
+/// `(é put, open interest)` por instrumento; o que não termina em `-P`/`-C`
+/// é ignorado.
+pub fn parse_option_open_interest(body: &str) -> Result<Vec<(bool, f64)>, AppError> {
+    let envelope: DeribitEnvelope<Vec<OptionSummary>> =
+        serde_json::from_str(body).map_err(|e| source_err("Deribit options", e))?;
+    Ok(envelope
+        .result
+        .into_iter()
+        .filter_map(|o| {
+            if o.instrument_name.ends_with("-P") {
+                Some((true, o.open_interest))
+            } else if o.instrument_name.ends_with("-C") {
+                Some((false, o.open_interest))
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
+#[derive(Deserialize)]
+struct StablecoinPoint {
+    /// Segundos Unix, como texto.
+    date: String,
+    #[serde(rename = "totalCirculatingUSD")]
+    total: StablecoinTotal,
+}
+
+#[derive(Deserialize)]
+struct StablecoinTotal {
+    #[serde(rename = "peggedUSD")]
+    pegged_usd: f64,
+}
+
+const STABLECOIN_WINDOW_SECS: i64 = 30 * 86_400;
+
+/// Variação % do total circulante de stablecoins (USD) nos últimos 30 dias.
+/// A base é o último ponto **até** 30 dias antes do mais recente (a série
+/// tem falhas, então não dá pra contar 30 posições).
+pub fn parse_stablecoin_change_30d(body: &str) -> Result<f64, AppError> {
+    let points: Vec<StablecoinPoint> =
+        serde_json::from_str(body).map_err(|e| source_err("DefiLlama stablecoins", e))?;
+    let dated: Vec<(i64, f64)> = points
+        .iter()
+        .filter_map(|p| p.date.parse::<i64>().ok().map(|d| (d, p.total.pegged_usd)))
+        .collect();
+    let (last_date, last_total) = *dated
+        .last()
+        .ok_or_else(|| source_err("DefiLlama stablecoins", "empty series"))?;
+    let baseline = dated
+        .iter()
+        .rev()
+        .find(|(date, _)| *date <= last_date - STABLECOIN_WINDOW_SECS)
+        .ok_or_else(|| source_err("DefiLlama stablecoins", "less than 30 days of history"))?
+        .1;
+    pct_change(baseline, last_total)
+        .ok_or_else(|| source_err("DefiLlama stablecoins", "zero supply at the start"))
+}
+
 // ---------------------------------------------------------------------------
 // Fetch
 // ---------------------------------------------------------------------------
@@ -178,33 +369,126 @@ async fn get_text(source: &str, url: &str) -> Result<String, AppError> {
     Ok(body)
 }
 
-/// Funding médio de 7 dias do ETHUSDT perpétuo, anualizado em %.
-pub async fn fetch_funding_rate_7d() -> Result<f64, AppError> {
-    let url = format!("{BINANCE_FAPI}/fapi/v1/fundingRate?symbol=ETHUSDT&limit={FUNDING_WINDOW}");
-    let rates = parse_funding_rates(&get_text("Binance funding", &url).await?)?;
-    funding_annualized_pct(&rates).ok_or_else(|| source_err("Binance funding", "no funding data"))
+/// Valor e a fonte que de fato respondeu (gravada em `crypto_indicators.source`).
+pub type Sourced = (f64, &'static str);
+
+/// Tenta a Binance e, se falhar (rede, HTTP ou bloqueio de região), a Bybit.
+/// Só dá erro se as duas falharem, e a mensagem traz os dois motivos.
+async fn binance_then_bybit(
+    metric: &str,
+    binance: impl Future<Output = Result<f64, AppError>>,
+    bybit: impl Future<Output = Result<f64, AppError>>,
+) -> Result<Sourced, AppError> {
+    match binance.await {
+        Ok(value) => Ok((value, "binance")),
+        Err(primary) => match bybit.await {
+            Ok(value) => Ok((value, "bybit")),
+            Err(fallback) => Err(AppError::CryptoSource(format!(
+                "{metric}: Binance failed ({primary}); Bybit failed ({fallback})"
+            ))),
+        },
+    }
 }
 
-/// Variação do open interest em ETH nos últimos ~30 dias, em %.
-pub async fn fetch_open_interest_change_30d() -> Result<f64, AppError> {
+fn funding_value(rates: &[f64], source: &str) -> Result<f64, AppError> {
+    funding_annualized_pct(rates).ok_or_else(|| source_err(source, "no funding data"))
+}
+
+fn open_interest_value(series: &[f64], source: &str) -> Result<f64, AppError> {
+    if series.len() < 2 {
+        return Err(source_err(source, "not enough history"));
+    }
+    pct_change(series[0], series[series.len() - 1])
+        .ok_or_else(|| source_err(source, "zero open interest at the start"))
+}
+
+fn long_short_value(ratios: &[f64], source: &str) -> Result<f64, AppError> {
+    mean(ratios).ok_or_else(|| source_err(source, "no data"))
+}
+
+async fn binance_funding() -> Result<f64, AppError> {
+    let url = format!("{BINANCE_FAPI}/fapi/v1/fundingRate?symbol=ETHUSDT&limit={FUNDING_WINDOW}");
+    funding_value(&parse_funding_rates(&get_text("Binance funding", &url).await?)?, "Binance funding")
+}
+
+async fn bybit_funding() -> Result<f64, AppError> {
+    let url = format!(
+        "{BYBIT_API}/v5/market/funding/history?category=linear&symbol=ETHUSDT&limit={FUNDING_WINDOW}"
+    );
+    funding_value(&parse_bybit_funding(&get_text("Bybit funding", &url).await?)?, "Bybit funding")
+}
+
+async fn binance_open_interest() -> Result<f64, AppError> {
     let url = format!(
         "{BINANCE_FAPI}/futures/data/openInterestHist?symbol=ETHUSDT&period=1d&limit={HISTORY_DAYS}"
     );
-    let series = parse_open_interest(&get_text("Binance open interest", &url).await?)?;
-    if series.len() < 2 {
-        return Err(source_err("Binance open interest", "not enough history"));
-    }
-    pct_change(series[0], series[series.len() - 1])
-        .ok_or_else(|| source_err("Binance open interest", "zero open interest at the start"))
+    open_interest_value(
+        &parse_open_interest(&get_text("Binance open interest", &url).await?)?,
+        "Binance open interest",
+    )
 }
 
-/// Média de 7 dias da razão long/short de contas do ETHUSDT.
-pub async fn fetch_long_short_ratio() -> Result<f64, AppError> {
+async fn bybit_open_interest() -> Result<f64, AppError> {
+    let url = format!(
+        "{BYBIT_API}/v5/market/open-interest?category=linear&symbol=ETHUSDT&intervalTime=1d&limit={HISTORY_DAYS}"
+    );
+    open_interest_value(
+        &parse_bybit_open_interest(&get_text("Bybit open interest", &url).await?)?,
+        "Bybit open interest",
+    )
+}
+
+async fn binance_long_short() -> Result<f64, AppError> {
     let url = format!(
         "{BINANCE_FAPI}/futures/data/globalLongShortAccountRatio?symbol=ETHUSDT&period=1d&limit={LONG_SHORT_WINDOW}"
     );
-    let ratios = parse_long_short(&get_text("Binance long/short", &url).await?)?;
-    mean(&ratios).ok_or_else(|| source_err("Binance long/short", "no data"))
+    long_short_value(&parse_long_short(&get_text("Binance long/short", &url).await?)?, "Binance long/short")
+}
+
+async fn bybit_long_short() -> Result<f64, AppError> {
+    let url = format!(
+        "{BYBIT_API}/v5/market/account-ratio?category=linear&symbol=ETHUSDT&period=1d&limit={LONG_SHORT_WINDOW}"
+    );
+    long_short_value(&parse_bybit_long_short(&get_text("Bybit long/short", &url).await?)?, "Bybit long/short")
+}
+
+/// Funding médio de 7 dias do ETHUSDT perpétuo, anualizado em %.
+pub async fn fetch_funding_rate_7d() -> Result<Sourced, AppError> {
+    binance_then_bybit("funding", binance_funding(), bybit_funding()).await
+}
+
+/// Variação do open interest em ETH nos últimos ~30 dias, em %.
+pub async fn fetch_open_interest_change_30d() -> Result<Sourced, AppError> {
+    binance_then_bybit("open interest", binance_open_interest(), bybit_open_interest()).await
+}
+
+/// Média de 7 dias da razão long/short de contas do ETHUSDT.
+pub async fn fetch_long_short_ratio() -> Result<Sourced, AppError> {
+    binance_then_bybit("long/short", binance_long_short(), bybit_long_short()).await
+}
+
+/// Último fechamento do DVOL (volatilidade implícita) do ETH na Deribit.
+pub async fn fetch_dvol() -> Result<f64, AppError> {
+    let end = chrono::Utc::now().timestamp_millis();
+    let start = end - 3 * 86_400_000;
+    let url = format!(
+        "{DERIBIT_API}/public/get_volatility_index_data?currency=ETH&start_timestamp={start}&end_timestamp={end}&resolution=86400"
+    );
+    parse_dvol_latest(&get_text("Deribit DVOL", &url).await?)
+}
+
+/// Put/call por open interest de todas as opções de ETH na Deribit.
+pub async fn fetch_put_call_ratio() -> Result<f64, AppError> {
+    let url = format!("{DERIBIT_API}/public/get_book_summary_by_currency?currency=ETH&kind=option");
+    let open_interest = parse_option_open_interest(&get_text("Deribit options", &url).await?)?;
+    put_call_ratio(&open_interest)
+        .ok_or_else(|| source_err("Deribit options", "no call open interest"))
+}
+
+/// Variação % em 30 dias da oferta total de stablecoins (DefiLlama).
+pub async fn fetch_stablecoin_supply_change_30d() -> Result<f64, AppError> {
+    let url = format!("{DEFILLAMA_STABLECOINS}/stablecoincharts/all");
+    parse_stablecoin_change_30d(&get_text("DefiLlama stablecoins", &url).await?)
 }
 
 /// Staking yield real do ETH: APY do stETH menos a inflação bruta.
@@ -304,17 +588,123 @@ mod tests {
         assert!(err.to_string().contains("Binance funding"));
     }
 
+    // Bybit, respostas reais de 2026-10-16: **mais novo primeiro**.
+    const BYBIT_FUNDING: &str = r#"{"retCode":0,"retMsg":"OK","result":{"category":"linear","list":[{"symbol":"ETHUSDT","fundingRate":"0.00005006","fundingRateTimestamp":"1792137600000"},{"symbol":"ETHUSDT","fundingRate":"0.00009644","fundingRateTimestamp":"1792108800000"}]},"retExtInfo":{},"time":1792157675806}"#;
+    const BYBIT_OPEN_INTEREST: &str = r#"{"retCode":0,"retMsg":"OK","result":{"symbol":"ETHUSDT","category":"linear","list":[{"openInterest":"781262.72000000","singleOpenInterest":"390631.36","timestamp":"1792108800000"},{"openInterest":"774923.49000000","singleOpenInterest":"387461.75","timestamp":"1792022400000"}],"nextPageCursor":"x"},"retExtInfo":{},"time":1792157676206}"#;
+    const BYBIT_RATIO: &str = r#"{"retCode":0,"retMsg":"OK","result":{"list":[{"symbol":"ETHUSDT","buyRatio":"0.724","sellRatio":"0.276","timestamp":"1792108800000"},{"symbol":"ETHUSDT","buyRatio":"0.7228","sellRatio":"0.2772","timestamp":"1792022400000"}],"nextPageCursor":"x"},"retExtInfo":{},"time":1792157676601}"#;
+    // Deribit: forma real, `[timestamp, open, high, low, close]`.
+    const DVOL: &str = r#"{"jsonrpc":"2.0","result":{"data":[[1791936000000,50.1,52.0,49.0,51.5],[1792022400000,51.5,53.2,50.8,52.4],[1792108800000,52.4,53.0,50.0,51.08]],"continuation":null},"testnet":false}"#;
+    const OPTIONS: &str = r#"{"jsonrpc":"2.0","result":[{"instrument_name":"ETH-25JUN27-2900-P","open_interest":508.0,"mark_price":0.26},{"instrument_name":"ETH-25JUN27-3500-C","open_interest":800.0,"mark_price":0.1},{"instrument_name":"ETH-30OCT26-2500-P","open_interest":200.0,"mark_price":0.05},{"instrument_name":"ETH-30OCT26-2500-C","open_interest":300.0,"mark_price":0.2},{"instrument_name":"ETH-PERPETUAL","open_interest":999.0,"mark_price":2440.0}]}"#;
+    // DefiLlama stablecoins: forma real, datas em segundos Unix como texto.
+    // Último ponto = 1_000_000 + 30 dias; base = 300; agora = 306 (+2%).
+    const STABLECOINS: &str = r#"[{"date":"1000000","totalCirculating":{"peggedUSD":300.0},"totalCirculatingUSD":{"peggedUSD":300.0}},{"date":"1864000","totalCirculating":{"peggedUSD":310.0},"totalCirculatingUSD":{"peggedUSD":310.0}},{"date":"3592000","totalCirculating":{"peggedUSD":306.0},"totalCirculatingUSD":{"peggedUSD":306.0}}]"#;
+
+    #[test]
+    fn bybit_series_come_back_in_chronological_order() {
+        // A Bybit manda o mais novo primeiro; o parser inverte.
+        let funding = parse_bybit_funding(BYBIT_FUNDING).unwrap();
+        assert!(close(funding[0], 0.00009644));
+        assert!(close(funding[1], 0.00005006));
+
+        let oi = parse_bybit_open_interest(BYBIT_OPEN_INTEREST).unwrap();
+        assert!(close(oi[0], 774923.49));
+        // Subiu de 774.923 pra 781.262 (+0,82%), não caiu.
+        assert!(pct_change(oi[0], oi[1]).unwrap() > 0.8);
+        assert!(open_interest_value(&oi, "t").unwrap() > 0.0);
+    }
+
+    #[test]
+    fn bybit_long_short_is_buy_over_sell() {
+        let ratios = parse_bybit_long_short(BYBIT_RATIO).unwrap();
+        assert!(close(ratios[1], 0.724 / 0.276));
+        // Bate com a razão da Binance no mesmo dia (2,64).
+        assert!((mean(&ratios).unwrap() - 2.64).abs() < 0.05);
+        assert!(parse_bybit_long_short(
+            r#"{"retCode":0,"retMsg":"OK","result":{"list":[{"buyRatio":"0.5","sellRatio":"0"}]}}"#
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn bybit_error_envelope_becomes_a_named_source_error() {
+        let err = parse_bybit_funding(r#"{"retCode":10001,"retMsg":"params error","result":{}}"#)
+            .unwrap_err();
+        assert!(err.to_string().contains("Bybit funding"));
+        assert!(err.to_string().contains("params error"));
+    }
+
+    #[test]
+    fn dvol_takes_the_latest_close() {
+        assert!(close(parse_dvol_latest(DVOL).unwrap(), 51.08));
+        assert!(parse_dvol_latest(r#"{"result":{"data":[]}}"#).is_err());
+    }
+
+    #[test]
+    fn put_call_sums_open_interest_by_option_type_and_skips_other_instruments() {
+        let oi = parse_option_open_interest(OPTIONS).unwrap();
+        assert_eq!(oi.len(), 4); // o perpétuo fica de fora
+        // Puts 508 + 200 = 708; calls 800 + 300 = 1.100.
+        assert!(close(put_call_ratio(&oi).unwrap(), 708.0 / 1100.0));
+        assert!(put_call_ratio(&[(true, 10.0)]).is_none());
+    }
+
+    #[test]
+    fn stablecoin_change_uses_the_point_30_days_before_not_the_nearest() {
+        // O ponto de 310 (a ~20 dias do fim) não pode servir de base.
+        assert!(close(parse_stablecoin_change_30d(STABLECOINS).unwrap(), 2.0));
+    }
+
+    #[test]
+    fn stablecoin_change_needs_30_days_of_history() {
+        let short = r#"[{"date":"1000000","totalCirculatingUSD":{"peggedUSD":300.0}},{"date":"1100000","totalCirculatingUSD":{"peggedUSD":301.0}}]"#;
+        assert!(parse_stablecoin_change_30d(short).is_err());
+        assert!(parse_stablecoin_change_30d("[]").is_err());
+    }
+
+    #[tokio::test]
+    async fn fallback_uses_bybit_only_when_binance_fails() {
+        let ok = |v: f64| std::future::ready(Ok::<f64, AppError>(v));
+        let err = |m: &str| std::future::ready(Err::<f64, AppError>(AppError::CryptoSource(m.to_string())));
+
+        assert_eq!(binance_then_bybit("m", ok(1.0), ok(2.0)).await.unwrap(), (1.0, "binance"));
+        assert_eq!(
+            binance_then_bybit("m", err("geo-blocked"), ok(2.0)).await.unwrap(),
+            (2.0, "bybit")
+        );
+        let both = binance_then_bybit("funding", err("geo-blocked"), err("timeout"))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(both.contains("funding") && both.contains("geo-blocked") && both.contains("timeout"));
+    }
+
     // Ao vivo: `cargo test --lib -- --ignored crypto_sources`.
     #[tokio::test]
     #[ignore]
     async fn live_sources_return_plausible_values() {
-        let funding = fetch_funding_rate_7d().await.unwrap();
-        assert!(funding.abs() < 200.0);
-        let oi = fetch_open_interest_change_30d().await.unwrap();
+        let (funding, source) = fetch_funding_rate_7d().await.unwrap();
+        assert!(funding.abs() < 200.0 && !source.is_empty());
+        let (oi, _) = fetch_open_interest_change_30d().await.unwrap();
         assert!(oi.abs() < 500.0);
-        let ls = fetch_long_short_ratio().await.unwrap();
+        let (ls, _) = fetch_long_short_ratio().await.unwrap();
         assert!(ls > 0.0 && ls < 20.0);
         let staking = fetch_staking_yield_real().await.unwrap();
         assert!(staking > -5.0 && staking < 15.0);
+        let dvol = fetch_dvol().await.unwrap();
+        assert!(dvol > 10.0 && dvol < 300.0);
+        let put_call = fetch_put_call_ratio().await.unwrap();
+        assert!(put_call > 0.05 && put_call < 5.0);
+        let stable = fetch_stablecoin_supply_change_30d().await.unwrap();
+        assert!(stable.abs() < 50.0);
+    }
+
+    // Ao vivo: a Bybit sozinha entrega valores plausíveis (o fallback).
+    #[tokio::test]
+    #[ignore]
+    async fn live_bybit_fallback_returns_plausible_values() {
+        assert!(bybit_funding().await.unwrap().abs() < 200.0);
+        assert!(bybit_open_interest().await.unwrap().abs() < 500.0);
+        let ls = bybit_long_short().await.unwrap();
+        assert!(ls > 0.0 && ls < 20.0);
     }
 }

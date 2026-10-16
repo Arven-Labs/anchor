@@ -1,4 +1,4 @@
-// The 13 Ethereum score indicators (Fase 3 + Fase 31) — keys match the
+// The 15 Ethereum score indicators (Fase 3 + Fase 31) — keys match the
 // `indicator` column in `indicator_thresholds`. The grouping into subscores
 // lives in the backend (`domain::crypto_score`) and comes with
 // `get_crypto_score`; this list only labels the indicators and drives the
@@ -16,6 +16,9 @@ export const INDICATORS = {
   funding_rate_7d: "Perp Funding, 7d avg (annualized %)",
   open_interest_change_30d: "Open Interest Change, 30d (% in ETH)",
   long_short_ratio: "Long/Short Account Ratio, 7d avg",
+  dvol: "DVOL (implied volatility index)",
+  put_call_ratio: "Options Put/Call (open interest)",
+  stablecoin_supply_change_30d: "Stablecoin Supply Change, 30d (%)",
 } as const;
 
 export type IndicatorKey = keyof typeof INDICATORS;
