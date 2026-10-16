@@ -70,6 +70,7 @@ function WorkspaceGate({ onEnter }: { onEnter: (workspaceId: number) => void }) 
             <Field label="New Workspace">
               <Input
                 required
+                data-testid="workspace-name"
                 placeholder="e.g.: Family"
                 value={newWorkspaceName}
                 onChange={(e) => setNewWorkspaceName(e.currentTarget.value)}
@@ -78,7 +79,11 @@ function WorkspaceGate({ onEnter }: { onEnter: (workspaceId: number) => void }) 
             {createWorkspaceMutation.isError && (
               <p className="text-red-600">{createWorkspaceMutation.error.message}</p>
             )}
-            <Button type="submit" disabled={createWorkspaceMutation.isPending}>
+            <Button
+              type="submit"
+              data-testid="workspace-create"
+              disabled={createWorkspaceMutation.isPending}
+            >
               {createWorkspaceMutation.isPending ? "Creating..." : "Create and enter"}
             </Button>
           </form>

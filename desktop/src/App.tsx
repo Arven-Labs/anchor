@@ -120,6 +120,7 @@ function App() {
                     <TooltipTrigger asChild>
                       <TabsTrigger
                         value={key}
+                        data-testid={`nav-${key}`}
                         className={
                           "gap-1.5 rounded-lg px-2.5 min-[1900px]:px-3" +
                           (section === key

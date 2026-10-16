@@ -1,0 +1,99 @@
+name: CI Desktop E2E
+
+# E2E do app real: o binário debug (Rust + React embutido + SQLite descartável)
+# dirigido por tauri-driver/WebDriver sob xvfb. Testes em desktop/e2e/.
+#
+# Por enquanto só manual (workflow_dispatch) enquanto o spike não prova que o app
+# sobe headless; depois ganha o gatilho de push/PR em desktop/**.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    # 24.04: o webkit2gtk-driver do 22.04 é da API 4.0 e o app usa a 4.1.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            desktop/e2e/package-lock.json
+
+      # Mesma lista do ci-desktop-rust.yml, mais o WebKitWebDriver (o que o
+      # tauri-driver usa), o servidor X virtual e o D-Bus de sessão.
+      - name: Linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libdbus-1-dev \
+            libsecret-1-dev \
+            patchelf \
+            libudev-dev \
+            pkg-config \
+            webkit2gtk-driver \
+            xvfb \
+            dbus
+
+      # `tauri-build` exige o binário do sidecar no disco; em build debug o
+      # sidecar não é usado (ver `finance_api::sidecar::init`), então um
+      # placeholder basta.
+      - name: Placeholders
+        run: |
+          mkdir -p desktop/src-tauri/binaries
+          touch desktop/src-tauri/binaries/anchor-finance-api-x86_64-unknown-linux-gnu
+
+      - name: App npm deps
+        working-directory: desktop
+        run: npm ci --legacy-peer-deps
+
+      # Debug com frontend embutido: `tauri build` roda o `npm run build` e liga o
+      # `custom-protocol`; `--debug` mantém `debug_assertions` (sem sidecar).
+      - name: Build app (debug, sem instalador)
+        working-directory: desktop
+        run: npx tauri build --debug --no-bundle
+
+      - name: tauri-driver
+        run: cargo install tauri-driver --locked
+
+      - name: E2E npm deps
+        working-directory: desktop/e2e
+        run: npm ci
+
+      - name: E2E
+        working-directory: desktop/e2e
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+        run: xvfb-run -a dbus-run-session -- npm test
+
+      - name: Capturas de tela (falha)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: desktop/e2e/artifacts
+          if-no-files-found: ignore

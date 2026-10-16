@@ -287,6 +287,7 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
             <form onSubmit={handleCreateBorrower} className="flex items-end gap-2">
               <Field label="New borrower">
                 <Input
+                  data-testid="loan-new-borrower-name"
                   placeholder="e.g.: Mom"
                   value={newBorrowerName}
                   onChange={(e) => setNewBorrowerName(e.currentTarget.value)}
@@ -295,6 +296,7 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
               <Button
                 type="submit"
                 variant="outline"
+                data-testid="loan-add-borrower"
                 disabled={newBorrowerName.trim() === "" || createBorrowerMutation.isPending}
               >
                 Add
@@ -302,6 +304,7 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
             </form>
             <Button
               type="button"
+              data-testid="loan-new"
               disabled={borrowers.length === 0}
               onClick={() => {
                 createLoanMutation.reset();
@@ -385,8 +388,12 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
                       </TableCell>
                       <TableCell>{loan.accrued_interest.toFixed(2)}</TableCell>
                       <TableCell>{loan.total_written_off.toFixed(2)}</TableCell>
-                      <TableCell>{loan.extra_received.toFixed(2)}</TableCell>
-                      <TableCell className="font-medium">{loan.saldo_a_receber.toFixed(2)}</TableCell>
+                      <TableCell data-testid={`loan-extra-${loan.id}`}>
+                        {loan.extra_received.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="font-medium" data-testid={`loan-receivable-${loan.id}`}>
+                        {loan.saldo_a_receber.toFixed(2)}
+                      </TableCell>
                       <TableCell>
                         <input
                           type="checkbox"
@@ -397,7 +404,11 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
                         />
                       </TableCell>
                       <TableCell className="flex flex-wrap gap-2">
-                        <Button size="sm" onClick={() => openRepay(loan)}>
+                        <Button
+                          size="sm"
+                          data-testid={`loan-repay-${loan.id}`}
+                          onClick={() => openRepay(loan)}
+                        >
                           Repayment
                         </Button>
                         <Button
@@ -464,7 +475,7 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Borrower">
                 <Select value={borrowerId} onValueChange={setBorrowerId}>
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full" data-testid="loan-borrower-select">
                     <SelectValue placeholder="Select a borrower" />
                   </SelectTrigger>
                   <SelectContent>
@@ -497,6 +508,7 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
               <Field label="Principal">
                 <Input
                   required
+                  data-testid="loan-principal"
                   type="number"
                   step="any"
                   min="0"
@@ -543,6 +555,7 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
 
             <Button
               type="submit"
+              data-testid="loan-create"
               disabled={!canCreateLoan || createLoanMutation.isPending}
               className="w-fit"
             >
@@ -574,6 +587,7 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
               <Field label="Amount received">
                 <Input
                   required
+                  data-testid="repay-received"
                   type="number"
                   step="any"
                   min="0"
@@ -584,6 +598,7 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
               <Field label="Amount written off">
                 <Input
                   required
+                  data-testid="repay-written-off"
                   type="number"
                   step="any"
                   min="0"
@@ -620,7 +635,12 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
 
             {repayMutation.isError && <p className="text-red-600">{repayMutation.error.message}</p>}
 
-            <Button type="submit" disabled={!canRepay || repayMutation.isPending} className="w-fit">
+            <Button
+              type="submit"
+              data-testid="repay-submit"
+              disabled={!canRepay || repayMutation.isPending}
+              className="w-fit"
+            >
               {repayMutation.isPending ? "Saving..." : "Register repayment"}
             </Button>
           </form>

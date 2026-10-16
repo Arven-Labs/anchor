@@ -31,7 +31,7 @@ function FinancesPanel({ workspaceId }: { workspaceId: number }) {
     <Tabs value={section} onValueChange={(value) => setSection(value as FinancesSection)}>
       <TabsList className="mb-4">
         {Object.entries(FINANCES_SECTIONS).map(([key, label]) => (
-          <TabsTrigger key={key} value={key}>
+          <TabsTrigger key={key} value={key} data-testid={`finances-tab-${key}`}>
             {label}
           </TabsTrigger>
         ))}
