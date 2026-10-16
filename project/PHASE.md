@@ -2065,10 +2065,12 @@ arquivar o Lume (decisão exclusiva do dono do projeto, depois de validar).
   `_handle` fica até a aposentadoria). Erros novos `NoData` e `ProviderUnavailable`; `skip_not_found`
   aceita os dois. O cache de frescor ficou **em memória** (só pro que não é gravado), não em tabelas
   novas: as tabelas do Anchor já têm `fetched_at`/`source`. O teste ao vivo contra o Lume de tax-rules
-  virou teste offline (tabela embarcada × seed da migration). **Risco aberto**: a série diária da Selic
-  é baixada inteira (4 janelas) e o cache some ao fechar o app; o teste ao vivo levou 139 s (CDI + Selic)
-  numa rede lenta do BCB, contra o cache persistido do Lume. Mitigar gravando a Selic diária no
-  `anchor.db` e buscando só o trecho novo. **Próximo**: domínio 2 (família Yahoo + bolsai).
+  virou teste offline (tabela embarcada × seed da migration). **Selic persistida**: o BCB é lento e oscila (a série diária inteira levou de 46 s a 139 s
+nos testes ao vivo), então a Meta Selic vive em `selic_daily` no `anchor.db` (migration
+`m20261016_150000`, `finance_api::selic_store`): baixa tudo na primeira vez, depois só o trecho novo
+(TTL de 1 h) e, com o BCB fora do ar, serve o gravado como `stale`. `client::fetch_selic` passou a
+receber `&DatabaseConnection` em vez do handle. O `TtlCache` ficou sem chamador até a curva DI
+(domínio 3). **Próximo**: domínio 2 (família Yahoo + bolsai).
 
 **Estado anterior**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
 arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan

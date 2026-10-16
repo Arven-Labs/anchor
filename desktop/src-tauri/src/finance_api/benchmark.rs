@@ -53,11 +53,8 @@ async fn collect_macro_series(
 /// convertida aqui em retorno mensal (% no mês, mesma unidade do CDI) por
 /// `domain::rates::selic_monthly_returns`. Mês corrente parcial é reescrito
 /// a cada coleta (upsert).
-async fn collect_selic_series(
-    db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
-) -> Result<usize, AppError> {
-    let response = client::fetch_selic(handle, "meta").await?;
+async fn collect_selic_series(db: &DatabaseConnection) -> Result<usize, AppError> {
+    let response = client::fetch_selic(db, "meta").await?;
     let points: Vec<(NaiveDate, f64)> =
         response.data.iter().map(|p| (p.reference_date, p.value_pct)).collect();
     let rows = rates::selic_monthly_returns(&points, Utc::now().date_naive());
@@ -157,7 +154,7 @@ pub async fn collect_benchmarks(
     // Selic não derruba o resto: a série diária é a mais frágil da coleta
     // (~10 mil pontos em 4 janelas do BCB, que oscila — ver Fase 17).
     // Falhou → 0 meses agora, tenta de novo na próxima coleta.
-    let selic_count = match collect_selic_series(db, handle).await {
+    let selic_count = match collect_selic_series(db).await {
         Ok(count) => count,
         Err(err) => {
             eprintln!("collect_benchmarks: Selic skipped — {err}");

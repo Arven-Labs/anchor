@@ -12,10 +12,11 @@
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::de::DeserializeOwned;
+use sea_orm::DatabaseConnection;
 use serde::Deserialize;
 
 use crate::error::AppError;
-use crate::finance_api::FinanceApiHandle;
+use crate::finance_api::{selic_store, FinanceApiHandle};
 use crate::finance_core::{bcb_sgs, tax_rules};
 
 /// Campos presentes em toda resposta da Finance API — achatado (`flatten`)
@@ -705,13 +706,13 @@ pub struct SelicResponse {
     pub data: Vec<SelicPoint>,
 }
 
-pub async fn fetch_selic(_handle: &FinanceApiHandle, series_code: &str) -> Result<SelicResponse, AppError> {
-    let cached = bcb_sgs::daily_series(series_code).await?;
+/// Fase 26 — nativo e persistido: lê/atualiza `selic_daily` no `anchor.db`.
+pub async fn fetch_selic(db: &DatabaseConnection, series_code: &str) -> Result<SelicResponse, AppError> {
+    let series = selic_store::load(db, series_code).await?;
     Ok(SelicResponse {
-        meta: native_meta(cached.value.source, cached.cached, cached.stale, cached.fetched_at),
-        data: cached
-            .value
-            .value
+        meta: native_meta(bcb_sgs::SOURCE, series.cached, series.stale, series.fetched_at),
+        data: series
+            .points
             .into_iter()
             .map(|(reference_date, value_pct)| SelicPoint { reference_date, value_pct })
             .collect(),

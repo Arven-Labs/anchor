@@ -9,14 +9,12 @@
 // (mesma janela leva 0,4 s ou 30 s, ou devolve 502, ou uma página HTML com
 // status 200), então cada janela tem timeout maior e até 3 tentativas.
 
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use chrono::{Datelike, NaiveDate, Utc};
 use serde::Deserialize;
 
 use crate::error::AppError;
-use crate::finance_core::cache::{Cached, TtlCache};
 use crate::finance_core::http;
 use crate::finance_core::provider::{cascade, BoxFuture, DataProvider, Sourced};
 
@@ -30,8 +28,6 @@ const DAILY_RETRY_BACKOFF: Duration = Duration::from_secs(2);
 const DAILY_WINDOW_YEARS: i32 = 9;
 /// Nenhuma série diária do BCB começa antes disso.
 const DAILY_EARLIEST_YEAR: i32 = 1994;
-/// Mesmo TTL padrão do Lume (`cache_ttl_seconds`).
-const SERIES_TTL: Duration = Duration::from_secs(3600);
 
 // ---------------------------------------------------------------------------
 // Catálogo — deliberadamente pequeno (só séries confirmadas ao vivo)
@@ -92,10 +88,11 @@ pub fn parse_daily(body: &str) -> Result<Vec<(NaiveDate, f64)>, AppError> {
     parse_items(body)
 }
 
-/// Janelas `[início, fim]` de 9 anos de 1994 até `today`, contíguas e sem sobreposição.
-pub fn daily_windows(today: NaiveDate) -> Vec<(NaiveDate, NaiveDate)> {
+/// Janelas `[início, fim]` de 9 anos de `from` até `today`, contíguas e sem
+/// sobreposição. Vazio se `from` já passou de `today`.
+pub fn daily_windows(from: NaiveDate, today: NaiveDate) -> Vec<(NaiveDate, NaiveDate)> {
     let mut windows = Vec::new();
-    let mut start = NaiveDate::from_ymd_opt(DAILY_EARLIEST_YEAR, 1, 1).expect("valid date");
+    let mut start = from;
     while start <= today {
         let next_start =
             NaiveDate::from_ymd_opt(start.year() + DAILY_WINDOW_YEARS, 1, 1).expect("valid date");
@@ -104,6 +101,11 @@ pub fn daily_windows(today: NaiveDate) -> Vec<(NaiveDate, NaiveDate)> {
         start = end.succ_opt().expect("has successor");
     }
     windows
+}
+
+/// Primeira data possível de uma série diária do BCB.
+fn earliest() -> NaiveDate {
+    NaiveDate::from_ymd_opt(DAILY_EARLIEST_YEAR, 1, 1).expect("valid date")
 }
 
 // ---------------------------------------------------------------------------
@@ -141,9 +143,10 @@ async fn fetch_daily_window(
     Err(last.expect("at least one attempt"))
 }
 
-async fn fetch_daily(code: u32) -> Result<Vec<(NaiveDate, f64)>, AppError> {
+/// Série diária a partir de `since` (inclusive); `None` busca desde 1994.
+async fn fetch_daily(code: u32, since: Option<NaiveDate>) -> Result<Vec<(NaiveDate, f64)>, AppError> {
     let mut all = Vec::new();
-    for (start, end) in daily_windows(Utc::now().date_naive()) {
+    for (start, end) in daily_windows(since.unwrap_or_else(earliest), Utc::now().date_naive()) {
         all.extend(fetch_daily_window(code, start, end).await?);
     }
     Ok(all)
@@ -157,7 +160,11 @@ async fn fetch_daily(code: u32) -> Result<Vec<(NaiveDate, f64)>, AppError> {
 /// entraria como outra implementação na lista de `providers()`.
 pub trait MacroSeriesProvider: DataProvider {
     fn monthly<'a>(&'a self, slug: &'a str) -> BoxFuture<'a, Result<Vec<(NaiveDate, f64)>, AppError>>;
-    fn daily<'a>(&'a self, slug: &'a str) -> BoxFuture<'a, Result<Vec<(NaiveDate, f64)>, AppError>>;
+    fn daily<'a>(
+        &'a self,
+        slug: &'a str,
+        since: Option<NaiveDate>,
+    ) -> BoxFuture<'a, Result<Vec<(NaiveDate, f64)>, AppError>>;
 }
 
 pub struct BcbSgs;
@@ -177,11 +184,15 @@ impl MacroSeriesProvider for BcbSgs {
         })
     }
 
-    fn daily<'a>(&'a self, slug: &'a str) -> BoxFuture<'a, Result<Vec<(NaiveDate, f64)>, AppError>> {
+    fn daily<'a>(
+        &'a self,
+        slug: &'a str,
+        since: Option<NaiveDate>,
+    ) -> BoxFuture<'a, Result<Vec<(NaiveDate, f64)>, AppError>> {
         Box::pin(async move {
             let code = daily_bcb_code(slug)
                 .ok_or_else(|| AppError::NoData(format!("unknown daily series '{slug}'")))?;
-            fetch_daily(code).await
+            fetch_daily(code, since).await
         })
     }
 }
@@ -197,21 +208,16 @@ pub async fn monthly_series(slug: &str) -> Result<Sourced<Vec<(NaiveDate, f64)>>
     cascade(&format!("macro series '{slug}'"), attempts).await
 }
 
-static DAILY_CACHE: OnceLock<TtlCache<String, Sourced<Vec<(NaiveDate, f64)>>>> = OnceLock::new();
-
-/// Série diária completa (`meta` = Meta Selic), em cache de 1 h na memória: a
-/// Home e o backfill de benchmarks pedem a série inteira (~4 janelas) toda vez.
-pub async fn daily_series(
+/// Série diária (`meta` = Meta Selic) a partir de `since` (inclusive), ou
+/// inteira com `None`. Sem cache aqui: quem chama (`finance_api::selic_store`)
+/// grava no `anchor.db` e só pede o trecho novo.
+pub async fn daily_series_since(
     slug: &str,
-) -> Result<Cached<Sourced<Vec<(NaiveDate, f64)>>>, AppError> {
-    let cache = DAILY_CACHE.get_or_init(TtlCache::new);
-    cache
-        .get_or_refresh(slug.to_string(), SERIES_TTL, || async {
-            let providers = providers();
-            let attempts = providers.iter().map(|p| (p.id(), p.daily(slug))).collect();
-            cascade(&format!("daily series '{slug}'"), attempts).await
-        })
-        .await
+    since: Option<NaiveDate>,
+) -> Result<Sourced<Vec<(NaiveDate, f64)>>, AppError> {
+    let providers = providers();
+    let attempts = providers.iter().map(|p| (p.id(), p.daily(slug, since))).collect();
+    cascade(&format!("daily series '{slug}'"), attempts).await
 }
 
 #[cfg(test)]
@@ -258,7 +264,7 @@ mod tests {
     #[test]
     fn windows_are_contiguous_nine_year_blocks_until_today() {
         let today = d(2026, 10, 16);
-        let windows = daily_windows(today);
+        let windows = daily_windows(earliest(), today);
         assert_eq!(windows[0], (d(1994, 1, 1), d(2002, 12, 31)));
         assert_eq!(windows[1], (d(2003, 1, 1), d(2011, 12, 31)));
         assert_eq!(*windows.last().unwrap(), (d(2021, 1, 1), today));
@@ -272,8 +278,15 @@ mod tests {
 
     #[test]
     fn window_ending_exactly_on_a_block_boundary_is_not_duplicated() {
-        let windows = daily_windows(d(2002, 12, 31));
+        let windows = daily_windows(earliest(), d(2002, 12, 31));
         assert_eq!(windows, vec![(d(1994, 1, 1), d(2002, 12, 31))]);
+    }
+
+    #[test]
+    fn incremental_fetch_is_a_single_short_window() {
+        let today = d(2026, 10, 16);
+        assert_eq!(daily_windows(d(2026, 9, 15), today), vec![(d(2026, 9, 15), today)]);
+        assert!(daily_windows(d(2026, 10, 17), today).is_empty());
     }
 
     #[test]
@@ -294,16 +307,16 @@ mod tests {
     // Ao vivo (rede): `cargo test --lib -- --ignored finance_core::bcb_sgs`.
     #[tokio::test]
     #[ignore]
-    async fn live_cdi_and_meta_selic() {
+    async fn live_cdi_and_incremental_meta_selic() {
         let cdi = monthly_series("cdi").await.unwrap();
         assert_eq!(cdi.source, SOURCE);
         assert!(cdi.value.len() > 200, "{} points", cdi.value.len());
         assert!(cdi.value.iter().all(|(date, _)| date.day() == 1));
 
-        let selic = daily_series("meta").await.unwrap();
-        assert!(!selic.cached);
-        let (_, current) = *selic.value.value.last().unwrap();
+        let recent = daily_series_since("meta", Some(d(2025, 1, 1))).await.unwrap();
+        assert_eq!(recent.source, SOURCE);
+        let (_, current) = *recent.value.last().unwrap();
         assert!(current > 2.0 && current < 40.0, "Selic {current}% looks wrong");
-        assert!(daily_series("meta").await.unwrap().cached);
+        assert!(recent.value.iter().all(|(date, _)| *date >= d(2025, 1, 1)));
     }
 }

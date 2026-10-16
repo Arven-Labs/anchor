@@ -1,8 +1,9 @@
 // Fase 17 — juros ao vivo pro widget da Home e pra tela "Interest rates" do
-// Research. Sem tabela no Anchor: o Lume já cacheia as duas séries, e o
-// sidecar local continua respondendo offline com o cache dele.
+// Research. A Selic vem de `selic_daily` (Fase 26, BCB direto); a curva DI
+// ainda vem do Lume e é calculada a cada chamada.
 
 use chrono::{Duration, NaiveDate, Utc};
+use sea_orm::DatabaseConnection;
 use serde::Serialize;
 
 use crate::domain::rates;
@@ -93,8 +94,8 @@ fn to_vertices(curve: &client::DiCurveResponse) -> Vec<CurveVertex> {
         .collect()
 }
 
-async fn selic_view(handle: &FinanceApiHandle) -> Result<SelicView, AppError> {
-    let response = client::fetch_selic(handle, "meta").await?;
+async fn selic_view(db: &DatabaseConnection) -> Result<SelicView, AppError> {
+    let response = client::fetch_selic(db, "meta").await?;
     let points: Vec<(NaiveDate, f64)> =
         response.data.iter().map(|p| (p.reference_date, p.value_pct)).collect();
     let changes = rates::selic_changes(&points);
@@ -136,9 +137,10 @@ async fn di_view(handle: &FinanceApiHandle) -> Result<Option<DiCurveView>, AppEr
 
 #[tauri::command]
 pub async fn get_interest_rates(
+    db: tauri::State<'_, DatabaseConnection>,
     finance_api: tauri::State<'_, FinanceApiHandle>,
 ) -> Result<InterestRatesView, AppError> {
-    let (selic, di) = tokio::join!(selic_view(&finance_api), di_view(&finance_api));
+    let (selic, di) = tokio::join!(selic_view(&db), di_view(&finance_api));
     let (selic, selic_error) = match selic {
         Ok(view) => (Some(view), None),
         Err(err) => (None, Some(err.to_string())),
@@ -180,7 +182,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn live_selic_current_is_plausible() {
-        let response = client::fetch_selic(&handle(), "meta").await.unwrap();
+        let db = crate::test_support::memory_db().await;
+        let response = client::fetch_selic(&db, "meta").await.unwrap();
         let points: Vec<(NaiveDate, f64)> =
             response.data.iter().map(|p| (p.reference_date, p.value_pct)).collect();
         let (_, current) = *rates::selic_changes(&points).last().unwrap();

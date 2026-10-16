@@ -10,6 +10,7 @@ pub mod crypto;
 pub mod fii;
 pub mod metals;
 pub mod reit;
+pub mod selic_store;
 pub mod sidecar;
 pub mod stocks;
 pub mod us_stock;

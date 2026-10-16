@@ -1,9 +1,13 @@
 // Cache em memória com TTL para dados que não são gravados no `anchor.db`
-// (ex.: série da Selic e curva DI, calculadas a cada abertura da Home). O que
+// (ex.: a curva DI, calculada a cada abertura da Home). O que
 // é gravado já tem `fetched_at`/`source` na própria tabela. Mesmo contrato do
 // `single_row_cache` do Lume: fonte caiu e há dado antigo → devolve o antigo
 // marcado `stale`; sem dado antigo → propaga o erro. `NoData` nunca vira stale
 // (é resposta da fonte, não falha).
+
+// Ainda sem chamador: entra com a curva DI (domínio 3), que não é gravada no
+// banco. A Selic usa `selic_daily` em vez deste cache.
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::future::Future;

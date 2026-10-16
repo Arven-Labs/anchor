@@ -37,6 +37,7 @@ pub mod reit_fundamentals;
 pub mod reit_manual_indicators;
 pub mod rim_inputs;
 pub mod rnav_inputs;
+pub mod selic_daily;
 pub mod stock_dcf_fundamentals;
 pub mod stock_dividend_payments;
 pub mod stock_dividends_avg;

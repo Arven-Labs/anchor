@@ -2374,5 +2374,8 @@ Plano completo em `~/.claude/plans/fuzzy-humming-crystal.md` e resumo na Fase 26
 - **Achado de ambiente**: o `dev.sh check` falhava com "Permission denied" em `/root/.cargo/registry`
   porque os volumes `cargo-registry`/`cargo-git` nascem do root e o container roda como uid 1000 (o
   script só acerta o `target`); acertei o dono dos dois à mão. Vale pôr o `chown` deles no `dev.sh`.
-- **Pendente**: persistir a Selic diária; teste de clique (Home → Selic/DI, Profitability → backfill,
+- **Selic persistida (mesma sessão)**: tabela `selic_daily` + `selic_store` (baixa tudo uma vez, depois só
+  o trecho novo, `stale` se o BCB cair). Suíte inteira: 291 passam, 0 falham; `check` sem warnings. Testes
+  ao vivo passam (primeira carga 46 s, depois instantânea).
+- **Pendente**: teste de clique (Home → Selic/DI, Profitability → backfill,
   Settings → Taxes → sync); domínio 2.
