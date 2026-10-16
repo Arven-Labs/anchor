@@ -2154,3 +2154,10 @@ desenvolvido de verdade. Antes disso o CI só rodava `flutter analyze`/`flutter 
   relativos). 2ª execução: 3 instaladores + APK, tudo verde. Release em rascunho
   `v0.0.0-ci-test` ainda existe (apagar com `gh release delete v0.0.0-ci-test --cleanup-tag`).
 - **Pendência encerrada**: `build.yml` e o job `apk` já rodaram e funcionam.
+- **Teste de clique (item 3) NÃO feito**: o `./dev.sh` foi iniciado mas interrompido (bateria do
+  notebook) durante o rebuild da imagem `anchor-desktop`, que estava do zero depois da limpeza de
+  cache. Release de teste `v0.0.0-ci-test` e a tag foram apagados. **Próxima sessão**: rodar
+  `cd desktop && ./dev.sh` (1ª vez: 15 a 25 min) e testar as Fases 15 (Settings → Storage), 16
+  (Backup: export/import real, com anexo), 17 (widget Interest rates na Home, seção de juros em
+  Research, linha Selic na Rentabilidade), 20 (sem chat/aba de IA/botão de PDF no RNAV/"Check CVM
+  notices") e 24 (Settings → Taxes e Portfolio → Taxes, marcar/desmarcar DARF pago).
