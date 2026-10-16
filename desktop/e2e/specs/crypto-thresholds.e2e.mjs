@@ -1,6 +1,7 @@
 import { browser, expect } from "@wdio/globals";
 import {
   byId,
+  clickCentered,
   enterWorkspace,
   pickOption,
   sql,
@@ -51,7 +52,7 @@ describe("Anchor — score cripto e editor de thresholds", () => {
   });
 
   it("editar o threshold reclassifica a leitura, e o Reset desfaz", async () => {
-    await byId("edit-thresholds").click();
+    await clickCentered(byId("edit-thresholds"));
 
     // Afrouxa: verde até 15, vermelho a partir de 30 → 12% vira verde.
     await byId("threshold-green-funding_rate_7d").waitForDisplayed({ timeout: 20_000 });

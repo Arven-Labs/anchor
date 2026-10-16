@@ -22,6 +22,17 @@ export async function waitForText(element, predicate, message) {
   });
 }
 
+/**
+ * Clica num elemento depois de centralizá-lo na janela. O WebDriver rola o
+ * elemento até a borda de cima, onde o cabeçalho fixo (`sticky`) do app o cobre
+ * e intercepta o clique ("element click intercepted").
+ */
+export async function clickCentered(element) {
+  const el = await element;
+  await el.scrollIntoView({ block: "center", inline: "center" });
+  await el.click();
+}
+
 /** Abre um Select do Radix e escolhe a opção pelo texto exato. */
 export async function pickOption(trigger, label) {
   await (await trigger).click();
