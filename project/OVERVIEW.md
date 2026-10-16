@@ -60,12 +60,13 @@ Testes e builds rodam no GitHub, não na máquina local (pedido do dono do proje
 
 | Workflow | Quando roda | O que faz |
 |---|---|---|
-| `ci-desktop.yml` | push no `main`/PR que mexa em `desktop/` | `npm run build` (`tsc` + vite) e `cargo test --lib` (os `#[ignore]` ao vivo ficam de fora). Cria um sidecar vazio porque o `tauri-build` exige o arquivo do `externalBin` |
+| `ci-desktop-frontend.yml` | push no `main`/PR que mexa no frontend (`desktop/src/`, `package*.json`, configs do vite/tsconfig...) | `npm run build` (`tsc` + vite) |
+| `ci-desktop-rust.yml` | push no `main`/PR que mexa em `desktop/src-tauri/` | `cargo test --lib` (os `#[ignore]` ao vivo ficam de fora). Cria placeholders (`dist/index.html` e um sidecar vazio) porque o `tauri-build` exige `frontendDist` e o arquivo do `externalBin` |
 | `ci-contracts.yml` | push/PR em `contracts/` | `forge test` |
 | `ci-mobile.yml` | push/PR em `mobile/` | `flutter analyze` + `flutter test` (substitui `./dev.sh flutter test` no Docker local). No "Run workflow" manual roda também o job `apk`, que gera um APK de teste como artefato |
 | `build.yml` | tag `v*` | instaladores Linux/Windows/macOS + APK Android (job `apk`, depois do `build`) no mesmo release em rascunho (ainda nunca rodou) |
 
-Os três de CI têm `workflow_dispatch` (botão "Run workflow" na aba Actions); o `build.yml` só dispara por tag.
+Os quatro de CI têm `workflow_dispatch` (botão "Run workflow" na aba Actions); o `build.yml` só dispara por tag.
 
 **APK**: `flutter build apk --release` em `mobile/`, assinado com a chave de debug (`signingConfig` em `mobile/android/app/build.gradle.kts`). Basta pra instalar no celular, mas não serve pra Play Store. Quando houver versão oficial: criar keystore próprio, guardar nos secrets do GitHub e trocar o `signingConfig`.
 

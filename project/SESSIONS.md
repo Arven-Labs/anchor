@@ -2126,3 +2126,21 @@ desenvolvido de verdade. Antes disso o CI só rodava `flutter analyze`/`flutter 
   Na hora da versão oficial: keystore próprio nos secrets do GitHub.
 - **Pendente**: o job `apk` do `build.yml` nunca rodou (depende de tag, como o resto do
   `build.yml`).
+
+### 2026-10-15 — Sessão 105
+
+**CI do desktop dividido por frontend e Rust.** Pedido do dono do projeto: só rodar o que mudou
+(cargo só quando mexer no Rust, Flutter só no mobile), pra não gastar CI à toa.
+- **Achado**: `ci-desktop.yml` filtrava por `desktop/**` inteiro, então mudar só um `.tsx` rodava
+  `cargo test` (~4 min) e mudar só um `.rs` rodava o build do frontend. O `paths` do GitHub vale
+  pro workflow inteiro, então a divisão exigiu dois arquivos.
+- **Feito**: `ci-desktop-frontend.yml` (só `npm run build`, filtro em `desktop/src/`, `public/`,
+  `index.html`, `package*.json`, `tsconfig*.json`, `vite.config.ts`, `components.json`) e
+  `ci-desktop-rust.yml` (só `cargo test --lib`, filtro em `desktop/src-tauri/`). O job Rust não usa
+  Node: cria `desktop/dist/index.html` e o sidecar vazios, porque o `tauri-build` exige o
+  `frontendDist` e o `externalBin` no disco.
+- **Pendente**: validar com push e CI verde (nunca rodou). Ponto de atenção: se o `generate_context!`
+  recusar o `dist/` placeholder, o job Rust precisa gerar o frontend de verdade.
+- **Limpeza de cache local** (autorizada): imagens e volumes de cache do Docker, `~/.cache`,
+  `~/.npm`, `~/.cargo/registry`, `~/.gradle`, `~/.pub-cache` e `desktop/node_modules`. Mantidos
+  volumes de dados e `~/.rustup`. Próximo `./dev.sh` reconstrói tudo.

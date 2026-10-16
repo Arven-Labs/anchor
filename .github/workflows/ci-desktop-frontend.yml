@@ -1,0 +1,56 @@
+name: CI Desktop Frontend
+
+# Checagem de tipos e build do frontend (React/TS), só quando algo dele muda.
+# O backend Rust tem workflow próprio (ci-desktop-rust.yml).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/src/**'
+      - 'desktop/public/**'
+      - 'desktop/index.html'
+      - 'desktop/package.json'
+      - 'desktop/package-lock.json'
+      - 'desktop/tsconfig*.json'
+      - 'desktop/vite.config.ts'
+      - 'desktop/components.json'
+      - '.github/workflows/ci-desktop-frontend.yml'
+  pull_request:
+    paths:
+      - 'desktop/src/**'
+      - 'desktop/public/**'
+      - 'desktop/index.html'
+      - 'desktop/package.json'
+      - 'desktop/package-lock.json'
+      - 'desktop/tsconfig*.json'
+      - 'desktop/vite.config.ts'
+      - 'desktop/components.json'
+      - '.github/workflows/ci-desktop-frontend.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: npm install
+        working-directory: desktop
+        run: npm ci --legacy-peer-deps
+
+      # `tsc && vite build` — checa os tipos e confirma que o bundle gera
+      - name: Frontend build
+        working-directory: desktop
+        run: npm run build

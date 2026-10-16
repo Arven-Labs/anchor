@@ -1,12 +1,13 @@
-name: CI Desktop
+name: CI Desktop Rust
 
-# Testes do app desktop (Rust + frontend) a cada push/PR que mexa em desktop/.
+# Testes do backend Rust do app desktop, só quando algo em desktop/src-tauri/ muda.
+# O frontend tem workflow próprio (ci-desktop-frontend.yml).
 on:
   push:
     branches: [main]
-    paths: ['desktop/**', '.github/workflows/ci-desktop.yml']
+    paths: ['desktop/src-tauri/**', '.github/workflows/ci-desktop-rust.yml']
   pull_request:
-    paths: ['desktop/**', '.github/workflows/ci-desktop.yml']
+    paths: ['desktop/src-tauri/**', '.github/workflows/ci-desktop-rust.yml']
   workflow_dispatch:
 
 concurrency:
@@ -19,13 +20,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
 
       - name: Rust
         uses: dtolnay/rust-toolchain@stable
@@ -51,20 +45,14 @@ jobs:
             libudev-dev \
             pkg-config
 
-      - name: npm install
-        working-directory: desktop
-        run: npm ci --legacy-peer-deps
-
-      # `tsc && vite build` — checa os tipos e gera o dist/ que o Tauri exige pra compilar
-      - name: Frontend build
-        working-directory: desktop
-        run: npm run build
-
-      # O tauri-build exige que o sidecar declarado em `externalBin` exista no disco.
-      # Os testes não usam o sidecar, então um arquivo vazio basta (o real só é gerado no build.yml).
-      - name: Sidecar placeholder
+      # O tauri-build exige que o `frontendDist` (../dist) e o sidecar declarado em
+      # `externalBin` existam no disco. Os testes não usam nenhum dos dois, então
+      # placeholders bastam (o frontend real é validado no ci-desktop-frontend.yml
+      # e o sidecar real só é gerado no build.yml).
+      - name: Placeholders
         run: |
-          mkdir -p desktop/src-tauri/binaries
+          mkdir -p desktop/dist desktop/src-tauri/binaries
+          echo '<!doctype html>' > desktop/dist/index.html
           touch desktop/src-tauri/binaries/anchor-finance-api-x86_64-unknown-linux-gnu
 
       # Testes `#[ignore]` (ao vivo contra o Lume) ficam de fora, como no local
