@@ -35,7 +35,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_shell::init())
         // Fase 11.3 — conexão de banco precisa de um `AppHandle` pra resolver
         // `app_data_dir()` em build de release (`db::resolve_database_path`),
         // que só existe a partir daqui — não dá mais pra conectar antes do
@@ -52,13 +51,6 @@ pub fn run() {
             if let Ok(cache_dir) = app.path().app_cache_dir() {
                 finance_core::disk_cache::init(cache_dir);
             }
-
-            // Fase 14.2 — em dev, aponta pro `docker compose up` manual do
-            // easybusiness; em release, spawna o sidecar compilado. Ver
-            // `finance_api::sidecar::init`.
-            let finance_api = finance_api::sidecar::init(&handle)
-                .expect("failed to initialize the Finance API sidecar");
-            app.manage(finance_api);
 
             Ok(())
         })
@@ -139,8 +131,9 @@ pub fn run() {
             commands::fii::run_fii_cvm_collector,
             commands::fii::list_fii_cvm_monthly,
             commands::fii::list_fii_cvm_properties,
-            commands::finance_api_settings::get_finance_api_settings,
-            commands::finance_api_settings::set_finance_api_settings,
+            commands::data_source_credentials::list_data_source_credentials,
+            commands::data_source_credentials::set_data_source_credential,
+            commands::data_source_credentials::clear_data_source_credential,
             commands::storage_settings::get_storage_settings,
             commands::storage_settings::set_storage_settings,
             commands::backup::export_workspace_backup,
@@ -226,14 +219,5 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            // Fase 14.2 — mata o processo sidecar da Finance API (se houver
-            // um rodando, ver `finance_api::FinanceApiHandle::shutdown`)
-            // antes do app fechar, pra não deixar processo órfão.
-            if let tauri::RunEvent::ExitRequested { .. } = event {
-                if let Some(finance_api) = app_handle.try_state::<finance_api::FinanceApiHandle>() {
-                    finance_api.shutdown();
-                }
-            }
-        });
+        .run(|_app_handle, _event| {});
 }

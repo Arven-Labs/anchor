@@ -1163,6 +1163,9 @@ configurada), coluna Source ganhou o rótulo "CVM".
 
 ### Fase 14 — Terceirizar `data-collector/` de vez pro EasyBusiness (ideia levantada na Sessão 89, planejada por completo, não iniciada)
 
+> **Histórico (superada pela Fase 26, Sessão 107)**: a Fase 14 foi executada (Sessões 89 a 92) e
+> depois desfeita no sentido inverso: o sidecar do Lume saiu e as fontes foram portadas pra Rust.
+
 **Objetivo**: pedido explícito do dono do projeto — apagar `data-collector/` por completo (a
 Fase 1.7 do EasyBusiness já tinha migrado a maior parte dele pra consumir a Finance API via
 HTTP, mas deixou o processo Python local, setup manual, e 4 capacidades sem endpoint
@@ -1734,6 +1737,9 @@ duplica essa funcionalidade.
 
 ### Fase 21 — Consumo do Lume (ex-EasyBusiness) com fallback pra instância compartilhada do Warden (registrada na Sessão 100, não iniciada)
 
+> **Superada pela Fase 26 (Sessão 107)**: o Lume foi aposentado e o Anchor busca os dados direto
+> das fontes públicas; não há mais sidecar nem instância compartilhada pra descobrir.
+
 **Origem**: arquivo solto `anchor.md`, registrado aqui na Sessão 100.
 
 **Contexto de nomenclatura**: o repo `easybusiness` citado nas Fases 14 e 17 (Finance API) foi
@@ -2146,10 +2152,30 @@ código. O sidecar de release nunca recebia essa variável, então os fundamento
 dev; agora sem o e-mail o erro diz o que configurar. **Paridade com o Python do Lume**: AAPL, JPM e O
 (fundamentos, payout, DCF e REIT) idênticos até o último dígito, inclusive JPM e O dando "sem DCF" e o
 REIT devolvendo imóveis só para o O. Cerca de 6 s por ticker em build de debug (14 s no primeiro, com a
-lista de tickers). **Todos os 7 domínios de dados estão nativos; o Lume só é chamado por código que
-ainda não foi apagado.** **Próximo**: domínio 8, aposentar o sidecar (`sidecar.rs`, `externalBin`,
-passos Python do `build.yml`, `.lume-version`), a tela de credenciais (bolsai + e-mail da SEC) e a
-limpeza das menções ao Lume.
+lista de tickers). **Todos os 7 domínios de dados estão nativos.**
+
+**Domínio 8 feito (Sessão 107): sidecar aposentado, Fase 26 concluída no código.**
+- **Removido**: `finance_api/sidecar.rs` e o `FinanceApiHandle`, que atravessava ~40 funções sem fazer
+  nada (o parâmetro saiu de `client.rs`, de todos os `collect_*` e dos comandos Tauri); o HTTP do
+  `client.rs`; `tauri-plugin-shell`, `bundle.externalBin` e `shell:allow-execute`; as variantes
+  `FinanceApi` e `FinanceApiNotFound` do `AppError`; `.lume-version`; os passos Python, "Checkout Lume" e
+  PyInstaller do `build.yml` e os placeholders do binário nos dois CIs; a tela Local/Remote e a tabela
+  `finance_api_settings` (nova migration `m20261016_160000`, com `down` que recria a tabela vazia). Os
+  DTOs do `client.rs` deixaram de ser `Deserialize` (viraram só o contrato entre fontes e coletores).
+- **Novo**: Settings → **Data sources** (substitui "Finance API"): a chave da bolsai e o e-mail de
+  contato da SEC, gravados no keyring do SO por `finance_core::api_keys` (`status`, `store`, `clear`,
+  validação de entrada) e expostos por `list/set/clear_data_source_credential`. A tela nunca recebe um
+  segredo de volta, só de onde ele vem (keyring, variável de ambiente ou nada); o e-mail volta porque não
+  é segredo. Isso fecha o problema de que bolsai e SEC só funcionavam em dev.
+- **Também**: o campo `lume_value` de `TaxRuleConflict` virou `official_value` (backend e tela), e os
+  textos "Couldn't reach Lume" / "from the Finance API" foram trocados.
+- **Verificado**: `./dev.sh check` sem warnings (tsc + `cargo check --all-targets`, sem o plugin shell e
+  sem `externalBin`); suíte inteira 400 passam, 0 falham (inclui as migrations do zero e 10 testes novos
+  de credenciais). **Não verificado**: o `build.yml` sem Python nas 3 plataformas (só roda em tag) e o E2E
+  novo da seção, que dependem do CI; e o teste de clique em Settings → Data sources (salvar e remover no
+  keyring do SO).
+- **Estado do Lume**: o repo não foi tocado. Quando o dono do projeto validar o Anchor sozinho, a decisão
+  de arquivar ou apagar é dele. Fases 14 e 21 ficam **superadas** por esta fase.
 
 **Estado anterior**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
 arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan

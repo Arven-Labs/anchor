@@ -1,6 +1,6 @@
 import { useState } from "react";
 import TruthIdSettingsSection from "../truthid/TruthIdSettingsSection";
-import FinanceApiSettingsSection from "./FinanceApiSettingsSection";
+import DataSourcesSection from "./DataSourcesSection";
 import StorageSettingsSection from "./StorageSettingsSection";
 import BackupSettingsSection from "./BackupSettingsSection";
 import TaxSettingsSection from "./TaxSettingsSection";
@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // layout de sidebar + conteúdo já pensado pra caber mais de uma seção
 // (comentário original, quando só "IA" existia) funcionou sem redesenho;
 // ainda sem abstração de registro de seções — só 2 itens, não vale a pena.
-const SECTIONS = ["TruthID", "Finance API", "Storage", "Backup", "Taxes"] as const;
+const SECTIONS = ["TruthID", "Data sources", "Storage", "Backup", "Taxes"] as const;
 
 function SettingsPage({ onBack }: { onBack: () => void }) {
   const [section, setSection] = useState<(typeof SECTIONS)[number]>("TruthID");
@@ -50,7 +50,7 @@ function SettingsPage({ onBack }: { onBack: () => void }) {
         </nav>
         <div className="flex-1">
           {section === "TruthID" && <TruthIdSettingsSection />}
-          {section === "Finance API" && <FinanceApiSettingsSection />}
+          {section === "Data sources" && <DataSourcesSection />}
           {section === "Storage" && <StorageSettingsSection />}
           {section === "Backup" && <BackupSettingsSection />}
           {section === "Taxes" && <TaxSettingsSection />}

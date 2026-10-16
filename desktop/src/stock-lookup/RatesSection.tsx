@@ -172,7 +172,7 @@ export default function RatesSection() {
   if (ratesQuery.isError) {
     return (
       <p className="text-sm text-red-600">
-        Couldn't load interest rates from the Finance API ({ratesQuery.error.message}).
+        Couldn't load interest rates from the market data sources ({ratesQuery.error.message}).
       </p>
     );
   }

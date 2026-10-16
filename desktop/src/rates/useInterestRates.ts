@@ -6,7 +6,7 @@ import type { InterestRatesView } from "./types";
 // Compartilhado entre o widget da Home e a tela de Research — mesma
 // `queryKey`, então abrir um depois do outro não busca de novo. Juros mudam
 // no máximo uma vez por dia (curva DI) ou a cada Copom (Selic): 30 min de
-// `staleTime` evita bater no Lume a cada troca de aba.
+// `staleTime` evita bater nas fontes (BCB e B3) a cada troca de aba.
 export function useInterestRates() {
   return useQuery<InterestRatesView, AppError>({
     queryKey: ["interest-rates"],

@@ -13,7 +13,6 @@ use sea_orm::{DatabaseConnection, Set};
 use crate::entity::reit_fundamentals;
 use crate::error::AppError;
 use crate::finance_api::{client, insert_ignoring_conflicts, skip_not_found, us_stock};
-use crate::finance_api::FinanceApiHandle;
 
 /// A Finance API já devolve a série histórica completa a cada chamada
 /// (append-only do lado dela) — `ON CONFLICT DO NOTHING` no índice
@@ -21,7 +20,6 @@ use crate::finance_api::FinanceApiHandle;
 /// existentes ao rodar de novo, mesmo espírito do `stock_price_history`.
 pub async fn collect_reit_fundamentals(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     tickers: &[String],
 ) -> Result<usize, AppError> {
     let now = Utc::now().to_rfc3339();
@@ -29,7 +27,7 @@ pub async fn collect_reit_fundamentals(
     let mut models = Vec::new();
 
     for ticker in tickers {
-        let Some(response) = skip_not_found(client::fetch_reit_fundamentals(handle, ticker)).await?
+        let Some(response) = skip_not_found(client::fetch_reit_fundamentals(ticker)).await?
         else {
             continue;
         };
@@ -73,15 +71,14 @@ pub async fn collect_reit_fundamentals(
 /// "sem dado pra esse ticker"; um erro de configuração ainda propaga.
 pub async fn run_reit_collector(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     tickers: &[String],
 ) -> Result<String, AppError> {
-    let quotes = us_stock::collect_quotes(db, handle, tickers).await?;
-    let dividends_avg = us_stock::collect_dividends_avg(db, handle, tickers).await?;
-    let technicals = us_stock::collect_technicals(db, handle, tickers).await?;
-    let payments = us_stock::collect_dividend_payments(db, handle, tickers).await?;
-    let price_history = us_stock::collect_price_history(db, handle, tickers).await?;
-    let reit_count = collect_reit_fundamentals(db, handle, tickers).await?;
+    let quotes = us_stock::collect_quotes(db,tickers).await?;
+    let dividends_avg = us_stock::collect_dividends_avg(db,tickers).await?;
+    let technicals = us_stock::collect_technicals(db,tickers).await?;
+    let payments = us_stock::collect_dividend_payments(db,tickers).await?;
+    let price_history = us_stock::collect_price_history(db,tickers).await?;
+    let reit_count = collect_reit_fundamentals(db,tickers).await?;
 
     Ok(format!(
         "Updated {} quote(s), {} dividend average record(s), {} technicals record(s), \
@@ -106,21 +103,13 @@ mod tests {
             .expect("failed to connect to the real dev database")
     }
 
-    fn handle() -> FinanceApiHandle {
-        FinanceApiHandle::for_test(
-            "http://localhost:8000".to_string(),
-            "local-dev-key-change-me".to_string(),
-        )
-    }
-
     #[tokio::test]
     #[ignore]
     async fn live_collect_reit_fundamentals_writes_a_real_row() {
         let db = dev_db().await;
-        let handle = handle();
         let ticker = "O".to_string(); // Realty Income — validado ao vivo do lado easybusiness
 
-        let count = collect_reit_fundamentals(&db, &handle, &[ticker.clone()])
+        let count = collect_reit_fundamentals(&db,&[ticker.clone()])
             .await
             .unwrap();
         assert!(count > 0);

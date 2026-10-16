@@ -70,7 +70,7 @@ pub trait StorageProvider: Send + Sync {
 }
 
 /// Resolve o provider configurado em `storage_settings` (default `local` se a tabela estiver
-/// vazia, mesmo padrão de `commands::finance_api_settings::get_finance_api_settings`).
+/// vazia: linha única, ausente = valor padrão).
 pub async fn resolve_active_provider(
     app: &tauri::AppHandle,
     db: &DatabaseConnection,

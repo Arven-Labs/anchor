@@ -9,8 +9,8 @@ use tauri::Manager;
 // `/data-collector/anchor.db` — Rust e o coletor Python compartilhavam o
 // mesmo container, então só precisavam apontar pro mesmo arquivo (decisão
 // original, ver `project/ARCHITECTURE.md`). Com `data-collector/` apagado
-// por completo (Fase 14.5 — todo o fetch+write já mora em `finance_api/`,
-// consumindo a Finance API do easybusiness via HTTP), o motivo de
+// por completo (Fase 14.5 — todo o fetch+write já mora em `finance_api/`),
+// o motivo de
 // compartilhar container desapareceu; o banco ganhou uma pasta própria.
 const DEV_DATABASE_FILE_PATH: &str = "/data/anchor.db";
 

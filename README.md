@@ -33,10 +33,11 @@ a UI built around exactly that workflow.
 | Desktop app | Tauri + Rust + React/TypeScript | [`desktop/`](desktop/) |
 | Smart contract (sync, in progress) | Solidity (Foundry) | [`contracts/`](contracts/) |
 
-Quotes, fundamentals, and crypto data come from a local instance of the
-[Lume Finance API](https://github.com/Arven-Labs/lume) (a sibling open-source
-project), embedded as a Tauri sidecar process — the Rust side talks to it over HTTP, no
-Python or subprocess-per-fetch involved.
+Quotes, rates, fundamentals, and crypto data are fetched by the app itself (Rust) straight from
+public sources — Yahoo Finance, the Brazilian Central Bank, B3, the CVM, SEC EDGAR, CoinGecko and
+others — with no helper process and no account required. Two sources ask for something from you,
+set in Settings → Data sources: a free [bolsai](https://usebolsai.com) API key (Brazilian stock
+fundamentals) and a contact email for the SEC (US fundamentals).
 
 ## Building from source
 
@@ -71,8 +72,8 @@ session-by-session history — start at [`project/INDEX.md`](project/INDEX.md).
 
 ## Security
 
-- API keys (e.g. a remote Finance API key) live in the OS keyring, never in the SQLite database or
-  in git.
+- Data-source credentials (the bolsai API key, the SEC contact email) live in the OS keyring, never
+  in the SQLite database or in git.
 - Your local SQLite database (actual valuations/portfolio data) is gitignored and never leaves your
   machine.
 - This is a personal tool, not professionally audited — treat it as early-stage software.

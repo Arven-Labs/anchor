@@ -1,5 +1,5 @@
 // Fase 17 — SELIC e DI Futuro. Puro: conversões da Meta Selic diária (BCB
-// 432, vem do Lume em dias corridos) em retorno mensal e em "decisões do
+// 432, vem do BCB em dias corridos) em retorno mensal e em "decisões do
 // Copom", e leitura de prazos-chave na curva DI×PRE da B3.
 
 use std::collections::BTreeMap;

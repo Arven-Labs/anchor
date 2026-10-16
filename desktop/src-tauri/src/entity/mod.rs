@@ -19,7 +19,6 @@ pub mod dcf_inputs;
 pub mod fii_cnpj_cache;
 pub mod fii_cvm_monthly;
 pub mod fii_cvm_properties;
-pub mod finance_api_settings;
 pub mod general_transaction;
 pub mod general_transaction_category;
 pub mod gordon_inputs;

@@ -2454,3 +2454,18 @@ com Write e Edit.
   normal em REIT; o indicador não faz sentido para esse tipo de empresa).
 - **Pendente**: teste de clique (Research → ação dos EUA, REIT); domínio 8 (aposentar o sidecar).
 
+**Fase 26, domínio 8 (aposentar o sidecar e dar tela às credenciais).** Plan mode primeiro; tudo
+escrito com Write e Edit.
+- **Feito**: `FinanceApiHandle` fora de ~40 funções, `sidecar.rs`, `tauri-plugin-shell`, `externalBin`,
+  permissão de shell, `.lume-version` e os passos Python do `build.yml` removidos; migration que apaga
+  `finance_api_settings`; nova seção Settings → **Data sources** (bolsai + e-mail da SEC no keyring) no
+  lugar de "Finance API"; `lume_value` virou `official_value`; README e comentários vivos atualizados.
+  Fases 14 e 21 marcadas como superadas.
+- **Verificado**: `check` sem warnings e suíte inteira com 400 testes passando (10 novos de
+  credenciais; as migrations do zero rodam com a nova migration). **Não verificado**: `build.yml` sem
+  Python nas 3 plataformas (só roda em tag), E2E novo da seção e o clique em Settings → Data sources.
+- **Achado**: um construtor de `AppError::FinanceApi` em `finance_api/crypto.rs` só apareceu quando
+  removi a variante; o compilador o pegou.
+- **Pendente**: CI do push; autorização do dono para uma tag de teste (`v0.0.0-ci-test`, apagada depois)
+  que prove o `build.yml`; testes de clique de todos os domínios; decisão sobre arquivar o repo do Lume.
+

@@ -37,8 +37,8 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
       "nav-portfolio",
     ]);
 
-    // Fase 17: o widget de juros existe na Home (os dados vêm do Lume, ausente
-    // aqui, então só conferimos que o widget está lá).
+    // Fase 17: o widget de juros existe na Home (os dados vêm do BCB e da B3, que
+    // o teste não consulta, então só conferimos que o widget está lá).
     await waitForText(
       $("body"),
       (text) => text.includes("Total portfolio value") && text.includes("Interest rates"),
@@ -52,7 +52,17 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
 
     const sections = await elementsOf('[data-testid^="settings-section-"]');
     const names = await Promise.all(sections.map((el) => textOf(el)));
-    expect(names).toEqual(["TruthID", "Finance API", "Storage", "Backup", "Taxes"]);
+    expect(names).toEqual(["TruthID", "Data sources", "Storage", "Backup", "Taxes"]);
+  });
+
+  it("Data sources: lista a chave da bolsai e o e-mail da SEC sem expor valores", async () => {
+    await byId("settings-section-Data sources").click();
+    // Não salvamos nada: o CI não tem cofre (secret service) para o keyring.
+    await waitForText(
+      $("body"),
+      (text) => text.includes("bolsai API key") && text.includes("SEC EDGAR contact email"),
+      "a seção deveria listar as duas credenciais",
+    );
   });
 
   it("Storage: o padrão é o disco local e as outras opções estão desabilitadas", async () => {

@@ -2,8 +2,8 @@
 // de `transactions` (nunca persistida), no nível do Workspace inteiro — o
 // imposto é por CPF, então somam-se as vendas de todas as carteiras dele.
 // Os parâmetros (alíquotas, limites…) vêm de `tax_rules`: seed da migration,
-// atualizável pelo Lume (`sync_tax_rules`) e editável pelo usuário — edição
-// do usuário nunca é sobrescrita pela sincronização.
+// atualizável pela tabela embarcada no app (`sync_tax_rules`) e editável pelo
+// usuário — edição do usuário nunca é sobrescrita pela sincronização.
 
 use std::collections::{HashMap, HashSet};
 
@@ -22,7 +22,7 @@ use crate::entity::{
     tax_rules, transactions,
 };
 use crate::error::AppError;
-use crate::finance_api::{client, FinanceApiHandle};
+use crate::finance_api::client;
 
 const BUY: &str = "compra";
 const SELL: &str = "venda";
@@ -269,25 +269,24 @@ pub struct TaxRuleConflict {
     pub rule_key: String,
     pub effective_from: String,
     pub your_value: f64,
-    pub lume_value: f64,
+    pub official_value: f64,
 }
 
 #[derive(Serialize)]
 pub struct TaxRuleSyncResult {
     pub added: u32,
     pub updated: u32,
-    /// Regras editadas pelo usuário cujo valor oficial mudou no Lume — não
-    /// são tocadas; a UI oferece "reset" pra aplicar o valor novo.
+    /// Regras editadas pelo usuário cujo valor oficial mudou na tabela embarcada
+    /// — não são tocadas; a UI oferece "reset" pra aplicar o valor novo.
     pub conflicts: Vec<TaxRuleConflict>,
 }
 
 #[tauri::command]
 pub async fn sync_tax_rules(
     db: tauri::State<'_, DatabaseConnection>,
-    finance_api: tauri::State<'_, FinanceApiHandle>,
 ) -> Result<TaxRuleSyncResult, AppError> {
     let db = db.inner();
-    let response = client::fetch_tax_rules_br(&finance_api).await?;
+    let response = client::fetch_tax_rules_br().await?;
     let existing: HashMap<(String, String), tax_rules::Model> = tax_rules::Entity::find()
         .all(db)
         .await?
@@ -328,7 +327,7 @@ pub async fn sync_tax_rules(
                         rule_key: row.rule_key.clone(),
                         effective_from: row.effective_from.clone(),
                         your_value: row.value,
-                        lume_value: rule.value,
+                        official_value: rule.value,
                     });
                 }
                 if official_changed && !keep_user_value {

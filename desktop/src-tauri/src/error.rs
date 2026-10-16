@@ -30,10 +30,6 @@ pub enum AppError {
     Rpc(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Finance API: not found — {0}")]
-    FinanceApiNotFound(String),
-    #[error("Finance API error: {0}")]
-    FinanceApi(String),
     #[error("Arweave gateway error: {0}")]
     Arweave(String),
     #[error("decryption failed: {0}")]
@@ -70,8 +66,6 @@ impl AppError {
             AppError::InvalidAddress(_) => "INVALID_ADDRESS",
             AppError::Rpc(_) => "RPC_ERROR",
             AppError::Io(_) => "IO_ERROR",
-            AppError::FinanceApiNotFound(_) => "FINANCE_API_NOT_FOUND",
-            AppError::FinanceApi(_) => "FINANCE_API_ERROR",
             AppError::Arweave(_) => "ARWEAVE_ERROR",
             AppError::Decryption(_) => "DECRYPTION_ERROR",
             AppError::Json(_) => "JSON_ERROR",

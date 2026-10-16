@@ -26,7 +26,6 @@ node_modules/
 dist/
 build/
 target/
-desktop/src-tauri/binaries/
 
 # Foundry
 contracts/out/

@@ -1,9 +1,7 @@
-// Fase 14.2 — infraestrutura de acesso à Finance API (easybusiness), que vai
-// substituir o `data-collector/` local por completo até o fim da Fase 14.
-// `sidecar` cuida do ciclo de vida do processo (release) / endpoint fixo
-// (dev); `client` é o HTTP client tipado consumido por cima dele. Nenhum
-// `#[tauri::command]` chama isso ainda — a Fase 14.4 é quem porta a lógica
-// de fetch+write do coletor Python pra cima deste client.
+// Coletores de dados de mercado: buscam nas fontes públicas (via `client`, que
+// chama `finance_core`) e gravam no `anchor.db`, uma classe de ativo por módulo.
+// Foi a camada que falava com o sidecar do Lume (Fases 14 e 17); na Fase 26 o
+// sidecar foi aposentado e `client` passou a usar as fontes nativas.
 pub mod benchmark;
 pub mod client;
 pub mod crypto;
@@ -11,31 +9,26 @@ pub mod fii;
 pub mod metals;
 pub mod reit;
 pub mod selic_store;
-pub mod sidecar;
 pub mod stocks;
 pub mod us_stock;
-
-pub use sidecar::FinanceApiHandle;
 
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{DatabaseConnection, DbErr, EntityTrait};
 
 use crate::error::AppError;
 
-/// Vários endpoints da Finance API voltam 404 pra "esse ticker/empresa não
-/// tem esse dado" (ex.: `bolsai-fundamentals` pra um FII, `dividends-avg`
-/// pra um ticker sem histórico) — mesmo contrato que
-/// `data-collector/sources/finance_api_client.py` já tinha (`
-/// FinanceApiNotFoundError` capturado dentro do loop por-ticker, deixando
-/// qualquer outro erro propagar). Usado nos módulos por classe de ativo pra
-/// não repetir esse `match` em cada chamada.
+/// Muitas fontes respondem "esse ticker/empresa não tem esse dado" (ex.:
+/// fundamentos da bolsai pra um FII, média de dividendos de um ticker sem
+/// histórico), que chega como `AppError::NoData`. O coletor pula o item e deixa
+/// qualquer outro erro propagar. Usado nos módulos por classe de ativo pra não
+/// repetir esse `match` em cada chamada.
 pub async fn skip_not_found<T, F>(fut: F) -> Result<Option<T>, AppError>
 where
     F: std::future::Future<Output = Result<T, AppError>>,
 {
     match fut.await {
         Ok(value) => Ok(Some(value)),
-        Err(AppError::FinanceApiNotFound(_) | AppError::NoData(_)) => Ok(None),
+        Err(AppError::NoData(_)) => Ok(None),
         Err(err) => Err(err),
     }
 }

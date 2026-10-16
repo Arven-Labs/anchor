@@ -38,7 +38,7 @@ type TaxRuleConflict = {
   rule_key: string;
   effective_from: string;
   your_value: number;
-  lume_value: number;
+  official_value: number;
 };
 
 type TaxRuleSyncResult = {
@@ -143,8 +143,8 @@ function TaxSettingsSection() {
       <div>
         <h3 className="text-sm font-semibold text-muted-foreground">Tax rules</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Rates and limits used by the Taxes tab. They come up to date from Lume; if the law
-          changes before an update arrives, edit the value here — your edits are never
+          Rates and limits used by the Taxes tab. App updates ship the latest official table; if
+          the law changes before an update arrives, edit the value here — your edits are never
           overwritten. Each row applies from its start date, so past months keep the rule that was
           valid then.
         </p>
@@ -169,7 +169,8 @@ function TaxSettingsSection() {
         )}
         {syncMutation.isError && (
           <p className="text-sm text-red-600">
-            Couldn't reach Lume ({syncMutation.error.message}). The current values keep working.
+            Couldn't update the rules ({syncMutation.error.message}). The current values keep
+            working.
           </p>
         )}
       </div>

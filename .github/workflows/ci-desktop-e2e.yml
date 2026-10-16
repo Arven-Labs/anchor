@@ -74,20 +74,12 @@ jobs:
             dbus \
             sqlite3
 
-      # `tauri-build` exige o binário do sidecar no disco; em build debug o
-      # sidecar não é usado (ver `finance_api::sidecar::init`), então um
-      # placeholder basta.
-      - name: Placeholders
-        run: |
-          mkdir -p desktop/src-tauri/binaries
-          touch desktop/src-tauri/binaries/anchor-finance-api-x86_64-unknown-linux-gnu
-
       - name: App npm deps
         working-directory: desktop
         run: npm ci --legacy-peer-deps
 
       # Debug com frontend embutido: `tauri build` roda o `npm run build` e liga o
-      # `custom-protocol`; `--debug` mantém `debug_assertions` (sem sidecar).
+      # `custom-protocol`; `--debug` mantém `debug_assertions` (banco descartável por `ANCHOR_DB_PATH`).
       - name: Build app (debug, sem instalador)
         working-directory: desktop
         run: npx tauri build --debug --no-bundle

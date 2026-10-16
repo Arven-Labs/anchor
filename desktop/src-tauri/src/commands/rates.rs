@@ -1,6 +1,6 @@
 // Fase 17 — juros ao vivo pro widget da Home e pra tela "Interest rates" do
-// Research. A Selic vem de `selic_daily` (Fase 26, BCB direto); a curva DI
-// ainda vem do Lume e é calculada a cada chamada.
+// Research. A Selic vem de `selic_daily` (Fase 26, BCB direto); a curva DI vem
+// da B3 (cache de 1 h na memória) e é montada a cada chamada.
 
 use chrono::{Duration, NaiveDate, Utc};
 use sea_orm::DatabaseConnection;
@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::domain::rates;
 use crate::error::AppError;
-use crate::finance_api::{client, skip_not_found, FinanceApiHandle};
+use crate::finance_api::{client, skip_not_found};
 
 /// Prazos-chave da curva DI, em anos.
 const KEY_TENORS_YEARS: [f64; 5] = [1.0, 2.0, 3.0, 5.0, 10.0];
@@ -63,14 +63,11 @@ pub struct InterestRatesView {
 }
 
 /// Curva do último pregão em ou antes de `from` (volta dia a dia; dia sem
-/// pregão é 404 no Lume).
-async fn latest_curve(
-    handle: &FinanceApiHandle,
-    from: NaiveDate,
-) -> Result<Option<client::DiCurveResponse>, AppError> {
+/// pregão é `NoData`).
+async fn latest_curve(from: NaiveDate) -> Result<Option<client::DiCurveResponse>, AppError> {
     for back in 0..=MAX_DAYS_BACK {
         let date = from - Duration::days(back);
-        if let Some(curve) = skip_not_found(client::fetch_di_futures_curve(handle, date)).await? {
+        if let Some(curve) = skip_not_found(client::fetch_di_futures_curve(date)).await? {
             if !curve.data.is_empty() {
                 return Ok(Some(curve));
             }
@@ -112,11 +109,11 @@ async fn selic_view(db: &DatabaseConnection) -> Result<SelicView, AppError> {
     })
 }
 
-async fn di_view(handle: &FinanceApiHandle) -> Result<Option<DiCurveView>, AppError> {
-    let Some(curve) = latest_curve(handle, Utc::now().date_naive()).await? else {
+async fn di_view() -> Result<Option<DiCurveView>, AppError> {
+    let Some(curve) = latest_curve(Utc::now().date_naive()).await? else {
         return Ok(None);
     };
-    let month_ago = latest_curve(handle, curve.reference_date - Duration::days(30)).await?;
+    let month_ago = latest_curve(curve.reference_date - Duration::days(30)).await?;
     let now_pairs = to_pairs(&curve);
     let ago_pairs = month_ago.as_ref().map(to_pairs).unwrap_or_default();
     Ok(Some(DiCurveView {
@@ -138,9 +135,8 @@ async fn di_view(handle: &FinanceApiHandle) -> Result<Option<DiCurveView>, AppEr
 #[tauri::command]
 pub async fn get_interest_rates(
     db: tauri::State<'_, DatabaseConnection>,
-    finance_api: tauri::State<'_, FinanceApiHandle>,
 ) -> Result<InterestRatesView, AppError> {
-    let (selic, di) = tokio::join!(selic_view(&db), di_view(&finance_api));
+    let (selic, di) = tokio::join!(selic_view(&db), di_view());
     let (selic, selic_error) = match selic {
         Ok(view) => (Some(view), None),
         Err(err) => (None, Some(err.to_string())),
@@ -152,24 +148,16 @@ pub async fn get_interest_rates(
     Ok(InterestRatesView { selic, selic_error, di, di_error })
 }
 
-// Teste `#[ignore]` — Lume rodando em `http://localhost:8000` (mesma
-// convenção de `commands::tax::tests`). Rodar com
+// Testes `#[ignore]` — vão às fontes públicas (BCB e B3) de verdade. Rodar com
 // `cargo test --lib -- --ignored commands::rates`.
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn handle() -> FinanceApiHandle {
-        FinanceApiHandle::for_test(
-            "http://localhost:8000".to_string(),
-            "local-dev-key-change-me".to_string(),
-        )
-    }
-
     #[tokio::test]
     #[ignore]
     async fn live_latest_curve_finds_a_trading_day() {
-        let curve = latest_curve(&handle(), Utc::now().date_naive())
+        let curve = latest_curve(Utc::now().date_naive())
             .await
             .unwrap()
             .expect("a published DI curve in the last days");

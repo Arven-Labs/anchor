@@ -17,7 +17,7 @@ use sea_orm::{DatabaseConnection, EntityTrait, Set};
 use crate::domain::rates;
 use crate::entity::{macro_index_monthly, stock_price_history};
 use crate::error::AppError;
-use crate::finance_api::{client, insert_ignoring_conflicts, stocks, us_stock, FinanceApiHandle};
+use crate::finance_api::{client, insert_ignoring_conflicts, stocks, us_stock};
 
 pub struct BenchmarkSummary {
     pub cdi_count: usize,
@@ -37,10 +37,9 @@ pub struct BenchmarkSummary {
 /// do coletor que lida com histórico fechado).
 async fn collect_macro_series(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     series_code: &str,
 ) -> Result<usize, AppError> {
-    let response = client::fetch_benchmark_series(handle, series_code).await?;
+    let response = client::fetch_benchmark_series(series_code).await?;
     let rows: Vec<(String, f64)> = response
         .data
         .iter()
@@ -102,19 +101,16 @@ async fn upsert_monthly(
     Ok(count)
 }
 
-/// IFIX/SMLL/IDIV via `/v1/b3-indexes/{index_code}/history` — grava com o
-/// `index_code` **maiúsculo** originalmente passado (não o que a API ecoa
-/// de volta, que é minúsculo), mesma decisão do Python
-/// (`collect_b3_index_history` grava o `index_code` recebido, não o campo
-/// da resposta) — `commands::profitability` espera `"IFIX"`/`"SMLL"`/
-/// `"IDIV"` em `stock_price_history.ticker`.
+/// IFIX/SMLL/IDIV (`finance_core::b3_index_stats`) — grava com o `index_code`
+/// **maiúsculo** originalmente passado (não o que a resposta ecoa, que é
+/// minúsculo): `commands::profitability` espera `"IFIX"`/`"SMLL"`/`"IDIV"` em
+/// `stock_price_history.ticker`.
 async fn collect_b3_index_history(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     index_code: &str,
 ) -> Result<usize, AppError> {
     let now = Utc::now().to_rfc3339();
-    let response = client::fetch_b3_index_history(handle, index_code).await?;
+    let response = client::fetch_b3_index_history(index_code).await?;
 
     let total = response.data.len();
     let models: Vec<_> = response
@@ -147,10 +143,9 @@ async fn collect_b3_index_history(
 
 pub async fn collect_benchmarks(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
 ) -> Result<BenchmarkSummary, AppError> {
-    let cdi_count = collect_macro_series(db, handle, "cdi").await?;
-    let ipca_count = collect_macro_series(db, handle, "ipca").await?;
+    let cdi_count = collect_macro_series(db,"cdi").await?;
+    let ipca_count = collect_macro_series(db,"ipca").await?;
     // Selic não derruba o resto: a série diária é a mais frágil da coleta
     // (~10 mil pontos em 4 janelas do BCB, que oscila — ver Fase 17).
     // Falhou → 0 meses agora, tenta de novo na próxima coleta.
@@ -164,15 +159,15 @@ pub async fn collect_benchmarks(
 
     // IBOV (^BVSP, sem sufixo — é índice, não papel B3): mesmo mecanismo de
     // "ticker sem sufixo" que ação americana/REIT/ETF-US usam.
-    let ibov_count = us_stock::collect_price_history(db, handle, &["^BVSP".to_string()]).await?;
+    let ibov_count = us_stock::collect_price_history(db,&["^BVSP".to_string()]).await?;
     // IVVB11 (ETF B3 comum, sufixo .SA padrão): já portável, mesma função
     // que Ação BR/FII/ETF-BR usa.
     let ivvb11_count =
-        stocks::collect_price_history(db, handle, &["IVVB11".to_string()]).await?;
+        stocks::collect_price_history(db,&["IVVB11".to_string()]).await?;
 
-    let ifix_count = collect_b3_index_history(db, handle, "IFIX").await?;
-    let smll_count = collect_b3_index_history(db, handle, "SMLL").await?;
-    let idiv_count = collect_b3_index_history(db, handle, "IDIV").await?;
+    let ifix_count = collect_b3_index_history(db,"IFIX").await?;
+    let smll_count = collect_b3_index_history(db,"SMLL").await?;
+    let idiv_count = collect_b3_index_history(db,"IDIV").await?;
 
     Ok(BenchmarkSummary {
         cdi_count,
@@ -190,13 +185,6 @@ pub async fn collect_benchmarks(
 mod tests {
     use super::*;
 
-    fn handle() -> FinanceApiHandle {
-        FinanceApiHandle::for_test(
-            "http://localhost:8000".to_string(),
-            "local-dev-key-change-me".to_string(),
-        )
-    }
-
     async fn dev_db() -> DatabaseConnection {
         sea_orm::Database::connect("sqlite:///data/anchor.db?mode=rwc")
             .await
@@ -207,9 +195,7 @@ mod tests {
     #[ignore]
     async fn live_collect_benchmarks_writes_all_8_series() {
         let db = dev_db().await;
-        let handle = handle();
-
-        let summary = collect_benchmarks(&db, &handle).await.unwrap();
+        let summary = collect_benchmarks(&db).await.unwrap();
         assert!(summary.cdi_count > 0);
         assert!(summary.ipca_count > 0);
         // Meta Selic desde 1999 → bem mais de 300 meses.
@@ -227,16 +213,14 @@ mod tests {
         use sea_orm::{ColumnTrait, QueryFilter};
 
         let db = dev_db().await;
-        let handle = handle();
-
-        collect_macro_series(&db, &handle, "cdi").await.unwrap();
+        collect_macro_series(&db, "cdi").await.unwrap();
         let before = macro_index_monthly::Entity::find()
             .filter(macro_index_monthly::Column::IndexCode.eq("cdi"))
             .all(&db)
             .await
             .unwrap()
             .len();
-        collect_macro_series(&db, &handle, "cdi").await.unwrap();
+        collect_macro_series(&db, "cdi").await.unwrap();
         let after = macro_index_monthly::Entity::find()
             .filter(macro_index_monthly::Column::IndexCode.eq("cdi"))
             .all(&db)

@@ -10,7 +10,7 @@ use sea_orm::{
 
 use crate::entity::{fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties};
 use crate::error::AppError;
-use crate::finance_api::{client, insert_ignoring_conflicts, skip_not_found, FinanceApiHandle};
+use crate::finance_api::{client, insert_ignoring_conflicts, skip_not_found};
 
 pub struct FiiCvmDataResult {
     pub monthly_count: usize,
@@ -58,7 +58,6 @@ fn format_cnpj(digits_only: &str) -> String {
 /// CVM também vira `None` do lado do easybusiness, nunca chuta).
 pub async fn resolve_cnpj(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<Option<FiiCnpjResolution>, AppError> {
     if let Some(cached) = fii_cnpj_cache::Entity::find()
@@ -72,7 +71,7 @@ pub async fn resolve_cnpj(
         }));
     }
 
-    let Some(resolution) = skip_not_found(client::fetch_fii_cnpj_resolution(handle, ticker)).await?
+    let Some(resolution) = skip_not_found(client::fetch_fii_cnpj_resolution(ticker)).await?
     else {
         return Ok(None);
     };
@@ -97,7 +96,6 @@ pub async fn resolve_cnpj(
 
 pub async fn collect_cvm_data(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     cnpjs: &[String],
 ) -> Result<FiiCvmDataResult, AppError> {
     let now = Utc::now().to_rfc3339();
@@ -117,7 +115,7 @@ pub async fn collect_cvm_data(
         // mesma decisão de `finance_api::metals` com o ticker.
         let digits_only: String = cnpj.chars().filter(char::is_ascii_digit).collect();
 
-        let monthly = client::fetch_fii_monthly_indicators(handle, &digits_only).await?;
+        let monthly = client::fetch_fii_monthly_indicators(&digits_only).await?;
         monthly_count += 1;
         monthly_models.push(fii_cvm_monthly::ActiveModel {
             id: ActiveValue::NotSet,
@@ -132,7 +130,7 @@ pub async fn collect_cvm_data(
             fetched_at: Set(now.clone()),
         });
 
-        let properties = client::fetch_fii_properties(handle, &digits_only).await?;
+        let properties = client::fetch_fii_properties(&digits_only).await?;
         for property in properties.data {
             properties_count += 1;
             properties_models.push(fii_cvm_properties::ActiveModel {
@@ -204,24 +202,16 @@ mod tests {
         assert_eq!(format_cnpj("not-a-cnpj"), "not-a-cnpj");
     }
 
-    fn handle() -> FinanceApiHandle {
-        FinanceApiHandle::for_test(
-            "http://localhost:8000".to_string(),
-            "local-dev-key-change-me".to_string(),
-        )
-    }
-
     #[tokio::test]
     #[ignore]
     async fn live_collect_cvm_data_is_idempotent() {
         let db = dev_db().await;
-        let handle = handle();
         // HGLG11 — CNPJ real, já resolvido e cacheado em `fii_cnpj_cache`
         // pelo banco de dev deste projeto (consultado direto pra este
         // teste, não inventado).
         let cnpjs = vec!["11.728.688/0001-47".to_string()];
 
-        let first = collect_cvm_data(&db, &handle, &cnpjs).await.unwrap();
+        let first = collect_cvm_data(&db, &cnpjs).await.unwrap();
         assert!(first.monthly_count > 0);
     }
 
@@ -229,15 +219,11 @@ mod tests {
     #[ignore]
     async fn live_resolve_cnpj_cache_hit_skips_the_network() {
         let db = dev_db().await;
-        // Handle apontando pra um host que não escuta nada — se o cache não
-        // for consultado primeiro, a chamada de rede falharia e o teste
-        // quebraria, provando que o cache hit realmente evita a Finance API.
-        let dead_handle =
-            FinanceApiHandle::for_test("http://127.0.0.1:1".to_string(), "irrelevant".to_string());
-
         // HGLG11 já está cacheado no banco de dev real (ver
-        // live_collect_cvm_data_is_idempotent acima).
-        let result = resolve_cnpj(&db, &dead_handle, "HGLG11").await.unwrap();
+        // live_collect_cvm_data_is_idempotent acima). Sem chave da bolsai
+        // configurada, qualquer ida à rede falharia: o teste só passa se o
+        // cache for consultado primeiro.
+        let result = resolve_cnpj(&db, "HGLG11").await.unwrap();
         let resolution = result.expect("HGLG11 deveria estar cacheado");
         assert_eq!(resolution.cnpj, "11.728.688/0001-47");
     }
@@ -246,14 +232,13 @@ mod tests {
     #[ignore]
     async fn live_resolve_cnpj_cache_miss_fetches_and_persists() {
         let db = dev_db().await;
-        let handle = handle();
         // KNRI11 (Kinea Renda Imobiliária) — FII real, escolhido por não
         // estar cacheado no banco de dev antes da primeira vez que este
         // teste rodou (conferido direto no SQLite); reruns batem no cache,
         // as asserções continuam válidas de todo jeito.
         let ticker = "KNRI11";
 
-        let result = resolve_cnpj(&db, &handle, ticker).await.unwrap();
+        let result = resolve_cnpj(&db, ticker).await.unwrap();
         let resolution = result.expect("KNRI11 deveria resolver via bolsai+CVM");
         assert!(!resolution.cnpj.is_empty());
 

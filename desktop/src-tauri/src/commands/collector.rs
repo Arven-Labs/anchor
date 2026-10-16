@@ -11,7 +11,7 @@ use crate::error::AppError;
 use crate::finance_api::{
     benchmark as finance_api_benchmark, crypto as finance_api_crypto,
     metals as finance_api_metals, reit as finance_api_reit, stocks as finance_api_stocks,
-    us_stock as finance_api_us_stock, FinanceApiHandle,
+    us_stock as finance_api_us_stock,
 };
 
 #[derive(Serialize)]
@@ -19,15 +19,6 @@ pub struct CollectorSummary {
     pub success: bool,
     pub output: String,
 }
-
-// `run_collector` (subprocess Python, `data-collector/main.py` em dev /
-// sidecar `anchor-collector` em release) foi removida nesta sessão — a
-// Fase 14.4 (Sessão 92) portou seu último chamador restante
-// (`commands::fii::resolve_fii_cnpj`) pra Rust, então a função ficou
-// inteiramente morta (`cargo check` confirmou). O binário/script Python em
-// si (`data-collector/`, `tauri.conf.json::bundle.externalBin`, o step de
-// build em `build.yml`) continuam existindo até a Fase 14.5 apagar tudo de
-// vez — só o wrapper Rust que não tinha mais chamador foi removido aqui.
 
 // `asset_class` distingue "cripto" (fonte CoinGecko, `--crypto-ticker`,
 // Sessão 51), "metal" (fonte Yahoo sem `.SA` — COMEX, `--metal-ticker`,
@@ -37,17 +28,13 @@ pub struct CollectorSummary {
 // (chamadores que não sabem/não precisam distinguir classe, ex.: os
 // formulários de valuation via `useTickerCollector`).
 //
-// Fase 14.4 — todos os branches trocaram de `run_collector` (subprocess
-// Python) pra chamadas nativas via Finance API: `_` (Sessão 91) usa
-// `finance_api::stocks`, "cripto"/"metal" (Sessão 91) usam
-// `finance_api::{crypto,metals}`, e "acao_internacional"/"reit"/"etf_us"
-// (Sessão 92, desbloqueados pela Fase 1.11 do easybusiness) usam
-// `finance_api::{us_stock,reit}`.
+// Cada branch chama o coletor da classe: `_` usa `finance_api::stocks`,
+// "cripto"/"metal" usam `finance_api::{crypto,metals}` e
+// "acao_internacional"/"reit"/"etf_us" usam `finance_api::{us_stock,reit}`.
 #[tauri::command]
 pub async fn run_stock_collector(
     lock: tauri::State<'_, AtomicBool>,
     db: tauri::State<'_, DatabaseConnection>,
-    finance_api: tauri::State<'_, FinanceApiHandle>,
     ticker: String,
     asset_class: Option<String>,
 ) -> Result<CollectorSummary, AppError> {
@@ -56,7 +43,7 @@ pub async fn run_stock_collector(
             if lock.swap(true, Ordering::SeqCst) {
                 return Err(AppError::CollectorBusy);
             }
-            let result = finance_api_crypto::collect_ticker(db.inner(), &finance_api, &ticker)
+            let result = finance_api_crypto::collect_ticker(db.inner(),&ticker)
                 .await
                 .map(|r| CollectorSummary {
                     success: true,
@@ -77,7 +64,7 @@ pub async fn run_stock_collector(
             if lock.swap(true, Ordering::SeqCst) {
                 return Err(AppError::CollectorBusy);
             }
-            let result = finance_api_metals::collect_ticker(db.inner(), &finance_api, &ticker)
+            let result = finance_api_metals::collect_ticker(db.inner(),&ticker)
                 .await
                 .map(|r| CollectorSummary {
                     success: true,
@@ -94,7 +81,7 @@ pub async fn run_stock_collector(
                 return Err(AppError::CollectorBusy);
             }
             let result =
-                finance_api_us_stock::run_us_stock_collector(db.inner(), &finance_api, &[ticker])
+                finance_api_us_stock::run_us_stock_collector(db.inner(),&[ticker])
                     .await;
             lock.store(false, Ordering::SeqCst);
 
@@ -108,7 +95,7 @@ pub async fn run_stock_collector(
                 return Err(AppError::CollectorBusy);
             }
             let result =
-                finance_api_reit::run_reit_collector(db.inner(), &finance_api, &[ticker]).await;
+                finance_api_reit::run_reit_collector(db.inner(),&[ticker]).await;
             lock.store(false, Ordering::SeqCst);
 
             result.map(|output| CollectorSummary {
@@ -121,7 +108,7 @@ pub async fn run_stock_collector(
                 return Err(AppError::CollectorBusy);
             }
             let result =
-                finance_api_us_stock::run_etf_us_collector(db.inner(), &finance_api, &[ticker])
+                finance_api_us_stock::run_etf_us_collector(db.inner(),&[ticker])
                     .await;
             lock.store(false, Ordering::SeqCst);
 
@@ -135,7 +122,7 @@ pub async fn run_stock_collector(
                 return Err(AppError::CollectorBusy);
             }
             let result =
-                finance_api_stocks::run_stock_collector(db.inner(), &finance_api, &[ticker])
+                finance_api_stocks::run_stock_collector(db.inner(),&[ticker])
                     .await;
             lock.store(false, Ordering::SeqCst);
 
@@ -156,12 +143,11 @@ pub async fn run_stock_collector(
 pub async fn run_crypto_collector(
     lock: tauri::State<'_, AtomicBool>,
     db: tauri::State<'_, DatabaseConnection>,
-    finance_api: tauri::State<'_, FinanceApiHandle>,
 ) -> Result<CollectorSummary, AppError> {
     if lock.swap(true, Ordering::SeqCst) {
         return Err(AppError::CollectorBusy);
     }
-    let result = finance_api_crypto::collect_eth_indicators(db.inner(), &finance_api)
+    let result = finance_api_crypto::collect_eth_indicators(db.inner())
         .await
         .map(|collection| CollectorSummary {
             success: collection.errors.is_empty(),
@@ -257,13 +243,12 @@ pub async fn list_stock_dividend_payments(
 pub async fn run_price_history_backfill(
     lock: tauri::State<'_, AtomicBool>,
     db: tauri::State<'_, DatabaseConnection>,
-    finance_api: tauri::State<'_, FinanceApiHandle>,
     tickers: Vec<String>,
 ) -> Result<CollectorSummary, AppError> {
     if lock.swap(true, Ordering::SeqCst) {
         return Err(AppError::CollectorBusy);
     }
-    let result = finance_api_stocks::collect_price_history(db.inner(), &finance_api, &tickers)
+    let result = finance_api_stocks::collect_price_history(db.inner(),&tickers)
         .await
         .map(|count| CollectorSummary {
             success: true,
@@ -279,20 +264,16 @@ pub async fn run_price_history_backfill(
 // (`commands::profitability::get_profitability_comparison`). Sem tickers
 // pra passar — são sempre os mesmos 7.
 //
-// Fase 14.4 (Sessão 92) — trocou de `run_collector` (subprocess Python,
-// `--benchmark-returns`) pra `finance_api::benchmark::collect_benchmarks`
-// direto, desbloqueado pela Fase 1.11 do easybusiness (IBOV era o único dos
-// 7 sem endpoint equivalente).
+// Chama `finance_api::benchmark::collect_benchmarks` direto.
 #[tauri::command]
 pub async fn run_benchmark_backfill(
     lock: tauri::State<'_, AtomicBool>,
     db: tauri::State<'_, DatabaseConnection>,
-    finance_api: tauri::State<'_, FinanceApiHandle>,
 ) -> Result<CollectorSummary, AppError> {
     if lock.swap(true, Ordering::SeqCst) {
         return Err(AppError::CollectorBusy);
     }
-    let result = finance_api_benchmark::collect_benchmarks(db.inner(), &finance_api)
+    let result = finance_api_benchmark::collect_benchmarks(db.inner())
         .await
         .map(|s| CollectorSummary {
             success: true,

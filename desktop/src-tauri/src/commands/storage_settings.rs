@@ -1,5 +1,4 @@
-// Fase 15 — só a escolha de `StorageProvider` (schema+UI), mesmo escopo explícito de
-// `commands::finance_api_settings` na Fase 14.3. `set_storage_settings` recusa qualquer valor
+// Fase 15 — só a escolha de `StorageProvider` (schema+UI), escopo explícito: `set_storage_settings` recusa qualquer valor
 // diferente de `"local"`: as outras 3 opções existem no enum (`StorageProviderKind`) e na UI
 // ("em breve") só pra não exigir migração de schema quando ganharem implementação real.
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};

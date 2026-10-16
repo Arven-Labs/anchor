@@ -3,7 +3,7 @@
 // partir de `transactions`/`assets`/`tax_rules` e chama `assessment::assess`.
 //
 // Separação deliberada: os VALORES (alíquotas, limites, IRRF, mínimo de DARF)
-// vêm de `RuleSet` — editáveis pelo usuário, atualizáveis pelo Lume —, a
+// vêm de `RuleSet` — editáveis pelo usuário, atualizáveis pela tabela embarcada —, a
 // LÓGICA (custo médio, day trade, gavetas, compensação) mora no código.
 
 pub mod assessment;

@@ -17,13 +17,12 @@ use crate::entity::{
     stock_technicals,
 };
 use crate::error::AppError;
-use crate::finance_api::{client, insert_ignoring_conflicts, skip_not_found, FinanceApiHandle};
+use crate::finance_api::{client, insert_ignoring_conflicts, skip_not_found};
 
 const SOURCE: &str = "yahoo_finance";
 
 pub async fn collect_quotes(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     tickers: &[String],
 ) -> Result<Vec<client::UsStockQuoteResponse>, AppError> {
     let now = Utc::now().to_rfc3339();
@@ -31,7 +30,7 @@ pub async fn collect_quotes(
     let mut models = Vec::new();
 
     for ticker in tickers {
-        let quote = client::fetch_us_stock_quote(handle, ticker).await?;
+        let quote = client::fetch_us_stock_quote(ticker).await?;
         models.push(stock_quotes::ActiveModel {
             id: sea_orm::ActiveValue::NotSet,
             ticker: Set(quote.ticker.clone()),
@@ -54,7 +53,6 @@ pub async fn collect_quotes(
 
 pub async fn collect_dividends_avg(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     tickers: &[String],
 ) -> Result<Vec<client::UsStockDividendsAvgResponse>, AppError> {
     let now = Utc::now().to_rfc3339();
@@ -63,7 +61,7 @@ pub async fn collect_dividends_avg(
 
     for ticker in tickers {
         let Some(item) =
-            skip_not_found(client::fetch_us_stock_dividends_avg(handle, ticker)).await?
+            skip_not_found(client::fetch_us_stock_dividends_avg(ticker)).await?
         else {
             continue;
         };
@@ -86,7 +84,6 @@ pub async fn collect_dividends_avg(
 
 pub async fn collect_technicals(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     tickers: &[String],
 ) -> Result<Vec<client::UsStockTechnicalsResponse>, AppError> {
     let now = Utc::now().to_rfc3339();
@@ -94,7 +91,7 @@ pub async fn collect_technicals(
     let mut models = Vec::new();
 
     for ticker in tickers {
-        let item = client::fetch_us_stock_technicals(handle, ticker).await?;
+        let item = client::fetch_us_stock_technicals(ticker).await?;
         models.push(stock_technicals::ActiveModel {
             id: sea_orm::ActiveValue::NotSet,
             ticker: Set(item.ticker.clone()),
@@ -118,7 +115,6 @@ pub async fn collect_technicals(
 
 pub async fn collect_dividend_payments(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     tickers: &[String],
 ) -> Result<usize, AppError> {
     let now = Utc::now().to_rfc3339();
@@ -126,7 +122,7 @@ pub async fn collect_dividend_payments(
     let mut models = Vec::new();
 
     for ticker in tickers {
-        let response = client::fetch_us_stock_dividend_payments(handle, ticker).await?;
+        let response = client::fetch_us_stock_dividend_payments(ticker).await?;
         total += response.data.len();
         for point in response.data {
             models.push(stock_dividend_payments::ActiveModel {
@@ -163,7 +159,6 @@ pub async fn collect_dividend_payments(
 /// tomava (`collect_us_price_history(["^BVSP"])`, mesma função usada aqui).
 pub async fn collect_price_history(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     tickers: &[String],
 ) -> Result<usize, AppError> {
     let now = Utc::now().to_rfc3339();
@@ -171,7 +166,7 @@ pub async fn collect_price_history(
     let mut models = Vec::new();
 
     for ticker in tickers {
-        let response = client::fetch_us_stock_price_history(handle, ticker).await?;
+        let response = client::fetch_us_stock_price_history(ticker).await?;
         total += response.data.len();
         for point in response.data {
             models.push(stock_price_history::ActiveModel {
@@ -205,14 +200,13 @@ pub async fn collect_price_history(
 /// qual `etf_br` também não busca fundamentos).
 pub async fn run_etf_us_collector(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     tickers: &[String],
 ) -> Result<String, AppError> {
-    let quotes = collect_quotes(db, handle, tickers).await?;
-    let dividends_avg = collect_dividends_avg(db, handle, tickers).await?;
-    let technicals = collect_technicals(db, handle, tickers).await?;
-    let payments = collect_dividend_payments(db, handle, tickers).await?;
-    let price_history = collect_price_history(db, handle, tickers).await?;
+    let quotes = collect_quotes(db,tickers).await?;
+    let dividends_avg = collect_dividends_avg(db,tickers).await?;
+    let technicals = collect_technicals(db,tickers).await?;
+    let payments = collect_dividend_payments(db,tickers).await?;
+    let price_history = collect_price_history(db,tickers).await?;
 
     Ok(format!(
         "Updated {} quote(s), {} dividend average record(s), {} technicals record(s), \
@@ -235,14 +229,13 @@ pub async fn run_etf_us_collector(
 /// `main_us_stock` original.
 pub async fn run_us_stock_collector(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     tickers: &[String],
 ) -> Result<String, AppError> {
-    let quotes = collect_quotes(db, handle, tickers).await?;
-    let dividends_avg = collect_dividends_avg(db, handle, tickers).await?;
-    let technicals = collect_technicals(db, handle, tickers).await?;
-    let payments = collect_dividend_payments(db, handle, tickers).await?;
-    let price_history = collect_price_history(db, handle, tickers).await?;
+    let quotes = collect_quotes(db,tickers).await?;
+    let dividends_avg = collect_dividends_avg(db,tickers).await?;
+    let technicals = collect_technicals(db,tickers).await?;
+    let payments = collect_dividend_payments(db,tickers).await?;
+    let price_history = collect_price_history(db,tickers).await?;
 
     let mut summary = format!(
         "Updated {} quote(s), {} dividend average record(s), {} technicals record(s), \
@@ -254,12 +247,12 @@ pub async fn run_us_stock_collector(
         price_history,
     );
 
-    let fundamentals = collect_us_fundamentals(db, handle, tickers).await?;
+    let fundamentals = collect_us_fundamentals(db,tickers).await?;
     if fundamentals.is_empty() {
         return Ok(summary);
     }
 
-    let dcf_count = collect_us_dcf_fundamentals(db, handle, &fundamentals).await?;
+    let dcf_count = collect_us_dcf_fundamentals(db,&fundamentals).await?;
     summary.push_str(&format!(
         ", {} fundamentals record(s), {} DCF fundamentals record(s)",
         fundamentals.len(),
@@ -291,7 +284,6 @@ struct UsStockFundamentalsRow {
 /// continua sendo gravado, só com `payout = None`.
 async fn collect_us_fundamentals(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     tickers: &[String],
 ) -> Result<Vec<UsStockFundamentalsRow>, AppError> {
     use crate::entity::stock_fundamentals;
@@ -302,11 +294,11 @@ async fn collect_us_fundamentals(
 
     for ticker in tickers {
         let Some(fundamentals) =
-            skip_not_found(client::fetch_us_stock_fundamentals(handle, ticker)).await?
+            skip_not_found(client::fetch_us_stock_fundamentals(ticker)).await?
         else {
             continue;
         };
-        let payout = skip_not_found(client::fetch_us_stock_payout(handle, ticker)).await?;
+        let payout = skip_not_found(client::fetch_us_stock_payout(ticker)).await?;
 
         let row = UsStockFundamentalsRow {
             ticker: fundamentals.ticker.clone(),
@@ -339,7 +331,6 @@ async fn collect_us_fundamentals(
 
 async fn collect_us_dcf_fundamentals(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     fundamentals: &[UsStockFundamentalsRow],
 ) -> Result<usize, AppError> {
     use crate::entity::stock_dcf_fundamentals;
@@ -349,7 +340,7 @@ async fn collect_us_dcf_fundamentals(
 
     for row in fundamentals {
         let Some(dcf) =
-            skip_not_found(client::fetch_us_stock_dcf_fundamentals(handle, &row.ticker)).await?
+            skip_not_found(client::fetch_us_stock_dcf_fundamentals(&row.ticker)).await?
         else {
             continue;
         };
@@ -383,8 +374,8 @@ async fn collect_us_dcf_fundamentals(
 
 // ---------------------------------------------------------------------------
 // Testes `#[ignore]` — mesma convenção de `finance_api::stocks::tests`:
-// precisam de uma Finance API real em `http://localhost:8000` e do banco
-// real de dev. Rodar com `cargo test --lib -- --ignored finance_api::us_stock`.
+// vão às fontes públicas de verdade (rede) e precisam do banco real de dev.
+// Rodar com `cargo test --lib -- --ignored finance_api::us_stock`.
 // ---------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
@@ -397,21 +388,13 @@ mod tests {
             .expect("failed to connect to the real dev database")
     }
 
-    fn handle() -> FinanceApiHandle {
-        FinanceApiHandle::for_test(
-            "http://localhost:8000".to_string(),
-            "local-dev-key-change-me".to_string(),
-        )
-    }
-
     #[tokio::test]
     #[ignore]
     async fn live_collect_quotes_writes_a_real_row() {
         let db = dev_db().await;
-        let handle = handle();
         let ticker = "AAPL".to_string();
 
-        let quotes = collect_quotes(&db, &handle, &[ticker.clone()]).await.unwrap();
+        let quotes = collect_quotes(&db,&[ticker.clone()]).await.unwrap();
         assert_eq!(quotes.len(), 1);
         assert!(quotes[0].price > 0.0);
 
@@ -427,13 +410,12 @@ mod tests {
     #[ignore]
     async fn live_collect_technicals_and_dividends_avg_write_real_rows() {
         let db = dev_db().await;
-        let handle = handle();
         let tickers = vec!["AAPL".to_string()];
 
-        let technicals = collect_technicals(&db, &handle, &tickers).await.unwrap();
+        let technicals = collect_technicals(&db,&tickers).await.unwrap();
         assert_eq!(technicals.len(), 1);
 
-        let dividends_avg = collect_dividends_avg(&db, &handle, &tickers).await.unwrap();
+        let dividends_avg = collect_dividends_avg(&db,&tickers).await.unwrap();
         assert_eq!(dividends_avg.len(), 1);
         assert!(dividends_avg[0].avg_dividend_5y >= 0.0);
     }
@@ -442,10 +424,9 @@ mod tests {
     #[ignore]
     async fn live_collect_price_history_is_idempotent() {
         let db = dev_db().await;
-        let handle = handle();
         let tickers = vec!["AAPL".to_string()];
 
-        let first = collect_price_history(&db, &handle, &tickers).await.unwrap();
+        let first = collect_price_history(&db,&tickers).await.unwrap();
         assert!(first > 0);
 
         let before = stock_price_history::Entity::find()
@@ -454,7 +435,7 @@ mod tests {
             .await
             .unwrap()
             .len();
-        collect_price_history(&db, &handle, &tickers).await.unwrap();
+        collect_price_history(&db,&tickers).await.unwrap();
         let after = stock_price_history::Entity::find()
             .filter(stock_price_history::Column::Ticker.eq("AAPL"))
             .all(&db)
@@ -468,9 +449,8 @@ mod tests {
     #[ignore]
     async fn live_run_etf_us_collector_writes_real_rows() {
         let db = dev_db().await;
-        let handle = handle();
 
-        let summary = run_etf_us_collector(&db, &handle, &["IVV".to_string()])
+        let summary = run_etf_us_collector(&db,&["IVV".to_string()])
             .await
             .unwrap();
         assert!(summary.contains("Updated"));

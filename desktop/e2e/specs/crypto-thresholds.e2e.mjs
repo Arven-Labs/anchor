@@ -15,8 +15,8 @@ describe("Anchor — score cripto e editor de thresholds", () => {
   it("abre a tela de Research do ETH", async () => {
     await enterWorkspace("Crypto E2E");
 
-    // A seção do score só aparece com uma cotação do ativo (que no app vem do
-    // Lume, ausente aqui), então ela é semeada direto no banco.
+    // A seção do score só aparece com uma cotação do ativo (que no app vem da
+    // CoinGecko, que o teste não consulta), então ela é semeada direto no banco.
     sql(
       "INSERT INTO stock_quotes (ticker, price, source, fetched_at, name, exchange, currency) " +
         "VALUES ('ETH', 2450.5, 'coingecko', '2026-10-16T12:00:00Z', 'Ethereum', 'CoinGecko', 'USD')",

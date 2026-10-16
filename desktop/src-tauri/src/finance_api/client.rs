@@ -1,44 +1,30 @@
-// Cliente HTTP tipado pra Finance API (easybusiness), um método por endpoint
-// hoje consumido por `data-collector/sources/finance_api_client.py` (Fase 1.7
-// de lá, Sessão 88) — schema levantado direto nos 8 routers do easybusiness
-// nesta sessão. Sem chamador real ainda: a Fase 14.4 é quem porta a lógica
-// de fetch+write do coletor Python pra cima disto.
+// Fachada de dados de mercado que os `collect_*` usam: uma função por recurso, que
+// chama as fontes nativas de `finance_core` e devolve um DTO com a origem
+// (`meta.source`, `cached`, `stale`, `fetched_at`). Nasceu como cliente HTTP do
+// sidecar Python do Lume (Fases 14 e 17) e, na Fase 26, cada recurso foi portado
+// pra Rust; o sidecar foi aposentado e os DTOs ficaram como o contrato entre as
+// fontes e os coletores.
 //
-// Os DTOs espelham o contrato completo de cada endpoint, inclusive campos que
-// o app ainda não lê (`meta.stale`/`meta.cached`, `cvm_code`, `roe`...). Ficam
-// de propósito: documentam a resposta e o `stale` deve virar aviso de "dado
-// desatualizado" na tela. Por isso `dead_code` é silenciado no arquivo todo.
+// Os DTOs trazem campos que o app ainda não lê (`meta.stale`/`meta.cached`,
+// `cvm_code`...). Ficam de propósito: documentam o dado e o `stale` deve virar
+// aviso de "dado desatualizado" na tela. Por isso `dead_code` é silenciado no arquivo.
 #![allow(dead_code)]
 
 use chrono::{DateTime, NaiveDate, Utc};
-use serde::de::DeserializeOwned;
 use sea_orm::DatabaseConnection;
-use serde::Deserialize;
 
 use crate::error::AppError;
-use crate::finance_api::{selic_store, FinanceApiHandle};
+use crate::finance_api::selic_store;
 use crate::finance_core::market::{self, Instrument};
 use crate::finance_core::{
     b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, coingecko, cvm_dfp, cvm_fii, eth_indicators, fear_greed,
     metals, sec_edgar, tax_rules, yahoo,
 };
 
-/// Campos presentes em toda resposta da Finance API — achatado (`flatten`)
-/// dentro de cada DTO abaixo em vez de repetir os 4 campos 22 vezes.
-///
-/// `fetched_at` é `DateTime<Utc>`, não `NaiveDateTime` — achado real ao vivo
-/// (Sessão 92, continuação): contra a Finance API rodando sobre SQLite (o
-/// sidecar embutido, `DateTime(timezone=True)` do SQLAlchemy vira datetime
-/// *naive* nesse dialeto), a string vinha sem sufixo `Z`/offset e
-/// `NaiveDateTime` dava conta; contra Postgres (`docker compose up` do
-/// easybusiness, mesmo tipo de coluna mas timezone-aware de verdade), a
-/// string vem com `Z` — e `NaiveDateTime` combinado com `#[serde(flatten)]`
-/// quebra com "trailing input" nesse caso (bug real de
-/// serde_json+chrono+flatten, reproduzido isolado sem rede nenhuma:
-/// `NaiveDateTime` engasga no sufixo de timezone quando o campo seguinte no
-/// struct achatado é um escalar cru como `f64`). `DateTime<Utc>` é o tipo
-/// certo pro dado em si (timestamp sempre UTC) e não tem esse problema.
-#[derive(Debug, Deserialize)]
+/// Origem do dado, presente em toda resposta: quem respondeu (`source`), se veio
+/// de cache (`cached`), se é um dado antigo servido porque a fonte caiu (`stale`)
+/// e quando foi buscado. `fetched_at` é sempre UTC.
+#[derive(Debug)]
 pub struct ResponseMeta {
     pub source: String,
     pub cached: bool,
@@ -47,7 +33,7 @@ pub struct ResponseMeta {
 }
 
 /// Ponto `{price_date, close_price}` — mesma forma em stocks/metals/b3-indexes.
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct PriceHistoryPoint {
     pub price_date: NaiveDate,
     pub close_price: f64,
@@ -83,47 +69,13 @@ fn payment_points(payments: Vec<market::DividendPayment>) -> Vec<StockDividendPa
         .collect()
 }
 
-async fn get<T: DeserializeOwned>(handle: &FinanceApiHandle, path: &str) -> Result<T, AppError> {
-    let client = reqwest::Client::new();
-    let response = client
-        .get(format!("{}{path}", handle.base_url))
-        .header("X-API-Key", &handle.api_key)
-        .send()
-        .await?;
-
-    let status = response.status();
-    if status.is_success() {
-        return Ok(response.json::<T>().await?);
-    }
-
-    let body = response.text().await.unwrap_or_default();
-    // FastAPI's `HTTPException` sempre serializa como `{"detail": "..."}"`
-    // (confirmado nos 8 routers) — cai pro corpo cru se não for esse formato
-    // (ex.: um 500 sem handler customizado, texto puro do Starlette).
-    let message = serde_json::from_str::<serde_json::Value>(&body)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("detail")
-                .and_then(|detail| detail.as_str().map(str::to_string))
-        })
-        .unwrap_or(body);
-
-    if status == reqwest::StatusCode::NOT_FOUND {
-        Err(AppError::FinanceApiNotFound(message))
-    } else {
-        Err(AppError::FinanceApi(format!("{status}: {message}")))
-    }
-}
-
 // ---------------------------------------------------------------------------
 // stocks — /v1/stocks/{ticker}/...
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct StockQuoteResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub price: f64,
     pub name: Option<String>,
@@ -132,7 +84,6 @@ pub struct StockQuoteResponse {
 }
 
 pub async fn fetch_stock_quote(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<StockQuoteResponse, AppError> {
     let q = yahoo::quote(&Instrument::b3(ticker)).await?;
@@ -146,10 +97,9 @@ pub async fn fetch_stock_quote(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct StockTechnicalsResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub sma_50: Option<f64>,
     pub sma_100: Option<f64>,
@@ -159,7 +109,6 @@ pub struct StockTechnicalsResponse {
 }
 
 pub async fn fetch_stock_technicals(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<StockTechnicalsResponse, AppError> {
     let t = yahoo::technicals(&Instrument::b3(ticker)).await?;
@@ -174,32 +123,28 @@ pub async fn fetch_stock_technicals(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct StockDividendsAvgResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub avg_dividend_5y: f64,
 }
 
 pub async fn fetch_stock_dividends_avg(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<StockDividendsAvgResponse, AppError> {
     let a = yahoo::dividends_avg(&Instrument::b3(ticker)).await?;
     Ok(StockDividendsAvgResponse { ticker: ticker.to_string(), meta: now_meta(a.source), avg_dividend_5y: a.value })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct StockPriceHistoryResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub data: Vec<PriceHistoryPoint>,
 }
 
 pub async fn fetch_stock_price_history(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<StockPriceHistoryResponse, AppError> {
     let h = yahoo::price_history(&Instrument::b3(ticker)).await?;
@@ -210,7 +155,7 @@ pub async fn fetch_stock_price_history(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct StockDividendPaymentPoint {
     pub payment_date: NaiveDate,
     pub amount: f64,
@@ -218,16 +163,14 @@ pub struct StockDividendPaymentPoint {
     pub yield_pct: Option<f64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct StockDividendPaymentsResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub data: Vec<StockDividendPaymentPoint>,
 }
 
 pub async fn fetch_stock_dividend_payments(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<StockDividendPaymentsResponse, AppError> {
     let p = yahoo::dividend_payments(&Instrument::b3(ticker)).await?;
@@ -238,10 +181,9 @@ pub async fn fetch_stock_dividend_payments(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct StockBolsaiFundamentalsResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub lpa: f64,
     pub vpa: f64,
@@ -251,7 +193,6 @@ pub struct StockBolsaiFundamentalsResponse {
 }
 
 pub async fn fetch_stock_bolsai_fundamentals(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<StockBolsaiFundamentalsResponse, AppError> {
     let f = bolsai::fundamentals(ticker).await?;
@@ -270,17 +211,15 @@ pub async fn fetch_stock_bolsai_fundamentals(
 // companies — /v1/companies/{cvm_code}/...
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct CompanyRoeResponse {
     pub cvm_code: i32,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub reference_year: i32,
     pub roe: f64,
 }
 
 pub async fn fetch_company_roe(
-    _handle: &FinanceApiHandle,
     cvm_code: i32,
 ) -> Result<CompanyRoeResponse, AppError> {
     let roe = cvm_dfp::roe(cvm_code).await?;
@@ -292,25 +231,22 @@ pub async fn fetch_company_roe(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct CompanyPayoutResponse {
     pub cvm_code: i32,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub payout_avg_5y: f64,
 }
 
 pub async fn fetch_company_payout(
-    _handle: &FinanceApiHandle,
     cvm_code: i32,
 ) -> Result<CompanyPayoutResponse, AppError> {
     let payout = cvm_dfp::payout(cvm_code).await?;
     Ok(CompanyPayoutResponse { cvm_code, meta: now_meta(payout.source), payout_avg_5y: payout.value })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct DcfFundamentals {
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub reference_year: i32,
     pub ebit: f64,
@@ -324,15 +260,13 @@ pub struct DcfFundamentals {
     pub inventory: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct CompanyDcfFundamentalsResponse {
     pub cvm_code: i32,
-    #[serde(flatten)]
     pub fundamentals: DcfFundamentals,
 }
 
 pub async fn fetch_company_dcf_fundamentals(
-    _handle: &FinanceApiHandle,
     cvm_code: i32,
 ) -> Result<CompanyDcfFundamentalsResponse, AppError> {
     let dcf = cvm_dfp::dcf_fundamentals(cvm_code).await?;
@@ -359,16 +293,14 @@ pub async fn fetch_company_dcf_fundamentals(
 // crypto — /v1/crypto/...
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct CryptoIndicatorResponse {
     pub indicator_code: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub raw_value: f64,
 }
 
 pub async fn fetch_eth_indicator(
-    _handle: &FinanceApiHandle,
     indicator_code: &str,
 ) -> Result<CryptoIndicatorResponse, AppError> {
     let reading = eth_indicators::indicator(indicator_code).await?;
@@ -379,16 +311,15 @@ pub async fn fetch_eth_indicator(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct CryptoFearGreedResponse {
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub value: i32,
     pub classification: String,
     pub reading_date: NaiveDate,
 }
 
-pub async fn fetch_fear_greed(_handle: &FinanceApiHandle) -> Result<CryptoFearGreedResponse, AppError> {
+pub async fn fetch_fear_greed() -> Result<CryptoFearGreedResponse, AppError> {
     let reading = fear_greed::latest().await?;
     Ok(CryptoFearGreedResponse {
         meta: now_meta(reading.source),
@@ -398,18 +329,16 @@ pub async fn fetch_fear_greed(_handle: &FinanceApiHandle) -> Result<CryptoFearGr
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct CryptoQuoteResponse {
     pub symbol: String,
     pub coin_id: String,
     pub name: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub price: f64,
 }
 
 pub async fn fetch_crypto_quote(
-    _handle: &FinanceApiHandle,
     symbol: &str,
 ) -> Result<CryptoQuoteResponse, AppError> {
     let market = coingecko::coin_market(symbol).await?;
@@ -424,23 +353,21 @@ pub async fn fetch_crypto_quote(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct CryptoPriceHistoryPoint {
     pub price_date: NaiveDate,
     pub price: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct CryptoPriceHistoryResponse {
     pub symbol: String,
     pub coin_id: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub data: Vec<CryptoPriceHistoryPoint>,
 }
 
 pub async fn fetch_crypto_price_history(
-    _handle: &FinanceApiHandle,
     symbol: &str,
 ) -> Result<CryptoPriceHistoryResponse, AppError> {
     let market = coingecko::coin_market(symbol).await?;
@@ -461,11 +388,10 @@ pub async fn fetch_crypto_price_history(
 // metals — /v1/metals/{metal_code}/...
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct MetalQuoteResponse {
     pub metal_code: String,
     pub name: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub price: f64,
 }
@@ -474,7 +400,6 @@ pub struct MetalQuoteResponse {
 // código minúsculo na URL (`xau`, não `XAU`) — mesmo cuidado aplicado aqui
 // pra não reproduzir o mesmo bug do lado Rust.
 pub async fn fetch_metal_quote(
-    _handle: &FinanceApiHandle,
     metal_code: &str,
 ) -> Result<MetalQuoteResponse, AppError> {
     let info = metals::metal_info(metal_code)
@@ -488,16 +413,14 @@ pub async fn fetch_metal_quote(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct MetalPriceHistoryResponse {
     pub metal_code: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub data: Vec<PriceHistoryPoint>,
 }
 
 pub async fn fetch_metal_price_history(
-    _handle: &FinanceApiHandle,
     metal_code: &str,
 ) -> Result<MetalPriceHistoryResponse, AppError> {
     let info = metals::metal_info(metal_code)
@@ -514,10 +437,9 @@ pub async fn fetch_metal_price_history(
 // fiis — /v1/fiis/{cnpj}/...
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct FiiMonthlyIndicatorsResponse {
     pub cnpj: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub reference_date: NaiveDate,
     pub patrimonio_liquido: f64,
@@ -528,7 +450,6 @@ pub struct FiiMonthlyIndicatorsResponse {
 }
 
 pub async fn fetch_fii_monthly_indicators(
-    _handle: &FinanceApiHandle,
     cnpj: &str,
 ) -> Result<FiiMonthlyIndicatorsResponse, AppError> {
     let monthly = cvm_fii::monthly_indicators(cnpj).await?;
@@ -545,7 +466,7 @@ pub async fn fetch_fii_monthly_indicators(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct FiiPropertyPoint {
     pub nome_imovel: String,
     pub reference_date: NaiveDate,
@@ -557,16 +478,14 @@ pub struct FiiPropertyPoint {
     pub percentual_locado: Option<f64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct FiiPropertiesResponse {
     pub cnpj: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub data: Vec<FiiPropertyPoint>,
 }
 
 pub async fn fetch_fii_properties(
-    _handle: &FinanceApiHandle,
     cnpj: &str,
 ) -> Result<FiiPropertiesResponse, AppError> {
     let properties = cvm_fii::properties(cnpj).await?;
@@ -594,24 +513,21 @@ pub async fn fetch_fii_properties(
 // macro-series — /v1/macro-series/{series_code}
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct MacroSeriesPoint {
     pub reference_month: NaiveDate,
     pub value_pct: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct MacroSeriesResponse {
     pub series_code: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub data: Vec<MacroSeriesPoint>,
 }
 
-// Fase 26 — nativo (BCB SGS direto, sem o Lume). `_handle` fica até a
-// aposentadoria do sidecar, pra não mexer nos chamadores agora.
+// Fase 26 — nativo (BCB SGS direto, sem o Lume).
 pub async fn fetch_benchmark_series(
-    _handle: &FinanceApiHandle,
     series_code: &str,
 ) -> Result<MacroSeriesResponse, AppError> {
     let sourced = bcb_sgs::monthly_series(series_code).await?;
@@ -630,10 +546,9 @@ pub async fn fetch_benchmark_series(
 // b3-indexes — /v1/b3-indexes/{index_code}/history
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct B3IndexHistoryResponse {
     pub index_code: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub data: Vec<PriceHistoryPoint>,
 }
@@ -641,7 +556,6 @@ pub struct B3IndexHistoryResponse {
 // Mesma pegadinha de casing de `fetch_metal_quote` — catálogo usa código
 // minúsculo (`ifix`, não `IFIX`) na URL.
 pub async fn fetch_b3_index_history(
-    _handle: &FinanceApiHandle,
     index_code: &str,
 ) -> Result<B3IndexHistoryResponse, AppError> {
     let history = b3_index_stats::index_history(&index_code.to_lowercase()).await?;
@@ -656,10 +570,9 @@ pub async fn fetch_b3_index_history(
 // us-stocks — /v1/us-stocks/{ticker}/...
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct UsStockFundamentalsResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub lpa: f64,
     pub vpa: f64,
@@ -668,7 +581,6 @@ pub struct UsStockFundamentalsResponse {
 }
 
 pub async fn fetch_us_stock_fundamentals(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockFundamentalsResponse, AppError> {
     let ticker = ticker.to_uppercase();
@@ -683,15 +595,13 @@ pub async fn fetch_us_stock_fundamentals(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct UsStockDcfFundamentalsResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub fundamentals: DcfFundamentals,
 }
 
 pub async fn fetch_us_stock_dcf_fundamentals(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockDcfFundamentalsResponse, AppError> {
     let ticker = ticker.to_uppercase();
@@ -715,16 +625,14 @@ pub async fn fetch_us_stock_dcf_fundamentals(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct UsStockPayoutResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub payout_avg_5y: f64,
 }
 
 pub async fn fetch_us_stock_payout(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockPayoutResponse, AppError> {
     let ticker = ticker.to_uppercase();
@@ -738,10 +646,9 @@ pub async fn fetch_us_stock_payout(
 // tratamento especial pra índice, mesma decisão que o coletor Python já
 // tomava). DTOs idênticos aos `Stock*Response` — mesmos campos.
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct UsStockQuoteResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub price: f64,
     pub name: Option<String>,
@@ -750,7 +657,6 @@ pub struct UsStockQuoteResponse {
 }
 
 pub async fn fetch_us_stock_quote(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockQuoteResponse, AppError> {
     let q = yahoo::quote(&Instrument::global(ticker)).await?;
@@ -764,10 +670,9 @@ pub async fn fetch_us_stock_quote(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct UsStockTechnicalsResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub sma_50: Option<f64>,
     pub sma_100: Option<f64>,
@@ -777,7 +682,6 @@ pub struct UsStockTechnicalsResponse {
 }
 
 pub async fn fetch_us_stock_technicals(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockTechnicalsResponse, AppError> {
     let t = yahoo::technicals(&Instrument::global(ticker)).await?;
@@ -792,32 +696,28 @@ pub async fn fetch_us_stock_technicals(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct UsStockDividendsAvgResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub avg_dividend_5y: f64,
 }
 
 pub async fn fetch_us_stock_dividends_avg(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockDividendsAvgResponse, AppError> {
     let a = yahoo::dividends_avg(&Instrument::global(ticker)).await?;
     Ok(UsStockDividendsAvgResponse { ticker: ticker.to_string(), meta: now_meta(a.source), avg_dividend_5y: a.value })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct UsStockPriceHistoryResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub data: Vec<PriceHistoryPoint>,
 }
 
 pub async fn fetch_us_stock_price_history(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockPriceHistoryResponse, AppError> {
     let h = yahoo::price_history(&Instrument::global(ticker)).await?;
@@ -828,16 +728,14 @@ pub async fn fetch_us_stock_price_history(
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct UsStockDividendPaymentsResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub data: Vec<StockDividendPaymentPoint>,
 }
 
 pub async fn fetch_us_stock_dividend_payments(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockDividendPaymentsResponse, AppError> {
     let p = yahoo::dividend_payments(&Instrument::global(ticker)).await?;
@@ -851,7 +749,7 @@ pub async fn fetch_us_stock_dividend_payments(
 // Fase 1.11.2 do easybusiness — indicadores imobiliários de REIT via SEC
 // EDGAR. Time-series do lado da API (append-only por `reference_year`), por
 // isso `data` é uma lista, não um objeto único.
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct ReitFundamentalsPoint {
     pub reference_year: i32,
     pub revenue: f64,
@@ -862,16 +760,14 @@ pub struct ReitFundamentalsPoint {
     pub eps_diluted: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct ReitFundamentalsResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub data: Vec<ReitFundamentalsPoint>,
 }
 
 pub async fn fetch_reit_fundamentals(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<ReitFundamentalsResponse, AppError> {
     let ticker = ticker.to_uppercase();
@@ -902,17 +798,15 @@ pub async fn fetch_reit_fundamentals(
 // Fase 1.11.3 do easybusiness — resolução ticker->CNPJ de FII (cruza bolsai
 // + CVM do lado de lá). Router separado de `/v1/fiis/{cnpj}/...` acima
 // porque é keyed por ticker, não CNPJ.
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct FiiCnpjResolutionResponse {
     pub ticker: String,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub cnpj: String,
     pub fund_name: String,
 }
 
 pub async fn fetch_fii_cnpj_resolution(
-    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<FiiCnpjResolutionResponse, AppError> {
     let ticker = ticker.to_uppercase();
@@ -932,15 +826,14 @@ pub async fn fetch_fii_cnpj_resolution(
 // Fase 17 — Meta Selic diária (BCB 432, em dias corridos, % a.a.) e curva
 // DI×PRE da B3. Curva em dia sem pregão = 404 (`FinanceApiNotFound`), não
 // erro — o chamador volta dia a dia via `skip_not_found`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct SelicPoint {
     pub reference_date: NaiveDate,
     pub value_pct: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct SelicResponse {
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub data: Vec<SelicPoint>,
 }
@@ -958,22 +851,20 @@ pub async fn fetch_selic(db: &DatabaseConnection, series_code: &str) -> Result<S
     })
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct DiCurvePoint {
     pub dias_uteis: i32,
     pub rate_pct: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct DiCurveResponse {
     pub reference_date: NaiveDate,
-    #[serde(flatten)]
     pub meta: ResponseMeta,
     pub data: Vec<DiCurvePoint>,
 }
 
 pub async fn fetch_di_futures_curve(
-    _handle: &FinanceApiHandle,
     reference_date: NaiveDate,
 ) -> Result<DiCurveResponse, AppError> {
     let curve = b3_taxa_swap::di_curve(reference_date).await?;
@@ -993,9 +884,9 @@ pub async fn fetch_di_futures_curve(
 // tax-rules — /v1/tax-rules/br
 // ---------------------------------------------------------------------------
 
-// Fase 24 — regras de IR curadas no Lume (sem `ResponseMeta`: não é dado
-// coletado de fonte externa com cache, é tabela versionada no repo de lá).
-#[derive(Debug, Deserialize)]
+// Fase 24 — regras de IR curadas à mão (sem `ResponseMeta`: não é dado coletado
+// de fonte externa com cache, é a tabela versionada em `finance_core::tax_rules`).
+#[derive(Debug)]
 pub struct TaxRulePoint {
     pub key: String,
     pub value: f64,
@@ -1005,13 +896,13 @@ pub struct TaxRulePoint {
     pub verified_at: NaiveDate,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct TaxRulesResponse {
     pub rules: Vec<TaxRulePoint>,
 }
 
 // Fase 26 — tabela embarcada no binário (`finance_core::tax_rules`).
-pub async fn fetch_tax_rules_br(_handle: &FinanceApiHandle) -> Result<TaxRulesResponse, AppError> {
+pub async fn fetch_tax_rules_br() -> Result<TaxRulesResponse, AppError> {
     Ok(TaxRulesResponse {
         rules: tax_rules::rules_br()
             .into_iter()
@@ -1028,29 +919,18 @@ pub async fn fetch_tax_rules_br(_handle: &FinanceApiHandle) -> Result<TaxRulesRe
 }
 
 // ---------------------------------------------------------------------------
-// Testes `#[ignore]` — precisam de uma Finance API real rodando em
-// `http://localhost:8000` com `API_KEYS=local-dev-key-change-me` (mesmos
-// valores de `sidecar::DEV_BASE_URL`/`DEV_API_KEY`), ex.: `sidecar_main.py`
-// do easybusiness contra SQLite, ou `docker compose up` de lá. Rodar com
-// `cargo test --lib -- --ignored finance_api`. Fora do `cargo test --lib`
-// padrão de propósito — não podem depender de rede/serviço externo no CI.
+// Testes `#[ignore]` — vão às fontes públicas de verdade (rede). Rodar com
+// `cargo test --lib -- --ignored finance_api`. Ficam fora do `cargo test --lib`
+// padrão de propósito: o CI não pode depender de serviço externo.
 // ---------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::finance_api::FinanceApiHandle;
-
-    fn handle() -> FinanceApiHandle {
-        FinanceApiHandle::for_test(
-            "http://localhost:8000".to_string(),
-            "local-dev-key-change-me".to_string(),
-        )
-    }
 
     #[tokio::test]
     #[ignore]
     async fn live_fetch_benchmark_series() {
-        let series = fetch_benchmark_series(&handle(), "cdi").await.unwrap();
+        let series = fetch_benchmark_series("cdi").await.unwrap();
         assert_eq!(series.series_code, "cdi");
         assert!(!series.data.is_empty());
     }
@@ -1058,14 +938,14 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn live_fetch_fear_greed() {
-        let reading = fetch_fear_greed(&handle()).await.unwrap();
+        let reading = fetch_fear_greed().await.unwrap();
         assert!(reading.value >= 0 && reading.value <= 100);
     }
 
     #[tokio::test]
     #[ignore]
     async fn live_fetch_metal_quote_lowercases_the_code() {
-        let quote = fetch_metal_quote(&handle(), "XAU").await.unwrap();
+        let quote = fetch_metal_quote("XAU").await.unwrap();
         assert_eq!(quote.metal_code, "xau");
         assert!(quote.price > 0.0);
     }
@@ -1073,7 +953,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn live_fetch_b3_index_history_lowercases_the_code() {
-        let history = fetch_b3_index_history(&handle(), "IFIX").await.unwrap();
+        let history = fetch_b3_index_history("IFIX").await.unwrap();
         assert_eq!(history.index_code, "ifix");
         assert!(!history.data.is_empty());
     }
@@ -1081,7 +961,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn live_fetch_stock_quote() {
-        let quote = fetch_stock_quote(&handle(), "PETR4").await.unwrap();
+        let quote = fetch_stock_quote("PETR4").await.unwrap();
         assert_eq!(quote.ticker, "PETR4");
         assert!(quote.price > 0.0);
     }
@@ -1089,9 +969,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn live_fetch_unknown_indicator_is_no_data() {
-        let err = fetch_eth_indicator(&handle(), "does-not-exist")
-            .await
-            .unwrap_err();
+        let err = fetch_eth_indicator("does-not-exist").await.unwrap_err();
         assert!(matches!(err, AppError::NoData(_)));
     }
 }

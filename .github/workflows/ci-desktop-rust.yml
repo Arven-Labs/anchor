@@ -45,17 +45,15 @@ jobs:
             libudev-dev \
             pkg-config
 
-      # O tauri-build exige que o `frontendDist` (../dist) e o sidecar declarado em
-      # `externalBin` existam no disco. Os testes não usam nenhum dos dois, então
-      # placeholders bastam (o frontend real é validado no ci-desktop-frontend.yml
-      # e o sidecar real só é gerado no build.yml).
+      # O tauri-build exige que o `frontendDist` (../dist) exista no disco. Os
+      # testes não o usam, então um placeholder basta (o frontend real é validado
+      # no ci-desktop-frontend.yml).
       - name: Placeholders
         run: |
-          mkdir -p desktop/dist desktop/src-tauri/binaries
+          mkdir -p desktop/dist
           echo '<!doctype html>' > desktop/dist/index.html
-          touch desktop/src-tauri/binaries/anchor-finance-api-x86_64-unknown-linux-gnu
 
-      # Testes `#[ignore]` (ao vivo contra o Lume) ficam de fora, como no local
+      # Testes `#[ignore]` (ao vivo, vão às fontes públicas) ficam de fora, como no local
       - name: cargo test
         working-directory: desktop/src-tauri
         run: cargo test --lib

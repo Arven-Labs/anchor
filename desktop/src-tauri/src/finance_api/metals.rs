@@ -8,7 +8,7 @@ use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection, Set};
 
 use crate::entity::{stock_price_history, stock_quotes};
 use crate::error::AppError;
-use crate::finance_api::{client, insert_ignoring_conflicts, FinanceApiHandle};
+use crate::finance_api::{client, insert_ignoring_conflicts};
 
 pub struct MetalTickerResult {
     pub ticker: String,
@@ -19,11 +19,10 @@ pub struct MetalTickerResult {
 
 pub async fn collect_ticker(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<MetalTickerResult, AppError> {
-    let quote = client::fetch_metal_quote(handle, ticker).await?;
-    let history = client::fetch_metal_price_history(handle, ticker).await?;
+    let quote = client::fetch_metal_quote(ticker).await?;
+    let history = client::fetch_metal_price_history(ticker).await?;
     let now = Utc::now().to_rfc3339();
 
     // Grava com o ticker original (ex.: "XAU", maiúsculo — convenção do
@@ -86,20 +85,11 @@ mod tests {
             .expect("failed to connect to the real dev database")
     }
 
-    fn handle() -> FinanceApiHandle {
-        FinanceApiHandle::for_test(
-            "http://localhost:8000".to_string(),
-            "local-dev-key-change-me".to_string(),
-        )
-    }
-
     #[tokio::test]
     #[ignore]
     async fn live_collect_ticker_writes_real_rows() {
         let db = dev_db().await;
-        let handle = handle();
-
-        let result = collect_ticker(&db, &handle, "XAU").await.unwrap();
+        let result = collect_ticker(&db, "XAU").await.unwrap();
         assert_eq!(result.ticker, "XAU");
         assert!(result.price > 0.0);
         assert!(result.history_points > 0);

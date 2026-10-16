@@ -1,7 +1,7 @@
 // E2E do Anchor com WebdriverIO + tauri-driver (WebKitWebDriver no Linux).
 // Sobe o binário **debug** do app (`tauri build --debug --no-bundle`: o
-// frontend vem embutido e `debug_assertions` fica ligado, o que pula o
-// sidecar do Lume) apontando pra um banco descartável via `ANCHOR_DB_PATH`.
+// frontend vem embutido e `debug_assertions` fica ligado) apontando pra um
+// banco descartável via `ANCHOR_DB_PATH`.
 // O app migra o banco sozinho ao abrir (`db::connect`).
 
 import fs from "node:fs";

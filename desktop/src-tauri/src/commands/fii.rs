@@ -6,13 +6,12 @@ use serde::{Deserialize, Serialize};
 use crate::commands::collector::CollectorSummary;
 use crate::entity::{fii_cvm_monthly, fii_cvm_properties};
 use crate::error::AppError;
-use crate::finance_api::{fii as finance_api_fii, FinanceApiHandle};
+use crate::finance_api::fii as finance_api_fii;
 
 /// Fase 10, item 8, Sessão 41 — sugestão de CNPJ pro cadastro de um FII,
 /// resolvida cruzando bolsai + cadastro público da CVM (nunca chuta — 0 ou
-/// mais de um match vira `None`, ver docstring de
-/// `cvm_fii.py::resolve_cnpj`/`app.sources.cvm_fii.resolve_cnpj` do
-/// easybusiness). O usuário confirma/edita antes de salvar em `assets.cnpj`
+/// mais de um match vira `None`, ver `finance_core::cvm_fii::resolve_of`).
+/// O usuário confirma/edita antes de salvar em `assets.cnpj`
 /// — este comando não escreve nada lá, só no cache de resolução.
 #[derive(Serialize, Deserialize)]
 pub struct FiiCnpjSuggestion {
@@ -20,18 +19,16 @@ pub struct FiiCnpjSuggestion {
     pub fund_name: String,
 }
 
-/// Fase 14.4 (Sessão 92) — trocou de `run_collector` (subprocess Python,
-/// `--fii-resolve-cnpj`) pra `finance_api::fii::resolve_cnpj` direto,
-/// desbloqueado pela Fase 1.11.3 do easybusiness. Sem `lock`/`app` — a
-/// chamada HTTP não precisa do lock de subprocess (frontend só passa
-/// `{ ticker }`, ver `AssetSection.tsx`/`FiiLookupSection.tsx`).
+/// Resolve ticker → CNPJ do fundo (`finance_api::fii::resolve_cnpj`: cache local,
+/// depois bolsai + cadastro da CVM). Sem `lock`/`app` — a chamada não precisa do
+/// lock de coletor (frontend só passa `{ ticker }`, ver
+/// `AssetSection.tsx`/`FiiLookupSection.tsx`).
 #[tauri::command]
 pub async fn resolve_fii_cnpj(
     db: tauri::State<'_, DatabaseConnection>,
-    finance_api: tauri::State<'_, FinanceApiHandle>,
     ticker: String,
 ) -> Result<Option<FiiCnpjSuggestion>, AppError> {
-    let resolution = finance_api_fii::resolve_cnpj(db.inner(), &finance_api, &ticker).await?;
+    let resolution = finance_api_fii::resolve_cnpj(db.inner(), &ticker).await?;
 
     Ok(resolution.map(|r| FiiCnpjSuggestion {
         cnpj: r.cnpj,
@@ -43,19 +40,17 @@ pub async fn resolve_fii_cnpj(
 /// CVM pra uma lista de CNPJs já resolvidos e salvos — a bolsai não entra
 /// aqui, só na sugestão inicial (`resolve_fii_cnpj` acima).
 ///
-/// Fase 14.4 — trocou de `run_collector` (subprocess Python,
-/// `--fii-cvm-data`) pra `finance_api::fii::collect_cvm_data` direto.
+/// Chama `finance_api::fii::collect_cvm_data` direto.
 #[tauri::command]
 pub async fn run_fii_cvm_collector(
     lock: tauri::State<'_, AtomicBool>,
     db: tauri::State<'_, DatabaseConnection>,
-    finance_api: tauri::State<'_, FinanceApiHandle>,
     cnpjs: Vec<String>,
 ) -> Result<CollectorSummary, AppError> {
     if lock.swap(true, Ordering::SeqCst) {
         return Err(AppError::CollectorBusy);
     }
-    let result = finance_api_fii::collect_cvm_data(db.inner(), &finance_api, &cnpjs)
+    let result = finance_api_fii::collect_cvm_data(db.inner(), &cnpjs)
         .await
         .map(|r| CollectorSummary {
             success: true,

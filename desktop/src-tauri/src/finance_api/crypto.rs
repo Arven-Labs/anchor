@@ -16,7 +16,7 @@ use crate::crypto_sources;
 use crate::domain::crypto_score::{self, Threshold};
 use crate::entity::{crypto_fear_greed, crypto_indicators, indicator_thresholds, stock_price_history, stock_quotes};
 use crate::error::AppError;
-use crate::finance_api::{client, insert_ignoring_conflicts, FinanceApiHandle};
+use crate::finance_api::{client, insert_ignoring_conflicts};
 
 pub struct CryptoTickerResult {
     pub symbol: String,
@@ -34,14 +34,13 @@ pub struct CryptoTickerResult {
 /// índice único de `reading_date`, só grava a primeira vez no dia.
 pub async fn collect_ticker(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
     symbol: &str,
 ) -> Result<CryptoTickerResult, AppError> {
-    let quote = client::fetch_crypto_quote(handle, symbol).await?;
-    let history = client::fetch_crypto_price_history(handle, symbol).await?;
+    let quote = client::fetch_crypto_quote(symbol).await?;
+    let history = client::fetch_crypto_price_history(symbol).await?;
     if history.data.is_empty() {
-        return Err(AppError::FinanceApi(format!(
-            "Finance API returned no price history for '{symbol}' ({})",
+        return Err(AppError::NoData(format!(
+            "no price history for '{symbol}' ({})",
             quote.coin_id
         )));
     }
@@ -86,7 +85,7 @@ pub async fn collect_ticker(
     )
     .await?;
 
-    let fear_greed = client::fetch_fear_greed(handle).await?;
+    let fear_greed = client::fetch_fear_greed().await?;
     insert_ignoring_conflicts::<crypto_fear_greed::Entity>(
         db,
         vec![crypto_fear_greed::ActiveModel {
@@ -181,13 +180,12 @@ pub struct EthCollection {
 /// Só devolve erro se **nenhum** indicador foi coletado.
 pub async fn collect_eth_indicators(
     db: &DatabaseConnection,
-    handle: &FinanceApiHandle,
 ) -> Result<EthCollection, AppError> {
     let mut readings = Vec::with_capacity(ETH_INDICATORS.len() + 4);
     let mut errors = Vec::new();
 
     for (internal_name, api_code, source) in ETH_INDICATORS {
-        let fetched = client::fetch_eth_indicator(handle, api_code)
+        let fetched = client::fetch_eth_indicator(api_code)
             .await
             .map(|response| response.raw_value);
         record_or_collect_error(db, internal_name, source, fetched, &mut readings, &mut errors).await;
@@ -246,8 +244,8 @@ async fn record_or_collect_error(
 
 // ---------------------------------------------------------------------------
 // Testes `#[ignore]` — mesma convenção de `finance_api::stocks::tests`:
-// precisam da Finance API real em `http://localhost:8000` e do banco real
-// de dev. Rodar com `cargo test --lib -- --ignored finance_api::crypto`.
+// vão às fontes públicas de verdade (rede) e precisam do banco real de dev.
+// Rodar com `cargo test --lib -- --ignored finance_api::crypto`.
 // ---------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
@@ -260,20 +258,11 @@ mod tests {
             .expect("failed to connect to the real dev database")
     }
 
-    fn handle() -> FinanceApiHandle {
-        FinanceApiHandle::for_test(
-            "http://localhost:8000".to_string(),
-            "local-dev-key-change-me".to_string(),
-        )
-    }
-
     #[tokio::test]
     #[ignore]
     async fn live_collect_ticker_writes_real_rows() {
         let db = dev_db().await;
-        let handle = handle();
-
-        let result = collect_ticker(&db, &handle, "BTC").await.unwrap();
+        let result = collect_ticker(&db, "BTC").await.unwrap();
         assert!(result.price > 0.0);
         assert!(result.history_points > 0);
     }
@@ -282,9 +271,7 @@ mod tests {
     #[ignore]
     async fn live_collect_eth_indicators_writes_fifteen_readings() {
         let db = dev_db().await;
-        let handle = handle();
-
-        let collection = collect_eth_indicators(&db, &handle).await.unwrap();
+        let collection = collect_eth_indicators(&db).await.unwrap();
         assert_eq!(collection.readings.len() + collection.errors.len(), 15);
         for reading in &collection.readings {
             assert!(matches!(reading.signal.as_str(), "GREEN" | "NEUTRAL" | "RED"));
