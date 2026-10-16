@@ -1,4 +1,4 @@
-import { $, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 
 // Seletores por `data-testid` (os que o app expõe de propósito pro E2E).
 const byId = (id) => $(`[data-testid="${id}"]`);
@@ -26,7 +26,14 @@ describe("Anchor — Loans, de ponta a ponta", () => {
     await newLoan.waitForEnabled({ timeout: 20_000 });
     await newLoan.click();
 
-    await expect(byId("loan-borrower-select")).toHaveText(expect.stringContaining("Mom"));
+    // O texto do Select do Radix vem num portal e o `getText()` do WebKitWebDriver
+    // devolve vazio pra ele; o `textContent` é confiável (a captura de tela do CI
+    // confirma que "Mom" aparece selecionado).
+    const borrowerSelect = await byId("loan-borrower-select");
+    await browser.waitUntil(
+      async () => (await borrowerSelect.getProperty("textContent")).includes("Mom"),
+      { timeoutMsg: "o devedor recém-criado deveria vir selecionado no empréstimo" },
+    );
     await byId("loan-principal").setValue("1000");
     await byId("loan-create").click();
 
