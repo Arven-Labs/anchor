@@ -18,7 +18,7 @@ use serde::Deserialize;
 use crate::error::AppError;
 use crate::finance_api::{selic_store, FinanceApiHandle};
 use crate::finance_core::market::{self, Instrument};
-use crate::finance_core::{bcb_sgs, bolsai, metals, tax_rules, yahoo};
+use crate::finance_core::{b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, metals, tax_rules, yahoo};
 
 /// Campos presentes em toda resposta da Finance API — achatado (`flatten`)
 /// dentro de cada DTO abaixo em vez de repetir os 4 campos 22 vezes.
@@ -554,14 +554,15 @@ pub struct B3IndexHistoryResponse {
 // Mesma pegadinha de casing de `fetch_metal_quote` — catálogo usa código
 // minúsculo (`ifix`, não `IFIX`) na URL.
 pub async fn fetch_b3_index_history(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     index_code: &str,
 ) -> Result<B3IndexHistoryResponse, AppError> {
-    get(
-        handle,
-        &format!("/v1/b3-indexes/{}/history", index_code.to_lowercase()),
-    )
-    .await
+    let history = b3_index_stats::index_history(&index_code.to_lowercase()).await?;
+    Ok(B3IndexHistoryResponse {
+        index_code: index_code.to_lowercase(),
+        meta: now_meta(history.source),
+        data: price_points(history.value),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -831,10 +832,20 @@ pub struct DiCurveResponse {
 }
 
 pub async fn fetch_di_futures_curve(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     reference_date: NaiveDate,
 ) -> Result<DiCurveResponse, AppError> {
-    get(handle, &format!("/v1/rates/di-futures-curve/{reference_date}")).await
+    let curve = b3_taxa_swap::di_curve(reference_date).await?;
+    Ok(DiCurveResponse {
+        reference_date,
+        meta: native_meta(curve.value.source, curve.cached, curve.stale, curve.fetched_at),
+        data: curve
+            .value
+            .value
+            .into_iter()
+            .map(|v| DiCurvePoint { dias_uteis: v.dias_uteis, rate_pct: v.rate_pct })
+            .collect(),
+    })
 }
 
 // ---------------------------------------------------------------------------

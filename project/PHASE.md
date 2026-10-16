@@ -2083,7 +2083,17 @@ e derrubava o lote. **bolsai é o primeiro BYO-key**: a chave vem do keyring (`a
 Achado: o sidecar de release nunca recebia `BOLSAI_API_KEY` (o spawn só passava `API_KEYS` e
 `DATABASE_URL`), então fundamentos e resolução de FII só funcionavam em dev. **Falta**: tela em
 Settings pra colar a chave (hoje só keyring/ambiente) e testar com uma chave real, que não tenho.
-**Próximo**: domínio 3 (índices B3 + curva DI).
+**Domínio 3 feito (Sessão 107)**: `finance_core::{b3_index_stats, b3_taxa_swap}` (IFIX/SMLL/IDIV e a
+curva DI×PRE) com `IndexHistoryProvider` e `DiCurveProvider`; `fetch_b3_index_history` e
+`fetch_di_futures_curve` do `client.rs` agora são nativos. Nova dependência `zip` (vai servir também
+a CVM e ao COTAHIST). A curva usa o `TtlCache` (1 h, inclusive dias sem pregão, que viram `NoData`),
+porque a Home volta dia a dia procurando a última curva. **Achado ao vivo**: no arquivo real da B3 os
+offsets do diretório central são relativos ao blob `.ex_` inteiro (o zip interno começa no byte
+86036 e é lá que o diretório central aponta), então o blob todo abre como zip; a crate `zip` não
+tolera a ambiguidade que o Python tolerava, por isso tenta o blob inteiro e, se falhar, o recorte a
+partir de `PK\x03\x04` (layout do teste do Lume). **Paridade com o Python do Lume conferida**:
+curva de 15/10/2026 com os mesmos 281 vértices e o mesmo primeiro vértice (13,65%), e IFIX com a
+mesma última cotação (31/08/2026, 3762,79). **Próximo**: domínio 4 (cripto restante).
 
 **Estado anterior**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
 arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan

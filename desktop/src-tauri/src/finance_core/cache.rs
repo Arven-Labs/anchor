@@ -5,10 +5,6 @@
 // marcado `stale`; sem dado antigo → propaga o erro. `NoData` nunca vira stale
 // (é resposta da fonte, não falha).
 
-// Ainda sem chamador: entra com a curva DI (domínio 3), que não é gravada no
-// banco. A Selic usa `selic_daily` em vez deste cache.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::future::Future;
 use std::hash::Hash;

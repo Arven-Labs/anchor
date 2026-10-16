@@ -2394,3 +2394,16 @@ Plano completo em `~/.claude/plans/fuzzy-humming-crystal.md` e resumo na Fase 26
 - **Pendente**: tela de chave da bolsai em Settings; teste de clique (Research → ação B3, EUA, metal;
   Profitability → backfill com IBOV/IVVB11); domínio 3.
 
+**Fase 26, domínio 3 (índices B3 + curva DI).** Pedido: "vamos de domínio 3".
+- **Feito**: `finance_core/{b3_index_stats,b3_taxa_swap}.rs`, dependência `zip`, `TtlCache` em uso (curva
+  DI). 9 testes novos (grade de índice, URL base64, zips aninhados montados como no Lume, taxas
+  negativas, zip malformado).
+- **Verificado**: `check` sem warnings; suíte inteira passa (320 + os novos); testes ao vivo de índice,
+  curva (dia útil e domingo) e `commands::rates` passam sem o Lume; paridade com o Python (281
+  vértices, IFIX).
+- **Achado**: o zip interno do TaxaSwap real tem offsets relativos ao blob inteiro; meu primeiro
+  recorte falhava com "Invalid CDFH offset". Descoberto rodando contra a B3 de verdade, o teste com
+  zip sintético passava.
+- **Pendente**: teste de clique (Home → Selic/DI; Research → Interest rates; Profitability →
+  backfill de benchmarks); domínio 4.
+

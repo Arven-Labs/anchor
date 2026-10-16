@@ -13,7 +13,10 @@
 // - `market`, `yahoo`, `metals`: domínio 2 (cotação, histórico, técnicos e
 //   dividendos via `MarketDataProvider`; catálogo de metais), `bolsai` e
 //   `api_keys` (primeiro provider BYO-key; chave no keyring ou no ambiente).
+// - `b3_index_stats`, `b3_taxa_swap`: domínio 3 (índices IFIX/SMLL/IDIV e curva DI).
 pub mod api_keys;
+pub mod b3_index_stats;
+pub mod b3_taxa_swap;
 pub mod bcb_sgs;
 pub mod bolsai;
 pub mod cache;
