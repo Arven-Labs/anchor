@@ -17,7 +17,8 @@ use serde::Deserialize;
 
 use crate::error::AppError;
 use crate::finance_api::{selic_store, FinanceApiHandle};
-use crate::finance_core::{bcb_sgs, tax_rules};
+use crate::finance_core::market::{self, Instrument};
+use crate::finance_core::{bcb_sgs, bolsai, metals, tax_rules, yahoo};
 
 /// Campos presentes em toda resposta da Finance API — achatado (`flatten`)
 /// dentro de cada DTO abaixo em vez de repetir os 4 campos 22 vezes.
@@ -53,6 +54,30 @@ pub struct PriceHistoryPoint {
 /// quem de fato respondeu, no lugar do que o Lume ecoava.
 fn native_meta(source: &str, cached: bool, stale: bool, fetched_at: DateTime<Utc>) -> ResponseMeta {
     ResponseMeta { source: source.to_string(), cached, stale, fetched_at: Some(fetched_at) }
+}
+
+/// Instante único usado como `fetched_at` das respostas nativas sem cache.
+fn now_meta(source: &str) -> ResponseMeta {
+    native_meta(source, false, false, Utc::now())
+}
+
+fn price_points(points: Vec<(NaiveDate, f64)>) -> Vec<PriceHistoryPoint> {
+    points
+        .into_iter()
+        .map(|(price_date, close_price)| PriceHistoryPoint { price_date, close_price })
+        .collect()
+}
+
+fn payment_points(payments: Vec<market::DividendPayment>) -> Vec<StockDividendPaymentPoint> {
+    payments
+        .into_iter()
+        .map(|p| StockDividendPaymentPoint {
+            payment_date: p.payment_date,
+            amount: p.amount,
+            price_at_payment: p.price_at_payment,
+            yield_pct: p.yield_pct,
+        })
+        .collect()
 }
 
 async fn get<T: DeserializeOwned>(handle: &FinanceApiHandle, path: &str) -> Result<T, AppError> {
@@ -104,10 +129,18 @@ pub struct StockQuoteResponse {
 }
 
 pub async fn fetch_stock_quote(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<StockQuoteResponse, AppError> {
-    get(handle, &format!("/v1/stocks/{ticker}/quote")).await
+    let q = yahoo::quote(&Instrument::b3(ticker)).await?;
+    Ok(StockQuoteResponse {
+        ticker: ticker.to_string(),
+        meta: now_meta(q.source),
+        price: q.value.price,
+        name: q.value.name,
+        exchange: q.value.exchange,
+        currency: q.value.currency,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,10 +156,19 @@ pub struct StockTechnicalsResponse {
 }
 
 pub async fn fetch_stock_technicals(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<StockTechnicalsResponse, AppError> {
-    get(handle, &format!("/v1/stocks/{ticker}/technicals")).await
+    let t = yahoo::technicals(&Instrument::b3(ticker)).await?;
+    Ok(StockTechnicalsResponse {
+        ticker: ticker.to_string(),
+        meta: now_meta(t.source),
+        sma_50: t.value.sma_50,
+        sma_100: t.value.sma_100,
+        sma_200: t.value.sma_200,
+        cagr_5y: t.value.cagr_5y,
+        cagr_10y: t.value.cagr_10y,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,10 +180,11 @@ pub struct StockDividendsAvgResponse {
 }
 
 pub async fn fetch_stock_dividends_avg(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<StockDividendsAvgResponse, AppError> {
-    get(handle, &format!("/v1/stocks/{ticker}/dividends-avg")).await
+    let a = yahoo::dividends_avg(&Instrument::b3(ticker)).await?;
+    Ok(StockDividendsAvgResponse { ticker: ticker.to_string(), meta: now_meta(a.source), avg_dividend_5y: a.value })
 }
 
 #[derive(Debug, Deserialize)]
@@ -153,10 +196,15 @@ pub struct StockPriceHistoryResponse {
 }
 
 pub async fn fetch_stock_price_history(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<StockPriceHistoryResponse, AppError> {
-    get(handle, &format!("/v1/stocks/{ticker}/price-history")).await
+    let h = yahoo::price_history(&Instrument::b3(ticker)).await?;
+    Ok(StockPriceHistoryResponse {
+        ticker: ticker.to_string(),
+        meta: now_meta(h.source),
+        data: price_points(h.value),
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -176,10 +224,15 @@ pub struct StockDividendPaymentsResponse {
 }
 
 pub async fn fetch_stock_dividend_payments(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<StockDividendPaymentsResponse, AppError> {
-    get(handle, &format!("/v1/stocks/{ticker}/dividend-payments")).await
+    let p = yahoo::dividend_payments(&Instrument::b3(ticker)).await?;
+    Ok(StockDividendPaymentsResponse {
+        ticker: ticker.to_string(),
+        meta: now_meta(p.source),
+        data: payment_points(p.value),
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -195,10 +248,19 @@ pub struct StockBolsaiFundamentalsResponse {
 }
 
 pub async fn fetch_stock_bolsai_fundamentals(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<StockBolsaiFundamentalsResponse, AppError> {
-    get(handle, &format!("/v1/stocks/{ticker}/bolsai-fundamentals")).await
+    let f = bolsai::fundamentals(ticker).await?;
+    Ok(StockBolsaiFundamentalsResponse {
+        ticker: ticker.to_string(),
+        meta: now_meta(f.source),
+        lpa: f.value.lpa,
+        vpa: f.value.vpa,
+        roe: f.value.roe,
+        shares_outstanding: f.value.shares_outstanding,
+        cvm_code: f.value.cvm_code,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -354,14 +416,18 @@ pub struct MetalQuoteResponse {
 // código minúsculo na URL (`xau`, não `XAU`) — mesmo cuidado aplicado aqui
 // pra não reproduzir o mesmo bug do lado Rust.
 pub async fn fetch_metal_quote(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     metal_code: &str,
 ) -> Result<MetalQuoteResponse, AppError> {
-    get(
-        handle,
-        &format!("/v1/metals/{}/quote", metal_code.to_lowercase()),
-    )
-    .await
+    let info = metals::metal_info(metal_code)
+        .ok_or_else(|| AppError::NoData(format!("unknown metal '{metal_code}'")))?;
+    let q = yahoo::quote(&Instrument::global(info.yahoo_symbol)).await?;
+    Ok(MetalQuoteResponse {
+        metal_code: info.code.to_string(),
+        name: info.name.to_string(),
+        meta: now_meta(q.source),
+        price: q.value.price,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -373,14 +439,17 @@ pub struct MetalPriceHistoryResponse {
 }
 
 pub async fn fetch_metal_price_history(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     metal_code: &str,
 ) -> Result<MetalPriceHistoryResponse, AppError> {
-    get(
-        handle,
-        &format!("/v1/metals/{}/price-history", metal_code.to_lowercase()),
-    )
-    .await
+    let info = metals::metal_info(metal_code)
+        .ok_or_else(|| AppError::NoData(format!("unknown metal '{metal_code}'")))?;
+    let h = yahoo::price_history(&Instrument::global(info.yahoo_symbol)).await?;
+    Ok(MetalPriceHistoryResponse {
+        metal_code: info.code.to_string(),
+        meta: now_meta(h.source),
+        data: price_points(h.value),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -564,10 +633,18 @@ pub struct UsStockQuoteResponse {
 }
 
 pub async fn fetch_us_stock_quote(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockQuoteResponse, AppError> {
-    get(handle, &format!("/v1/us-stocks/{ticker}/quote")).await
+    let q = yahoo::quote(&Instrument::global(ticker)).await?;
+    Ok(UsStockQuoteResponse {
+        ticker: ticker.to_string(),
+        meta: now_meta(q.source),
+        price: q.value.price,
+        name: q.value.name,
+        exchange: q.value.exchange,
+        currency: q.value.currency,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -583,10 +660,19 @@ pub struct UsStockTechnicalsResponse {
 }
 
 pub async fn fetch_us_stock_technicals(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockTechnicalsResponse, AppError> {
-    get(handle, &format!("/v1/us-stocks/{ticker}/technicals")).await
+    let t = yahoo::technicals(&Instrument::global(ticker)).await?;
+    Ok(UsStockTechnicalsResponse {
+        ticker: ticker.to_string(),
+        meta: now_meta(t.source),
+        sma_50: t.value.sma_50,
+        sma_100: t.value.sma_100,
+        sma_200: t.value.sma_200,
+        cagr_5y: t.value.cagr_5y,
+        cagr_10y: t.value.cagr_10y,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -598,10 +684,11 @@ pub struct UsStockDividendsAvgResponse {
 }
 
 pub async fn fetch_us_stock_dividends_avg(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockDividendsAvgResponse, AppError> {
-    get(handle, &format!("/v1/us-stocks/{ticker}/dividends-avg")).await
+    let a = yahoo::dividends_avg(&Instrument::global(ticker)).await?;
+    Ok(UsStockDividendsAvgResponse { ticker: ticker.to_string(), meta: now_meta(a.source), avg_dividend_5y: a.value })
 }
 
 #[derive(Debug, Deserialize)]
@@ -613,10 +700,15 @@ pub struct UsStockPriceHistoryResponse {
 }
 
 pub async fn fetch_us_stock_price_history(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockPriceHistoryResponse, AppError> {
-    get(handle, &format!("/v1/us-stocks/{ticker}/price-history")).await
+    let h = yahoo::price_history(&Instrument::global(ticker)).await?;
+    Ok(UsStockPriceHistoryResponse {
+        ticker: ticker.to_string(),
+        meta: now_meta(h.source),
+        data: price_points(h.value),
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -628,10 +720,15 @@ pub struct UsStockDividendPaymentsResponse {
 }
 
 pub async fn fetch_us_stock_dividend_payments(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<UsStockDividendPaymentsResponse, AppError> {
-    get(handle, &format!("/v1/us-stocks/{ticker}/dividend-payments")).await
+    let p = yahoo::dividend_payments(&Instrument::global(ticker)).await?;
+    Ok(UsStockDividendPaymentsResponse {
+        ticker: ticker.to_string(),
+        meta: now_meta(p.source),
+        data: payment_points(p.value),
+    })
 }
 
 // Fase 1.11.2 do easybusiness — indicadores imobiliários de REIT via SEC

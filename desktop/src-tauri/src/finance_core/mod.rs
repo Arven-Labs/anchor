@@ -10,8 +10,16 @@
 // - `cache`: cache em memória com TTL e fallback `stale`, pros dados que não
 //   são gravados no `anchor.db` (os que são já têm `fetched_at`/`source`).
 // - `bcb_sgs`, `tax_rules`: domínio 1 (macro BCB, Selic e regras de IR).
+// - `market`, `yahoo`, `metals`: domínio 2 (cotação, histórico, técnicos e
+//   dividendos via `MarketDataProvider`; catálogo de metais), `bolsai` e
+//   `api_keys` (primeiro provider BYO-key; chave no keyring ou no ambiente).
+pub mod api_keys;
 pub mod bcb_sgs;
+pub mod bolsai;
 pub mod cache;
 pub mod http;
+pub mod market;
+pub mod metals;
 pub mod provider;
 pub mod tax_rules;
+pub mod yahoo;

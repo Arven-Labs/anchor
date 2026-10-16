@@ -2070,7 +2070,20 @@ nos testes ao vivo), então a Meta Selic vive em `selic_daily` no `anchor.db` (m
 `m20261016_150000`, `finance_api::selic_store`): baixa tudo na primeira vez, depois só o trecho novo
 (TTL de 1 h) e, com o BCB fora do ar, serve o gravado como `stale`. `client::fetch_selic` passou a
 receber `&DatabaseConnection` em vez do handle. O `TtlCache` ficou sem chamador até a curva DI
-(domínio 3). **Próximo**: domínio 2 (família Yahoo + bolsai).
+(domínio 3). **Domínio 2 feito (Sessão 107)**: `finance_core::{market, yahoo, metals, bolsai, api_keys}`.
+`MarketDataProvider` (cotação, histórico 10 anos, técnicos, média de dividendos, pagamentos) com
+`Yahoo` como único provider por ora; `Instrument { ticker, market: B3 | Global }` decide o símbolo
+(`.SA` só na B3). Nativos no `client.rs`: ações B3 (6 métodos, inclusive a bolsai), partes de mercado
+das ações EUA (5), metais (2) e, por tabela, IBOV/IVVB11 do benchmark. **Paridade com o Python do
+Lume conferida em PETR4**: SMA 50/100/200, CAGR 5/10 anos, média de dividendos, 34 pagamentos e as
+2492 cotações batem (diferença só no último dígito do ponto flutuante). **Mudança consciente**:
+símbolo desconhecido no Yahoo (404) agora é `NoData` e o coletor pula o ticker; o Lume devolvia 502
+e derrubava o lote. **bolsai é o primeiro BYO-key**: a chave vem do keyring (`anchor` /
+`bolsai_api_key`) e depois da variável `BOLSAI_API_KEY`; sem chave o erro diz o que configurar.
+Achado: o sidecar de release nunca recebia `BOLSAI_API_KEY` (o spawn só passava `API_KEYS` e
+`DATABASE_URL`), então fundamentos e resolução de FII só funcionavam em dev. **Falta**: tela em
+Settings pra colar a chave (hoje só keyring/ambiente) e testar com uma chave real, que não tenho.
+**Próximo**: domínio 3 (índices B3 + curva DI).
 
 **Estado anterior**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
 arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan

@@ -27,6 +27,16 @@ pub fn check_status(source: &str, status: u16, body: String) -> Result<String, A
 }
 
 pub async fn get_text(source: &str, url: &str, timeout: Duration) -> Result<String, AppError> {
+    get_text_with_headers(source, url, timeout, &[]).await
+}
+
+/// Igual a `get_text`, com cabeçalhos extras (ex.: `X-API-Key` de provider com chave).
+pub async fn get_text_with_headers(
+    source: &str,
+    url: &str,
+    timeout: Duration,
+    headers: &[(&str, &str)],
+) -> Result<String, AppError> {
     let unavailable = |detail: reqwest::Error| {
         AppError::ProviderUnavailable(format!("{source}: {detail}"))
     };
@@ -35,7 +45,11 @@ pub async fn get_text(source: &str, url: &str, timeout: Duration) -> Result<Stri
         .user_agent(USER_AGENT)
         .build()
         .map_err(unavailable)?;
-    let response = client.get(url).send().await.map_err(unavailable)?;
+    let mut request = client.get(url);
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    let response = request.send().await.map_err(unavailable)?;
     let status = response.status().as_u16();
     let body = response.text().await.map_err(unavailable)?;
     check_status(source, status, body)

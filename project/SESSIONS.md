@@ -2379,3 +2379,18 @@ Plano completo em `~/.claude/plans/fuzzy-humming-crystal.md` e resumo na Fase 26
   ao vivo passam (primeira carga 46 s, depois instantânea).
 - **Pendente**: teste de clique (Home → Selic/DI, Profitability → backfill,
   Settings → Taxes → sync); domínio 2.
+
+**Fase 26, domínio 2 (família Yahoo + bolsai).** Pedido: "pode seguir com ele".
+- **Feito**: `finance_core/{market,yahoo,metals,bolsai,api_keys}.rs`; 14 métodos do `client.rs` agora
+  nativos (B3: quote, technicals, dividends-avg, price-history, dividend-payments, bolsai; EUA: os 5 de
+  mercado; metais: 2). 17 testes novos de cálculo puro com JSON no formato real do Yahoo.
+- **Verificado**: `check` sem warnings; suíte inteira 311 passam, 0 falham; teste ao vivo do Yahoo
+  (B3, EUA, `^BVSP`, `GC=F`, ticker inexistente) passa; **paridade exata com o Python do Lume** em
+  PETR4 (rodei o `acoes_yahoo.py` num venv no scratchpad). Os 3 testes ao vivo de `client.rs` que ainda
+  falham são de domínios não portados (cripto, índices B3) e precisam do Lume.
+- **Achados**: Yahoo responde 404 com JSON pra símbolo inexistente (mudei pra `NoData`); o sidecar
+  de release não passava `BOLSAI_API_KEY` ao Lume, então fundamentos e resolução de FII nunca
+  funcionaram fora do dev.
+- **Pendente**: tela de chave da bolsai em Settings; teste de clique (Research → ação B3, EUA, metal;
+  Profitability → backfill com IBOV/IVVB11); domínio 3.
+
