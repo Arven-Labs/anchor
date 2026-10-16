@@ -2362,3 +2362,11 @@ pode pegar" o que sobrava.
   no código antes de descartar qualquer domínio.
 - **Pendente**: decisões da Fase 26 (banco do cache, exposição ao Warden, domínios sem consumidor,
   `DataProvider`), em plan mode.
+
+**Fase 26, plano aprovado.** Em plan mode, com dois agentes lendo o Anchor e o Lume. Decisões do dono
+do projeto: pular o passo Python da Opção C e ir direto pra Rust por domínio; cache no `anchor.db`;
+`DataProvider` desde a 1ª fonte; MCP e HTTP pro Warden "os dois, mas não agora"; câmbio e opções
+adiados. Achado: 27 de 32 métodos do `client.rs` têm chamador, e Selic, curva DI e tax-rules **são**
+usados (o inventário do Lume estava errado). Corrigido na Fase 32 o nome do pin (`.lume-version`).
+Plano completo em `~/.claude/plans/fuzzy-humming-crystal.md` e resumo na Fase 26 do `PHASE.md`.
+- **Pendente**: executar a Etapa 0 (`finance_core/`) e o domínio 1 (macro BCB + tax-rules).

@@ -2047,7 +2047,21 @@ arquivar o Lume (decisão exclusiva do dono do projeto, depois de validar).
 - **Fase 20** (IA removida) — o Warden consumir dados do Anchor é a "ponte" que ficou pendente lá.
 - **Fase 15** (`StorageProvider`) — mesmo padrão de abstração provável pro `DataProvider`.
 
-**Estado**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
+**Plano aprovado na Sessão 107** (plan mode; detalhe em `~/.claude/plans/fuzzy-humming-crystal.md`):
+- **Pula o passo "mover o Python"** da Opção C do Lume: vai direto pra Rust, um domínio por vez; o
+  Lume segue como sidecar pro que ainda não foi portado e só é arquivado no fim.
+- **Cache no `anchor.db`** (some o `finance_api.db`); **`DataProvider` já na 1ª fonte portada**
+  (traits por categoria, cascata, proveniência); **MCP e HTTP pro Warden: os dois, decidir depois**
+  (junto da Fase 25); **câmbio e opções/gregas adiados** (Fases 19 e 18).
+- **Fachada preservada**: `FinanceApiHandle` e os métodos de `client.rs` ficam; cada domínio troca
+  HTTP por nativo sem mexer nos `collect_*`. Etapa 0 = `finance_core/` (HTTP, erros `NoData` ×
+  `ProviderUnavailable`, traits, frescor/stale).
+- **Ordem**: 1 macro BCB + tax-rules; 2 família Yahoo (+ bolsai); 3 índices B3 + curva DI; 4 cripto
+  restante (8 indicadores, fear-greed, CoinGecko); 5 CVM DFP/IPE; 6 FII; 7 SEC EDGAR; 8 aposentar
+  sidecar, `externalBin`, passos Python do `build.yml` e `.lume-version`.
+- **Estado de execução**: plano aprovado, nada de código ainda.
+
+**Estado anterior**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
 arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan
 mode, conforme a regra número um acima.
 
@@ -2270,10 +2284,9 @@ ações BR → CVM/FII → EUA/SEC → cripto/metais/índices), cada um com test
 sidecar Python, (3) aposentar o sidecar. A execução foi **adiada** ("não vamos fazer agora", Sessão
 24 do Lume). As decisões ortogonais seguem em aberto: onde guardar o cache (`finance_api.db` próprio
 vs. dentro do `anchor.db`), como expor ao Warden (MCP, HTTP ou ambos), o que fazer com os domínios
-sem consumidor e se o `DataProvider` nasce já na migração. **Atenção**: a tabela de "quem consome o
-quê" do Lume (Sessão 22) marca taxas/DI, câmbio e tax-rules como ❌ sem consumidor no Anchor, mas
-as Fases 17 e 24 daqui usam `/v1/rates` e `/v1/tax-rules/br`; **conferir no código antes de
-descartar qualquer domínio**.
+sem consumidor e se o `DataProvider` nasce já na migração. **Divergência resolvida na Sessão 107**: o inventário do Lume (Sessão 22) marcava taxas/DI e tax-rules
+como sem consumidor, mas o Anchor usa os dois (Home, Research, Settings → Taxes). Só câmbio e opções
+não têm chamador (nem método no `client.rs`).
 
 #### A. Dados que o Lume já tem e o Anchor ainda não usa (ganho barato, o dado existe)
 
@@ -2369,7 +2382,7 @@ Diário, PNCP), CVEs e releases (NVD, GitHub advisories), calendários (ENEM, SI
 - Contrato de erro que o Anchor depende: **404 = "não tem esse dado"**, pulado por ticker; o resto propaga.
 - Licenças: **CoinMetrics Community é não comercial** (Fase 31) e a bolsai é a única fonte com chave.
   Ambos pesam no tier hospedado pago.
-- Resíduos de nome: o CI do Anchor ainda usa `.easybusiness-version` e há comentários "easybusiness";
+- Resíduos de nome: o CI do Anchor usa `.lume-version` (já renomeado) mas ainda há comentários "easybusiness";
   o repo já migrou no GitHub pra `Arven-Labs/lume`.
 - Dev e CI acoplados: dev assume `docker compose up` do Lume em `localhost:8000` com chave fixa; o
   `build.yml` faz checkout do Lume por SHA. Qualquer caminho da Fase 26 precisa mexer nisso.
