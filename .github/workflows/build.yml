@@ -128,7 +128,7 @@ jobs:
   # oficial, trocar por keystore próprio guardado nos secrets do GitHub.
   apk:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
