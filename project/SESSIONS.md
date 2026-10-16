@@ -2244,6 +2244,28 @@ sobraram. Feito em plan mode, com as fontes testadas ao vivo antes.
 - **Verificado**: `./dev.sh check` limpo. **Lacuna do `check`**: ele roda `cargo check` sem
   `--all-targets`, então não compila o código de teste; rodei `cargo check --all-targets` à
   parte (limpo, 0 warnings). Vale colocar `--all-targets` no `dev.sh check`.
-- **Pendente**: push e CI verde; teste de clique (Research → ETH → "Run crypto collector" deve
-  mostrar 4 grupos e 15 tiles; conferir DVOL contra a Deribit). Testes `#[ignore]` ao vivo:
+- **Verificado**: push `ca7916d`, CI Desktop Rust e Frontend verdes.
+- **Pendente**: teste de clique (Research → ETH → "Run crypto collector" deve mostrar 4 grupos e
+  15 tiles; conferir DVOL contra a Deribit). Testes `#[ignore]` ao vivo:
   `cargo test --lib -- --ignored crypto_sources` (inclui a Bybit sozinha).
+
+**Testes automatizados, fase A: fluxos com o schema real e migrations no startup.** Pedido do dono
+do projeto: "não podemos fazer uma forma para você automatizar esses tipos de testes?". Feito em
+plan mode; escolha dele: E2E real no CI + testes de fluxo Rust (a fase B, E2E, vem depois).
+- **Achado importante**: o app **nunca rodou migrations**. Em dev elas eram aplicadas à mão
+  (`sea-orm-cli migrate up`) e em **release** o banco novo abre sem tabelas (provável bug dos
+  instaladores, a confirmar com um build real). **Correção minha**: eu tinha dito que o primeiro
+  `./dev.sh` aplicaria as migrations de Loans e dos indicadores cripto, e isso estava errado.
+- **Feito**: `migration` virou dependência do app e `db::connect` roda `db::migrate` (idempotente,
+  mesma tabela `seaql_migrations` da CLI); `ANCHOR_DB_PATH` força o caminho do banco;
+  `test_support.rs` (SQLite em memória com **1 conexão**, senão cada conexão do pool vê um banco
+  vazio, + construtores de linhas); comandos de Loans, patrimônio, simulação de venda e score
+  cripto ganharam a versão `*_in(&DatabaseConnection, ...)`; `flow_tests.rs` com 9 testes:
+  migrations do zero e idempotentes, seeds de thresholds batendo com `DEFAULT_THRESHOLDS` (fecha o
+  risco de duplicação anotado), regras fiscais semeadas, fluxo de Loans (caixa, baixa 1.050/1.000,
+  patrimônio, apagar), flag de patrimônio, rejeição de devedor de outro workspace, prejuízo e
+  simulação de venda com as regras reais, ativo fora do escopo e score cripto reagindo ao editor.
+  `dev.sh check` agora usa `cargo check --all-targets`.
+- **Verificado**: `./dev.sh check` limpo (já com `--all-targets`).
+- **Pendente**: push e CI verde (os testes novos só rodam lá); depois a fase B (E2E com
+  tauri-driver sob xvfb em `ci-desktop-e2e.yml`, spike de 3 fluxos).

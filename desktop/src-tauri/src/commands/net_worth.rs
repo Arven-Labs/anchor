@@ -31,8 +31,13 @@ pub async fn get_net_worth_summary(
     db: tauri::State<'_, DatabaseConnection>,
     workspace_id: i32,
 ) -> Result<NetWorthSummary, AppError> {
-    let db = db.inner();
+    compute_net_worth(db.inner(), workspace_id).await
+}
 
+pub async fn compute_net_worth(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+) -> Result<NetWorthSummary, AppError> {
     let portfolios = portfolio::Entity::find()
         .filter(portfolio::Column::WorkspaceId.eq(workspace_id))
         .all(db)

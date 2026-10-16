@@ -24,6 +24,10 @@ mod pin_content_cipher;
 mod storage;
 mod sync_registry;
 mod sync_snapshot_cipher;
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+mod flow_tests;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,7 +42,7 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             let db = tauri::async_runtime::block_on(db::connect(&handle))
-                .expect("failed to connect to database");
+                .expect("failed to open or migrate the database");
             alert_checker::spawn_periodic_check(db.clone());
             app.manage(db);
 

@@ -1,6 +1,7 @@
 #!/bin/bash
 # ./dev.sh        → sobe o app (tauri dev) no Docker
-# ./dev.sh check  → só confere se compila (tsc + cargo check), sem abrir o app.
+# ./dev.sh check  → só confere se compila (tsc + cargo check --all-targets, que inclui
+#                   o código de teste), sem abrir o app.
 #                   Roda no mesmo container/volume do app pra reaproveitar o cache
 #                   de compilação em vez de criar um segundo target/ no host.
 #                   Testes de verdade (cargo test etc.) rodam no GitHub Actions.
@@ -14,7 +15,7 @@ docker compose run --rm --no-deps --user root desktop \
 case "${1:-up}" in
   check)
     docker compose run --rm --no-deps desktop sh -c \
-      "npm install --no-audit --no-fund --silent && npx tsc --noEmit && cd src-tauri && cargo check"
+      "npm install --no-audit --no-fund --silent && npx tsc --noEmit && cd src-tauri && cargo check --all-targets"
     ;;
   up)
     xhost +local:docker

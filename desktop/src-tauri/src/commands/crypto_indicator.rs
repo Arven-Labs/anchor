@@ -22,9 +22,16 @@ pub async fn record_crypto_indicator(
     db: tauri::State<'_, DatabaseConnection>,
     request: RecordCryptoIndicatorRequest,
 ) -> Result<crypto_indicators::Model, AppError> {
+    record_crypto_indicator_in(db.inner(), request).await
+}
+
+pub async fn record_crypto_indicator_in(
+    db: &DatabaseConnection,
+    request: RecordCryptoIndicatorRequest,
+) -> Result<crypto_indicators::Model, AppError> {
     let threshold_row = indicator_thresholds::Entity::find()
         .filter(indicator_thresholds::Column::Indicator.eq(&request.indicator))
-        .one(db.inner())
+        .one(db)
         .await?
         .ok_or_else(|| AppError::UnknownIndicator(request.indicator.clone()))?;
 
@@ -46,7 +53,7 @@ pub async fn record_crypto_indicator(
         created_at: Set(chrono::Utc::now().to_rfc3339()),
         ..Default::default()
     }
-    .insert(db.inner())
+    .insert(db)
     .await?;
 
     Ok(reading)
@@ -110,7 +117,7 @@ pub async fn list_indicator_thresholds(
 /// (o `raw_value` fica; só o `signal` muda), na mesma transação. Sem isso o
 /// score e os alertas, que leem o `signal` gravado, ficariam com a regra
 /// antiga até a próxima coleta.
-async fn apply_threshold(
+pub(crate) async fn apply_threshold(
     db: &DatabaseConnection,
     indicator: &str,
     green_boundary: f64,
@@ -176,12 +183,19 @@ pub async fn get_crypto_score(
     db: tauri::State<'_, DatabaseConnection>,
     coin: String,
 ) -> Result<crypto_score::CryptoScore, AppError> {
+    crypto_score_for(db.inner(), coin).await
+}
+
+pub async fn crypto_score_for(
+    db: &DatabaseConnection,
+    coin: String,
+) -> Result<crypto_score::CryptoScore, AppError> {
     let readings = crypto_indicators::Entity::find()
         .filter(crypto_indicators::Column::Coin.eq(coin))
         .order_by_desc(crypto_indicators::Column::ReadingDate)
         .order_by_desc(crypto_indicators::Column::CreatedAt)
         .order_by_desc(crypto_indicators::Column::Id)
-        .all(db.inner())
+        .all(db)
         .await?;
 
     let mut latest: Vec<crypto_score::LatestReading> = Vec::new();

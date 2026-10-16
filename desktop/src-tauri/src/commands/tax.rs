@@ -142,7 +142,13 @@ pub async fn simulate_tax_sale(
     db: tauri::State<'_, DatabaseConnection>,
     request: SimulateTaxSaleRequest,
 ) -> Result<assessment::SaleSimulation, AppError> {
-    let db = db.inner();
+    simulate_tax_sale_in(db.inner(), request).await
+}
+
+pub async fn simulate_tax_sale_in(
+    db: &DatabaseConnection,
+    request: SimulateTaxSaleRequest,
+) -> Result<assessment::SaleSimulation, AppError> {
     if !request.quantity.is_finite() || request.quantity <= 0.0 {
         return Err(AppError::InvalidGuard("quantity must be greater than zero".to_string()));
     }

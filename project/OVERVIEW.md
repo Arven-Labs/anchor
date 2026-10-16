@@ -71,10 +71,12 @@ Os quatro de CI têm `workflow_dispatch` (botão "Run workflow" na aba Actions);
 **APK**: `flutter build apk --release` em `mobile/`, assinado com a chave de debug (`signingConfig` em `mobile/android/app/build.gradle.kts`). Basta pra instalar no celular, mas não serve pra Play Store. Quando houver versão oficial: criar keystore próprio, guardar nos secrets do GitHub e trocar o `signingConfig`.
 
 **Fluxo de desenvolvimento a partir da Sessão 103:**
-- **Local, leve:** `cd desktop && ./dev.sh check` roda `tsc --noEmit` + `cargo check` (só confere se compila, não gera binário) dentro do mesmo container/volume do app. Usar enquanto desenvolve e antes de cada push. Medido: primeira vez ~1 min, depois ~10 s; cache em 1,3 GB. **Não rodar `cargo check` no host**: criaria um segundo `target/` fora do volume do Docker e duplicaria o espaço.
+- **Local, leve:** `cd desktop && ./dev.sh check` roda `tsc --noEmit` + `cargo check --all-targets` (só confere se compila, inclusive o código de teste, não gera binário) dentro do mesmo container/volume do app. Usar enquanto desenvolve e antes de cada push. Medido: primeira vez ~1 min, depois ~10 s; cache em 1,3 GB. **Não rodar `cargo check` no host**: criaria um segundo `target/` fora do volume do Docker e duplicaria o espaço.
 - **Local, rodar o app:** `./dev.sh` (ou `./dev.sh up`) pra testar tela; não tem como sair da máquina. O script acerta o dono do volume `anchor_cargo-target` (nasce root, container roda como uid 1000) antes de compilar.
 - **GitHub, pesado:** `cargo test`, `flutter test`, `forge test` e os builds de instalador. Não rodar localmente por padrão. Commitar, dar push e conferir o resultado com `gh run list` / `gh run watch <id>` (ou na aba Actions). Só rodar local quando precisar iterar rápido num teste específico.
 - Os testes `#[ignore]` (ao vivo contra o Lume) não rodam no CI. Continuam manuais e locais.
+- **Migrations rodam sozinhas ao abrir o banco** (`db::connect` → `db::migrate`, Sessão 106). Antes era preciso `sea-orm-cli migrate up` à mão em dev, e um banco novo de release abria sem tabelas. As já aplicadas ficam em `seaql_migrations` (mesma tabela da CLI), então rodar de novo é inofensivo. `ANCHOR_DB_PATH` força o caminho do banco em qualquer build.
+- **Testes de fluxo** (`flow_tests.rs`, `cargo test --lib` no CI): percorrem Loans, patrimônio, impostos e score cripto contra o schema real (as migrations, com seeds, em SQLite em memória; helper em `test_support.rs`). Os comandos Tauri têm uma versão `*_in(&DatabaseConnection, ...)` que os testes chamam.
 - Uma fase só conta como "verificada" com o CI verde no commit dela.
 
 ---

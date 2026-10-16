@@ -67,6 +67,15 @@ pub async fn create_borrower(
     db: tauri::State<'_, DatabaseConnection>,
     request: CreateBorrowerRequest,
 ) -> Result<borrower::Model, AppError> {
+    create_borrower_in(db.inner(), request).await
+}
+
+// As funções `*_in` recebem `&DatabaseConnection` (os comandos acima só
+// repassam o `State`): é o que os testes de fluxo chamam, sem subir o Tauri.
+pub async fn create_borrower_in(
+    db: &DatabaseConnection,
+    request: CreateBorrowerRequest,
+) -> Result<borrower::Model, AppError> {
     let nome = request.nome.trim().to_string();
     if nome.is_empty() {
         return Err(AppError::InvalidInput("borrower name is required".to_string()));
@@ -78,7 +87,7 @@ pub async fn create_borrower(
         created_at: Set(chrono::Utc::now().to_rfc3339()),
         ..Default::default()
     }
-    .insert(db.inner())
+    .insert(db)
     .await?;
     Ok(model)
 }
@@ -179,6 +188,13 @@ pub async fn create_loan(
     db: tauri::State<'_, DatabaseConnection>,
     request: CreateLoanRequest,
 ) -> Result<loan::Model, AppError> {
+    create_loan_in(db.inner(), request).await
+}
+
+pub async fn create_loan_in(
+    db: &DatabaseConnection,
+    request: CreateLoanRequest,
+) -> Result<loan::Model, AppError> {
     validate_positive("principal", request.principal)?;
     if let Some(taxa) = request.taxa_mensal_percentual {
         if !taxa.is_finite() || taxa < 0.0 {
@@ -187,7 +203,7 @@ pub async fn create_loan(
     }
     parse_date("data_inicio", &request.data_inicio)?;
 
-    let txn = db.inner().begin().await?;
+    let txn = db.begin().await?;
 
     let borrower = borrower::Entity::find_by_id(request.borrower_id)
         .one(&txn)
@@ -243,12 +259,18 @@ pub async fn update_loan(
     db: tauri::State<'_, DatabaseConnection>,
     request: UpdateLoanRequest,
 ) -> Result<loan::Model, AppError> {
+    update_loan_in(db.inner(), request).await
+}
+
+pub async fn update_loan_in(
+    db: &DatabaseConnection,
+    request: UpdateLoanRequest,
+) -> Result<loan::Model, AppError> {
     if let Some(taxa) = request.taxa_mensal_percentual {
         if !taxa.is_finite() || taxa < 0.0 {
             return Err(AppError::InvalidGuard("monthly rate cannot be negative".to_string()));
         }
     }
-    let db = db.inner();
     let existing = loan::Entity::find_by_id(request.loan_id)
         .one(db)
         .await?
@@ -340,7 +362,11 @@ pub async fn delete_loan(
     db: tauri::State<'_, DatabaseConnection>,
     loan_id: i32,
 ) -> Result<(), AppError> {
-    let txn = db.inner().begin().await?;
+    delete_loan_in(db.inner(), loan_id).await
+}
+
+pub async fn delete_loan_in(db: &DatabaseConnection, loan_id: i32) -> Result<(), AppError> {
+    let txn = db.begin().await?;
 
     let existing = loan::Entity::find_by_id(loan_id)
         .one(&txn)
@@ -383,6 +409,13 @@ pub async fn register_loan_repayment(
     db: tauri::State<'_, DatabaseConnection>,
     request: RegisterLoanRepaymentRequest,
 ) -> Result<loan_repayment::Model, AppError> {
+    register_loan_repayment_in(db.inner(), request).await
+}
+
+pub async fn register_loan_repayment_in(
+    db: &DatabaseConnection,
+    request: RegisterLoanRepaymentRequest,
+) -> Result<loan_repayment::Model, AppError> {
     validate_positive("valor_baixado", request.valor_baixado)?;
     if !request.valor_recebido.is_finite() || request.valor_recebido < 0.0 {
         return Err(AppError::InvalidGuard(
@@ -391,7 +424,7 @@ pub async fn register_loan_repayment(
     }
     parse_date("data", &request.data)?;
 
-    let txn = db.inner().begin().await?;
+    let txn = db.begin().await?;
 
     let l = loan::Entity::find_by_id(request.loan_id)
         .one(&txn)
@@ -446,7 +479,14 @@ pub async fn delete_loan_repayment(
     db: tauri::State<'_, DatabaseConnection>,
     repayment_id: i32,
 ) -> Result<(), AppError> {
-    let txn = db.inner().begin().await?;
+    delete_loan_repayment_in(db.inner(), repayment_id).await
+}
+
+pub async fn delete_loan_repayment_in(
+    db: &DatabaseConnection,
+    repayment_id: i32,
+) -> Result<(), AppError> {
+    let txn = db.begin().await?;
 
     let existing = loan_repayment::Entity::find_by_id(repayment_id)
         .one(&txn)
