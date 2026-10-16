@@ -16,6 +16,7 @@
 // - `b3_index_stats`, `b3_taxa_swap`: domínio 3 (índices IFIX/SMLL/IDIV e curva DI).
 // - `coingecko`, `fear_greed`, `eth_indicators`: domínio 4 (cotação/histórico de
 //   cripto, Fear & Greed e os 8 indicadores do ETH que o Lume servia).
+// - `cvm_fii`: domínio 6 (indicadores mensais, imóveis e ticker→CNPJ dos FIIs).
 // - `cvm_dfp`, `disk_cache`: domínio 5 (ROE, payout e fundamentos de DCF das
 //   empresas, direto dos zips anuais da CVM; cache em disco compartilhado).
 pub mod api_keys;
@@ -26,6 +27,7 @@ pub mod bolsai;
 pub mod cache;
 pub mod coingecko;
 pub mod cvm_dfp;
+pub mod cvm_fii;
 pub mod disk_cache;
 pub mod eth_indicators;
 pub mod fear_greed;

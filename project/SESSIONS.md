@@ -2428,3 +2428,16 @@ Plano completo em `~/.claude/plans/fuzzy-humming-crystal.md` e resumo na Fase 26
 - **Pendente**: teste de clique (Research → ação B3 coleta fundamentos, precisa da chave da bolsai);
   domínio 6.
 
+**Fase 26, domínio 6 (FII).** Plan mode primeiro, de novo. No meio do turno o dono do projeto reclamou
+("eu já não falei para editar código na tela? usando o update?"): eu vinha aplicando mudanças por
+heredocs e scripts Python via Bash, que escondem o diff. **Daqui em diante uso Edit e Write** (salvei
+a regra na memória). Os domínios 1 a 5 e o começo deste foram escritos desse jeito.
+- **Feito**: `finance_core/cvm_fii.rs`, `bolsai::fii_summary`; 3 métodos do `client.rs` nativos. 12
+  testes novos com zips sintéticos nas colunas reais.
+- **Verificado**: `check` sem warnings; suíte inteira 372 passam, 0 falham; paridade com o Python do
+  Lume no HGLG11 (indicadores mensais idênticos, 37 imóveis); casamento do `geral` real resolve o
+  HGLG11 em exatamente 1 CNPJ.
+- **Achado**: o `geral` repete cada fundo uma vez por mês e o HGLG11 mudou de nome para PÁTRIA LOG;
+  o teste ao vivo herdado do Lume usava o nome antigo e falhou até eu conferir o cadastro real.
+- **Pendente**: teste de clique (Research → FII); domínio 7 (SEC/EUA), o último.
+

@@ -19,8 +19,8 @@ use crate::error::AppError;
 use crate::finance_api::{selic_store, FinanceApiHandle};
 use crate::finance_core::market::{self, Instrument};
 use crate::finance_core::{
-    b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, coingecko, cvm_dfp, eth_indicators, fear_greed, metals,
-    tax_rules, yahoo,
+    b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, coingecko, cvm_dfp, cvm_fii, eth_indicators, fear_greed,
+    metals, tax_rules, yahoo,
 };
 
 /// Campos presentes em toda resposta da Finance API — achatado (`flatten`)
@@ -528,10 +528,21 @@ pub struct FiiMonthlyIndicatorsResponse {
 }
 
 pub async fn fetch_fii_monthly_indicators(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     cnpj: &str,
 ) -> Result<FiiMonthlyIndicatorsResponse, AppError> {
-    get(handle, &format!("/v1/fiis/{cnpj}/monthly-indicators")).await
+    let monthly = cvm_fii::monthly_indicators(cnpj).await?;
+    let m = monthly.value;
+    Ok(FiiMonthlyIndicatorsResponse {
+        cnpj: cvm_fii::normalize_cnpj(cnpj),
+        meta: now_meta(monthly.source),
+        reference_date: m.reference_date,
+        patrimonio_liquido: m.patrimonio_liquido,
+        valor_patrimonial_cota: m.valor_patrimonial_cota,
+        numero_cotistas: m.numero_cotistas,
+        dividend_yield_mes: m.dividend_yield_mes,
+        rentabilidade_efetiva_mes: m.rentabilidade_efetiva_mes,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -555,10 +566,28 @@ pub struct FiiPropertiesResponse {
 }
 
 pub async fn fetch_fii_properties(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     cnpj: &str,
 ) -> Result<FiiPropertiesResponse, AppError> {
-    get(handle, &format!("/v1/fiis/{cnpj}/properties")).await
+    let properties = cvm_fii::properties(cnpj).await?;
+    Ok(FiiPropertiesResponse {
+        cnpj: cvm_fii::normalize_cnpj(cnpj),
+        meta: now_meta(properties.source),
+        data: properties
+            .value
+            .into_iter()
+            .map(|p| FiiPropertyPoint {
+                nome_imovel: p.nome_imovel,
+                reference_date: p.reference_date,
+                endereco: p.endereco,
+                area_m2: p.area_m2,
+                percentual_vacancia: p.percentual_vacancia,
+                percentual_inadimplencia: p.percentual_inadimplencia,
+                percentual_receitas_fii: p.percentual_receitas_fii,
+                percentual_locado: p.percentual_locado,
+            })
+            .collect(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -836,10 +865,17 @@ pub struct FiiCnpjResolutionResponse {
 }
 
 pub async fn fetch_fii_cnpj_resolution(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     ticker: &str,
 ) -> Result<FiiCnpjResolutionResponse, AppError> {
-    get(handle, &format!("/v1/fiis/resolve/{ticker}")).await
+    let ticker = ticker.to_uppercase();
+    let resolved = cvm_fii::resolve_cnpj(&ticker).await?;
+    Ok(FiiCnpjResolutionResponse {
+        ticker,
+        meta: now_meta(resolved.source),
+        cnpj: resolved.value.cnpj,
+        fund_name: resolved.value.fund_name,
+    })
 }
 
 // ---------------------------------------------------------------------------

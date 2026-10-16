@@ -2117,7 +2117,21 @@ dando "sem DCF"). **Divergência consciente, bug do Lume corrigido**: o `_find_b
 aplicava `abs()` sempre, então um prejuízo virava lucro (ROE positivo pra empresa com prejuízo) e os
 guardas `lucro <= 0` e `patrimônio <= 0` nunca disparavam; lucro e patrimônio agora mantêm o sinal
 (`Sign::Keep`) e o módulo fica só pras saídas de caixa (dividendos, capex, D&A). Só muda o resultado
-em empresas com prejuízo ou patrimônio negativo. **Próximo**: domínio 6 (FII).
+em empresas com prejuízo ou patrimônio negativo.
+
+**Domínio 6 feito (Sessão 107)**: `finance_core::cvm_fii` (+ `bolsai::fii_summary`).
+`fetch_fii_monthly_indicators`, `fetch_fii_properties` e `fetch_fii_cnpj_resolution` do `client.rs`
+agora são nativos. Os zips (`inf_mensal_fii_{ano}` e `inf_trimestral_fii_{ano}`, 1 a 2,5 MB) usam o
+`disk_cache` e o ano corrente, com o ano anterior só se o corrente não existir. **Melhoria sobre o
+Lume**: o Lume guardava o zip do ano corrente em disco para sempre (um zip baixado em janeiro nunca
+recebia os meses seguintes); aqui o do ano corrente expira em 3 dias e os de anos anteriores em 30.
+A resolução ticker→CNPJ exige administrador **e** nome idênticos (espaços e caixa normalizados), e
+zero ou mais de um candidato é `NoData`; o cadastro `geral` repete o fundo uma vez por mês, então
+candidatos são contados por CNPJ distinto. **Paridade com o Python do Lume** no HGLG11: indicadores
+mensais idênticos campo a campo e os mesmos 37 imóveis (a ordem muda: o Rust ordena por nome, como
+o serviço do Lume fazia). **Achado**: o HGLG11 hoje se chama "PÁTRIA LOG" no cadastro da CVM; o nome
+das fixtures do Lume ("CSHG LOGISTICA") está desatualizado. A resolução com a bolsai não foi testada
+ao vivo (sem chave); o casamento contra o `geral` real foi. **Próximo**: domínio 7 (SEC/EUA).
 
 **Estado anterior**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
 arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan

@@ -54,6 +54,34 @@ pub fn parse_fundamentals(body: &str) -> Result<BrFundamentals, AppError> {
     })
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct FiiSummary {
+    pub ticker: String,
+    /// Nome oficial do fundo, igual ao `Nome_Fundo_Classe` da CVM.
+    pub name: String,
+    /// A bolsai não devolve o CNPJ do fundo, só o do administrador (que
+    /// administra dezenas de fundos): sozinho não identifica o fundo.
+    pub administrator_cnpj: String,
+}
+
+#[derive(Deserialize)]
+struct FiiPayload {
+    ticker: Option<String>,
+    name: Option<String>,
+    administrator_cnpj: Option<String>,
+}
+
+pub fn parse_fii_summary(body: &str) -> Result<FiiSummary, AppError> {
+    let bad = |detail: String| AppError::ProviderUnavailable(format!("bolsai: {detail}"));
+    let payload: FiiPayload = serde_json::from_str(body).map_err(|e| bad(e.to_string()))?;
+    let field = |name: &str, value: Option<String>| value.ok_or_else(|| bad(format!("response missing '{name}'")));
+    Ok(FiiSummary {
+        ticker: field("ticker", payload.ticker)?,
+        name: field("name", payload.name)?,
+        administrator_cnpj: field("administrator_cnpj", payload.administrator_cnpj)?,
+    })
+}
+
 /// LPA, VPA, ROE, ações e código CVM de uma empresa da B3.
 pub trait BrFundamentalsProvider: DataProvider {
     fn fundamentals<'a>(&'a self, ticker: &'a str) -> BoxFuture<'a, Result<BrFundamentals, AppError>>;
@@ -77,6 +105,28 @@ impl BrFundamentalsProvider for Bolsai {
             parse_fundamentals(&http::get_text_with_headers("bolsai", &url, TIMEOUT, &[("X-API-Key", &key)]).await?)
         })
     }
+}
+
+/// Resumo de um FII (`GET /fiis/{ticker}`, plano grátis). 404 (ticker que não
+/// existe ou não é FII) é `NoData`.
+pub trait FiiSummaryProvider: DataProvider {
+    fn fii_summary<'a>(&'a self, ticker: &'a str) -> BoxFuture<'a, Result<FiiSummary, AppError>>;
+}
+
+impl FiiSummaryProvider for Bolsai {
+    fn fii_summary<'a>(&'a self, ticker: &'a str) -> BoxFuture<'a, Result<FiiSummary, AppError>> {
+        Box::pin(async move {
+            let key = api_keys::resolve(self.key)?;
+            let url = format!("{BASE_URL}/fiis/{ticker}");
+            parse_fii_summary(&http::get_text_with_headers("bolsai", &url, TIMEOUT, &[("X-API-Key", &key)]).await?)
+        })
+    }
+}
+
+pub async fn fii_summary(ticker: &str) -> Result<Sourced<FiiSummary>, AppError> {
+    let providers: Vec<Box<dyn FiiSummaryProvider>> = vec![Box::new(Bolsai { key: &api_keys::BOLSAI })];
+    let attempts = providers.iter().map(|p| (p.id(), p.fii_summary(ticker))).collect();
+    cascade(&format!("FII summary for '{ticker}'"), attempts).await
 }
 
 fn providers() -> Vec<Box<dyn BrFundamentalsProvider>> {
@@ -107,6 +157,20 @@ mod tests {
         };
         assert_eq!(parse_fundamentals(&body("9512")).unwrap(), expected("9512"));
         assert_eq!(parse_fundamentals(&body("\"9512\"")).unwrap(), expected("9512"));
+    }
+
+    #[test]
+    fn parses_the_fii_summary_and_rejects_incomplete_ones() {
+        let body = r#"{"ticker":"HGLG11","name":"CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO","administrator_cnpj":"27.809.513/0001-30","price":1}"#;
+        assert_eq!(
+            parse_fii_summary(body).unwrap(),
+            FiiSummary {
+                ticker: "HGLG11".into(),
+                name: "CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO".into(),
+                administrator_cnpj: "27.809.513/0001-30".into()
+            }
+        );
+        assert!(matches!(parse_fii_summary(r#"{"ticker":"X","name":"Y"}"#), Err(AppError::ProviderUnavailable(_))));
     }
 
     #[test]
