@@ -42,6 +42,15 @@ pub enum AppError {
     Json(#[from] serde_json::Error),
     #[error("crypto data source error: {0}")]
     CryptoSource(String),
+    /// Fase 26 — a fonte respondeu, mas não tem esse dado (404, ticker/série
+    /// desconhecida). O chamador pula o item; é o que o Lume devolvia como 404.
+    #[error("no data: {0}")]
+    NoData(String),
+    /// Fase 26 — a fonte não respondeu direito (rede, HTTP != 2xx, corpo
+    /// ilegível). Diferente de `NoData`: vale tentar outro provider ou servir
+    /// o dado antigo como `stale`.
+    #[error("data provider unavailable: {0}")]
+    ProviderUnavailable(String),
 }
 
 impl AppError {
@@ -67,6 +76,8 @@ impl AppError {
             AppError::Decryption(_) => "DECRYPTION_ERROR",
             AppError::Json(_) => "JSON_ERROR",
             AppError::CryptoSource(_) => "CRYPTO_SOURCE_ERROR",
+            AppError::NoData(_) => "NO_DATA",
+            AppError::ProviderUnavailable(_) => "PROVIDER_UNAVAILABLE",
         }
     }
 }

@@ -2059,7 +2059,16 @@ arquivar o Lume (decisão exclusiva do dono do projeto, depois de validar).
 - **Ordem**: 1 macro BCB + tax-rules; 2 família Yahoo (+ bolsai); 3 índices B3 + curva DI; 4 cripto
   restante (8 indicadores, fear-greed, CoinGecko); 5 CVM DFP/IPE; 6 FII; 7 SEC EDGAR; 8 aposentar
   sidecar, `externalBin`, passos Python do `build.yml` e `.lume-version`.
-- **Estado de execução**: plano aprovado, nada de código ainda.
+- **Estado de execução (Sessão 107)**: **Etapa 0 e domínio 1 feitos** (`finance_core/`: `http`, `provider`
+  com `cascade`, `cache` em memória com `stale`, `bcb_sgs` com `MacroSeriesProvider`, `tax_rules`). Em
+  `client.rs`, `fetch_benchmark_series`, `fetch_selic` e `fetch_tax_rules_br` agora são nativos (o
+  `_handle` fica até a aposentadoria). Erros novos `NoData` e `ProviderUnavailable`; `skip_not_found`
+  aceita os dois. O cache de frescor ficou **em memória** (só pro que não é gravado), não em tabelas
+  novas: as tabelas do Anchor já têm `fetched_at`/`source`. O teste ao vivo contra o Lume de tax-rules
+  virou teste offline (tabela embarcada × seed da migration). **Risco aberto**: a série diária da Selic
+  é baixada inteira (4 janelas) e o cache some ao fechar o app; o teste ao vivo levou 139 s (CDI + Selic)
+  numa rede lenta do BCB, contra o cache persistido do Lume. Mitigar gravando a Selic diária no
+  `anchor.db` e buscando só o trecho novo. **Próximo**: domínio 2 (família Yahoo + bolsai).
 
 **Estado anterior**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
 arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan

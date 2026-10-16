@@ -18,6 +18,7 @@ mod ecies;
 mod entity;
 mod error;
 mod finance_api;
+mod finance_core;
 mod ipns_key;
 mod lan_sweep;
 mod pin_content_cipher;

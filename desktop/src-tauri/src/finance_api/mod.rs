@@ -34,7 +34,7 @@ where
 {
     match fut.await {
         Ok(value) => Ok(Some(value)),
-        Err(AppError::FinanceApiNotFound(_)) => Ok(None),
+        Err(AppError::FinanceApiNotFound(_) | AppError::NoData(_)) => Ok(None),
         Err(err) => Err(err),
     }
 }

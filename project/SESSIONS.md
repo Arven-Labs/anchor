@@ -2369,4 +2369,10 @@ do projeto: pular o passo Python da Opção C e ir direto pra Rust por domínio;
 adiados. Achado: 27 de 32 métodos do `client.rs` têm chamador, e Selic, curva DI e tax-rules **são**
 usados (o inventário do Lume estava errado). Corrigido na Fase 32 o nome do pin (`.lume-version`).
 Plano completo em `~/.claude/plans/fuzzy-humming-crystal.md` e resumo na Fase 26 do `PHASE.md`.
-- **Pendente**: executar a Etapa 0 (`finance_core/`) e o domínio 1 (macro BCB + tax-rules).
+- **Executado**: Etapa 0 e domínio 1 (ver Fase 26 no `PHASE.md`). `./dev.sh check` limpo; 22 testes
+  novos passam (`cargo test --lib -- finance_core commands::tax`); teste ao vivo do BCB passa (139 s).
+- **Achado de ambiente**: o `dev.sh check` falhava com "Permission denied" em `/root/.cargo/registry`
+  porque os volumes `cargo-registry`/`cargo-git` nascem do root e o container roda como uid 1000 (o
+  script só acerta o `target`); acertei o dono dos dois à mão. Vale pôr o `chown` deles no `dev.sh`.
+- **Pendente**: persistir a Selic diária; teste de clique (Home → Selic/DI, Profitability → backfill,
+  Settings → Taxes → sync); domínio 2.

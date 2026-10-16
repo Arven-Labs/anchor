@@ -16,6 +16,7 @@ use serde::Deserialize;
 
 use crate::error::AppError;
 use crate::finance_api::FinanceApiHandle;
+use crate::finance_core::{bcb_sgs, tax_rules};
 
 /// Campos presentes em toda resposta da Finance API — achatado (`flatten`)
 /// dentro de cada DTO abaixo em vez de repetir os 4 campos 22 vezes.
@@ -45,6 +46,12 @@ pub struct ResponseMeta {
 pub struct PriceHistoryPoint {
     pub price_date: NaiveDate,
     pub close_price: f64,
+}
+
+/// `ResponseMeta` dos endpoints já portados pra Rust (Fase 26): a fonte é
+/// quem de fato respondeu, no lugar do que o Lume ecoava.
+fn native_meta(source: &str, cached: bool, stale: bool, fetched_at: DateTime<Utc>) -> ResponseMeta {
+    ResponseMeta { source: source.to_string(), cached, stale, fetched_at: Some(fetched_at) }
 }
 
 async fn get<T: DeserializeOwned>(handle: &FinanceApiHandle, path: &str) -> Result<T, AppError> {
@@ -444,11 +451,22 @@ pub struct MacroSeriesResponse {
     pub data: Vec<MacroSeriesPoint>,
 }
 
+// Fase 26 — nativo (BCB SGS direto, sem o Lume). `_handle` fica até a
+// aposentadoria do sidecar, pra não mexer nos chamadores agora.
 pub async fn fetch_benchmark_series(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     series_code: &str,
 ) -> Result<MacroSeriesResponse, AppError> {
-    get(handle, &format!("/v1/macro-series/{series_code}")).await
+    let sourced = bcb_sgs::monthly_series(series_code).await?;
+    Ok(MacroSeriesResponse {
+        series_code: series_code.to_string(),
+        meta: native_meta(sourced.source, false, false, Utc::now()),
+        data: sourced
+            .value
+            .into_iter()
+            .map(|(reference_month, value_pct)| MacroSeriesPoint { reference_month, value_pct })
+            .collect(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -687,8 +705,17 @@ pub struct SelicResponse {
     pub data: Vec<SelicPoint>,
 }
 
-pub async fn fetch_selic(handle: &FinanceApiHandle, series_code: &str) -> Result<SelicResponse, AppError> {
-    get(handle, &format!("/v1/rates/selic/{series_code}")).await
+pub async fn fetch_selic(_handle: &FinanceApiHandle, series_code: &str) -> Result<SelicResponse, AppError> {
+    let cached = bcb_sgs::daily_series(series_code).await?;
+    Ok(SelicResponse {
+        meta: native_meta(cached.value.source, cached.cached, cached.stale, cached.fetched_at),
+        data: cached
+            .value
+            .value
+            .into_iter()
+            .map(|(reference_date, value_pct)| SelicPoint { reference_date, value_pct })
+            .collect(),
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -733,8 +760,21 @@ pub struct TaxRulesResponse {
     pub rules: Vec<TaxRulePoint>,
 }
 
-pub async fn fetch_tax_rules_br(handle: &FinanceApiHandle) -> Result<TaxRulesResponse, AppError> {
-    get(handle, "/v1/tax-rules/br").await
+// Fase 26 — tabela embarcada no binário (`finance_core::tax_rules`).
+pub async fn fetch_tax_rules_br(_handle: &FinanceApiHandle) -> Result<TaxRulesResponse, AppError> {
+    Ok(TaxRulesResponse {
+        rules: tax_rules::rules_br()
+            .into_iter()
+            .map(|r| TaxRulePoint {
+                key: r.key.to_string(),
+                value: r.value,
+                effective_from: r.effective_from,
+                description: r.description.to_string(),
+                source: r.source.to_string(),
+                verified_at: r.verified_at,
+            })
+            .collect(),
+    })
 }
 
 // ---------------------------------------------------------------------------

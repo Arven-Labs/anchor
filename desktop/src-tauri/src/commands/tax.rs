@@ -545,39 +545,32 @@ pub(crate) async fn tax_cost_flows(
     Ok(flows)
 }
 
-// Teste `#[ignore]` — mesma convenção de `finance_api::*::tests`: precisa do
-// Lume rodando em `http://localhost:8000` (`docker compose up` de lá, chave
-// `local-dev-key-change-me`) e do banco real de dev com as migrations da
-// Fase 24 aplicadas. Garante que o seed da migration (fallback offline) e o
-// `/v1/tax-rules/br` do Lume não divergem. Rodar com
-// `cargo test --lib -- --ignored commands::tax`.
+// Fase 26 — a tabela embarcada (`finance_core::tax_rules`, o que
+// `sync_tax_rules` aplica) e o seed da migration (fallback offline) guardam
+// o mesmo conteúdo; este teste pega a divergência sem rede nem Lume.
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::Database;
 
     #[tokio::test]
-    #[ignore]
-    async fn live_lume_rules_match_migration_seed() {
-        let handle = FinanceApiHandle::for_test(
-            "http://localhost:8000".to_string(),
-            "local-dev-key-change-me".to_string(),
-        );
-        let response = client::fetch_tax_rules_br(&handle).await.expect("Lume reachable");
-        let db = Database::connect("sqlite:///data/anchor.db?mode=rwc").await.unwrap();
-        let seeded: HashMap<(String, String), f64> = tax_rules::Entity::find()
+    async fn embedded_rules_match_the_migration_seed() {
+        let db = crate::test_support::memory_db().await;
+        let seeded: HashMap<(String, String), tax_rules::Model> = tax_rules::Entity::find()
             .all(&db)
             .await
             .unwrap()
             .into_iter()
-            .map(|r| ((r.rule_key, r.effective_from), r.default_value))
+            .map(|r| ((r.rule_key.clone(), r.effective_from.clone()), r))
             .collect();
 
-        assert_eq!(response.rules.len(), seeded.len());
-        for rule in response.rules {
-            let key = (rule.key.clone(), rule.effective_from.format("%Y-%m-%d").to_string());
+        let embedded = crate::finance_core::tax_rules::rules_br();
+        assert_eq!(embedded.len(), seeded.len());
+        for rule in embedded {
+            let key = (rule.key.to_string(), rule.effective_from.format("%Y-%m-%d").to_string());
             let seed = seeded.get(&key).unwrap_or_else(|| panic!("missing seed for {key:?}"));
-            assert!((seed - rule.value).abs() < EPS, "{key:?}: seed {seed} vs Lume {}", rule.value);
+            assert!((seed.default_value - rule.value).abs() < EPS, "{key:?} value");
+            assert_eq!(seed.description, rule.description, "{key:?} description");
+            assert_eq!(seed.source, rule.source, "{key:?} source");
         }
     }
 }
