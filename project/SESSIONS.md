@@ -2407,3 +2407,13 @@ Plano completo em `~/.claude/plans/fuzzy-humming-crystal.md` e resumo na Fase 26
 - **Pendente**: teste de clique (Home → Selic/DI; Research → Interest rates; Profitability →
   backfill de benchmarks); domínio 4.
 
+**Fase 26, domínio 4 (cripto restante).** Pedido: "sim".
+- **Feito**: `finance_core/{coingecko,fear_greed,eth_indicators}.rs`; 4 métodos do `client.rs` nativos
+  (indicador ETH, Fear & Greed, cotação e histórico de cripto). 18 testes novos de cálculo puro.
+- **Verificado**: `check` sem warnings; suíte inteira 339 passam, 0 falham; testes ao vivo passam sem o
+  Lume; **paridade com o Python do Lume**: os 8 indicadores iguais até o último dígito.
+- **Achado**: o `page_size` pequeno do CoinMetrics devolve a página mais recente (conferi com
+  `curl`), então os indicadores de tendência não olham 2015, como eu temia ao ler o Lume.
+- **Pendente**: teste de clique (Research → cripto, "Run crypto collector", Portfolio → adicionar
+  moeda); domínio 5.
+

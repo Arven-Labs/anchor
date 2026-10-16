@@ -18,7 +18,10 @@ use serde::Deserialize;
 use crate::error::AppError;
 use crate::finance_api::{selic_store, FinanceApiHandle};
 use crate::finance_core::market::{self, Instrument};
-use crate::finance_core::{b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, metals, tax_rules, yahoo};
+use crate::finance_core::{
+    b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, coingecko, eth_indicators, fear_greed, metals, tax_rules,
+    yahoo,
+};
 
 /// Campos presentes em toda resposta da Finance API — achatado (`flatten`)
 /// dentro de cada DTO abaixo em vez de repetir os 4 campos 22 vezes.
@@ -341,10 +344,15 @@ pub struct CryptoIndicatorResponse {
 }
 
 pub async fn fetch_eth_indicator(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     indicator_code: &str,
 ) -> Result<CryptoIndicatorResponse, AppError> {
-    get(handle, &format!("/v1/crypto/eth-indicators/{indicator_code}")).await
+    let reading = eth_indicators::indicator(indicator_code).await?;
+    Ok(CryptoIndicatorResponse {
+        indicator_code: indicator_code.to_string(),
+        meta: now_meta(reading.source),
+        raw_value: reading.value,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -356,8 +364,14 @@ pub struct CryptoFearGreedResponse {
     pub reading_date: NaiveDate,
 }
 
-pub async fn fetch_fear_greed(handle: &FinanceApiHandle) -> Result<CryptoFearGreedResponse, AppError> {
-    get(handle, "/v1/crypto/fear-greed").await
+pub async fn fetch_fear_greed(_handle: &FinanceApiHandle) -> Result<CryptoFearGreedResponse, AppError> {
+    let reading = fear_greed::latest().await?;
+    Ok(CryptoFearGreedResponse {
+        meta: now_meta(reading.source),
+        value: reading.value.value,
+        classification: reading.value.classification,
+        reading_date: reading.value.reading_date,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -371,10 +385,19 @@ pub struct CryptoQuoteResponse {
 }
 
 pub async fn fetch_crypto_quote(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     symbol: &str,
 ) -> Result<CryptoQuoteResponse, AppError> {
-    get(handle, &format!("/v1/crypto/{symbol}/quote")).await
+    let market = coingecko::coin_market(symbol).await?;
+    let coin = &market.value.value;
+    let (_, price) = *coin.prices.last().expect("coin_market never returns an empty history");
+    Ok(CryptoQuoteResponse {
+        symbol: symbol.to_uppercase(),
+        coin_id: coin.coin_id.clone(),
+        name: coin.name.clone(),
+        meta: native_meta(market.value.source, market.cached, market.stale, market.fetched_at),
+        price,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -393,10 +416,21 @@ pub struct CryptoPriceHistoryResponse {
 }
 
 pub async fn fetch_crypto_price_history(
-    handle: &FinanceApiHandle,
+    _handle: &FinanceApiHandle,
     symbol: &str,
 ) -> Result<CryptoPriceHistoryResponse, AppError> {
-    get(handle, &format!("/v1/crypto/{symbol}/price-history")).await
+    let market = coingecko::coin_market(symbol).await?;
+    let coin = &market.value.value;
+    Ok(CryptoPriceHistoryResponse {
+        symbol: symbol.to_uppercase(),
+        coin_id: coin.coin_id.clone(),
+        meta: native_meta(market.value.source, market.cached, market.stale, market.fetched_at),
+        data: coin
+            .prices
+            .iter()
+            .map(|&(price_date, price)| CryptoPriceHistoryPoint { price_date, price })
+            .collect(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -947,10 +981,10 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn live_fetch_unknown_indicator_is_not_found() {
+    async fn live_fetch_unknown_indicator_is_no_data() {
         let err = fetch_eth_indicator(&handle(), "does-not-exist")
             .await
             .unwrap_err();
-        assert!(matches!(err, AppError::FinanceApiNotFound(_)));
+        assert!(matches!(err, AppError::NoData(_)));
     }
 }

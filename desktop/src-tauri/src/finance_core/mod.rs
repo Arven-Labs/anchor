@@ -14,12 +14,17 @@
 //   dividendos via `MarketDataProvider`; catálogo de metais), `bolsai` e
 //   `api_keys` (primeiro provider BYO-key; chave no keyring ou no ambiente).
 // - `b3_index_stats`, `b3_taxa_swap`: domínio 3 (índices IFIX/SMLL/IDIV e curva DI).
+// - `coingecko`, `fear_greed`, `eth_indicators`: domínio 4 (cotação/histórico de
+//   cripto, Fear & Greed e os 8 indicadores do ETH que o Lume servia).
 pub mod api_keys;
 pub mod b3_index_stats;
 pub mod b3_taxa_swap;
 pub mod bcb_sgs;
 pub mod bolsai;
 pub mod cache;
+pub mod coingecko;
+pub mod eth_indicators;
+pub mod fear_greed;
 pub mod http;
 pub mod market;
 pub mod metals;

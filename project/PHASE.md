@@ -2093,7 +2093,19 @@ offsets do diretório central são relativos ao blob `.ex_` inteiro (o zip inter
 tolera a ambiguidade que o Python tolerava, por isso tenta o blob inteiro e, se falhar, o recorte a
 partir de `PK\x03\x04` (layout do teste do Lume). **Paridade com o Python do Lume conferida**:
 curva de 15/10/2026 com os mesmos 281 vértices e o mesmo primeiro vértice (13,65%), e IFIX com a
-mesma última cotação (31/08/2026, 3762,79). **Próximo**: domínio 4 (cripto restante).
+mesma última cotação (31/08/2026, 3762,79). **Domínio 4 feito (Sessão 107)**: `finance_core::{coingecko, fear_greed, eth_indicators}`. Nativos no
+`client.rs`: `fetch_eth_indicator` (os 8 do Lume: `tvl-trend`, `net-issuance`, `fees-vs-emission`,
+`nvt-ratio`, `mvrv-z-score`, `puell-multiple`, `exchange-netflow`, `active-addresses-trend`),
+`fetch_fear_greed`, `fetch_crypto_quote` e `fetch_crypto_price_history`. Providers: `CryptoMarketProvider`
+(CoinGecko), `FearGreedProvider` (alternative.me) e `EthIndicatorProvider`, em que cada fonte declara
+os códigos que atende (`supports`) e a cascata só consulta quem atende; código desconhecido é `NoData`.
+Cotação e histórico saem da mesma chamada `market_chart`, com cache de 5 min na memória (a CoinGecko
+grátis limita as chamadas) e resolução símbolo→id em cache de 24 h; símbolo sem correspondência exata
+é `NoData`. **Paridade com o Python do Lume conferida**: os 8 indicadores batem até o último dígito
+(ex.: MVRV Z 0,12189, Puell 1,06706, TVL 1,91299%) e o Fear & Greed lê o mesmo dia. **O Lume já não é
+chamado por nenhum caminho de cripto.** `crypto_sources.rs` (Fase 31) segue com seu próprio
+`get_text`; unificar com `finance_core::http` fica como arrumação futura. **Próximo**: domínio 5 (CVM
+DFP/IPE).
 
 **Estado anterior**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
 arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan
