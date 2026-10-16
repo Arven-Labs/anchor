@@ -8,8 +8,9 @@ use serde::Serialize;
 
 use crate::commands::bank_account::compute_total_cash;
 use crate::commands::liability::list_liabilities_view;
+use crate::commands::loan::list_loans_view;
 use crate::commands::transaction::compute_positions;
-use crate::domain::net_worth::compute_leverage;
+use crate::domain::net_worth::{compute_leverage, sum_receivable_in_net_worth};
 use crate::entity::portfolio;
 use crate::error::AppError;
 
@@ -18,6 +19,9 @@ pub struct NetWorthSummary {
     pub total_market_value: f64,
     pub total_cash: f64,
     pub total_debt: f64,
+    /// Saldo a receber dos empréstimos concedidos marcados pra entrar no
+    /// patrimônio (Fase 29). Os que ficaram de fora não aparecem aqui.
+    pub total_loans_receivable: f64,
     pub net_worth: f64,
     pub leverage_ratio: Option<f64>,
 }
@@ -45,13 +49,22 @@ pub async fn get_net_worth_summary(
     let liabilities = list_liabilities_view(db, workspace_id).await?;
     let total_debt: f64 = liabilities.iter().map(|l| l.saldo_devedor_atual).sum();
 
-    let net_worth = total_market_value + total_cash - total_debt;
+    let loans = list_loans_view(db, workspace_id).await?;
+    let total_loans_receivable = sum_receivable_in_net_worth(
+        &loans
+            .iter()
+            .map(|l| (l.include_in_net_worth, l.saldo_a_receber))
+            .collect::<Vec<_>>(),
+    );
+
+    let net_worth = total_market_value + total_cash + total_loans_receivable - total_debt;
     let leverage_ratio = compute_leverage(total_debt, net_worth);
 
     Ok(NetWorthSummary {
         total_market_value,
         total_cash,
         total_debt,
+        total_loans_receivable,
         net_worth,
         leverage_ratio,
     })

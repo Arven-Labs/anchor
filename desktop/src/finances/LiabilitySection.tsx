@@ -220,10 +220,15 @@ function LiabilitySection({ workspaceId }: { workspaceId: number }) {
             due date. Outstanding balance is always derived, never entered directly.
           </p>
 
-          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <KpiCard title="Market value" value={(netWorth?.total_market_value ?? 0).toFixed(2)} />
             <KpiCard title="Cash" value={(netWorth?.total_cash ?? 0).toFixed(2)} />
             <KpiCard title="Total debt" value={(netWorth?.total_debt ?? 0).toFixed(2)} />
+            <KpiCard
+              title="Loans receivable"
+              value={(netWorth?.total_loans_receivable ?? 0).toFixed(2)}
+              subtext="Only loans counted in net worth"
+            />
             <KpiCard title="Net worth" value={(netWorth?.net_worth ?? 0).toFixed(2)} />
             <KpiCard
               title="Leverage"

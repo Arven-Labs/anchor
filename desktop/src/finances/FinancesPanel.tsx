@@ -2,13 +2,15 @@ import { useState } from "react";
 import BankAccountSection from "./BankAccountSection";
 import GeneralTransactionSection from "./GeneralTransactionSection";
 import LiabilitySection from "./LiabilitySection";
+import LoanSection from "./LoanSection";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-type FinancesSection = "accounts" | "liabilities" | "transactions";
+type FinancesSection = "accounts" | "liabilities" | "loans" | "transactions";
 
 const FINANCES_SECTIONS: Record<FinancesSection, string> = {
   accounts: "Accounts",
   liabilities: "Liabilities",
+  loans: "Loans",
   transactions: "Transactions",
 };
 
@@ -40,6 +42,9 @@ function FinancesPanel({ workspaceId }: { workspaceId: number }) {
       </TabsContent>
       <TabsContent value="liabilities">
         <LiabilitySection workspaceId={workspaceId} />
+      </TabsContent>
+      <TabsContent value="loans">
+        <LoanSection workspaceId={workspaceId} />
       </TabsContent>
       <TabsContent value="transactions">
         <GeneralTransactionSection workspaceId={workspaceId} />

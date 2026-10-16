@@ -61,6 +61,7 @@ mod m20260913_100000_create_storage_settings;
 mod m20261014_100000_drop_ai_tables;
 mod m20261014_110000_create_tax_rules;
 mod m20261014_120000_create_tax_payments;
+mod m20261016_120000_create_loans;
 
 pub struct Migrator;
 
@@ -129,6 +130,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261014_100000_drop_ai_tables::Migration),
             Box::new(m20261014_110000_create_tax_rules::Migration),
             Box::new(m20261014_120000_create_tax_payments::Migration),
+            Box::new(m20261016_120000_create_loans::Migration),
         ]
     }
 }

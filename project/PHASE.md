@@ -2121,6 +2121,25 @@ nos relatórios quando a flag está ligada.
 
 **Estado**: puro registro de intenção, discussão detalhada fica pra depois.
 
+**Implementado na Sessão 106 (fatia 1)**, com as decisões do dono do projeto:
+- **Conta bancária opcional**: com conta, o empréstimo gera saída (`emprestimo_concedido`) e cada
+  baixa gera entrada (`recebimento_emprestimo`, no valor recebido) em Finanças Gerais; sem conta,
+  só registro. `compute_balances` passou a tratar `emprestimo_concedido` como débito.
+- **Recebido × baixado**: dois campos independentes em `loan_repayments`. A diferença só aparece
+  como "extra recebido" no empréstimo, **não** vira receita sozinha. Recebido pode ser 0 (baixa
+  sem dinheiro entrando).
+- **Devedor como entidade** (`borrowers`), não texto livre. Não dá pra remover devedor com
+  empréstimo.
+- **Flag por empréstimo** `include_in_net_worth` (default ligado). `NetWorthSummary` ganhou
+  `total_loans_receivable` (só os com flag ligada), somado ao patrimônio.
+- **Juros opcionais**: taxa mensal nula = sem juros. Quando existe, são juros **simples** sobre o
+  principal por meses completos (`domain::loan::accrued_interest`), informativos. Saldo a
+  receber = principal + juros − Σ valor baixado, nunca negativo, sempre derivado.
+- Código: migration `m20261016_120000_create_loans` (3 tabelas), `domain/loan.rs`,
+  `commands/loan.rs`, aba **Finances → Loans** (`LoanSection.tsx`).
+- **Fora desta fatia**: parcelas/vencimento/alertas, juros compostos, edição de principal e
+  data, aviso de atraso. Teste de clique pendente.
+
 ### Fase 30 — Mais países e mais tipos de investimento (ideia trazida pelo dono do projeto na Sessão 102, puro registro, futuro, não iniciada)
 
 **Objetivo**: dar suporte a cada vez mais países e mais tipos de investimento. Registrado como

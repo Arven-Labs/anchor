@@ -9,9 +9,26 @@ pub fn compute_leverage(total_debt: f64, net_worth: f64) -> Option<f64> {
     Some(total_debt / net_worth)
 }
 
+/// Soma o saldo a receber só dos empréstimos concedidos com a flag
+/// "entra no patrimônio" ligada (Fase 29). Pares `(incluir, saldo)`.
+pub fn sum_receivable_in_net_worth(loans: &[(bool, f64)]) -> f64 {
+    loans.iter().filter(|(include, _)| *include).map(|(_, saldo)| saldo).sum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sum_receivable_skips_loans_flagged_out_of_net_worth() {
+        // Empréstimo à mãe (fora) + empréstimo a um amigo (dentro).
+        assert_eq!(sum_receivable_in_net_worth(&[(false, 5000.0), (true, 800.0)]), 800.0);
+    }
+
+    #[test]
+    fn sum_receivable_is_zero_without_loans() {
+        assert_eq!(sum_receivable_in_net_worth(&[]), 0.0);
+    }
 
     #[test]
     fn compute_leverage_guards_zero_net_worth() {

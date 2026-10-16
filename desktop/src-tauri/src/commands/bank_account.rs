@@ -86,7 +86,7 @@ pub struct BankAccountView {
 }
 
 /// Saldo é sempre derivado, nunca gravado — soma de `receita` menos soma de
-/// `despesa`/`parcela_divida` por conta, mesmo espírito do cálculo em
+/// `despesa`/`parcela_divida`/`emprestimo_concedido` por conta, mesmo espírito do cálculo em
 /// memória de `get_portfolio_positions` (`commands/transaction.rs`). Função
 /// pura (sem I/O) para ficar testável isoladamente.
 ///
@@ -105,7 +105,7 @@ fn compute_balances(
             continue;
         }
         let signed_value = match tx.transaction_type.as_str() {
-            "despesa" | "parcela_divida" => -tx.valor,
+            "despesa" | "parcela_divida" | "emprestimo_concedido" => -tx.valor,
             _ => tx.valor,
         };
         *balances.entry(tx.bank_account_id).or_insert(0.0) += signed_value;
@@ -202,6 +202,17 @@ mod tests {
     #[test]
     fn compute_balances_subtracts_parcela_divida_like_despesa() {
         let transactions = vec![tx(1, "receita", 1000.0), tx(1, "parcela_divida", 250.0)];
+        let balances = compute_balances(&transactions, "2026-08-09");
+        assert_eq!(balances.get(&1), Some(&750.0));
+    }
+
+    #[test]
+    fn compute_balances_loan_out_debits_and_repayment_credits() {
+        let transactions = vec![
+            tx(1, "receita", 1000.0),
+            tx(1, "emprestimo_concedido", 400.0),
+            tx(1, "recebimento_emprestimo", 150.0),
+        ];
         let balances = compute_balances(&transactions, "2026-08-09");
         assert_eq!(balances.get(&1), Some(&750.0));
     }

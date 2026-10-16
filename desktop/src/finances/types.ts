@@ -42,6 +42,49 @@ export const GENERAL_TRANSACTION_TYPE_LABELS: Record<string, string> = {
   receita: "Income",
   despesa: "Expense",
   parcela_divida: "Loan installment",
+  // Fase 29 — gerados só por `create_loan`/`register_loan_repayment`.
+  emprestimo_concedido: "Loan granted",
+  recebimento_emprestimo: "Loan repayment received",
+};
+
+// Fase 29 — empréstimos concedidos a terceiros.
+export type Borrower = {
+  id: number;
+  workspace_id: number;
+  nome: string;
+  notes: string | null;
+  created_at: string;
+};
+
+export type LoanRepayment = {
+  id: number;
+  loan_id: number;
+  bank_account_id: number | null;
+  general_transaction_id: number | null;
+  data: string;
+  valor_recebido: number;
+  valor_baixado: number;
+  notes: string | null;
+  created_at: string;
+};
+
+export type LoanView = {
+  id: number;
+  workspace_id: number;
+  borrower_id: number;
+  borrower_nome: string;
+  bank_account_id: number | null;
+  principal: number;
+  taxa_mensal_percentual: number | null;
+  data_inicio: string;
+  include_in_net_worth: boolean;
+  notes: string | null;
+  created_at: string;
+  accrued_interest: number;
+  total_written_off: number;
+  extra_received: number;
+  saldo_a_receber: number;
+  repayments: LoanRepayment[];
 };
 
 export type Liability = {
@@ -76,6 +119,7 @@ export type NetWorthSummary = {
   total_market_value: number;
   total_cash: number;
   total_debt: number;
+  total_loans_receivable: number;
   net_worth: number;
   leverage_ratio: number | null;
 };

@@ -2170,5 +2170,21 @@ em aberto do ROADMAP.
   estimada por gaveta) e card "Losses to offset" em Portfolio → Taxes. Sem migration nem comando
   novo, o saldo já existia mês a mês em `BucketResult.loss_carried`. 2 testes novos.
 - **Fora desta fatia**: simulação de venda hipotética e widget na Home.
-- **Pendente**: validar com push e CI verde; teste de clique do card junto com o das Fases
-  15/16/17/20/24.
+- **Verificado**: push `b1e0ff8`, CI Desktop Rust e Frontend verdes.
+- **Pendente**: teste de clique do card junto com o das Fases 15/16/17/20/24.
+
+**Empréstimos concedidos a terceiros (Fase 29, fatia 1).** Feito em plan mode, com 3 decisões do
+dono do projeto: lançamento em conta **opcional**, diferença recebido × baixado **só guardada**
+(não vira receita) e devedor como **entidade cadastrada** (a recomendação era texto livre).
+- **Feito**: migration `m20261016_120000_create_loans` (`borrowers`, `loans`, `loan_repayments`),
+  3 entities escritas à mão (sem `generate entity`, `Relation` vazio como `tax_payments`),
+  `domain/loan.rs` (juros simples por meses completos, saldo, extra recebido), `commands/loan.rs`
+  (9 comandos), `emprestimo_concedido` como débito em `compute_balances`,
+  `NetWorthSummary.total_loans_receivable` (só empréstimos com a flag ligada), aba
+  **Finances → Loans** e KPI "Loans receivable" na aba Liabilities. Testes novos em
+  `domain::loan`, `domain::net_worth` e `compute_balances`.
+- **Verificado**: `./dev.sh check` (tsc + cargo check) limpo, 0 warnings.
+- **Pendente**: push e CI verde; teste de clique (devedor, empréstimo com e sem conta, flag fora
+  do patrimônio, baixa de 1.050 recebidos / 1.000 baixados, saldo da conta e net worth). Como a
+  migration é nova, o primeiro `./dev.sh` aplica ela no banco real de dev.
+- **Fora da fatia**: parcelas/vencimento/alertas, juros compostos, edição de principal/data.

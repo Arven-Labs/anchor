@@ -1,6 +1,6 @@
 // Fase 16 — Backup do Workspace (ideia registrada na Sessão 96, ver PHASE.md). Export/import
 // estruturado (JSON) de todo o schema SQLite via introspecção (`sqlite_master`/`PRAGMA
-// table_info`), em vez de código específico por entidade — o schema já tem 55 tabelas
+// table_info`), em vez de código específico por entidade — o schema já tem mais de 55 tabelas
 // (`entity/`) e cresce a cada fase nova, então uma implementação genérica cobre qualquer tabela
 // presente ou futura sem precisar ser tocada de novo. Anexos (Fase 15) entram via
 // `StorageProvider::export_all`/`import_all`, já existentes.
