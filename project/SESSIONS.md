@@ -2292,6 +2292,26 @@ para até 3 rodadas de depuração; passou na 2ª.
   `desktop/e2e` ou `desktop/package*.json`, e à mão.
 - **Fora do E2E**: o que depende de rede externa ou do sidecar do Lume (botão "Run crypto
   collector", `sync_tax_rules`), que seguem nos testes `#[ignore]` ao vivo.
-- **Pendente**: expandir os fluxos (thresholds cripto, Taxes com transações semeadas, Backup,
-  Settings → Storage, as telas das Fases 15/16/17/20/24); confirmar com um build de release que
-  o banco novo agora abre com as tabelas.
+- **Verificado**: o gatilho de push funcionou (run `38915323476` disparou sozinho no `63c01cf`).
+
+**Testes automatizados, fase B2: mais fluxos no E2E.** Pedido: seguir expandindo.
+- **Feito** (commits `0749e9b` e `f95addf`, **8 testes em 3 specs, todos verdes**): 
+  `crypto-thresholds.e2e.mjs` (Research → Crypto → ETH, leitura manual do funding, editar o
+  threshold reclassifica a leitura guardada e muda o score, Reset desfaz) e `taxes.e2e.mjs`
+  (saldo de prejuízo da gaveta comum e simulação de venda com R$ 1.500 de lucro, R$ 1.000 de
+  prejuízo usado e R$ 75 de imposto). `loans.e2e.mjs` passou a usar `specs/helpers.mjs`
+  (`enterWorkspace`, `pickOption` pro Radix, `textOf`/`waitForText`, `clickCentered`, `sql`).
+- **Dados semeados com `sqlite3`**: a seção do score cripto só renderiza com uma cotação (que no
+  app vem do Lume, ausente no E2E) e cadastrar compras/vendas pela tela seria longo, então o spec
+  insere linhas direto no banco do teste (`ANCHOR_DB_PATH`) depois de entrar no Workspace.
+  `sqlite3` entrou na lista de pacotes do workflow.
+- **Armadilhas achadas** (no `README`-vivo dos specs, `helpers.mjs`): (1) `getText()` do
+  WebKitWebDriver devolve vazio pra controle do Radix, ler `textContent`; (2) o cabeçalho fixo
+  do app intercepta o clique quando o WebDriver rola o elemento pra borda de cima, centralizar
+  antes de clicar; (3) cada spec roda num worker próprio (app e banco novos) e reaproveita a
+  porta 4444, então o `tauri-driver` do anterior precisa terminar antes (`afterSession` espera).
+- **Teste de clique manual que sobra**: o botão "Run crypto collector" e `sync_tax_rules` (rede
+  externa/Lume, ficam nos `#[ignore]` ao vivo), Backup export/import (usa o diálogo nativo de
+  arquivo), Settings → Storage, as telas das Fases 15/16/17/20 e conferir visualmente. O fluxo de
+  Loans **com conta bancária** é coberto pelos testes de fluxo Rust, não pelo E2E.
+- **Pendente**: confirmar com um build de release que o banco novo agora abre com as tabelas.
