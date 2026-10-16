@@ -2466,6 +2466,16 @@ escrito com Write e Edit.
   Python nas 3 plataformas (só roda em tag), E2E novo da seção e o clique em Settings → Data sources.
 - **Achado**: um construtor de `AppError::FinanceApi` em `finance_api/crypto.rs` só apareceu quando
   removi a variante; o compilador o pegou.
-- **Pendente**: CI do push; autorização do dono para uma tag de teste (`v0.0.0-ci-test`, apagada depois)
-  que prove o `build.yml`; testes de clique de todos os domínios; decisão sobre arquivar o repo do Lume.
+- **CI do push (`a8bbe2e`)**: Rust, Frontend e E2E verdes (inclusive o teste novo da seção Data sources).
+- **Ambiente**: o `dev.sh` agora também acerta o dono dos volumes `cargo-registry` e `cargo-git`
+  (antes só o `target`); num computador novo o primeiro `./dev.sh check` falhava com "Permission denied".
+- **Pendente (retomar daqui)**:
+  1. Tag de teste `v0.0.0-ci-test` (apagada depois, junto com a release em rascunho) para provar o
+     `build.yml` sem Python nas 3 plataformas; cria coisas no GitHub, precisa do aval do dono.
+  2. Teste de clique no app: Settings → Data sources (salvar e remover bolsai e e-mail da SEC), uma coleta
+     de ação da B3 e uma dos EUA depois de configurar, e os cliques dos domínios 1 a 7 (Home com
+     Selic/DI, Research, Profitability, Settings → Taxes).
+  3. Decisão do dono sobre arquivar ou apagar o repo do Lume (nada foi tocado lá).
+  4. Itens menores registrados: migrar `crypto_sources.rs` para `finance_core::http`; `ingestão agendada`
+     e `DataProvider` com mais de uma fonte por categoria (hoje cada categoria tem um provider só).
 

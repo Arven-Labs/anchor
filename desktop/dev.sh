@@ -10,7 +10,7 @@ set -e
 # Volume recém-criado nasce com dono root, mas o container roda como uid 1000
 # (ver docker-compose.yml). Acerta o dono antes de compilar — barato e idempotente.
 docker compose run --rm --no-deps --user root desktop \
-  chown 1000:1000 /app/src-tauri/target >/dev/null
+  chown 1000:1000 /app/src-tauri/target /root/.cargo/registry /root/.cargo/git >/dev/null
 
 case "${1:-up}" in
   check)
