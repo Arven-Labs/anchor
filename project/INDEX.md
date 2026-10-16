@@ -3,7 +3,20 @@
 > Este projeto usa a mesma estrutura de arquivos do TruthID (outro projeto do mesmo dono): o estado
 > foi dividido em arquivos menores dentro desta pasta (`project/`), em vez de um único
 > `PROJECT_STATE.md` monolítico na raiz.
-> Última atualização: 2026-09-16 (Sessão 99 — **Fase 16 implementada**: Backup do Workspace,
+> Última atualização: 2026-10-16 (Sessão 106 — **frente grande de código e testes**, tudo no
+> `main` com CI verde (Rust 262 testes, E2E 12 testes, Frontend, e o `build.yml` de release
+> verificado nas 3 plataformas): (1) **Fase 24** ganhou o card "Losses to offset" (prejuízo a
+> compensar por gaveta) e a "Simulate a sale" (apura com e sem a venda hipotética); (2) **Fase 29**
+> implementada, empréstimos concedidos a terceiros (aba Finances → Loans, flag de patrimônio por
+> empréstimo, baixa com valor recebido ≠ baixado); (3) **Fase 31**, indicadores cripto: estudo de
+> fontes grátis, score em 15 indicadores e 4 grupos com subscore, coleta em Rust no Anchor
+> (Binance com fallback Bybit, Deribit, DefiLlama), `staking_yield` automático e editor de
+> thresholds; (4) **testes automatizados**: testes de fluxo Rust contra o schema real e E2E do app
+> real no CI. **Achados importantes**: o app nunca rodava migrations (agora roda no startup; o
+> banco de release abria sem tabelas, verificado corrigido no `.deb`) e o restore do Backup
+> (Fase 16) perdia linhas filhas por cascade de FK (corrigido, coberto por teste). Ver
+> `SESSIONS.md` Sessão 106, e `ROADMAP.md` para o que sobra.)
+> Última atualização anterior: 2026-09-16 (Sessão 99 — **Fase 16 implementada**: Backup do Workspace,
 > ideia registrada na Sessão 96. Export/import estruturado (JSON) via introspecção SQL genérica
 > (`sqlite_master`/`PRAGMA table_info`, cobre as 55 tabelas do schema sem código por entidade) +
 > anexos via `StorageProvider` da Fase 15. Restore roda numa transação com `PRAGMA

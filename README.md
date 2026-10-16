@@ -54,8 +54,11 @@ forge build
 forge test
 ```
 
-**CI**: GitHub Actions runs the desktop (`cargo test`, `tsc`), contracts (`forge test`) and mobile
-(`flutter analyze`/`flutter test`) checks on every push to `main` touching each folder. Pushing a
+**CI**: GitHub Actions runs the desktop (`cargo test`, including flow tests against the real
+migrated schema, and `tsc`), an end-to-end suite that drives the real app headless
+(WebdriverIO + `tauri-driver`), contracts (`forge test`) and mobile
+(`flutter analyze`/`flutter test`) checks on every push to `main` touching each folder. The app
+applies its own database migrations on startup. Pushing a
 `v*` tag builds the Linux/Windows/macOS installers and the Android APK (debug-signed for now) into a
 draft release. See
 [`.github/workflows/`](.github/workflows/).
