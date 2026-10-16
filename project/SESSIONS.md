@@ -2310,8 +2310,28 @@ para até 3 rodadas de depuração; passou na 2ª.
   do app intercepta o clique quando o WebDriver rola o elemento pra borda de cima, centralizar
   antes de clicar; (3) cada spec roda num worker próprio (app e banco novos) e reaproveita a
   porta 4444, então o `tauri-driver` do anterior precisa terminar antes (`afterSession` espera).
-- **Teste de clique manual que sobra**: o botão "Run crypto collector" e `sync_tax_rules` (rede
-  externa/Lume, ficam nos `#[ignore]` ao vivo), Backup export/import (usa o diálogo nativo de
-  arquivo), Settings → Storage, as telas das Fases 15/16/17/20 e conferir visualmente. O fluxo de
-  Loans **com conta bancária** é coberto pelos testes de fluxo Rust, não pelo E2E.
+- **Teste de clique manual que sobra** (versão antes da fase B3, ver abaixo): o botão "Run crypto
+  collector" e `sync_tax_rules` (rede externa/Lume, ficam nos `#[ignore]` ao vivo), Backup
+  export/import (diálogo nativo de arquivo), Settings → Storage, as telas das Fases 15/16/17/20 e
+  conferir visualmente.
+
+**Testes automatizados, fase B3: Settings, navegação, regras fiscais e Backup.** Pedido: "sim,
+pode pegar" o que sobrava.
+- **Feito** (commits `6563e9b` e `1838f96`): `settings.e2e.mjs` (4 testes: navegação principal só
+  com as 5 abas e sem IA, **Fase 20**; Home com os widgets de valor total e de juros, **Fase 17**;
+  Settings com as 5 seções e sem IA; Storage com disco local padrão e 3 opções desabilitadas,
+  persistindo ao reabrir, **Fase 15**; editar a alíquota comum em Settings → Taxes muda a simulação
+  de venda de R$ 75 para R$ 100 e o Reset volta, **Fase 24**) e o teste de fluxo Rust do Backup
+  (**Fase 16**). Helpers novos: `seedLossScenario`, `simulateIvvbSale`.
+- **Bug real achado pelo teste de Backup** (corrigido, ver Fase 16 no `PHASE.md`): o restore
+  perdia linhas filhas em silêncio por causa do `ON DELETE CASCADE` com FKs ligadas. Também
+  corrigi dois comentários que diziam "o projeto não liga `PRAGMA foreign_keys`" (liga, é o
+  padrão do sqlx).
+- **Erro meu no spec** (corrigido): `$$` do WebdriverIO devolve um objeto cujo `.map` não é o de
+  array, `Array.from(await $$(...))` resolve.
+- **Verificado**: commit `1838f96`, CI Rust (**262 testes**) e E2E (**12 testes em 4 specs**)
+  verdes.
+- **Teste de clique manual que de fato sobra**: o botão "Run crypto collector" e `sync_tax_rules`
+  (rede/Lume), os botões de Backup que abrem o diálogo nativo de arquivo (a lógica está coberta),
+  os dados reais dos widgets de juros da Home (vêm do Lume) e conferência visual.
 - **Pendente**: confirmar com um build de release que o banco novo agora abre com as tabelas.

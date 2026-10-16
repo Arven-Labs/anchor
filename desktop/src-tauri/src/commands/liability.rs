@@ -298,9 +298,10 @@ pub async fn delete_liability(
 
     // Desfaz o fluxo de caixa projetado — sem isso, as parcelas geradas
     // ficariam "fantasma" em `general_transactions` (contando no saldo da
-    // conta) mesmo com a dívida excluída. SQLite não garante cascade real
-    // aqui (sem `PRAGMA foreign_keys=ON` no projeto), então isso é feito
-    // explicitamente.
+    // conta) mesmo com a dívida excluída. A FK aponta da parcela pro
+    // lançamento (excluir a dívida não apaga o lançamento), então isso é
+    // feito explicitamente. (O sqlx liga as FKs do SQLite por padrão, o que
+    // vale lembrar pra qualquer DELETE em massa: o cascade age na hora.)
     let general_transaction_ids: Vec<i32> =
         installments.iter().map(|i| i.general_transaction_id).collect();
     if !general_transaction_ids.is_empty() {

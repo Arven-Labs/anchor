@@ -1541,6 +1541,16 @@ migrar pra ele ainda), `DecentralizedVaultProvider` (depende da Fase 8/Vault Web
 
 ### Fase 16 — Backup do Workspace (ideia trazida em conversa pelo dono do projeto na Sessão 96, implementada na Sessão 99)
 
+**Bug corrigido na Sessão 106 (achado por teste automatizado)**: o restore voltava **incompleto
+e sem erro**. O sqlx liga as FKs do SQLite por padrão e o `import_snapshot` apagava e inseria
+tabela por tabela, em ordem alfabética; o `DELETE` de uma tabela "mãe" que vinha depois
+(`workspace`) cascateava (`ON DELETE CASCADE` age na hora, `defer_foreign_keys` só adia a checagem
+de violação) sobre filhas já restauradas (`bank_accounts`, `borrowers`, `loans`...). Agora apaga
+**todas** as tabelas antes de inserir qualquer uma. Coberto por
+`flow_tests::backup_round_trips_the_real_schema_with_data_and_attachments` (exporta o schema real
+com dados e anexo, passa pelo JSON, restaura num banco com lixo e compara **tabela por tabela**).
+O teste de clique manual desta fase nunca tinha sido confirmado, e teria perdido dados.
+
 **Objetivo**: mecanismo explícito de backup/restauração de um Workspace inteiro (dados +
 anexos, ver Fase 15), distinto do sync contínuo multi-dispositivo já desenhado na Fase 8 — cobre
 o caso de o usuário simplesmente querer um snapshot restaurável (proteção contra perda de

@@ -377,9 +377,9 @@ pub async fn delete_loan_in(db: &DatabaseConnection, loan_id: i32) -> Result<(),
         .all(&txn)
         .await?;
 
-    // Mesmo cuidado do `delete_liability`: o projeto não liga
-    // `PRAGMA foreign_keys`, então os lançamentos de caixa ligados são
-    // apagados explicitamente (senão ficam "fantasma" no saldo da conta).
+    // Mesmo cuidado do `delete_liability`: a FK aponta do empréstimo/baixa pro
+    // lançamento, então apagar o empréstimo não apaga o lançamento de caixa; ele
+    // é removido explicitamente (senão fica "fantasma" no saldo da conta).
     let mut transaction_ids: Vec<i32> =
         repayments.iter().filter_map(|r| r.general_transaction_id).collect();
     transaction_ids.extend(existing.general_transaction_id);
