@@ -34,6 +34,27 @@ pub struct Trade {
     pub fee: f64,
 }
 
+/// Resultado realizado de uma posição em opção **encerrada** (Fase 18). Opção
+/// não tem custo médio nem isenção: cada posição é uma operação com receita e
+/// custo próprios, apurada no mês do encerramento.
+#[derive(Clone, Debug)]
+pub struct OptionResult {
+    pub position_id: i32,
+    pub portfolio_id: i32,
+    /// Ticker da série (`PETRK600`).
+    pub ticker: String,
+    /// Data do encerramento.
+    pub date: NaiveDate,
+    /// Aberta e encerrada no mesmo dia: vai pra gaveta de day trade.
+    pub day_trade: bool,
+    pub quantity: f64,
+    pub proceeds: f64,
+    pub cost: f64,
+    /// Opção exercida: o prêmio entra no custo da ação, não é ganho nem perda
+    /// própria. Só gera aviso.
+    pub exercised: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Bucket {
@@ -112,6 +133,8 @@ pub enum TaxWarning {
     CryptoSalesAboveExemption { period: String, sales_total: f64, limit: f64 },
     CryptoSalesNonBrl { period: String },
     ForeignSales { year: i32 },
+    /// Opção exercida: o resultado não é apurado aqui (o prêmio vai pro custo da ação).
+    OptionExercised { ticker: String, date: NaiveDate },
 }
 
 /// Prejuízo acumulado de uma gaveta depois do último mês apurado, e quanto
@@ -171,7 +194,16 @@ fn take_from_position(pos: &mut Position, quantity: f64) -> (f64, f64) {
 /// Apura mês a mês o imposto de renda variável (B3) a partir das compras e
 /// vendas. `trades` pode vir em qualquer ordem e conter classes fora do
 /// escopo (viram avisos ou são ignoradas).
-pub fn assess(trades: &[Trade], rules: &RuleSet) -> Result<Assessment, AppError> {
+///
+/// Soma o resultado das opções encerradas: swing na gaveta comum e day trade
+/// na sua, **sem** isenção dos R$ 20 mil (só vale pra venda de ações) e
+/// **sem** IRRF estimado (o imposto pode sair um pouco acima do real).
+/// Prejuízo de opção compensa na mesma gaveta, inclusive contra ações.
+pub fn assess_with_options(
+    trades: &[Trade],
+    options: &[OptionResult],
+    rules: &RuleSet,
+) -> Result<Assessment, AppError> {
     let mut warnings = Vec::new();
     collect_out_of_scope_warnings(trades, rules, &mut warnings)?;
 
@@ -303,6 +335,31 @@ pub fn assess(trades: &[Trade], rules: &RuleSet) -> Result<Assessment, AppError>
         if let Some(p) = tx_portfolio.get(&s.tx_id) {
             s.portfolio_id = *p;
         }
+    }
+
+    // Opções encerradas: uma operação cada. `tx_id` e `asset_id` negativos (o id
+    // da posição com o sinal trocado) nunca colidem com os reais.
+    for option in options {
+        if option.exercised {
+            warnings.push(TaxWarning::OptionExercised { ticker: option.ticker.clone(), date: option.date });
+            continue;
+        }
+        sales.push(SaleResult {
+            tx_id: -option.position_id,
+            portfolio_id: option.portfolio_id,
+            asset_id: -option.position_id,
+            ticker: option.ticker.clone(),
+            date: option.date,
+            bucket: if option.day_trade { Bucket::DayTrade } else { Bucket::Common },
+            is_unit: false,
+            exemption_eligible: false,
+            quantity: option.quantity,
+            sale_value: 0.0,
+            proceeds: option.proceeds,
+            cost: option.cost,
+            gain: option.proceeds - option.cost,
+            cost_unknown: false,
+        });
     }
 
     // 2) Mês a mês, em ordem: isenção, gavetas, compensação, IRRF, mínimo.
@@ -466,16 +523,24 @@ pub struct SaleSimulation {
 /// Simula uma venda: apura as transações reais com e sem `sale` e compara.
 /// Usa `custodia_id` da própria venda — com `None` ela nunca casa como day
 /// trade com compra do mesmo dia (a simulação é de swing trade).
-pub fn simulate_sale(trades: &[Trade], rules: &RuleSet, sale: Trade) -> Result<SaleSimulation, AppError> {
+///
+/// As opções encerradas entram na base: o prejuízo (ou o ganho) delas muda
+/// quanto a venda consome de compensação.
+pub fn simulate_sale_with_options(
+    trades: &[Trade],
+    options: &[OptionResult],
+    rules: &RuleSet,
+    sale: Trade,
+) -> Result<SaleSimulation, AppError> {
     let mut sale = sale;
     sale.tx_id = SIMULATED_TX_ID;
     sale.side = Side::Sell;
     let period = period_of(sale.date);
 
-    let before = assess(trades, rules)?;
+    let before = assess_with_options(trades, options, rules)?;
     let mut with_sale = trades.to_vec();
     with_sale.push(sale);
-    let after = assess(&with_sale, rules)?;
+    let after = assess_with_options(&with_sale, options, rules)?;
 
     let after_month = after
         .months
@@ -559,6 +624,15 @@ mod tests {
 
     fn d(s: &str) -> NaiveDate {
         NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    /// Apuração só de ações (sem opções): o que a maioria dos testes exercita.
+    fn assess(trades: &[Trade], rules: &RuleSet) -> Result<Assessment, AppError> {
+        assess_with_options(trades, &[], rules)
+    }
+
+    fn simulate_sale(trades: &[Trade], rules: &RuleSet, sale: Trade) -> Result<SaleSimulation, AppError> {
+        simulate_sale_with_options(trades, &[], rules, sale)
     }
 
     struct Builder {
@@ -927,5 +1001,125 @@ mod tests {
         assert!(a.months.is_empty());
         assert!(a.warnings.iter().any(|w| matches!(w, TaxWarning::CryptoSalesAboveExemption { .. })));
         assert!(a.warnings.iter().any(|w| matches!(w, TaxWarning::ForeignSales { year: 2026 })));
+    }
+
+    // -- Opções (Fase 18) --------------------------------------------------
+
+    fn option(id: i32, date: &str, day_trade: bool, proceeds: f64, cost: f64) -> OptionResult {
+        OptionResult {
+            position_id: id,
+            portfolio_id: 1,
+            ticker: "PETRK600".to_string(),
+            date: d(date),
+            day_trade,
+            quantity: 100.0,
+            proceeds,
+            cost,
+            exercised: false,
+        }
+    }
+
+    fn assess_options(b: Builder, options: &[OptionResult]) -> Assessment {
+        assess_with_options(&b.trades, options, &test_rule_set()).unwrap()
+    }
+
+    #[test]
+    fn option_gain_is_taxed_at_15_percent_with_no_exemption_and_no_irrf() {
+        // Ganho de 1.000 (receita 1.500, custo 500): mesmo sem nenhuma venda de ação
+        // (que deixaria o mês "isento"), a opção paga 15 % e não gera IRRF.
+        let a = assess_options(Builder::new(), &[option(1, "2026-03-10", false, 1500.0, 500.0)]);
+
+        let m = &a.months[0];
+        assert!(close(m.stock_sales_total, 0.0));
+        assert!(close(m.exempt_gain, 0.0));
+        assert_eq!(m.buckets.len(), 1);
+        assert_eq!(m.buckets[0].bucket, Bucket::Common);
+        assert!(close(m.gross_tax, 150.0));
+        assert!(close(m.irrf_withheld, 0.0));
+        assert!(close(m.due, 150.0));
+        assert_eq!(m.sales[0].tx_id, -1);
+        assert!(!m.sales[0].exemption_eligible);
+    }
+
+    #[test]
+    fn option_gain_is_taxed_even_when_the_stock_gain_of_the_month_is_exempt() {
+        // Ação: venda de 4.000 (abaixo de 20 mil) com lucro 500 → isento. Opção: ganho 1.000.
+        // Gaveta comum: (500 + 1.000) − 500 isento = 1.000 → 15 % = 150.
+        let b = Builder::new()
+            .buy(1, "PETR4", "acao_br", "2026-01-02", 100.0, 3500.0, 0.0)
+            .sell(1, "PETR4", "acao_br", "2026-03-10", 100.0, 4000.0, 0.0);
+        let a = assess_options(b, &[option(1, "2026-03-20", false, 1500.0, 500.0)]);
+
+        let m = &a.months[0];
+        assert!(m.stock_exempt);
+        assert!(close(m.exempt_gain, 500.0));
+        assert!(close(m.stock_sales_total, 4000.0)); // a opção não entra no limite
+        assert!(close(m.buckets[0].taxable, 1000.0));
+        assert!(close(m.gross_tax, 150.0));
+    }
+
+    #[test]
+    fn an_option_loss_offsets_a_later_stock_gain_in_the_common_bucket() {
+        // Jan: opção perde 500. Fev: ETF ganha 1.500 → compensa 500, tributa 1.000.
+        let b = Builder::new()
+            .buy(3, "IVVB11", "etf_br", "2026-01-02", 10.0, 3000.0, 0.0)
+            .sell(3, "IVVB11", "etf_br", "2026-02-10", 10.0, 4500.0, 0.0);
+        let a = assess_options(b, &[option(1, "2026-01-15", false, 0.0, 500.0)]);
+
+        assert_eq!(a.months.len(), 2);
+        assert!(close(a.months[0].gross_tax, 0.0));
+        let feb = a.months[1].buckets.iter().find(|x| x.bucket == Bucket::Common).unwrap();
+        assert!(close(feb.loss_used, 500.0));
+        assert!(close(feb.taxable, 1000.0));
+        assert!(a.loss_balances.is_empty());
+    }
+
+    #[test]
+    fn a_day_trade_option_goes_to_the_day_trade_bucket_at_20_percent() {
+        let a = assess_options(Builder::new(), &[option(1, "2026-03-10", true, 1000.0, 500.0)]);
+
+        let m = &a.months[0];
+        assert_eq!(m.buckets.len(), 1);
+        assert_eq!(m.buckets[0].bucket, Bucket::DayTrade);
+        assert!(close(m.gross_tax, 100.0)); // 20 % × 500
+        assert!(close(m.irrf_withheld, 0.0)); // IRRF de opção não é estimado
+    }
+
+    #[test]
+    fn an_exercised_option_only_warns() {
+        let mut exercised = option(1, "2026-03-10", false, 1500.0, 500.0);
+        exercised.exercised = true;
+        let a = assess_options(Builder::new(), &[exercised]);
+
+        assert!(a.months.is_empty());
+        assert!(matches!(&a.warnings[0], TaxWarning::OptionExercised { ticker, .. } if ticker == "PETRK600"));
+    }
+
+    #[test]
+    fn assess_without_options_is_unchanged() {
+        let build = || {
+            Builder::new()
+                .buy(3, "IVVB11", "etf_br", "2026-01-02", 10.0, 3000.0, 0.0)
+                .sell(3, "IVVB11", "etf_br", "2026-02-10", 10.0, 4500.0, 0.0)
+        };
+        let plain = build().assess();
+        let with_empty = assess_options(build(), &[]);
+        assert_eq!(plain.months.len(), with_empty.months.len());
+        assert!(close(plain.months[0].gross_tax, with_empty.months[0].gross_tax));
+    }
+
+    #[test]
+    fn simulate_sale_sees_the_loss_from_closed_options() {
+        // Jan: a opção perde 1.000. Simula vender 10 IVVB11 (custo 3.000) por 4.500 em fev:
+        // lucro 1.500, compensa 1.000 da opção, paga 15 % × 500 = 75.
+        let b = Builder::new().buy(3, "IVVB11", "etf_br", "2026-01-02", 10.0, 3000.0, 0.0);
+        let sale = hypothetical(&b, 3, "IVVB11", "etf_br", "2026-02-10", 10.0, 4500.0);
+        let options = [option(1, "2026-01-15", false, 0.0, 1000.0)];
+        let sim = simulate_sale_with_options(&b.trades, &options, &test_rule_set(), sale).unwrap();
+
+        assert!(close(sim.loss_used, 1000.0));
+        assert!(close(sim.month_tax_after, 75.0));
+        assert_eq!(sim.loss_balances_before.len(), 1);
+        assert!(sim.loss_balances_after.is_empty());
     }
 }

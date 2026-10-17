@@ -36,6 +36,27 @@ pub fn result(
     sign(side) * (price - premium) * quantity - open_fee.unwrap_or(0.0) - close_fee.unwrap_or(0.0)
 }
 
+/// `(receita, custo)` de uma posição **encerrada**, no vocabulário da apuração
+/// de imposto: `receita − custo` é exatamente `result`. Comprada: paga o prêmio
+/// (+ taxa de abertura) e recebe o preço de encerramento (− taxa de saída).
+/// Lançada: recebe o prêmio (− taxa de abertura) e paga o preço de encerramento
+/// (+ taxa de saída).
+pub fn proceeds_and_cost(
+    side: &str,
+    premium: f64,
+    quantity: f64,
+    close_price: f64,
+    open_fee: Option<f64>,
+    close_fee: Option<f64>,
+) -> (f64, f64) {
+    let (open_fee, close_fee) = (open_fee.unwrap_or(0.0), close_fee.unwrap_or(0.0));
+    if side == SHORT {
+        (premium * quantity - open_fee, close_price * quantity + close_fee)
+    } else {
+        (close_price * quantity - close_fee, premium * quantity + open_fee)
+    }
+}
+
 /// Dias corridos até o vencimento; negativo depois dele.
 pub fn days_to_expiry(expiration: NaiveDate, today: NaiveDate) -> i64 {
     (expiration - today).num_days()
@@ -77,6 +98,19 @@ mod tests {
     fn fees_reduce_the_result_on_both_sides() {
         assert!(close(result(LONG, 2.0, 100.0, 3.0, Some(5.0), Some(7.0)), 100.0 - 12.0));
         assert!(close(result(SHORT, 2.0, 100.0, 1.0, Some(5.0), None), 100.0 - 5.0));
+    }
+
+    #[test]
+    fn proceeds_minus_cost_is_the_result_on_both_sides() {
+        for (side, close_price) in [(LONG, 3.5), (LONG, 0.0), (SHORT, 0.5), (SHORT, 5.0)] {
+            let (proceeds, cost) = proceeds_and_cost(side, 2.0, 100.0, close_price, Some(5.0), Some(7.0));
+            let expected = result(side, 2.0, 100.0, close_price, Some(5.0), Some(7.0));
+            assert!(close(proceeds - cost, expected), "{side} {close_price}");
+        }
+        // Lançada: receita é o prêmio (− taxa de abertura); custo é a recompra (+ taxa de saída).
+        assert_eq!(proceeds_and_cost(SHORT, 2.0, 100.0, 0.0, Some(5.0), None), (195.0, 0.0));
+        // Comprada que vira pó: sem receita, custo é o prêmio pago.
+        assert_eq!(proceeds_and_cost(LONG, 2.0, 100.0, 0.0, None, None), (0.0, 200.0));
     }
 
     #[test]

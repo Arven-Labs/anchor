@@ -88,7 +88,8 @@ type TaxWarning =
   | { kind: "cost_unknown"; ticker: string; date: string }
   | { kind: "crypto_sales_above_exemption"; period: string; sales_total: number; limit: number }
   | { kind: "crypto_sales_non_brl"; period: string }
-  | { kind: "foreign_sales"; year: number };
+  | { kind: "foreign_sales"; year: number }
+  | { kind: "option_exercised"; ticker: string; date: string };
 
 type TaxPayment = {
   id: number;
@@ -160,6 +161,8 @@ function warningText(w: TaxWarning): string {
       return `You sold crypto in ${formatPeriod(w.period)} in a foreign currency — check whether tax is due. Not calculated by Anchor yet.`;
     case "foreign_sales":
       return `You sold foreign assets in ${w.year}. Gains abroad are taxed yearly in the annual tax return (Law 14,754/2023) — not calculated by Anchor yet.`;
+    case "option_exercised":
+      return `Option ${w.ticker} was exercised on ${formatDate(w.date)}. Its premium goes into the cost of the stock bought or sold by the exercise, so it is not taxed here — update that stock's cost yourself.`;
   }
 }
 
@@ -382,7 +385,7 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
                         </TableCell>
                         <TableCell className="text-right">{formatBrl(m.gross_tax)}</TableCell>
                         <TableCell className="text-right">{formatBrl(m.irrf_used)}</TableCell>
-                        <TableCell className="text-right font-medium">
+                        <TableCell className="text-right font-medium" data-testid={`tax-due-${m.period}`}>
                           {m.due > 0 ? formatBrl(m.due) : "—"}
                           {m.carried_out > 0 && (
                             <span className="block text-xs text-muted-foreground">
@@ -406,6 +409,7 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
                           <Button
                             variant="ghost"
                             size="sm"
+                            data-testid={`tax-details-${m.period}`}
                             onClick={() => setExpanded(expanded === m.period ? null : m.period)}
                           >
                             {expanded === m.period ? "Hide" : "Details"}
@@ -539,8 +543,16 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
 }
 
 function MonthDetails({ month }: { month: MonthAssessment }) {
+  const hasOptions = month.sales.some((s) => s.tx_id < 0);
   return (
     <div className="flex flex-col gap-4 p-2">
+      {hasOptions && (
+        <p className="text-xs text-muted-foreground" data-testid="options-tax-note">
+          This month includes closed option positions (they appear with their series ticker). Options
+          have no R$ 20k exemption, and the withheld tax (IRRF) is not estimated for them, so the
+          estimate can be slightly above the real amount.
+        </p>
+      )}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {month.buckets.map((b) => (
           <div key={b.bucket} className="rounded-md border border-border bg-background p-3 text-sm">

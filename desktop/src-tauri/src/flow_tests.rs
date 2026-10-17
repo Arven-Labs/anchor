@@ -509,6 +509,77 @@ async fn an_open_position_past_its_expiry_is_flagged_and_marks_use_the_last_trad
 }
 
 #[tokio::test]
+async fn closed_option_positions_feed_the_tax_assessment() {
+    use crate::domain::tax::assessment::{Bucket, TaxWarning};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Options Tax WS").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+
+    let open_on = |series: &str, side: &str, quantity: f64, premium: f64, open_date: &str| {
+        let mut request = option_request(pf.id, series, side, quantity, premium);
+        request.open_date = open_date.to_string();
+        request
+    };
+
+    // Swing: lançada em 05/10, expira sem valor em 12/10 → ganha o prêmio, 100 × 1,50 = +150.
+    let swing = create_option_position_in(&db, open_on("PETRK600", "short", 100.0, 1.5, "2026-10-05")).await.unwrap();
+    close_option_position_in(&db, close_request(swing.id, "expired", None, "2026-10-12")).await.unwrap();
+    // Day trade: comprada a 1,00 e vendida a 2,00 no mesmo dia → +100.
+    let day = create_option_position_in(&db, open_on("PETRW550", "long", 100.0, 1.0, "2026-10-13")).await.unwrap();
+    close_option_position_in(&db, close_request(day.id, "closed", Some(2.0), "2026-10-13")).await.unwrap();
+    // Exercida: só avisa. Aberta: não entra.
+    let exercised = create_option_position_in(&db, open_on("PETRK650", "long", 100.0, 1.0, "2026-10-06")).await.unwrap();
+    close_option_position_in(&db, close_request(exercised.id, "exercised", Some(3.0), "2026-10-14")).await.unwrap();
+    create_option_position_in(&db, open_on("PETRK700", "short", 100.0, 9.0, "2026-10-07")).await.unwrap();
+
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert_eq!(assessment.months.len(), 1);
+    let month = &assessment.months[0];
+    assert_eq!(month.period, "2026-10");
+    assert!(close(month.stock_sales_total, 0.0));
+
+    let common = month.buckets.iter().find(|b| b.bucket == Bucket::Common).unwrap();
+    let day_trade = month.buckets.iter().find(|b| b.bucket == Bucket::DayTrade).unwrap();
+    assert!(close(common.result, 150.0));
+    assert!(close(common.tax, 22.5)); // 15 %, sem a isenção dos R$ 20 mil
+    assert!(close(day_trade.result, 100.0));
+    assert!(close(day_trade.tax, 20.0)); // 20 %
+    assert!(close(month.gross_tax, 42.5));
+    assert!(close(month.irrf_withheld, 0.0));
+    assert!(close(month.due, 42.5));
+
+    assert_eq!(month.sales.len(), 2); // a exercida e a aberta ficam de fora
+    assert!(assessment.warnings.iter().any(
+        |w| matches!(w, TaxWarning::OptionExercised { ticker, .. } if ticker == "PETRK650")
+    ));
+}
+
+#[tokio::test]
+async fn an_option_loss_offsets_a_later_stock_gain_in_the_workspace_assessment() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Options Tax WS").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let ivvb = asset(&db, "IVVB11", "etf_br").await;
+    trade(&db, pf.id, ivvb.id, "compra", 10.0, 3000.0, "2026-09-02").await;
+    trade(&db, pf.id, ivvb.id, "venda", 10.0, 4500.0, "2026-10-10").await;
+
+    // Setembro: comprada a 5,00 que vira pó → prejuízo de 500 na gaveta comum.
+    let mut request = option_request(pf.id, "PETRK600", "long", 100.0, 5.0);
+    request.open_date = "2026-09-03".to_string();
+    let lost = create_option_position_in(&db, request).await.unwrap();
+    close_option_position_in(&db, close_request(lost.id, "expired", None, "2026-09-18")).await.unwrap();
+
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    let october = assessment.months.iter().find(|m| m.period == "2026-10").unwrap();
+    let common = october.buckets.iter().find(|b| b.bucket == crate::domain::tax::assessment::Bucket::Common).unwrap();
+    // Lucro do ETF 1.500, compensa os 500 da opção: tributa 1.000 a 15 %.
+    assert!(close(common.loss_used, 500.0));
+    assert!(close(common.taxable, 1000.0));
+    assert!(close(october.gross_tax, 150.0));
+}
+
+#[tokio::test]
 async fn deleting_a_portfolio_deletes_its_option_positions() {
     use crate::entity::portfolio as portfolio_entity;
 

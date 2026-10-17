@@ -14,12 +14,13 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::domain::tax::assessment::{self, Assessment, Side, Trade};
+use crate::domain::option_position as option_calc;
+use crate::domain::tax::assessment::{self, Assessment, OptionResult, Side, Trade};
 use crate::domain::tax::classify::{treatment, TaxTreatment};
 use crate::domain::tax::rules::{self, Rule, RuleSet};
 use crate::entity::{
-    assets, bank_account, general_transaction, general_transaction_category, portfolio, tax_payments,
-    tax_rules, transactions,
+    assets, bank_account, general_transaction, general_transaction_category, option_position,
+    portfolio, tax_payments, tax_rules, transactions,
 };
 use crate::error::AppError;
 use crate::finance_api::client;
@@ -114,13 +115,59 @@ async fn load_trades(db: &DatabaseConnection, workspace_id: i32) -> Result<Vec<T
     Ok(trades)
 }
 
+/// Posições em opções **encerradas** das carteiras do Workspace (Fase 18), no
+/// formato da apuração. Posição aberta não entra: só vira resultado ao encerrar.
+/// Day trade = aberta e encerrada no mesmo dia.
+async fn load_option_results(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+) -> Result<Vec<OptionResult>, AppError> {
+    let portfolio_ids = workspace_portfolio_ids(db, workspace_id).await?;
+    if portfolio_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = option_position::Entity::find()
+        .filter(option_position::Column::PortfolioId.is_in(portfolio_ids))
+        .filter(option_position::Column::CloseDate.is_not_null())
+        .all(db)
+        .await?;
+
+    let mut results = Vec::with_capacity(rows.len());
+    for row in rows {
+        let (Some(close_date), Some(close_price)) = (row.close_date.as_deref(), row.close_price) else {
+            continue;
+        };
+        let (proceeds, cost) = option_calc::proceeds_and_cost(
+            &row.side,
+            row.premium,
+            row.quantity,
+            close_price,
+            row.open_fee,
+            row.close_fee,
+        );
+        results.push(OptionResult {
+            position_id: row.id,
+            portfolio_id: row.portfolio_id,
+            ticker: row.series_ticker.clone(),
+            date: parse_date(close_date)?,
+            day_trade: row.open_date == close_date,
+            quantity: row.quantity,
+            proceeds,
+            cost,
+            exercised: row.close_kind.as_deref() == Some(option_calc::EXERCISED),
+        });
+    }
+    Ok(results)
+}
+
 pub(crate) async fn assess_workspace(
     db: &DatabaseConnection,
     workspace_id: i32,
 ) -> Result<Assessment, AppError> {
     let rules = load_rule_set(db).await?;
     let trades = load_trades(db, workspace_id).await?;
-    assessment::assess(&trades, &rules)
+    let options = load_option_results(db, workspace_id).await?;
+    assessment::assess_with_options(&trades, &options, &rules)
 }
 
 #[derive(Deserialize)]
@@ -200,7 +247,8 @@ pub async fn simulate_tax_sale_in(
         gross_value: request.quantity * request.unit_price,
         fee,
     };
-    assessment::simulate_sale(&trades, &rules, sale)
+    let options = load_option_results(db, request.workspace_id).await?;
+    assessment::simulate_sale_with_options(&trades, &options, &rules, sale)
 }
 
 // ---------------------------------------------------------------------------
