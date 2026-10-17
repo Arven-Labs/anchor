@@ -3031,6 +3031,10 @@ do `PHASE.md`.
   não mudo tributação por suspeita da auditoria. Fica registrado como dúvida a tirar com a Receita ou a corretora.
 - **Feito**: `data-testid` no formulário de lançamento e na tabela de posições; `portfolio.e2e.mjs` (compra, venda e
   recompra pelo formulário com preço médio 20,00, venda acima do saldo recusada, desdobramento 2:1).
-- **Verificado**: `./dev.sh check` limpo.
-- **Não verificado**: o E2E novo só roda no CI; o campo de data do formulário não é exercitado (os lançamentos usam hoje).
-- **Pendente**: importar proventos da B3 (próximo, com plano), desdobramentos e bonificações na importação.
+- **Verificado**: `./dev.sh check` limpo; CI verde nos três workflows depois de um conserto. O primeiro push do E2E falhou
+  porque um Workspace novo não tem carteira (o spec não a semeava nem esperava as abas); corrigido no push seguinte.
+- **Não verificado**: o campo de data do formulário não é exercitado (os lançamentos usam hoje); a tela a olho.
+- **Pendente**: importar proventos da B3, desdobramentos e bonificações na importação. **Bloqueado por uma amostra**: preciso
+  da planilha "Movimentação" da Área do Investidor para saber se o JCP vem bruto ou líquido e como a B3 nomeia cada
+  movimentação. Sem ela, o plano seguinte é anexos no arquivo de Workspace.
+- **Encerramento**: o dono do projeto parou aqui por ora.
