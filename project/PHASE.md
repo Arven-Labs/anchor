@@ -1665,6 +1665,24 @@ decisão tomada além de "existe vontade de ter isso um dia". **Atualização (S
 dados existe em `finance_core` (séries da B3, último preço, Black-Scholes, IV e gregas; ver seção H da
 Fase 32), sem tela nem classe de ativo; nada do desenho de produto foi decidido.
 
+**1ª fatia implementada (Sessão 114, 2026-10-17)**, escolhas do dono do projeto: **só consulta** (cadeia +
+gregas, somente leitura, sem schema) e a tela como **seção na análise da Ação BR** (não view própria).
+- `commands/options.rs`: `list_option_chain(request { underlying })` e `get_option_greeks(request {
+  series_ticker, underlying })`. A cadeia sai de `build_chain`, função pura: descarta vencimentos passados
+  (o de hoje ainda conta), agrupa por vencimento crescente e pareia call e put pelo strike (chave em centavos
+  inteiros, porque `f64` não serve de chave) em ordem crescente. Raiz sem séries é cadeia vazia, não erro.
+- `stock-lookup/OptionsSection.tsx`, plugada em `StockAnalysisSection.tsx` antes das teses: **não carrega
+  sozinha** (a primeira carga do dia baixa ~80 MB, ~2 min), só com "Load options"; seletor de vencimento,
+  filtro "Only traded" (ligado), tabela Calls | Strike | Puts com a linha ATM destacada (strike mais perto do
+  preço da ação) e painel de gregas ao clicar numa série. Consultas com `retry: false` (um download de 80 MB
+  não pode repetir sozinho). Avisos fixos: só último preço negociado, aproximação europeia.
+- **Fora de escopo, decidido**: simulador de payoff (venda coberta, travas), posições e resultado de opções
+  na carteira, `AssetClass` de opção, seção em ETF/BDR, opções de índice. Seguem em aberto, sem desenho.
+- **Verificado**: `./dev.sh check` limpo; 7 testes unitários de `build_chain`; CI do push `37c76ff` verde nos
+  três workflows, com o E2E da PETR4 conferindo que a seção e o botão aparecem e que nada baixa sozinho.
+  **Não verificado**: a carga real (`live_option_chain`, `#[ignore]`, ~2 min e B3 instável), o painel de
+  gregas contra dado real e o clique na tela.
+
 ### Fase 19 — Moeda base seletiva da carteira (ideia trazida em conversa pelo dono do projeto na Sessão 96, puro registro, não iniciada)
 
 **Objetivo**: permitir escolher, nas Configurações, a moeda base em que a carteira é exibida (ex.:

@@ -2631,3 +2631,19 @@ só os análogos diretos do ETH. Duas fatias com CI entre elas. Detalhe na Fase 
 - **Não verificado**: nada de código mudou, então não rodei check nem CI.
 - **Pendente**: opções (Fase 18) e moeda base (Fase 19); ingestão agendada e `DataProvider` com mais de uma
   fonte por categoria; E2E do câmbio pular em "No data found".
+
+
+### 2026-10-17 — Sessão 114
+
+**Consulta de opções da B3 (Fase 18, 1ª fatia).** Plan mode; escolhas do dono do projeto: só consulta (cadeia +
+gregas) e seção na tela da Ação BR. Detalhe na Fase 18 do `PHASE.md`.
+- **Feito**: comandos `list_option_chain` e `get_option_greeks` (`commands/options.rs`, cadeia montada por
+  `build_chain`, função pura) e `OptionsSection.tsx` na análise da Ação BR, com carga só sob clique.
+- **Decisão de desenho**: a seção não carrega sozinha e as consultas não repetem (`retry: false`), porque a
+  primeira carga é um download de ~80 MB (~2 min); o E2E confere que nada baixa sozinho.
+- **Verificado**: `./dev.sh check` limpo; 7 testes unitários; CI do push `37c76ff` verde (Rust, E2E e
+  Frontend).
+- **Não verificado**: a carga real contra a B3 (`live_option_chain`, `#[ignore]`), as gregas de uma série
+  real pela tela e o clique manual. O E2E não baixa os 80 MB de propósito.
+- **Pendente**: simulador de payoff e posições de opções (sem desenho); moeda base (Fase 19); ingestão
+  agendada e `DataProvider` com mais de uma fonte por categoria; E2E do câmbio pular em "No data found".
