@@ -19,6 +19,8 @@
 // - `cvm_fii`: domínio 6 (indicadores mensais, imóveis e ticker→CNPJ dos FIIs).
 // - `cvm_dfp`, `disk_cache`: domínio 5 (ROE, payout e fundamentos de DCF das
 //   empresas, direto dos zips anuais da CVM; cache em disco compartilhado).
+// - `cvm_ipe`: avisos de dividendos da CVM (categoria "Relatório Proventos" do
+//   IPE: protocolo, data e link; valor e datas ficam no PDF). Fase 32, seção F.
 // - `sec_edgar`: domínio 7 (fundamentos, DCF, payout e REITs dos EUA, direto do
 //   XBRL da SEC; o e-mail de contato exigido por eles vem do keyring/ambiente).
 // - `fx`: câmbio multi-moeda (Fase 32, seção I): catálogo de 17 moedas e
@@ -32,6 +34,7 @@ pub mod cache;
 pub mod coingecko;
 pub mod cvm_dfp;
 pub mod cvm_fii;
+pub mod cvm_ipe;
 pub mod disk_cache;
 pub mod eth_indicators;
 pub mod fear_greed;

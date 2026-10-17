@@ -17,7 +17,7 @@ use crate::error::AppError;
 use crate::finance_api::selic_store;
 use crate::finance_core::market::{self, Instrument};
 use crate::finance_core::{
-    b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, coingecko, cvm_dfp, cvm_fii, eth_indicators, fear_greed,
+    b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, coingecko, cvm_dfp, cvm_fii, cvm_ipe, eth_indicators, fear_greed,
     fx, metals, sec_edgar, tax_rules, yahoo,
 };
 
@@ -229,6 +229,22 @@ pub async fn fetch_company_roe(
         reference_year: roe.value.reference_year,
         roe: roe.value.roe,
     })
+}
+
+#[derive(Debug)]
+pub struct CompanyDividendNoticesResponse {
+    pub cvm_code: i32,
+    pub meta: ResponseMeta,
+    pub data: Vec<cvm_ipe::DividendNotice>,
+}
+
+/// Avisos "Relatório Proventos" da CVM (protocolo, data de entrega e link do PDF);
+/// empresa sem aviso devolve `data` vazio, nunca `NoData`.
+pub async fn fetch_company_dividend_notices(
+    cvm_code: i32,
+) -> Result<CompanyDividendNoticesResponse, AppError> {
+    let notices = cvm_ipe::dividend_notices(cvm_code).await?;
+    Ok(CompanyDividendNoticesResponse { cvm_code, meta: now_meta(notices.source), data: notices.value })
 }
 
 #[derive(Debug)]

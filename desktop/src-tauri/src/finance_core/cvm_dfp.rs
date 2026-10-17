@@ -63,7 +63,7 @@ fn unavailable(detail: impl std::fmt::Display) -> AppError {
 }
 
 /// latin-1: cada byte é um code point.
-fn latin1(bytes: &[u8]) -> String {
+pub(crate) fn latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| b as char).collect()
 }
 

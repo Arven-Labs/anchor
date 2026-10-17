@@ -2536,6 +2536,13 @@ gosto de fazer"), então virou E2E.
   Research) passou sem skip, 5 specs passando. **Não verificado**: só o clique manual na tela.
 - **Achado**: a lista de moedas que eu tinha de cabeça estava errada (incluía SEK, NOK, DKK, que não
   estão no catálogo); a certa veio do `currency_catalog.py` do Lume, lido antes de codar.
-- **Pendente**: decisão do dono sobre o repo do Lume; opções com gregas e avisos de dividendos da CVM
-  (seção F da Fase 32); moeda base e conversão na carteira (Fase 19); ingestão agendada e `DataProvider`
-  com mais de uma fonte por categoria.
+- **Avisos de dividendos da CVM (IPE) portados, só a camada de dados** (plan mode; o dono escolheu
+  esse escopo em vez de tela ou leitura do PDF). `finance_core/cvm_ipe.rs` + fachada
+  `fetch_company_dividend_notices`; zip em `disk_cache` com `max_age` de 12 h (ano corrente) e 7 dias
+  (anterior), diferente do DFP. Detalhe na seção F da Fase 32.
+- **Verificado (avisos)**: `./dev.sh check` limpo, 11 testes unitários e teste ao vivo (Banco do Brasil,
+  18 avisos nos dois anos, último de 2026-09-09). CI do push ainda por conferir.
+- **Pendente**: decisão do dono sobre o repo do Lume; opções com gregas (seção F da Fase 32); consumidor
+  dos avisos (alerta de "aviso novo" ou leitura do PDF para o provento esperado, com `resolve_cvm_code`);
+  moeda base e conversão na carteira (Fase 19); ingestão agendada e `DataProvider` com mais de uma fonte
+  por categoria.

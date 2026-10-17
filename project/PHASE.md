@@ -2536,14 +2536,33 @@ desatualizado e foi avançado com `git pull --ff-only` até `7767069`).
 - **Já portado para Rust (`finance_core/`)**: Selic diária e curva DI; índices B3 (IFIX, SMLL, IDIV);
   metais; FII (indicadores mensais, imóveis, resolução ticker→CNPJ); SEC EDGAR (fundamentos, DCF,
   payout, REIT); CVM DFP; Yahoo (B3 e EUA); cripto (CoinGecko, Fear & Greed, os indicadores do ETH);
-  regras de IR (`tax_rules`); **câmbio multi-moeda (Sessão 109)**.
+  regras de IR (`tax_rules`); **câmbio multi-moeda e avisos de dividendos da CVM (Sessão 109)**.
 - **NÃO portado, só existe no Lume** (é o que se perde se o repo for apagado sem copiar o desenho):
   1. ~~**Câmbio multi-moeda**~~ — **portado na Sessão 109** (ver o fim da seção I).
   2. **Opções: catálogo de séries, preço EOD e gregas** (seção H abaixo) — base da Fase 18.
-  3. **Avisos de dividendos da CVM (IPE)**, `companies/{cvm}/dividend-notices` — alimentaria o
-     "provento esperado" (Sessão 77.2).
+  3. ~~**Avisos de dividendos da CVM (IPE)**~~ (`companies/{cvm}/dividend-notices`) — **portado na
+     Sessão 109, só a camada de dados** (ver abaixo); o "provento esperado" (Sessão 77.2) segue sem
+     consumidor.
   4. **Cache em Postgres/SQLite do Lume** (38 tabelas): o Anchor guarda o resultado no `anchor.db` e
      usa cache de frescor em memória; nada disso precisa voltar.
+- **Avisos de dividendos da CVM portados (Sessão 109), só a camada de dados** (sem tela, tabela,
+  comando Tauri nem leitura do PDF; escolha do dono do projeto):
+  - `finance_core/cvm_ipe.rs`: zip anual do IPE (`ipe_cia_aberta_{ano}.zip`), categoria exata "Relatório
+    Proventos", `Codigo_CVM` como inteiro, ano atual e anterior (falha de um ano é tolerada; sem linhas e
+    com algum ano fora do ar sobe o erro; empresa sem aviso é lista vazia, nunca `NoData`). Retorna
+    `{ protocolo_entrega, data_entrega, link_download }`, do mais antigo ao mais novo; o protocolo cai no
+    link porque vem em branco nessa categoria. Fachada `fetch_company_dividend_notices(cvm_code)`.
+  - **Diferença do Lume**: o Lume nunca guardou o zip em disco (o TTL ficava numa camada de cache em
+    banco). Aqui o zip vai para o `disk_cache` como o DFP, mas com `max_age` curto: 12 h no ano
+    corrente (o arquivo cresce o ano todo) e 7 dias no anterior, em vez dos 30 dias do DFP. Também há
+    dedupe por protocolo, que o Lume não fazia. `latin1` do `cvm_dfp` virou `pub(crate)` e é reaproveitado.
+  - Verificado: `./dev.sh check` limpo, 11 testes unitários (zips em memória) e `live_dividend_notices`
+    ao vivo: Banco do Brasil (CVM 1023) devolve 18 avisos nos dois anos, o último de 2026-09-09, todos
+    com link do `rad.cvm.gov.br`. Sem E2E, porque não há tela.
+  - **Para o consumidor**: o valor, a data de pagamento e a data-com ficam só no PDF do link, que precisa
+    de checagem do `%PDF-` (a CVM às vezes devolve uma página HTML de erro para versões antigas). O
+    `resolve_cvm_code` da Sessão 94 saiu junto com a Fase 20; hoje o código CVM vem de
+    `fetch_stock_bolsai_fundamentals(ticker).cvm_code` (exige a chave da bolsai).
 - **Fragilidade que veio junto**: no Lume, CDI e IPCA mensais (`fetch_monthly_series`) ficaram com 15 s
   e sem nova tentativa, e um 502 passageiro do BCB já derrubou o CDI. No Anchor, `bcb_sgs::fetch_monthly`
   usa o timeout padrão e também não tenta de novo (só a Selic diária tem janela de 9 anos, 45 s e 3
@@ -2777,6 +2796,6 @@ Valem para qualquer reescrita ou nova fonte; vários já aparecem nos comentári
 
 **Estado**: registro completo do `project/` do Lume (arquivos lidos: `OVERVIEW`, `CONTEXT`, `GUIDELINES`,
 `INDEX`, `PENDING`, `ARCHITECTURE`, `PHASE`, `ROADMAP`, `DESMONTAGEM` e as sessões 1 a 24). Sessão 108.
-Próximo passo natural: marcar, item a item, o que migra (opções e avisos de dividendos da CVM são os
-candidatos que sobraram), o que adia e o que descarta. Na Sessão 109 a série mensal do BCB ganhou o
-retry da Selic e o câmbio foi portado.
+Próximo passo natural: marcar, item a item, o que migra (opções com gregas é o único candidato concreto
+que sobrou), o que adia e o que descarta. Na Sessão 109 a série mensal do BCB ganhou o retry da Selic e
+o câmbio e os avisos de dividendos da CVM foram portados.
