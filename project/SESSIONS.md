@@ -2928,7 +2928,9 @@ mode. Detalhe na Fase 19 do `PHASE.md`.
   sem chave, com série diária; vale só para câmbio. Ações ficam só com o Yahoo.
 - **Feito**: `frankfurter.rs`, retry de 429, `ingestion_runs`, `ingestion.rs` (alvos, rodada, laço, 2 comandos),
   `CollectorGuard` e `collect_asset` em `collector.rs`, Settings → Updates, `ANCHOR_DISABLE_INGESTION` no E2E.
-- **Verificado**: `./dev.sh check` limpo (tsc e `cargo check --all-targets`).
-- **Não verificado**: nada rodou ainda (testes de Rust, E2E e Frankfurter contra a API real ficam para o CI e a
-  tela nunca foi vista); o agendador em si não é exercitado em nenhum teste, só a decisão de quando rodar.
+- **Verificado**: `./dev.sh check` limpo; CI do push `498e91e` verde nos três workflows, de primeira (inclui os
+  testes novos de alvos, trinco, última rodada e parse do Frankfurter, e o caso "Update now" do E2E).
+- **Não verificado**: a tela a olho; o Frankfurter contra a API real dentro do app (só testei o JSON dele por
+  `curl`; não escrevi o teste `#[ignore]` ao vivo previsto no plano); o agendador em si não é exercitado em nenhum
+  teste, só a decisão de quando rodar.
 - **Pendente**: aviso de câmbio velho na tela; segunda fonte de ações (BYO-key).
