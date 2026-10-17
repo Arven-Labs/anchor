@@ -4,7 +4,7 @@
 // de lógica pura não pegam: coluna que a migration não criou, seed faltando,
 // lançamento de caixa que não bate, regra fiscal semeada diferente do esperado.
 
-use sea_orm::EntityTrait;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 use crate::commands::crypto_indicator::{
     apply_threshold, crypto_score_for, record_crypto_indicator_in, RecordCryptoIndicatorRequest,
@@ -30,10 +30,13 @@ use crate::domain::crypto_score::{
 };
 use crate::entity::{indicator_thresholds, tax_rules};
 use crate::commands::bank_account::{
-    create_bank_account_in, list_bank_accounts_view, update_bank_account_in, CreateBankAccountRequest,
-    UpdateBankAccountRequest,
+    create_bank_account_in, delete_bank_account_in, list_bank_accounts_view, update_bank_account_in,
+    CreateBankAccountRequest, UpdateBankAccountRequest,
 };
-use crate::commands::general_transaction::{update_general_transaction_in, UpdateGeneralTransactionRequest};
+use crate::commands::general_transaction::{
+    create_transfer_in, delete_general_transaction_in, update_general_transaction_in, CreateTransferRequest,
+    UpdateGeneralTransactionRequest,
+};
 use crate::commands::general_transaction_category::list_categories_view;
 use crate::test_support::{
     asset, asset_in, bank_account, bank_account_in, cash_in, memory_db, portfolio, trade, workspace,
@@ -1090,6 +1093,155 @@ async fn a_category_budget_sums_expenses_in_the_base_currency() {
     let in_usd = list_categories_view(&db, ws.id).await.unwrap();
     assert!(close(in_usd[0].spent_this_month, 30.0)); // 100 ÷ 5 + 10
     assert_eq!(in_usd[0].base_currency, "USD");
+}
+
+fn transfer_request(
+    workspace_id: i32,
+    from: i32,
+    to: i32,
+    saida: f64,
+    entrada: f64,
+) -> CreateTransferRequest {
+    CreateTransferRequest {
+        workspace_id,
+        from_account_id: from,
+        to_account_id: to,
+        valor_saida: saida,
+        valor_entrada: entrada,
+        transaction_date: "2026-03-01".to_string(),
+        notes: None,
+    }
+}
+
+#[tokio::test]
+async fn a_transfer_between_currencies_moves_both_balances_without_income_or_expense() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Move").await;
+    let brl = bank_account(&db, ws.id, "Nubank").await;
+    let usd = bank_account_in(&db, ws.id, "Chase", "USD").await;
+    cash_in(&db, ws.id, brl.id, 1000.0, "2026-01-01").await;
+    seed_fx_rate(&db, "USDBRL", 5.0).await;
+
+    // R$ 500 saem e US$ 95 chegam (o câmbio de 5,26 já com spread).
+    let result =
+        create_transfer_in(&db, transfer_request(ws.id, brl.id, usd.id, 500.0, 95.0)).await.unwrap();
+    assert_eq!((result.from_currency.as_str(), result.to_currency.as_str()), ("BRL", "USD"));
+    assert!(close(result.effective_rate.unwrap(), 95.0 / 500.0));
+
+    let accounts = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    let balance_of = |id: i32| accounts.iter().find(|a| a.id == id).unwrap().balance;
+    assert!(close(balance_of(brl.id), 500.0));
+    assert!(close(balance_of(usd.id), 95.0));
+
+    // No patrimônio em BRL: 500 + 95 × 5; só o câmbio explica a diferença de R$ 25 sobre os R$ 1.000.
+    let net_worth = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(net_worth.total_cash, 500.0 + 95.0 * 5.0));
+}
+
+#[tokio::test]
+async fn a_transfer_is_not_counted_as_a_category_expense() {
+    use chrono::Datelike;
+    let db = memory_db().await;
+    let ws = workspace(&db, "Move").await;
+    let a = bank_account(&db, ws.id, "Nubank").await;
+    let b = bank_account(&db, ws.id, "Itaú").await;
+    cash_in(&db, ws.id, a.id, 1000.0, "2026-01-01").await;
+    let category = crate::entity::general_transaction_category::ActiveModel {
+        workspace_id: sea_orm::Set(ws.id),
+        nome: sea_orm::Set("Everything".to_string()),
+        limite_mensal: sea_orm::Set(None),
+        created_at: sea_orm::Set("2026-10-01T00:00:00Z".to_string()),
+        ..Default::default()
+    };
+    sea_orm::ActiveModelTrait::insert(category, &db).await.unwrap();
+
+    let mut request = transfer_request(ws.id, a.id, b.id, 300.0, 300.0);
+    request.transaction_date = chrono::Utc::now().date_naive().with_day(1).unwrap().format("%Y-%m-%d").to_string();
+    create_transfer_in(&db, request).await.unwrap();
+
+    let categories = list_categories_view(&db, ws.id).await.unwrap();
+    assert!(close(categories[0].spent_this_month, 0.0));
+    // As duas pernas são de transferência: nenhuma é receita nem despesa.
+    let rows = crate::entity::general_transaction::Entity::find().all(&db).await.unwrap();
+    let legs: Vec<_> = rows.iter().filter(|r| r.transfer_id.is_some()).collect();
+    assert_eq!(legs.len(), 2);
+    assert!(legs.iter().all(|r| r.transaction_type.starts_with("transferencia_")));
+}
+
+#[tokio::test]
+async fn deleting_either_leg_of_a_transfer_deletes_both() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Move").await;
+    let a = bank_account(&db, ws.id, "Nubank").await;
+    let b = bank_account(&db, ws.id, "Itaú").await;
+    cash_in(&db, ws.id, a.id, 1000.0, "2026-01-01").await;
+    let id = create_transfer_in(&db, transfer_request(ws.id, a.id, b.id, 300.0, 300.0)).await.unwrap().transfer_id;
+
+    // Os saldos já refletem a transferência.
+    let before = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    assert!(close(before.iter().find(|x| x.id == b.id).unwrap().balance, 300.0));
+
+    // A linha de entrada é a que não tem o mesmo id do transfer_id.
+    let entrada = crate::entity::general_transaction::Entity::find()
+        .filter(crate::entity::general_transaction::Column::TransactionType.eq("transferencia_entrada"))
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_ne!(entrada.id, id);
+    delete_general_transaction_in(&db, entrada.id).await.unwrap();
+
+    let after = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    assert!(close(after.iter().find(|x| x.id == a.id).unwrap().balance, 1000.0));
+    assert!(close(after.iter().find(|x| x.id == b.id).unwrap().balance, 0.0));
+}
+
+#[tokio::test]
+async fn deleting_an_account_removes_the_opposite_leg_of_its_transfers() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Move").await;
+    let a = bank_account(&db, ws.id, "Nubank").await;
+    let b = bank_account(&db, ws.id, "Itaú").await;
+    cash_in(&db, ws.id, a.id, 1000.0, "2026-01-01").await;
+    create_transfer_in(&db, transfer_request(ws.id, a.id, b.id, 300.0, 300.0)).await.unwrap();
+
+    delete_bank_account_in(&db, b.id).await.unwrap();
+    let accounts = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    assert_eq!(accounts.len(), 1);
+    // Sem a perna de entrada, a de saída também some: os R$ 1.000 voltam inteiros pra conta de origem.
+    assert!(close(accounts[0].balance, 1000.0));
+}
+
+#[tokio::test]
+async fn invalid_transfers_are_rejected_and_a_transfer_cannot_be_edited() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Move").await;
+    let other = workspace(&db, "Other").await;
+    let a = bank_account(&db, ws.id, "Nubank").await;
+    let b = bank_account(&db, ws.id, "Itaú").await;
+    let foreign = bank_account(&db, other.id, "Elsewhere").await;
+    let usd = bank_account_in(&db, ws.id, "Chase", "USD").await;
+
+    assert!(create_transfer_in(&db, transfer_request(ws.id, a.id, a.id, 10.0, 10.0)).await.is_err());
+    assert!(create_transfer_in(&db, transfer_request(ws.id, a.id, foreign.id, 10.0, 10.0)).await.is_err());
+    assert!(create_transfer_in(&db, transfer_request(ws.id, a.id, b.id, 0.0, 0.0)).await.is_err());
+    assert!(create_transfer_in(&db, transfer_request(ws.id, a.id, b.id, -5.0, -5.0)).await.is_err());
+    // Mesma moeda tem de receber exatamente o que saiu.
+    assert!(create_transfer_in(&db, transfer_request(ws.id, a.id, b.id, 100.0, 99.0)).await.is_err());
+    // Moedas diferentes aceitam valores diferentes.
+    assert!(create_transfer_in(&db, transfer_request(ws.id, a.id, usd.id, 100.0, 19.0)).await.is_ok());
+
+    let leg = crate::entity::general_transaction::Entity::find().one(&db).await.unwrap().unwrap();
+    let edit = UpdateGeneralTransactionRequest {
+        general_transaction_id: leg.id,
+        bank_account_id: leg.bank_account_id,
+        transaction_type: "despesa".to_string(),
+        category_id: None,
+        valor: 1.0,
+        transaction_date: "2026-03-01".to_string(),
+        notes: None,
+    };
+    assert!(update_general_transaction_in(&db, edit).await.is_err());
 }
 
 #[tokio::test]

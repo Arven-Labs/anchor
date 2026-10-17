@@ -34,6 +34,8 @@ export type GeneralTransaction = {
   transaction_date: string;
   notes: string | null;
   created_at: string;
+  // Fase 19 — as duas pernas de uma transferência compartilham este id.
+  transfer_id: number | null;
 };
 
 // Fase 12, núcleo de Finanças Gerais — só `receita`/`despesa` são
@@ -53,6 +55,9 @@ export const GENERAL_TRANSACTION_TYPE_LABELS: Record<string, string> = {
   // Fase 29 — gerados só por `create_loan`/`register_loan_repayment`.
   emprestimo_concedido: "Loan granted",
   recebimento_emprestimo: "Loan repayment received",
+  // Fase 19 — as duas pernas aparecem como uma linha "Transfer" na lista.
+  transferencia_saida: "Transfer out",
+  transferencia_entrada: "Transfer in",
 };
 
 // Fase 29 — empréstimos concedidos a terceiros.

@@ -37,7 +37,7 @@ fn clean_text(value: String) -> Option<String> {
     }
 }
 
-async fn ensure_account_in_workspace<C: sea_orm::ConnectionTrait>(
+pub(crate) async fn ensure_account_in_workspace<C: sea_orm::ConnectionTrait>(
     db: &C,
     bank_account_id: i32,
     workspace_id: i32,

@@ -212,6 +212,7 @@ mod tests {
             transaction_date: date.to_string(),
             notes: None,
             created_at: "2026-08-11T00:00:00Z".to_string(),
+            transfer_id: None,
         }
     }
 

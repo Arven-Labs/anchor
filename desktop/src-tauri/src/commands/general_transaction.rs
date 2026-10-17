@@ -1,9 +1,11 @@
+use chrono::NaiveDate;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
-    Unchanged,
+    TransactionTrait, Unchanged,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
+use crate::commands::loan::ensure_account_in_workspace;
 use crate::entity::{bank_account, general_transaction};
 use crate::error::AppError;
 
@@ -89,6 +91,11 @@ pub async fn update_general_transaction_in(
                 request.general_transaction_id
             ))
         })?;
+    if existing.transfer_id.is_some() {
+        return Err(AppError::InvalidInput(
+            "a transfer cannot be edited: delete it and create it again".to_string(),
+        ));
+    }
 
     // Fase 19 — o lançamento herda a moeda da conta; mudar de conta só é
     // possível entre contas da mesma moeda (não há conversão do valor).
@@ -133,11 +140,126 @@ pub async fn delete_general_transaction(
     db: tauri::State<'_, DatabaseConnection>,
     general_transaction_id: i32,
 ) -> Result<(), AppError> {
-    general_transaction::Entity::delete_by_id(general_transaction_id)
-        .exec(db.inner())
+    delete_general_transaction_in(db.inner(), general_transaction_id).await
+}
+
+/// Apagar uma das duas linhas de uma transferência apaga a outra junto: uma
+/// perna sozinha desbalancearia o saldo das contas.
+pub async fn delete_general_transaction_in(
+    db: &DatabaseConnection,
+    general_transaction_id: i32,
+) -> Result<(), AppError> {
+    let existing = general_transaction::Entity::find_by_id(general_transaction_id)
+        .one(db)
         .await?;
+    match existing.and_then(|tx| tx.transfer_id) {
+        Some(transfer_id) => {
+            general_transaction::Entity::delete_many()
+                .filter(general_transaction::Column::TransferId.eq(transfer_id))
+                .exec(db)
+                .await?;
+        }
+        None => {
+            general_transaction::Entity::delete_by_id(general_transaction_id)
+                .exec(db)
+                .await?;
+        }
+    }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Transferência entre contas (Fase 19)
+// ---------------------------------------------------------------------------
+
+pub const TRANSFER_OUT: &str = "transferencia_saida";
+pub const TRANSFER_IN: &str = "transferencia_entrada";
+
+#[derive(Deserialize)]
+pub struct CreateTransferRequest {
+    pub workspace_id: i32,
+    pub from_account_id: i32,
+    pub to_account_id: i32,
+    /// Quanto saiu, na moeda da conta de origem.
+    pub valor_saida: f64,
+    /// Quanto chegou, na moeda da conta de destino. Na mesma moeda tem de ser
+    /// igual a `valor_saida`; em moedas diferentes é o que o extrato mostra,
+    /// com spread e tarifa já embutidos.
+    pub valor_entrada: f64,
+    pub transaction_date: String,
+    pub notes: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct TransferResult {
+    pub transfer_id: i32,
+    pub from_currency: String,
+    pub to_currency: String,
+    /// Entrada ÷ saída; `None` quando as duas contas têm a mesma moeda.
+    pub effective_rate: Option<f64>,
+}
+
+#[tauri::command]
+pub async fn create_transfer(
+    db: tauri::State<'_, DatabaseConnection>,
+    request: CreateTransferRequest,
+) -> Result<TransferResult, AppError> {
+    create_transfer_in(db.inner(), request).await
+}
+
+pub async fn create_transfer_in(
+    db: &DatabaseConnection,
+    request: CreateTransferRequest,
+) -> Result<TransferResult, AppError> {
+    for (field, value) in [("valor_saida", request.valor_saida), ("valor_entrada", request.valor_entrada)] {
+        if !value.is_finite() || value <= 0.0 {
+            return Err(AppError::InvalidInput(format!("{field} must be positive")));
+        }
+    }
+    NaiveDate::parse_from_str(&request.transaction_date, "%Y-%m-%d")
+        .map_err(|e| AppError::InvalidInput(format!("transaction_date inválida: {e}")))?;
+    if request.from_account_id == request.to_account_id {
+        return Err(AppError::InvalidInput("choose two different accounts".to_string()));
+    }
+
+    let txn = db.begin().await?;
+    let from = ensure_account_in_workspace(&txn, request.from_account_id, request.workspace_id).await?;
+    let to = ensure_account_in_workspace(&txn, request.to_account_id, request.workspace_id).await?;
+    if from.currency == to.currency && (request.valor_entrada - request.valor_saida).abs() > 1e-9 {
+        return Err(AppError::InvalidInput(
+            "accounts in the same currency must receive exactly what left".to_string(),
+        ));
+    }
+
+    let leg = |account_id: i32, kind: &str, valor: f64| general_transaction::ActiveModel {
+        workspace_id: Set(request.workspace_id),
+        bank_account_id: Set(account_id),
+        transaction_type: Set(kind.to_string()),
+        category_id: Set(None),
+        valor: Set(valor),
+        transaction_date: Set(request.transaction_date.clone()),
+        notes: Set(request.notes.clone()),
+        created_at: Set(chrono::Utc::now().to_rfc3339()),
+        ..Default::default()
+    };
+    let out = leg(from.id, TRANSFER_OUT, request.valor_saida).insert(&txn).await?;
+    let transfer_id = out.id;
+    let mut out: general_transaction::ActiveModel = out.into();
+    out.transfer_id = Set(Some(transfer_id));
+    out.update(&txn).await?;
+    let mut incoming = leg(to.id, TRANSFER_IN, request.valor_entrada);
+    incoming.transfer_id = Set(Some(transfer_id));
+    incoming.insert(&txn).await?;
+    txn.commit().await?;
+
+    let same_currency = from.currency == to.currency;
+    Ok(TransferResult {
+        transfer_id,
+        effective_rate: (!same_currency).then(|| request.valor_entrada / request.valor_saida),
+        from_currency: from.currency,
+        to_currency: to.currency,
+    })
 }
 
 #[tauri::command]

@@ -10,6 +10,7 @@ import {
   type GeneralTransactionType,
 } from "./types";
 import CategoryManagerDialog from "./CategoryManagerDialog";
+import TransferDialog from "./TransferDialog";
 import {
   Dialog,
   DialogContent,
@@ -71,6 +72,7 @@ function categoryLabel(categories: GeneralTransactionCategory[], id: number | nu
 function GeneralTransactionSection({ workspaceId }: { workspaceId: number }) {
   const [isNewTransactionDialogOpen, setIsNewTransactionDialogOpen] = useState(false);
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
   const [transactionType, setTransactionType] = useState<GeneralTransactionType>("receita");
   const [bankAccountId, setBankAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -101,6 +103,39 @@ function GeneralTransactionSection({ workspaceId }: { workspaceId: number }) {
   function invalidateAfterWrite() {
     queryClient.invalidateQueries({ queryKey: ["general-transactions", workspaceId] });
     queryClient.invalidateQueries({ queryKey: ["bank-accounts", workspaceId] });
+    queryClient.invalidateQueries({ queryKey: ["net-worth", workspaceId] });
+  }
+
+  // Fase 19 — as duas pernas de uma transferência viram uma linha só (a lista vem
+  // ordenada por data; a primeira perna encontrada representa o par).
+  const legsByTransfer = new Map<number, GeneralTransaction[]>();
+  for (const tx of transactions) {
+    if (tx.transfer_id !== null) {
+      legsByTransfer.set(tx.transfer_id, [...(legsByTransfer.get(tx.transfer_id) ?? []), tx]);
+    }
+  }
+  const shownTransfers = new Set<number>();
+  const rows = transactions.filter((tx) => {
+    if (tx.transfer_id === null) return true;
+    if (shownTransfers.has(tx.transfer_id)) return false;
+    shownTransfers.add(tx.transfer_id);
+    return true;
+  });
+
+  function transferSummary(transferId: number): { accounts: string; value: string } | null {
+    const legs = legsByTransfer.get(transferId) ?? [];
+    const sent = legs.find((l) => l.transaction_type === "transferencia_saida");
+    const received = legs.find((l) => l.transaction_type === "transferencia_entrada");
+    if (!sent || !received) return null;
+    const fromAccount = accounts.find((a) => a.id === sent.bank_account_id);
+    const toAccount = accounts.find((a) => a.id === received.bank_account_id);
+    const sentText = `${sent.valor.toFixed(2)} ${fromAccount?.currency ?? ""}`.trim();
+    const receivedText = `${received.valor.toFixed(2)} ${toAccount?.currency ?? ""}`.trim();
+    return {
+      accounts: `${fromAccount?.nome ?? "—"} → ${toAccount?.nome ?? "—"}`,
+      value:
+        fromAccount?.currency === toAccount?.currency ? sentText : `${sentText} → ${receivedText}`,
+    };
   }
 
   const createMutation = useMutation<
@@ -161,6 +196,14 @@ function GeneralTransactionSection({ workspaceId }: { workspaceId: number }) {
             <Button type="button" variant="outline" onClick={() => setIsCategoryDialogOpen(true)}>
               Manage categories
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="transfer-new"
+              onClick={() => setIsTransferDialogOpen(true)}
+            >
+              New transfer
+            </Button>
             <Button type="button" onClick={() => setIsNewTransactionDialogOpen(true)}>
               New transaction
             </Button>
@@ -189,8 +232,30 @@ function GeneralTransactionSection({ workspaceId }: { workspaceId: number }) {
                   </TableCell>
                 </TableRow>
               )}
-              {transactions.map((tx) => {
+              {rows.map((tx) => {
                 const isConfirming = confirmingDeleteId === tx.id;
+                const transfer = tx.transfer_id !== null ? transferSummary(tx.transfer_id) : null;
+                if (transfer) {
+                  return (
+                    <TableRow key={`transfer-${tx.transfer_id}`} data-testid="transfer-row">
+                      <TableCell>{tx.transaction_date}</TableCell>
+                      <TableCell>Transfer</TableCell>
+                      <TableCell>{transfer.accounts}</TableCell>
+                      <TableCell>—</TableCell>
+                      <TableCell data-testid="transfer-value">{transfer.value}</TableCell>
+                      <TableCell>{tx.notes ?? "—"}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant={isConfirming ? "destructive" : "outline"}
+                          size="sm"
+                          onClick={() => handleDeleteClick(tx.id)}
+                        >
+                          {isConfirming ? "Confirm? (deletes both legs)" : "Delete"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                }
                 return (
                   <TableRow key={tx.id}>
                     <TableCell>{tx.transaction_date}</TableCell>
@@ -320,6 +385,14 @@ function GeneralTransactionSection({ workspaceId }: { workspaceId: number }) {
           </form>
         </DialogContent>
       </Dialog>
+
+      <TransferDialog
+        workspaceId={workspaceId}
+        accounts={accounts}
+        open={isTransferDialogOpen}
+        onOpenChange={setIsTransferDialogOpen}
+        onDone={invalidateAfterWrite}
+      />
 
       <CategoryManagerDialog
         workspaceId={workspaceId}

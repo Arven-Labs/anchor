@@ -2842,4 +2842,20 @@ um número na moeda base do Workspace. Detalhe na Fase 19 do `PHASE.md`.
   `be9e5f2` verde nos três workflows, de primeira.
 - **Não verificado**: a tela a olho.
 - **Pendente**: transferência entre contas; trocar a moeda pela edição da conta; separar P/L por preço e por câmbio;
-  formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.
+  formatadores de Ledger, Dividendos e impostos; benchmarks convertidos. *(A transferência foi feita na Sessão 125,
+  abaixo.)*
+
+
+### 2026-10-17 — Sessão 125
+
+**Transferência entre contas (Fase 19, 6ª entrega).** Plan mode; escolhas do dono do projeto: entre moedas
+diferentes digita-se o valor de saída e o de entrada; a transferência é um par ligado que se apaga junto, sem edição.
+Detalhe na Fase 19 do `PHASE.md`.
+- **Feito**: migration com `transfer_id`, `create_transfer`, exclusão do par (e das pernas ao apagar uma conta),
+  bloqueio de edição, `TransferDialog`, linha única na lista, caso novo em `accounts.e2e.mjs`.
+- **Decisão de desenho**: o `transfer_id` é o id da linha de saída, sem tabela nova nem FK; a exclusão do par é feita
+  pelo comando.
+- **Verificado**: `./dev.sh check` limpo; 1 teste de unidade e 5 de fluxo novos. CI: ver abaixo.
+- **Não verificado**: a tela a olho.
+- **Pendente**: trocar a moeda pela edição da conta; separar P/L por preço e por câmbio; formatadores de Ledger,
+  Dividendos e impostos; benchmarks convertidos.

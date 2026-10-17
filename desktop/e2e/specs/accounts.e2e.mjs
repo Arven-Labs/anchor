@@ -43,4 +43,28 @@ describe("Anchor — moeda por conta, de ponta a ponta", () => {
     const currencies = await Promise.all(cells.map((cell) => textOf(cell)));
     expect(currencies.sort()).toEqual(["ARS", "BRL"]);
   });
+
+  it("uma transferência entre moedas vira uma linha só e mostra a taxa efetiva", async () => {
+    await byId("finances-tab-transactions").click();
+    await byId("transfer-new").click();
+
+    await pickOption(byId("transfer-from"), "Nubank (Me) · BRL");
+    await pickOption(byId("transfer-to"), "Banco Nación (Me) · ARS");
+    await byId("transfer-amount-out").setValue("100");
+    await byId("transfer-amount-in").setValue("18000");
+    await waitForText(
+      byId("transfer-rate"),
+      (text) => text.includes("180.0000"),
+      "a taxa efetiva (18000 ÷ 100) deveria aparecer no formulário",
+    );
+    await byId("transfer-submit").click();
+
+    await waitForText(
+      byId("transfer-value"),
+      (text) => text === "100.00 BRL → 18000.00 ARS",
+      "a transferência deveria aparecer como uma linha com saída e entrada",
+    );
+    // Uma linha só, não duas pernas.
+    expect((await elementsOf('[data-testid="transfer-row"]')).length).toBe(1);
+  });
 });

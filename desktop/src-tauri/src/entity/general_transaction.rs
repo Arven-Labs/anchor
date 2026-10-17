@@ -17,6 +17,9 @@ pub struct Model {
     pub transaction_date: String,
     pub notes: Option<String>,
     pub created_at: String,
+    // Fase 19 — as duas linhas de uma transferência entre contas compartilham
+    // este valor (o `id` da linha de saída); linha comum fica `None`.
+    pub transfer_id: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

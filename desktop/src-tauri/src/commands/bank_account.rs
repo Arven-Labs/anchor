@@ -132,9 +132,31 @@ pub async fn delete_bank_account(
     db: tauri::State<'_, DatabaseConnection>,
     bank_account_id: i32,
 ) -> Result<(), AppError> {
-    bank_account::Entity::delete_by_id(bank_account_id)
-        .exec(db.inner())
-        .await?;
+    delete_bank_account_in(db.inner(), bank_account_id).await
+}
+
+pub async fn delete_bank_account_in(
+    db: &DatabaseConnection,
+    bank_account_id: i32,
+) -> Result<(), AppError> {
+    // Fase 19 — apagar a conta apaga as pernas das transferências dela, e a
+    // perna oposta, na outra conta, ficaria como dinheiro que apareceu do nada.
+    let transfer_ids: Vec<i32> = general_transaction::Entity::find()
+        .filter(general_transaction::Column::BankAccountId.eq(bank_account_id))
+        .filter(general_transaction::Column::TransferId.is_not_null())
+        .all(db)
+        .await?
+        .into_iter()
+        .filter_map(|tx| tx.transfer_id)
+        .collect();
+    if !transfer_ids.is_empty() {
+        general_transaction::Entity::delete_many()
+            .filter(general_transaction::Column::TransferId.is_in(transfer_ids))
+            .exec(db)
+            .await?;
+    }
+
+    bank_account::Entity::delete_by_id(bank_account_id).exec(db).await?;
 
     Ok(())
 }
@@ -173,7 +195,7 @@ fn compute_balances(
             continue;
         }
         let signed_value = match tx.transaction_type.as_str() {
-            "despesa" | "parcela_divida" | "emprestimo_concedido" => -tx.valor,
+            "despesa" | "parcela_divida" | "emprestimo_concedido" | "transferencia_saida" => -tx.valor,
             _ => tx.valor,
         };
         *balances.entry(tx.bank_account_id).or_insert(0.0) += signed_value;
@@ -268,7 +290,20 @@ mod tests {
             transaction_date: "2026-08-09".to_string(),
             notes: None,
             created_at: "2026-08-09T00:00:00Z".to_string(),
+            transfer_id: None,
         }
+    }
+
+    #[test]
+    fn compute_balances_moves_money_between_accounts_on_a_transfer() {
+        let transactions = vec![
+            tx(1, "receita", 1000.0),
+            tx(1, "transferencia_saida", 400.0),
+            tx(2, "transferencia_entrada", 75.0),
+        ];
+        let balances = compute_balances(&transactions, "2026-08-09");
+        assert_eq!(balances.get(&1), Some(&600.0));
+        assert_eq!(balances.get(&2), Some(&75.0));
     }
 
     #[test]

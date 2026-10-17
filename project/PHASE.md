@@ -1904,7 +1904,16 @@ despesa pela moeda da conta e a taxa da data dela (`FxHistory`). Despesa sem rot
 contada em `spent_missing_fx`; a view traz `base_currency` e o diálogo de categorias avisa. Consequência aceita:
 trocar a base em Settings mantém o número do limite e muda o significado dele.
 
-**Pendente**: transferência entre contas (não existe hoje); trocar a moeda de uma conta pela edição (hoje só na criação; pela
+**6ª entrega (Sessão 125) — transferência entre contas**: migration `m20261017_160000` (`general_transactions.
+transfer_id`, nullable). Uma transferência são duas linhas, `transferencia_saida` (subtrai da origem, na moeda dela)
+e `transferencia_entrada` (soma ao destino, na moeda dela), ligadas por `transfer_id` = id da linha de saída.
+`create_transfer` valida contas distintas do mesmo workspace, valores positivos e, na mesma moeda, entrada igual à
+saída; entre moedas diferentes o usuário digita o que saiu e o que chegou (decisão do dono do projeto) e a taxa
+efetiva é derivada. Apagar uma perna apaga a outra; apagar uma conta apaga as pernas das transferências dela (e a
+oposta); a transferência não se edita (exclui e recria). Não entra em receita nem em gasto de categoria. Na lista as
+duas pernas viram uma linha "Transfer"; `TransferDialog` mostra a taxa ao vivo.
+
+**Pendente**: trocar a moeda de uma conta pela edição (hoje só na criação; pela
 regra, só valeria para conta sem uso); separar "P/L por preço" de "P/L por câmbio"; formatadores locais de Ledger,
 Dividendos e impostos; benchmarks convertidos (hoje só escondidos fora do BRL); impostos ficam sempre em BRL (regra
 fiscal).
