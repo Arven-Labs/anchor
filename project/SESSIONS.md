@@ -2518,7 +2518,10 @@ gosto de fazer"), então virou E2E.
   200 também é tentado de novo, 404 não); CDI e IPCA mensais usam timeout de 30 s e a janela diária da
   Selic segue com 45 s. Constantes `DAILY_WINDOW_ATTEMPTS`/`DAILY_RETRY_BACKOFF` viraram
   `RETRY_ATTEMPTS`/`RETRY_BACKOFF`.
-- **Verificado**: `./dev.sh check` limpo. Os testes rodam no CI (o `dev.sh` não tem `test`); não há teste
-  novo, a lógica de retry depende de rede.
-- **Pendente**: decisão do dono sobre o repo do Lume; migrar `crypto_sources.rs` para
-  `finance_core::http`; plano de câmbio e opções (seção F da Fase 32).
+- **Feito também**: `crypto_sources.rs` deixou de ter cliente HTTP próprio e usa `finance_core::http`
+  (timeout de 20 s mantido, agora com o `User-Agent` do Anchor). O erro continua `CryptoSource`, porque
+  o código `CRYPTO_SOURCE_ERROR` e o fallback Binance→Bybit dependem dele.
+- **Verificado**: `./dev.sh check` limpo nas duas mudanças. Os testes rodam no CI (o `dev.sh` não tem
+  `test`); não há teste novo, o retry e o HTTP dependem de rede.
+- **Pendente**: decisão do dono sobre o repo do Lume; plano de câmbio e opções (seção F da Fase 32);
+  ingestão agendada e `DataProvider` com mais de uma fonte por categoria.

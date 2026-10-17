@@ -15,7 +15,9 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
 use crate::error::AppError;
+use crate::finance_core::http;
 
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const BINANCE_FAPI: &str = "https://fapi.binance.com";
 const BYBIT_API: &str = "https://api.bybit.com";
 const DERIBIT_API: &str = "https://www.deribit.com/api/v2";
@@ -355,18 +357,13 @@ pub fn parse_stablecoin_change_30d(body: &str) -> Result<f64, AppError> {
 // Fetch
 // ---------------------------------------------------------------------------
 
+/// Delega ao cliente compartilhado; a mensagem já vem prefixada com a fonte,
+/// e o erro segue como `CryptoSource` (o código `CRYPTO_SOURCE_ERROR` é do contrato da tela).
 async fn get_text(source: &str, url: &str) -> Result<String, AppError> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .build()?;
-    let response = client.get(url).send().await?;
-    let status = response.status();
-    let body = response.text().await?;
-    if !status.is_success() {
-        let snippet: String = body.chars().take(200).collect();
-        return Err(source_err(source, format!("HTTP {status} — {snippet}")));
-    }
-    Ok(body)
+    http::get_text(source, url, REQUEST_TIMEOUT).await.map_err(|err| match err {
+        AppError::NoData(detail) | AppError::ProviderUnavailable(detail) => AppError::CryptoSource(detail),
+        other => AppError::CryptoSource(format!("{source}: {other}")),
+    })
 }
 
 /// Valor e a fonte que de fato respondeu (gravada em `crypto_indicators.source`).
