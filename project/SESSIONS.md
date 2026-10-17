@@ -2707,4 +2707,23 @@ imposto. Detalhe na Fase 18 do `PHASE.md`.
 - **Processo**: rodei mais dois heredocs de Python vazios, sem efeito mas contra a regra de usar Edit/Write.
 - **Pendente**: patrimônio com as posições abertas (exigiria guardar o último preço atualizado em cada posição);
   "salvar estratégia do simulador como posições"; moeda base (Fase 19); ingestão agendada e `DataProvider` com
-  mais de uma fonte por categoria; E2E do câmbio pular em "No data found".
+  mais de uma fonte por categoria; E2E do câmbio pular em "No data found". *(O patrimônio foi feito na Sessão
+  118, abaixo.)*
+
+
+### 2026-10-17 — Sessão 118
+
+**Posições de opções abertas no patrimônio (Fase 18 × Fase 12).** Plan mode; escolhas do dono do projeto:
+posição sem preço vale o prêmio (custo) e a flag nasce ligada. Detalhe na Fase 18 do `PHASE.md`.
+- **Feito**: preço da marcação guardado em cada posição (`mark_price`, `mark_date`, `marked_at`), flag
+  `include_in_net_worth` por posição, valor no patrimônio (comprada ativo, lançada passivo, vencida 0),
+  `compute_net_worth` com `total_options_value` e `options_at_cost_count`, cartão "Options" em Finanças e coluna
+  "Net worth" na aba Options.
+- **Decisão de desenho**: o preço é guardado porque o patrimônio não usa rede; a lançada fica fora de
+  `total_debt` para não distorcer a alavancagem; o resultado a mercado passou a vir do backend.
+- **Verificado**: `./dev.sh check` limpo; 5 testes de domínio e 3 de fluxo novos; CI do push `da0c670` verde nos
+  três workflows (o caso novo de E2E rodou e passou), de primeira.
+- **Não verificado**: a gravação de preços pelo `get_option_marks` real contra a B3, a tela a olho e o clique
+  manual.
+- **Pendente**: "salvar estratégia do simulador como posições"; moeda base (Fase 19); ingestão agendada e
+  `DataProvider` com mais de uma fonte por categoria; E2E do câmbio pular em "No data found".

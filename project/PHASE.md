@@ -1769,8 +1769,38 @@ da Fase 24, escolha do dono do projeto de fazer **só o imposto** (o patrimônio
   no schema real; CI do push `4cc3d30` verde nos três workflows, com o E2E conferindo R$ 28,50 devidos em day
   trade (20 % de R$ 150 menos 1 % de IRRF) e R$ 22,50 depois de antedatar a abertura (swing). **Não
   verificado**: a tela a olho e o clique manual.
-- **Fora de escopo, decidido**: patrimônio, IRRF de swing em opção, efeito do exercício na base de custo da
-  ação, DARF específico de opções.
+- **Fora de escopo, decidido**: IRRF de swing em opção, efeito do exercício na base de custo da ação, DARF
+  específico de opções. (O patrimônio entrou na Sessão 118, abaixo.)
+
+**Posições abertas no patrimônio (Sessão 118, 2026-10-17)**, escolhas do dono do projeto: posição sem preço vale
+o **prêmio, como custo** (igual ao que a carteira faz sem cotação) e a flag "entra no patrimônio" nasce
+**ligada**, por posição, como nos empréstimos.
+- **Por que guardar o preço**: o patrimônio não usa rede e a marcação baixa ~80 MB da B3. `get_option_marks`
+  passa a **gravar** `mark_price`, `mark_date` (data do último negócio) e `marked_at` nas posições abertas que
+  tiveram negócio; série sem negócio mantém o preço anterior. A leitura (`option_marks_in`) segue pura e a
+  gravação é `save_option_marks_in`.
+- **Schema**: migration `m20261017_130000` acrescenta a `option_positions` `include_in_net_worth` (padrão
+  ligado), `mark_price`, `mark_date` e `marked_at` (uma `ALTER TABLE` por coluna, limite do SQLite).
+- **Valor** (`domain::option_position::net_worth_value`): comprada é ativo (`+preço · quantidade`), lançada é
+  passivo (`−preço · quantidade`, o que custaria recomprar). Preço = o guardado ou, sem ele, o prêmio (marcada
+  `at_cost`). **Aberta e vencida vale 0** (falta só encerrar) e não conta como "a custo". O prêmio recebido de
+  uma lançada, se foi para uma conta, já está no caixa.
+- **Patrimônio**: `compute_net_worth` ganha `total_options_value` e `options_at_cost_count`;
+  `net_worth = mercado + caixa + empréstimos + opções − dívidas`. A lançada **não** entra em `total_debt`,
+  então a alavancagem não muda por causa dela. `domain::net_worth::sum_options_in_net_worth` respeita a flag.
+  `set_option_position_net_worth` liga e desliga.
+- **Tela**: aba Options com coluna "Net worth" (valor, "at cost", "expired, counts 0", botão Leave out / Count
+  it), tile "Net worth impact" com "N at cost (no market price yet)", preço guardado com a data do negócio e
+  resultado a mercado calculado no backend (`market_pnl`, sem taxa de saída) mesmo sem clicar em Refresh;
+  Finanças → Liabilities ganhou o cartão "Options" (grade de 7 colunas).
+- **Verificado**: `./dev.sh check` limpo; 5 testes de domínio novos e 3 de fluxo no schema real (a custo e depois
+  ao preço guardado, série sem negócio mantém o preço, flag, posição encerrada, vencida vale 0, flag de
+  posição inexistente); CI do push `da0c670` verde nos três workflows, com um caso de E2E novo (uma lançada a
+  custo aparece como −R$ 100,00 na aba e em Finanças e some ao desligar a flag). **Não verificado**: a gravação
+  dos preços pelo `get_option_marks` real (80 MB, só sob clique), a tela a olho e o clique manual.
+- **Fora de escopo, decidido**: margem ou garantia exigida para lançadas, valor intrínseco no vencimento de
+  posição aberta, histórico de preços das posições, opções no Resumo da carteira, na alocação e na
+  rentabilidade, atualização automática dos preços.
 
 ### Fase 19 — Moeda base seletiva da carteira (ideia trazida em conversa pelo dono do projeto na Sessão 96, puro registro, não iniciada)
 
