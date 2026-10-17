@@ -2868,7 +2868,8 @@ Detalhe na Fase 19 do `PHASE.md`.
 mode; a mudança é pequena. Detalhe na Fase 19 do `PHASE.md`.
 - **Feito**: `in_use` em `BankAccountView` (reaproveita `account_in_use`) e seletor de moeda na edição inline da
   conta, trocado por texto quando a conta está em uso.
-- **Verificado**: `./dev.sh check` limpo; 1 teste de fluxo novo e 1 ajustado. CI: ver abaixo.
+- **Verificado**: `./dev.sh check` limpo; 1 teste de fluxo novo e 1 ajustado; CI do push `7f242a4` verde nos três
+  workflows, de primeira.
 - **Não verificado**: a tela a olho. Sem caso de E2E: as contas do spec já têm uso (a transferência), e criar uma só
   para isso não valeu o custo.
 - **Pendente**: separar P/L por preço e por câmbio; formatadores de Ledger, Dividendos e impostos; benchmarks
