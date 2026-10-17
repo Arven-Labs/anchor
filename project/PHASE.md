@@ -2177,6 +2177,24 @@ lista de tickers). **Todos os 7 domínios de dados estão nativos.**
 - **Estado do Lume**: o repo não foi tocado. Quando o dono do projeto validar o Anchor sozinho, a decisão
   de arquivar ou apagar é dele. Fases 14 e 21 ficam **superadas** por esta fase.
 
+**Verificação automática da Fase 26 (Sessão 108)**: o dono do projeto não quer teste de clique manual
+("não tínhamos automatizado esse tipo de teste, eu não gosto de fazer"), então o que dava foi para o CI.
+- **`build.yml` sem Python provado**: tag de teste `v0.0.0-ci-test` rodou o Build com sucesso em Windows
+  (`.msi`), Linux (`.deb`), macOS (`.dmg`) e no job `apk`. Release em rascunho e tag apagados depois
+  (conferido: nenhuma release, nenhuma tag, remota ou local).
+- **E2E novo `desktop/e2e/specs/lookup.e2e.mjs`** (rede real): B3 (PETR4), EUA (AAPL) e cripto (ETH) pela
+  tela de Research; confere a tela montada e a cotação gravada no banco. Pula em vez de falhar se a fonte
+  responder 429 (o Yahoo costuma limitar IPs de runner do GitHub; nas execuções do CI isso não ocorreu).
+  FII e CVM (zips pesados) ficam só nos testes ao vivo do Rust.
+- **Bug achado pelo E2E**: sem a chave da bolsai (B3) ou o e-mail da SEC (EUA) o coletor grava cotação,
+  dividendos e técnicos e só então erra nos fundamentos; as seções de Research relêem o banco só em
+  `onSuccess`, então a tela mostrava "No data found" com os dados já gravados. Trocado por `onSettled`
+  em `StockAnalysis`, `Fii`, `Bdr`, `Etf`, `UsStock` e `Reit`; o aviso "add it in Settings → Data
+  sources" continua visível. Cripto, metal e ETF dos EUA não passam pelo passo de fundamentos e ficaram
+  como estavam. Antes da Fase 26 isso era mascarado: o sidecar de release nem recebia a chave.
+- **Ainda sem cobertura automática**: backfill de Profitability, sync de Settings → Taxes, FII e metal
+  pela tela, e salvar/remover credenciais em Data sources (o CI não tem secret service para o keyring).
+
 **Estado anterior**: direção decidida (autossuficiência), **nenhuma exploração do código nem decisão de
 arquitetura feita ainda**. Próximo passo: explorar o repo e discutir com o dono do projeto, em plan
 mode, conforme a regra número um acima.
@@ -2511,5 +2529,230 @@ reorientação do Lume (iriam pro projeto de integrações burocráticas, parado
 Anchor**. Registradas só pra não serem esquecidas; a única que toca o Anchor é conciliação de caixa
 de empresa (módulo B3 corporativo), e só se o dono do projeto quiser a linha de empresário.
 
-**Estado**: registro. Próximo passo natural: na decisão da Fase 26, passar por A e B e marcar o que
-migra, o que adia e o que descarta.
+#### F. Situação de cada item da seção A depois da Fase 26 (Sessão 108)
+
+Conferido no código do Anchor em 2026-10-17. O Lume foi relido por inteiro (o clone local estava
+desatualizado e foi avançado com `git pull --ff-only` até `7767069`).
+- **Já portado para Rust (`finance_core/`)**: Selic diária e curva DI; índices B3 (IFIX, SMLL, IDIV);
+  metais; FII (indicadores mensais, imóveis, resolução ticker→CNPJ); SEC EDGAR (fundamentos, DCF,
+  payout, REIT); CVM DFP; Yahoo (B3 e EUA); cripto (CoinGecko, Fear & Greed, os indicadores do ETH);
+  regras de IR (`tax_rules`).
+- **NÃO portado, só existe no Lume** (é o que se perde se o repo for apagado sem copiar o desenho):
+  1. **Câmbio multi-moeda** (seção I abaixo) — base das Fases 19 e 30.
+  2. **Opções: catálogo de séries, preço EOD e gregas** (seção H abaixo) — base da Fase 18.
+  3. **Avisos de dividendos da CVM (IPE)**, `companies/{cvm}/dividend-notices` — alimentaria o
+     "provento esperado" (Sessão 77.2).
+  4. **Cache em Postgres/SQLite do Lume** (38 tabelas): o Anchor guarda o resultado no `anchor.db` e
+     usa cache de frescor em memória; nada disso precisa voltar.
+- **Fragilidade que veio junto**: no Lume, CDI e IPCA mensais (`fetch_monthly_series`) ficaram com 15 s
+  e sem nova tentativa, e um 502 passageiro do BCB já derrubou o CDI. No Anchor, `bcb_sgs::fetch_monthly`
+  usa o timeout padrão e também não tenta de novo (só a Selic diária tem janela de 9 anos, 45 s e 3
+  tentativas). Vale dar o mesmo tratamento à série mensal.
+- **O que o mobile faz**: o app Flutter **nunca usou o Lume**; busca Yahoo e CoinGecko direto
+  (`yahoo_quote_service.dart`, `coingecko_quote_service.dart`). Se o Anchor virar núcleo único de dados,
+  o mobile é um consumidor a decidir.
+
+#### G. Achados técnicos por fonte (do `ARCHITECTURE.md` e do `PHASE.md` do Lume)
+
+Valem para qualquer reescrita ou nova fonte; vários já aparecem nos comentários do `finance_core`.
+- **BCB SGS**: série **diária** sem `dataInicial` devolve HTTP 406 ("janela de no máximo 10 anos");
+  pagina em janelas de 9 anos desde 1994 (janelas antes do início da série voltam vazias). O BCB oscila
+  (mesma janela em 0,4 s, 30 s, 502 ou HTML com status 200). Catálogo travado (CDI 4391, IPCA 433, Meta
+  Selic 432), sem código especulativo. Valores de referência: CDI 481 pontos desde 1986-08, IPCA 559
+  desde ~1979, Selic 10.058 pontos desde 1999-03-05.
+- **Yahoo**: 5 capacidades por ticker (cotação, SMA 50/100/200 + CAGR 5/10, média de dividendos 5 anos,
+  histórico de 10 anos, pagamentos). Sufixo `.SA` só na B3. PETR4 como referência: 2.491 pontos de
+  histórico, 34 pagamentos. Dividendo sem histórico (growth stock) é um terceiro estado ("sem dado"),
+  não erro, e nunca apaga o valor já guardado.
+- **CVM**: não é API por identificador, é **um zip por ano** (~870 companhias no DFP). Empresas por
+  **código CVM**, fundos por **CNPJ de 14 dígitos** (o `geral` devolve o CNPJ pontuado, com 18
+  caracteres; sem normalizar o insert quebrava). Cache de zip em disco. `fii_properties` tem N linhas
+  por fundo e o refresh apaga e reinsere o conjunto numa transação, para imóvel que saiu do relatório
+  não ficar "fantasma". HGLG11 hoje se chama PÁTRIA LOG (era CSHG Logística). Referência: VALE3 (CVM
+  4170) ROE 6,25 %, alíquota efetiva 55,75 %, payout 5 anos 61,38 %.
+- **bolsai**: única fonte com chave. O campo `roe` **mistura lucro trimestral com TTM** conforme a
+  empresa; o Lume expõe como veio e manda quem quer ROE confiável usar o da CVM. Expõe o `cvm_code`
+  (PETR4 → 9512) para encadear com a CVM.
+- **SEC EDGAR**: resolução ticker→CIK com cache; limite de ~9 req/s com um único timestamp global, **não
+  seguro sob concorrência** (aceito no MVP). Banco (JPM) dá 404 em `dcf-fundamentals` de propósito: a
+  taxonomia não traz EBIT, estoque e contas a receber/pagar do jeito não financeiro. Referência: AAPL
+  LPA 7,46, VPA 4,99, ROE 151,9 %, payout 5 anos 15,08 %. Fallback `NetIncomeLoss` → `ProfitLoss`
+  (Simon Property).
+- **Cripto**: ETH tem 4 indicadores via DefiLlama/ultrasound.money/CoinGecko mais 4 via **CoinMetrics
+  Community** (sem chave, 1000 req/10 min por IP, histórico desde 2015-08-08, `page_size` com teto de
+  10000, `CapRealUSD` bloqueado no tier grátis, por isso o `RealizedCap` é derivado de
+  `CapMrktCurUSD`/`CapMVRVCur`). **Staking Yield** continua sem fonte grátis (a beaconcha.in passou a
+  exigir chave em 2026). A API serve o valor bruto; a classificação verde/neutro/vermelho é regra do
+  Anchor. Resolução símbolo→`coin_id` da CoinGecko por busca exata, desempatando pelo menor
+  `market_cap_rank`, com cache próprio.
+- **B3 Taxa Swap (curva DI)**: usa o sistema legado "Pesquisa por Pregão"
+  (`pesquisapregao/download?filelist=TS{YYMMDD}.ex_,`); o UP2DATA novo ficou atrás de Cloudflare desde
+  dez/2025 (testado e descartado). Zip externo → blob auto-extraível → zip interno com `TaxaSwap.txt`
+  (largura fixa, latin-1), filtra a curva `PRE`. A lib de referência (`pyettj`) desliga a verificação
+  de TLS; o Lume e o Anchor **não**. Dia sem pregão devolve zip de 22 bytes = "sem dado". Curva de
+  2026-09-15: 272 vértices, o de 1 dia (13,90 %) bate com a série BCB 1178.
+- **Índices B3**: catálogo travado em IFIX (base 2010), SMLL e IDIV (base 2005). IFIX tem 3.885 pontos
+  desde 2010-12-30.
+- **Metais**: XAU/XAG/XPT/XPD → GC=F/SI=F/PL=F/PA=F, preço sempre em onça troy, sem conversão.
+- **Regras de IR**: não há fonte legível por máquina, então a tabela é **curada à mão e versionada**.
+  Lei nova = **entrada nova com a data nova, nunca editar a antiga** (o consumidor apura meses passados
+  com a regra da época). 11 regras na primeira versão; as vindas de fonte secundária levam "verify on
+  planalto.gov.br" no campo `source`.
+- **Padrão de testabilidade**: o catálogo de indicadores guarda o `fetch` como closure que resolve o
+  atributo do módulo na hora da chamada; importar a função direto congela a referência e o `patch` dos
+  testes fica inerte.
+
+#### H. Opções: catálogo, preço EOD e gregas (existe só no Lume; base da Fase 18)
+
+- **Fontes (todas grátis, da B3)**: *Séries Autorizadas* (arquivo estático pipe-delimited em
+  `b3.com.br/lumis/portal/file/fileDownload.jsp?fileId=...`) dá o universo de séries (ativo-objeto,
+  call/put, strike, vencimento, estilo); *COTAHIST anual* (`bvmf.bmfbovespa.com.br/InstDados/SerHist/
+  COTAHIST_A{yyyy}.ZIP`) dá o último preço negociado. **Não existe COTAHIST diário** (a URL `_D` devolve
+  página de erro). O anual de 2026 tem ~80 MB comprimidos, ~700 MB descomprimidos e ~2,8 milhões de
+  linhas de 245 bytes; 86 % são opção (`TPMERC` 070 = compra, 080 = venda) e toda linha de opção é um
+  negócio real (`TOTNEG` nunca 0). Primeira chamada leva ~2 min.
+- **Não há fonte grátis para bid/ask, open interest nem IV.** Yahoo não tem chain de opções B3 (testado
+  em PETR4/VALE3/BOVA11), UP2DATA está atrás de Cloudflare e a bolsai não cobre derivativos.
+- **Formato**: o arquivo de séries tem dois tipos de linha: "02" (ação/ETF, ~85 mil das ~87 mil) e "03"
+  (opção de índice em pontos, IBOVESPA/SMALL CAP, liquidação em R$/ponto, colunas totalmente
+  diferentes). O tipo "03" ficou **fora de escopo**: a exposição a índice já vem das opções de BOVA11.
+- **Raiz da opção**: sempre prefixo exato do ticker da série (zero exceções em ~85 mil linhas), mas
+  **nem sempre** é o ticker menos o dígito (Embraer: `EMBR3` → raiz `EMBJ`). Sem mapa genérico, tratado
+  caso a caso (PENDING P2 do Lume). Ao portar, trazer o mapa.
+- **Modelo de dados**: cache **global**, não por identificador (o arquivo é o mercado inteiro). Frescor
+  por `MAX(fetched_at)` da tabela toda, TTL de 24 h; `option_series` apaga e reinsere (série
+  desregistrada some); `option_eod_quotes` é **1 linha por série** (o plano previa histórico, mas só o
+  último preço interessa e o parser já calcula o máximo em memória). Sem cache em disco do zip.
+  `/series` devolve `data: []` com 200 para ativo-objeto desconhecido (nunca 404) e `last_price: null`
+  para série registrada e nunca negociada.
+- **Gregas** (`black_scholes`, sem tabela, recomputadas a cada chamada porque o preço do ativo-objeto
+  muda a cada tick): matemática pura, `erf` para a CDF normal, sem numpy/scipy; IV por Newton-Raphson
+  (vega como derivada) com fallback para bisseção, devolvendo `None` explícito quando o preço de
+  mercado está abaixo do valor intrínseco (sinal de preço velho, não bug). Validada contra o caso do
+  Hull (S=K=100, T=1, r=5 %, σ=20 % → call ≈ 10,4506, put ≈ 5,5735, delta ≈ 0,6368, gamma ≈ 0,018762,
+  vega ≈ 0,3752, theta ≈ −0,017573/dia) e por round-trip de IV. **Estilo americano não é
+  distinguido** (só aproximação europeia, sem fonte para validar exercício antecipado).
+- **Decisão confirmada com o dono do projeto**: o **preço do ativo-objeto vem de quem chama**
+  (`underlying_ticker`), não é adivinhado, porque a raiz não diz a classe (ON/PN/PNA…) e uma grega com o
+  papel errado seria erro silencioso. A resposta expõe `last_trade_date`, porque o preço usado pode ter
+  semanas em série ilíquida.
+- **Taxa livre de risco**: curva DI interpolada linearmente por **dias corridos** (evita calendário de
+  feriados; `T` da opção usa a mesma base), sem extrapolar fora do intervalo (usa o vértice mais
+  próximo) e recuando dia a dia até 10 dias em fim de semana/feriado. Exemplo: `PETRL522` (call PETR4
+  dez/2026, strike 49,91, spot 49,06) → delta 0,576, gamma 0,034, theta −0,033/dia, vega 0,097, IV
+  46,49 %, taxa 13,59 %.
+- **Erros**: 404 série desconhecida ou nunca negociada, 422 opção vencida ou preço abaixo do intrínseco,
+  502 fonte fora do ar.
+
+#### I. Câmbio multi-moeda (existe só no Lume; base das Fases 19 e 30)
+
+- **Uma fonte só, o Yahoo**, pelo ticker `{BASE}{QUOTE}=X` (`EURUSD=X`, `USDBRL=X`, `ARSUSD=X`, e até
+  cross entre moedas não-BRL como `GBPJPY=X`, 208,5 JPY). A hipótese do roadmap (BCB PTAX para BRL e
+  outra fonte para cross) **não se confirmou**. Ticker desconhecido devolve 404 real. Histórico de
+  10 anos com o mesmo formato do de ações (`eurusd`: 2.601 pontos desde 2016-09-15).
+- **Catálogo por moeda, não por par**: a conversão é mecânica (`"eurusd"` → `"EURUSD=X"`), então
+  catalogar pares seria contra o pedido de "moedas quaisquer". Whitelist de **17 códigos ISO 4217**
+  (majors G10-ish, BRL, CNY e Mercosul/LatAm: ARS, UYU, PYG, CLP, COP, PEN, MXN); par válido se as duas
+  metades estão no catálogo e são diferentes (até 17×16 = 272 pares). Validação **antes** de qualquer
+  chamada ao Yahoo (`UnknownCurrencyPairError` → 404 sem rede).
+- **Limitação deliberada**: moedas de valor muito baixo (VND) fazem o Yahoo arredondar a cotação para
+  `0,0` na precisão que ele reporta; por isso ficaram fora da lista curada.
+- Sem coluna `name` (base e cotada saem do `pair_code` por split); reaproveita os TTLs de cotação
+  (5 min) e de histórico (1 h).
+
+#### J. Visão original do blueprint e modelo de negócio (do `CONTEXT.md` e do `ROADMAP.md` do Lume)
+
+- **Origem**: o blueprint `blueprint_plataforma_opensource.md.docx` descrevia 3 camadas: (A) ponte para
+  desenvolvedores (APIs e SDKs: pagamentos unificados, fiscal, WhatsApp, finanças/Open Finance), (B)
+  workspace web do empreendedor, (C) módulo B3 e mercado financeiro. O Lume começou pela fatia
+  financeira de A e C por já ter um consumidor real (o Anchor). Fases 2 a 4 do Lume (fiscal SEFAZ,
+  WhatsApp/Meta, Workspace) nunca começaram e estão fora do escopo do Anchor (seção E).
+- **Visão do PRD**: "democratizar o acesso a dados financeiros confiáveis (mercado brasileiro e
+  internacional, cripto, macroeconomia) para desenvolvedores e pequenos empreendedores brasileiros, via
+  uma API única, simples e open-source". Problema declarado: cada projeto financeiro reinventa
+  integração, retry, fallback e normalização de dezenas de APIs.
+- **Open-Core**: versão community gratuita (infra própria, MIT) vs. nuvem hospedada pay-as-you-go
+  (margem sobre micro-transações). Exemplos do blueprint: R$ 0,15 por nota fiscal emitida, repasse do
+  custo Meta mais margem por mensagem, micro-taxa sobre webhooks e baixa automática de boleto/Pix. Como
+  cobrar a Finance API (por chamada, por volume, tier grátis generoso) **ficou em aberto**; a Sessão 18
+  respondeu em parte: cobra-se hospedagem, conveniência e dado premium, nunca o uso local.
+- **Licença**: MIT (mesma do TruthID/Anchor); AGPL foi considerada para o open-core e descartada.
+- **Ideias de expansão nunca sequenciadas**: Open Finance (extratos), Unified Payment API (Asaas,
+  Mercado Pago, Pagar.me, Stripe) e SDK do catálogo de fontes (Python/Node). Pela régua de escopo,
+  Open Finance e custódia B3 ficam fora do núcleo de dados.
+- **Pontos de debate da Sessão 18 que dependiam do Lume continuar existindo** (hoje superados, mas
+  guardados): a "instância local compartilhada" com o Warden (handshake em `/health`, lockfile com
+  porta+PID+versão, ciclo de vida do daemon, regra de versão mínima, diretório de dados comum e
+  autenticação local só por loopback) e a decisão de "manter o Lume separado do Anchor porque o Warden
+  compartilha a instância". A BYO-key por keyring só faz sentido no modo local; no servidor e no
+  hospedado a chave viria de env ou secret manager.
+- **Docs públicas**: o Lume tinha um site Next.js + Fumadocs com a referência gerada do `/openapi.json`
+  (publicado no GitHub Pages, sem domínio próprio, busca embutida Orama). Se a API headless da Fase 26
+  virar produto, precisa de algo equivalente.
+- **Auth**: lista estática em `API_KEYS` (header `X-API-Key`), sem tabela nem rotação; chave por
+  consumidor, limite por plano e entitlement ficariam para o tier hospedado.
+- **Quem usaria cada ideia nova** (da nota `lume-ideias.md`): macro e calendário → Anchor (reajuste de
+  imóvel, desconto de DCF) e Warden (lembretes); documentos regulatórios → Warden (alertas) e Anchor
+  (preço-teto); commodities → módulo de commodities do Anchor (Suzano, Klabin, Vale); cadastros → Anchor
+  (custódia por titular, empresa não listada) e o site do açaí; on-chain → classe cripto sem RPC direto;
+  clima e astronomia, geo, dados abertos do governo (possível fonte de leads de freelance), CVEs e
+  releases (homelab, servidor de Minecraft), calendários e status de serviços → Warden e health check
+  dos providers. Fontes grátis boas: BCB, CVM e IBGE; o premium hospedado seria por latência e
+  cobertura. Pontos em aberto da nota: se o nome "centro de informações" aguenta a abertura, e quais
+  ideias têm consumidor além do Anchor (a régua exige pelo menos dois).
+
+#### K. Desmontagem: opções avaliadas, riscos e questões abertas (do `DESMONTAGEM.md` do Lume)
+
+- **Opções**: A, mover o `api/` Python para o repo do Anchor (menor risco, preserva os 41 testes, mas
+  mantém dois runtimes); B, reescrever em Rust num crate (um runtime só, mas ~7 mil linhas Python, 38
+  tabelas e parsers CVM/SEC para portar, e perde o ecossistema Python se o backtesting da Fase 22 o
+  quiser); **C, híbrido faseado (escolhida na Sessão 23 do Lume)**: A primeiro, depois Rust por domínio
+  com teste de paridade. O Anchor decidiu **pular o passo A** e ir direto para Rust (Fase 26).
+- **Riscos que o Lume listou** (nove): divergência de linguagem; quatro domínios sem consumidor; cache
+  duplicado; dev e CI acoplados ao Lume; Settings Local/Remote e fallback do Warden sem sentido; docs
+  públicas; auth e hospedagem; lógica de negócio sutil acumulada nos testes; brainstorms em suspenso.
+  A decisão da Fase 26 resolveu os de linguagem, cache duplicado, dev/CI acoplados e Settings
+  Local/Remote com fallback. **Seguem abertos**: docs públicas, auth e hospedagem, a revisão dos 41
+  testes do Lume (portei os de cada domínio, mas não conferi um a um) e os brainstorms (seção B).
+- **Questões abertas**: preservar o `DataProvider` (existe, com um provider por categoria); renomeação
+  EasyBusiness → Lume (sem sentido se o repo for descartado); aviso "em desmontagem" no README do Lume
+  (**não feito**, aguarda confirmação do dono); arquivar ou apagar o repo (decisão exclusiva do dono,
+  depois de validar o Anchor sozinho). O repo mudou de lugar no GitHub para `Arven-Labs/lume`.
+- **Inventário que o Lume fez** (para conferir cobertura): 13 routers, ~14 services, ~25 módulos de
+  fontes, 13 modelos (38 tabelas), 10 migrations, 41 arquivos de teste com fontes mockadas, 13 hosts
+  externos (api.bcb.gov.br, query1.finance.yahoo.com, dados.cvm.gov.br, data.sec.gov e www.sec.gov,
+  api.coingecko.com, api.llama.fi, community-api.coinmetrics.io, ultrasound.money, api.alternative.me,
+  www.b3.com.br, sistemaswebb3-listados.b3.com.br, bvmf.bmfbovespa.com.br, api.usebolsai.com). TTLs:
+  1 h padrão, cotação de ação/cripto 5 min, fundamentos 24 h, opções 24 h. Respostas sempre com
+  `source`, `cached`, `stale` e `fetched_at`.
+
+#### L. Diretrizes e lições de processo do Lume (do `GUIDELINES.md`, `PENDING.md` e das sessões)
+
+- **Diretrizes**: código novo em inglês (strings, nomes, rotas); comentários podem ser em português;
+  docs de `project/`, README e commits em português. Repo público desde o primeiro commit: nunca
+  commitar chave, string de conexão ou credencial (`.env` ignorado, com `.env.example`). Não copiar a
+  fonte Python 1:1, reimplementar usando o cliente antigo como referência de comportamento.
+  **Confiabilidade antes de cobertura**: poucas fontes bem tratadas (retry, timeout, normalização, teste
+  contra a API real) valem mais que muitas frágeis.
+- **PENDING P1**: `fiis/{cnpj}/properties` devolve `data: []` tanto para CNPJ desconhecido quanto para
+  FII de papel sem imóvel, e a CVM não dá como distinguir. Decisão consciente: tratar `[]` como "sem
+  imóvel", nunca como erro. **PENDING P2**: raiz de opção da Embraer (seção H).
+- **Bugs de integração que custaram caro** (Sessão 7 do Lume, ao trocar o coletor Python por HTTP):
+  capturar o erro genérico dentro do loop por ticker fazia o coletor terminar com "Updated 0 quote(s)"
+  e código 0 com a API derrubada, **mascarando indisponibilidade total como "sem dado"** (só o 404 pode
+  ser engolido por ticker); metais e índices B3 usam código minúsculo (`xau`, `ifix`) e o Anchor sempre
+  trabalhou em maiúsculo; os códigos dos indicadores do ETH usam hífen (`tvl-trend`) e o Anchor usa
+  underscore (`tvl_trend`, chave de `indicator_thresholds`).
+- **Ambiente**: rodar `pytest` contra o Postgres do `docker compose` cria as tabelas sem
+  `alembic_version` e o próximo `up` quebra com `DuplicateTable` (faltou um banco de teste separado);
+  Docker sem `CAP_NET_ADMIN` não cria rede bridge; o `docker-compose.yml` do `docs` não pode ter
+  `user: "1000:1000"` porque o volume nomeado de `node_modules` nasce root; um `.env.example` ainda
+  tinha credenciais do nome antigo (`easybusiness`) e escapou do grep por não ter extensão de doc.
+- **Fumadocs (3 bugs achados só rodando)**: `createOpenAPIPage()` não pode estar num módulo alcançável
+  por Server Component (isolar em arquivo `"use client"`); faltava `openapi.preloadOpenAPIPage(page)` no
+  `page.tsx`; o schema OpenAPI para o deploy estático sai de `app.openapi()` sem banco nem API rodando.
+
+**Estado**: registro completo do `project/` do Lume (arquivos lidos: `OVERVIEW`, `CONTEXT`, `GUIDELINES`,
+`INDEX`, `PENDING`, `ARCHITECTURE`, `PHASE`, `ROADMAP`, `DESMONTAGEM` e as sessões 1 a 24). Sessão 108.
+Próximo passo natural: marcar, item a item, o que migra (câmbio e opções são os candidatos concretos), o
+que adia e o que descarta; e dar à série mensal do BCB o mesmo retry da Selic.

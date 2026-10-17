@@ -2479,3 +2479,33 @@ escrito com Write e Edit.
   4. Itens menores registrados: migrar `crypto_sources.rs` para `finance_core::http`; `ingestão agendada`
      e `DataProvider` com mais de uma fonte por categoria (hoje cada categoria tem um provider só).
 
+
+### 2026-10-17 — Sessão 108
+
+**Fechando a verificação da Fase 26.** Pedido: seguir pelo que restava (check, teste de clique, tag de
+teste). O dono do projeto recusou o clique manual ("não tínhamos automatizado esse tipo de teste, eu não
+gosto de fazer"), então virou E2E.
+- **Feito**: `./dev.sh check` limpo após o `git pull`; spec novo `lookup.e2e.mjs` (B3, EUA e cripto com
+  rede real, pula em 429); tag de teste `v0.0.0-ci-test` provou o `build.yml` sem Python nas 3
+  plataformas, e a tag e o release em rascunho foram apagados. Detalhe na Fase 26 do `PHASE.md`.
+- **Achado**: o E2E pegou um bug real. Sem chave da bolsai ou e-mail da SEC o coletor gravava os dados e
+  errava nos fundamentos, e a tela mostrava "No data found" porque só relia o banco em `onSuccess`.
+  Corrigido com `onSettled` em 6 seções de Research (escolha do dono do projeto entre isso e tornar os
+  fundamentos não-fatais no backend; o aviso da chave faltando continua na tela).
+- **Verificado**: CI do push `1bfb44d` (spec novo) falhou em B3 e EUA (era o bug acima); CI do conserto
+  verde: E2E inteiro passando (PETR4, AAPL e ETH sem skip) e Frontend verde. Build da tag verde nas 3
+  plataformas e no `apk`.
+- **Registro completo do `project/` do Lume** (pedido: "quero que esteja tudo registrado aqui, não precisa
+  estar implementado"): releitura de todos os docs do Lume, depois de avançar o clone local com
+  `git pull --ff-only` (estava atrás do remoto, sem o `DESMONTAGEM.md`). Fase 32 do `PHASE.md` ganhou as
+  seções F a L: o que já foi portado e o que não (câmbio, opções com gregas e avisos de dividendos da
+  CVM), achados técnicos por fonte, desenho completo de opções e de câmbio, blueprint e modelo de
+  negócio, riscos e questões da desmontagem, e diretrizes e lições de processo. Só documentação.
+- **Achado**: o CDI/IPCA mensal do Anchor tem a mesma fragilidade do Lume (timeout padrão, sem nova
+  tentativa); só a Selic diária tem janela e 3 tentativas.
+- **Pendente**:
+  1. Decisão do dono do projeto sobre arquivar ou apagar o repo do Lume (nada foi tocado lá).
+  2. Sem cobertura automática: backfill de Profitability, sync de Taxes, FII e metal pela tela, e salvar
+     credenciais em Data sources (precisa de secret service, que o CI não tem).
+  3. Itens menores: migrar `crypto_sources.rs` para `finance_core::http`; ingestão agendada e
+     `DataProvider` com mais de uma fonte por categoria.
