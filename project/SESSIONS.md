@@ -2687,4 +2687,24 @@ do `PHASE.md`.
   que removi antes de commitar.
 - **Pendente**: integração das posições com patrimônio e IR; "salvar estratégia do simulador como posições";
   moeda base (Fase 19); ingestão agendada e `DataProvider` com mais de uma fonte por categoria; E2E do câmbio
-  pular em "No data found".
+  pular em "No data found". *(O IR foi feito na Sessão 117, abaixo.)*
+
+
+### 2026-10-17 — Sessão 117
+
+**Imposto sobre o resultado das opções (Fase 18 × Fase 24).** O "primeiro" do dono do projeto apontou para
+"integrar posições com patrimônio e IR"; as perguntas do plan mode separaram os dois e ele escolheu só o
+imposto. Detalhe na Fase 18 do `PHASE.md`.
+- **Feito**: resultado realizado das opções encerradas entra na apuração mensal da aba Taxes (swing na gaveta
+  comum a 15 %, day trade a 20 %, sem a isenção dos R$ 20 mil, compensação de prejuízo, exercida só avisa) e
+  também na simulação de venda.
+- **Erro meu**: afirmei que não haveria IRRF para opções; para day trade há (1 % do ganho, como nas ações). O
+  primeiro push (`3fcc3fa`) falhou em dois testes de Rust e no E2E por isso; o código da apuração estava certo,
+  corrigi as afirmações e o valor esperado do E2E (R$ 28,50, não R$ 30,00).
+- **Verificado**: `./dev.sh check` limpo; 7 testes de domínio e 2 de fluxo novos; CI do push `4cc3d30` verde nos
+  três workflows, com o E2E cobrindo day trade e, antedatando a abertura, swing.
+- **Não verificado**: a tela a olho e o clique manual. O IRRF do swing em opção não é estimado.
+- **Processo**: rodei mais dois heredocs de Python vazios, sem efeito mas contra a regra de usar Edit/Write.
+- **Pendente**: patrimônio com as posições abertas (exigiria guardar o último preço atualizado em cada posição);
+  "salvar estratégia do simulador como posições"; moeda base (Fase 19); ingestão agendada e `DataProvider` com
+  mais de uma fonte por categoria; E2E do câmbio pular em "No data found".

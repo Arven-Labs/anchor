@@ -1741,6 +1741,37 @@ projeto: **tabela própria** (não classe de ativo) e **encerramento manual + ma
   +R$ 150,00; e o erro do backend na quantidade zero). **Não verificado**: `get_option_marks` contra a B3 real
   (80 MB, só sob clique), a tela a olho e o clique manual.
 
+**Imposto sobre o resultado das opções (Sessão 117, 2026-10-17)**: ligação das posições encerradas à apuração
+da Fase 24, escolha do dono do projeto de fazer **só o imposto** (o patrimônio fica para depois).
+- **Regras** (renda variável na B3): swing (aberta e encerrada em dias diferentes) na gaveta **comum** a 15 %;
+  day trade (mesmo dia) na gaveta de **day trade** a 20 %; **sem a isenção dos R$ 20 mil** (só vale para venda
+  de ações; o resultado de opção não entra em `stock_sales_total`); prejuízo compensa na mesma gaveta, inclusive
+  contra ação, e o saldo segue para os meses seguintes. Mês = mês do **encerramento** (lançada que expira
+  realiza o prêmio nessa data; comprada que vira pó é prejuízo). Alíquotas e DARF (código 6015) são as já
+  semeadas em `tax_rules`.
+- **IRRF**: o day trade retém 1 % do ganho, como em qualquer day trade (a apuração já fazia isso por ganho);
+  o do swing (0,005 % sobre a venda) **não é estimado**, porque `sale_value` fica 0, então o imposto de swing
+  pode sair um pouco acima do real. A nota na tela diz isso.
+- **Exercida fica de fora**: no exercício o prêmio entra no custo da ação, não é ganho nem perda própria. Gera
+  `TaxWarning::OptionExercised` ("update that stock's cost yourself").
+- **Código**: `assessment::OptionResult`, `assess_with_options` e `simulate_sale_with_options` (a simulação de
+  venda também enxerga as opções; os invólucros antigos `assess`/`simulate_sale` viraram ajudantes só dos
+  testes). `domain::option_position::proceeds_and_cost` (receita − custo = resultado). `load_option_results`
+  em `commands/tax.rs` lê as posições fechadas das carteiras do Workspace (`day_trade = open_date ==
+  close_date`); `assess_workspace` e `simulate_tax_sale_in` passam os resultados. Cada opção vira um
+  `SaleResult` com `tx_id`/`asset_id` negativos, sem colisão com os reais. Aba Taxes: aviso novo, nota no mês e
+  `data-testid` no valor devido e no "Details".
+- **Erro meu corrigido no CI**: eu tinha afirmado (nos testes, na nota e no comentário) que não haveria IRRF
+  para opção. Estava errado para o day trade: o código já retém 1 % do ganho, e a lei é a mesma para opções.
+  O primeiro push falhou em dois testes por isso; o código estava certo e corrigi as afirmações.
+- **Verificado**: `./dev.sh check` limpo; 7 testes de domínio novos (swing sem isenção, convivência com ação
+  isenta, compensação de prejuízo, day trade, exercida, apuração sem opções inalterada, simulação) e 2 de fluxo
+  no schema real; CI do push `4cc3d30` verde nos três workflows, com o E2E conferindo R$ 28,50 devidos em day
+  trade (20 % de R$ 150 menos 1 % de IRRF) e R$ 22,50 depois de antedatar a abertura (swing). **Não
+  verificado**: a tela a olho e o clique manual.
+- **Fora de escopo, decidido**: patrimônio, IRRF de swing em opção, efeito do exercício na base de custo da
+  ação, DARF específico de opções.
+
 ### Fase 19 — Moeda base seletiva da carteira (ideia trazida em conversa pelo dono do projeto na Sessão 96, puro registro, não iniciada)
 
 **Objetivo**: permitir escolher, nas Configurações, a moeda base em que a carteira é exibida (ex.:
