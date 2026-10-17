@@ -2553,7 +2553,7 @@ gosto de fazer"), então virou E2E.
   quebrado, então a busca recua também em falha de provider (máx. 2); (4) a escolha da série no teste
   ao vivo (menor strike) era ruim e escondia tudo isso; ATM e de 31 a 120 dias funciona.
 - **Verificado (opções)**: `./dev.sh check` limpo, 33 testes unitários novos e o ao vivo: PETRK611, IV
-  40,9 %, delta 0,55, taxa 13,56 %. Sem E2E (não há tela). CI do push por conferir.
+  40,9 %, delta 0,55, taxa 13,56 %. Sem E2E (não há tela). CI do push `3f4c4e8` verde (Rust e E2E).
 - **Pendente**: decisão do dono sobre o repo do Lume (agora **nenhum domínio de dados é só dele**);
   consumidores: avisos da CVM (alerta ou leitura do PDF para o provento esperado, com `resolve_cvm_code`),
   opções (Fase 18) e moeda base (Fase 19); ingestão agendada e `DataProvider` com mais de uma fonte por
