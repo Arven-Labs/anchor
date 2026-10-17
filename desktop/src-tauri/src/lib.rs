@@ -170,6 +170,7 @@ pub fn run() {
             commands::option_position::close_option_position,
             commands::option_position::delete_option_position,
             commands::option_position::get_option_marks,
+            commands::option_position::set_option_position_net_worth,
             commands::proventos::get_proventos_summary,
             commands::profitability::get_portfolio_profitability,
             commands::profitability::get_profitability_comparison,

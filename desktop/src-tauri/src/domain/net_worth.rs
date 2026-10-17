@@ -15,9 +15,23 @@ pub fn sum_receivable_in_net_worth(loans: &[(bool, f64)]) -> f64 {
     loans.iter().filter(|(include, _)| *include).map(|(_, saldo)| saldo).sum()
 }
 
+/// Soma o valor assinado das posições em opções abertas com a flag "entra no
+/// patrimônio" ligada (Fase 18). Pares `(incluir, valor)`: comprada positiva,
+/// lançada negativa.
+pub fn sum_options_in_net_worth(positions: &[(bool, f64)]) -> f64 {
+    positions.iter().filter(|(include, _)| *include).map(|(_, value)| value).sum()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sum_options_counts_only_flagged_positions_and_keeps_the_sign() {
+        // Comprada +350 (dentro), lançada −200 (dentro), comprada +1.000 (fora).
+        assert_eq!(sum_options_in_net_worth(&[(true, 350.0), (true, -200.0), (false, 1000.0)]), 150.0);
+        assert_eq!(sum_options_in_net_worth(&[]), 0.0);
+    }
 
     #[test]
     fn sum_receivable_skips_loans_flagged_out_of_net_worth() {

@@ -17,8 +17,9 @@ use crate::commands::loan::{
 use crate::commands::net_worth::compute_net_worth;
 use crate::commands::option_position::{
     close_option_position_in, create_option_position_in, delete_option_position_in,
-    list_option_positions_view, option_marks_in, CloseOptionPositionRequest,
-    CreateOptionPositionRequest,
+    list_option_positions_view, option_marks_in, save_option_marks_in,
+    set_option_position_net_worth_in, CloseOptionPositionRequest, CreateOptionPositionRequest,
+    OptionMark, SetOptionNetWorthRequest,
 };
 use crate::finance_core::b3_options::{LastTrade, OptionsMarket};
 use crate::commands::tax::{assess_workspace, simulate_tax_sale_in, SimulateTaxSaleRequest};
@@ -578,6 +579,97 @@ async fn an_option_loss_offsets_a_later_stock_gain_in_the_workspace_assessment()
     assert!(close(common.loss_used, 500.0));
     assert!(close(common.taxable, 1000.0));
     assert!(close(october.gross_tax, 150.0));
+}
+
+#[tokio::test]
+async fn open_option_positions_count_in_net_worth_at_cost_and_then_at_the_stored_price() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Options NW WS").await;
+    let account = bank_account(&db, ws.id, "Checking").await;
+    cash_in(&db, ws.id, account.id, 5000.0, "2026-01-01").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+
+    // Sem posição, opções valem 0.
+    let nw = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(nw.total_options_value, 0.0));
+    assert_eq!(nw.options_at_cost_count, 0);
+    assert!(close(nw.net_worth, 5000.0));
+
+    // Comprada (100 a R$ 2,00) e lançada (100 a R$ 1,50), sem preço atualizado: valem o prêmio.
+    let long = create_option_position_in(&db, option_request(pf.id, "PETRK600", "long", 100.0, 2.0)).await.unwrap();
+    let short = create_option_position_in(&db, option_request(pf.id, "PETRW550", "short", 100.0, 1.5)).await.unwrap();
+    let nw = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(nw.total_options_value, 200.0 - 150.0));
+    assert_eq!(nw.options_at_cost_count, 2);
+    assert!(close(nw.net_worth, 5050.0));
+    assert!(close(nw.total_debt, 0.0)); // a lançada não vira "dívida": a alavancagem não muda
+
+    // Depois da atualização de preços: comprada a 3,50 (+350), lançada a 2,00 (−200).
+    let mark = |position: &crate::entity::option_position::Model, price: f64| OptionMark {
+        position_id: position.id,
+        series_ticker: position.series_ticker.clone(),
+        last_price: Some(price),
+        last_trade_date: Some("2026-10-16".to_string()),
+        unrealized_pnl: None,
+    };
+    save_option_marks_in(&db, &[mark(&long, 3.5), mark(&short, 2.0)]).await.unwrap();
+    let nw = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(nw.total_options_value, 350.0 - 200.0));
+    assert_eq!(nw.options_at_cost_count, 0);
+    let listed = list_option_positions_view(&db, pf.id).await.unwrap();
+    let stored = listed.iter().find(|p| p.series_ticker == "PETRK600").unwrap();
+    assert_eq!((stored.mark_price, stored.mark_date.as_deref()), (Some(3.5), Some("2026-10-16")));
+    assert!(stored.marked_at.is_some());
+    // Resultado a mercado com o preço guardado: comprada a 2,00 vale 3,50 → +150; lançada a 1,50 vale 2,00 → −50.
+    assert!(close(stored.market_pnl.unwrap(), 150.0));
+    let stored_short = listed.iter().find(|p| p.series_ticker == "PETRW550").unwrap();
+    assert!(close(stored_short.market_pnl.unwrap(), -50.0));
+    assert_eq!(stored_short.value_at_cost, false);
+
+    // Uma série sem negócio mantém o preço anterior.
+    let unchanged = OptionMark {
+        position_id: long.id,
+        series_ticker: long.series_ticker.clone(),
+        last_price: None,
+        last_trade_date: None,
+        unrealized_pnl: None,
+    };
+    save_option_marks_in(&db, &[unchanged]).await.unwrap();
+    assert!(close(compute_net_worth(&db, ws.id).await.unwrap().total_options_value, 150.0));
+
+    // Flag desligada tira a lançada do total; encerrada a comprada, ela sai por inteiro.
+    set_option_position_net_worth_in(&db, SetOptionNetWorthRequest { id: short.id, include: false }).await.unwrap();
+    assert!(close(compute_net_worth(&db, ws.id).await.unwrap().total_options_value, 350.0));
+    close_option_position_in(&db, close_request(long.id, "closed", Some(3.5), "2026-10-17")).await.unwrap();
+    assert!(close(compute_net_worth(&db, ws.id).await.unwrap().total_options_value, 0.0));
+    set_option_position_net_worth_in(&db, SetOptionNetWorthRequest { id: short.id, include: true }).await.unwrap();
+    let nw = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(nw.total_options_value, -200.0));
+    assert!(close(nw.net_worth, 5000.0 - 200.0));
+}
+
+#[tokio::test]
+async fn an_open_but_expired_option_is_worth_nothing_in_net_worth() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Options NW WS").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+
+    let mut request = option_request(pf.id, "PETRK500", "long", 100.0, 2.0);
+    request.open_date = "2026-09-01".to_string();
+    request.expiration = "2026-10-10".to_string(); // já passou e a posição segue aberta
+    create_option_position_in(&db, request).await.unwrap();
+
+    let nw = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(nw.total_options_value, 0.0));
+    assert_eq!(nw.options_at_cost_count, 0);
+}
+
+#[tokio::test]
+async fn setting_the_net_worth_flag_of_a_missing_position_is_an_error() {
+    let db = memory_db().await;
+    assert!(set_option_position_net_worth_in(&db, SetOptionNetWorthRequest { id: 9_999, include: false })
+        .await
+        .is_err());
 }
 
 #[tokio::test]

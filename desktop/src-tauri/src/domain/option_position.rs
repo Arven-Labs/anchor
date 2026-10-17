@@ -57,6 +57,33 @@ pub fn proceeds_and_cost(
     }
 }
 
+/// Quanto uma posição **aberta** vale no patrimônio e se esse valor veio do
+/// prêmio (sem preço atualizado) em vez do mercado.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OptionValue {
+    pub value: f64,
+    /// Sem preço guardado: valeu o prêmio, como a carteira faz sem cotação.
+    pub at_cost: bool,
+}
+
+/// Valor no patrimônio: comprada é ativo (`+preço · quantidade`), lançada é
+/// passivo (`−preço · quantidade`, o que custaria recomprá-la). O preço é o
+/// último guardado (`mark_price`) ou, na falta dele, o prêmio. Posição aberta
+/// já **vencida** vale 0: a opção expirou e falta só encerrá-la.
+pub fn net_worth_value(
+    side: &str,
+    quantity: f64,
+    premium: f64,
+    mark_price: Option<f64>,
+    expired: bool,
+) -> OptionValue {
+    if expired {
+        return OptionValue { value: 0.0, at_cost: false };
+    }
+    let price = mark_price.unwrap_or(premium);
+    OptionValue { value: sign(side) * price * quantity, at_cost: mark_price.is_none() }
+}
+
 /// Dias corridos até o vencimento; negativo depois dele.
 pub fn days_to_expiry(expiration: NaiveDate, today: NaiveDate) -> i64 {
     (expiration - today).num_days()
@@ -111,6 +138,28 @@ mod tests {
         assert_eq!(proceeds_and_cost(SHORT, 2.0, 100.0, 0.0, Some(5.0), None), (195.0, 0.0));
         // Comprada que vira pó: sem receita, custo é o prêmio pago.
         assert_eq!(proceeds_and_cost(LONG, 2.0, 100.0, 0.0, None, None), (0.0, 200.0));
+    }
+
+    #[test]
+    fn a_long_position_is_an_asset_and_a_short_one_is_a_liability() {
+        // Com preço guardado: 100 opções a R$ 3,50.
+        let long = net_worth_value(LONG, 100.0, 2.0, Some(3.5), false);
+        assert_eq!(long, OptionValue { value: 350.0, at_cost: false });
+        let short = net_worth_value(SHORT, 100.0, 2.0, Some(3.5), false);
+        assert_eq!(short, OptionValue { value: -350.0, at_cost: false });
+    }
+
+    #[test]
+    fn without_a_stored_price_the_premium_is_used_and_flagged_at_cost() {
+        assert_eq!(net_worth_value(LONG, 100.0, 2.0, None, false), OptionValue { value: 200.0, at_cost: true });
+        assert_eq!(net_worth_value(SHORT, 100.0, 1.5, None, false), OptionValue { value: -150.0, at_cost: true });
+    }
+
+    #[test]
+    fn an_open_position_past_its_expiry_is_worth_nothing() {
+        for (side, mark) in [(LONG, Some(3.5)), (SHORT, None)] {
+            assert_eq!(net_worth_value(side, 100.0, 2.0, mark, true), OptionValue { value: 0.0, at_cost: false });
+        }
     }
 
     #[test]

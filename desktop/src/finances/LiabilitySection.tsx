@@ -75,11 +75,23 @@ function assetTicker(assets: Asset[], id: number): string | null {
 // extrair um compartilhado (convenção já estabelecida no projeto).
 // Moeda segue a convenção do módulo `finances/` (`.toFixed(2)`, sem
 // `toLocaleString`), diferente de `portfolio/` que usa `pt-BR`.
-function KpiCard({ title, value, subtext }: { title: string; value: string; subtext?: string }) {
+function KpiCard({
+  title,
+  value,
+  subtext,
+  testId,
+}: {
+  title: string;
+  value: string;
+  subtext?: string;
+  testId?: string;
+}) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <p className="text-sm text-muted-foreground">{title}</p>
-      <p className="mt-1 text-2xl font-semibold">{value}</p>
+      <p className="mt-1 text-2xl font-semibold" data-testid={testId}>
+        {value}
+      </p>
       {subtext && <p className="mt-1 text-xs text-muted-foreground">{subtext}</p>}
     </div>
   );
@@ -220,7 +232,7 @@ function LiabilitySection({ workspaceId }: { workspaceId: number }) {
             due date. Outstanding balance is always derived, never entered directly.
           </p>
 
-          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
             <KpiCard title="Market value" value={(netWorth?.total_market_value ?? 0).toFixed(2)} />
             <KpiCard title="Cash" value={(netWorth?.total_cash ?? 0).toFixed(2)} />
             <KpiCard title="Total debt" value={(netWorth?.total_debt ?? 0).toFixed(2)} />
@@ -228,6 +240,16 @@ function LiabilitySection({ workspaceId }: { workspaceId: number }) {
               title="Loans receivable"
               value={(netWorth?.total_loans_receivable ?? 0).toFixed(2)}
               subtext="Only loans counted in net worth"
+            />
+            <KpiCard
+              title="Options"
+              testId="nw-options"
+              value={(netWorth?.total_options_value ?? 0).toFixed(2)}
+              subtext={
+                (netWorth?.options_at_cost_count ?? 0) > 0
+                  ? `Open positions; ${netWorth?.options_at_cost_count} at cost`
+                  : "Open positions counted in net worth"
+              }
             />
             <KpiCard title="Net worth" value={(netWorth?.net_worth ?? 0).toFixed(2)} />
             <KpiCard

@@ -84,6 +84,49 @@ describe("Anchor — posições em opções na Carteira", () => {
     await clickCentered(byId("portfolio-tab-options")); // o caso seguinte usa o formulário
   });
 
+  it("conta a posição aberta no patrimônio a custo e tira ao desligar a flag", async () => {
+    // Call lançada de 100 opções a R$ 1,00, sem preço atualizado: vale −R$ 100,00 (passivo, ao prêmio).
+    await byId("op-series").setValue("petrw550");
+    await byId("op-underlying").setValue("petr4");
+    await pickOption(byId("op-side"), "Sold (written)");
+    await byId("op-strike").setValue("55");
+    await byId("op-premium").setValue("1");
+    await byId("op-submit").click();
+
+    await waitForText(
+      byId("op-net-worth-impact"),
+      (text) => text.includes("100,00") && text.includes("−"),
+      "a lançada deveria pesar −R$ 100,00 no patrimônio",
+    );
+    expect(await textOf(byId("op-at-cost-note"))).toContain("1 at cost");
+
+    // O patrimônio de Finanças enxerga o mesmo valor.
+    await clickCentered(byId("nav-finances"));
+    await clickCentered(byId("finances-tab-liabilities"));
+    await waitForText(
+      byId("nw-options"),
+      (text) => text === "-100.00",
+      "o cartão Options de Finanças deveria mostrar -100.00",
+    );
+
+    // Desligando a flag a posição sai do patrimônio.
+    await clickCentered(byId("nav-portfolio"));
+    await clickCentered(byId("portfolio-tab-options"));
+    await clickCentered(byIdPrefix("op-nw-toggle-"));
+    await waitForText(
+      byId("op-net-worth-impact"),
+      (text) => text === "—",
+      "sem posição contada o impacto no patrimônio deveria ficar em —",
+    );
+    expect(sql("SELECT include_in_net_worth FROM option_positions WHERE series_ticker = 'PETRW550'")).toBe("0");
+    await clickCentered(byId("nav-finances"));
+    await clickCentered(byId("finances-tab-liabilities"));
+    await waitForText(byId("nw-options"), (text) => text === "0.00", "Options deveria voltar a 0.00");
+
+    await clickCentered(byId("nav-portfolio"));
+    await clickCentered(byId("portfolio-tab-options")); // o caso seguinte usa o formulário
+  });
+
   it("mostra o erro do backend quando o formulário é inválido", async () => {
     await byId("op-series").setValue("PETRW550");
     await byId("op-underlying").setValue("PETR4");
@@ -97,6 +140,6 @@ describe("Anchor — posições em opções na Carteira", () => {
       (text) => text.includes("quantity must be greater than zero"),
       "o erro de quantidade deveria aparecer na tela",
     );
-    expect(Number(sql("SELECT count(*) FROM option_positions"))).toBe(1);
+    expect(Number(sql("SELECT count(*) FROM option_positions"))).toBe(2);
   });
 });

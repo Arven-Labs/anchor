@@ -147,6 +147,17 @@ pub struct OptionPositionView {
     pub days_to_expiry: i64,
     /// Só nas fechadas.
     pub realized_pnl: Option<f64>,
+    pub include_in_net_worth: bool,
+    /// Último preço guardado pela atualização de preços, e a data do negócio.
+    pub mark_price: Option<f64>,
+    pub mark_date: Option<String>,
+    pub marked_at: Option<String>,
+    /// Valor no patrimônio (comprada +, lançada −); só nas abertas. Não leva em conta a flag.
+    pub net_worth_value: Option<f64>,
+    /// O valor veio do prêmio, por falta de preço guardado.
+    pub value_at_cost: bool,
+    /// Resultado a mercado com o preço guardado (sem taxa de saída); só nas abertas com preço.
+    pub market_pnl: Option<f64>,
 }
 
 fn view(row: option_position::Model, today: NaiveDate) -> OptionPositionView {
@@ -156,11 +167,25 @@ fn view(row: option_position::Model, today: NaiveDate) -> OptionPositionView {
     let realized_pnl = row.close_price.map(|price| {
         calc::result(&row.side, row.premium, row.quantity, price, row.open_fee, row.close_fee)
     });
+    let is_expired = calc::is_expired(expiration, today, is_open);
+    let value = is_open
+        .then(|| calc::net_worth_value(&row.side, row.quantity, row.premium, row.mark_price, is_expired));
+    let market_pnl = row
+        .mark_price
+        .filter(|_| is_open)
+        .map(|price| calc::result(&row.side, row.premium, row.quantity, price, row.open_fee, None));
     OptionPositionView {
         is_open,
-        is_expired: calc::is_expired(expiration, today, is_open),
+        is_expired,
         days_to_expiry: calc::days_to_expiry(expiration, today),
         realized_pnl,
+        include_in_net_worth: row.include_in_net_worth,
+        mark_price: row.mark_price,
+        mark_date: row.mark_date,
+        marked_at: row.marked_at,
+        net_worth_value: value.map(|v| v.value),
+        value_at_cost: value.is_some_and(|v| v.at_cost),
+        market_pnl,
         id: row.id,
         portfolio_id: row.portfolio_id,
         series_ticker: row.series_ticker,
@@ -329,8 +354,29 @@ pub async fn option_marks_in(
         .collect())
 }
 
-/// Último preço negociado e resultado a mercado das posições abertas. A primeira
-/// carga do dia baixa ~80 MB da B3 (~2 min); depois, 24 h de cache.
+/// Guarda o último preço das posições que tiveram negócio, pro patrimônio (que
+/// não usa rede) valorizá-las. Série sem negócio mantém o preço anterior.
+pub async fn save_option_marks_in(db: &DatabaseConnection, marks: &[OptionMark]) -> Result<(), AppError> {
+    let marked_at = chrono::Utc::now().to_rfc3339();
+    for mark in marks {
+        let (Some(price), Some(date)) = (mark.last_price, mark.last_trade_date.as_ref()) else {
+            continue;
+        };
+        let Some(row) = option_position::Entity::find_by_id(mark.position_id).one(db).await? else {
+            continue;
+        };
+        let mut active: option_position::ActiveModel = row.into();
+        active.mark_price = Set(Some(price));
+        active.mark_date = Set(Some(date.clone()));
+        active.marked_at = Set(Some(marked_at.clone()));
+        active.update(db).await?;
+    }
+    Ok(())
+}
+
+/// Último preço negociado e resultado a mercado das posições abertas, e guarda o
+/// preço em cada posição (é ele que o patrimônio usa). A primeira carga do dia
+/// baixa ~80 MB da B3 (~2 min); depois, 24 h de cache.
 #[tauri::command]
 pub async fn get_option_marks(
     db: tauri::State<'_, DatabaseConnection>,
@@ -338,5 +384,34 @@ pub async fn get_option_marks(
 ) -> Result<OptionMarksView, AppError> {
     let cached = b3_options::market().await?;
     let marks = option_marks_in(db.inner(), portfolio_id, &cached.value.value).await?;
+    save_option_marks_in(db.inner(), &marks).await?;
     Ok(OptionMarksView { stale: cached.stale, marks })
+}
+
+#[derive(Deserialize)]
+pub struct SetOptionNetWorthRequest {
+    pub id: i32,
+    pub include: bool,
+}
+
+/// Liga ou desliga a posição no patrimônio.
+#[tauri::command]
+pub async fn set_option_position_net_worth(
+    db: tauri::State<'_, DatabaseConnection>,
+    request: SetOptionNetWorthRequest,
+) -> Result<option_position::Model, AppError> {
+    set_option_position_net_worth_in(db.inner(), request).await
+}
+
+pub async fn set_option_position_net_worth_in(
+    db: &DatabaseConnection,
+    request: SetOptionNetWorthRequest,
+) -> Result<option_position::Model, AppError> {
+    let row = option_position::Entity::find_by_id(request.id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("option position {}", request.id)))?;
+    let mut active: option_position::ActiveModel = row.into();
+    active.include_in_net_worth = Set(request.include);
+    Ok(active.update(db).await?)
 }

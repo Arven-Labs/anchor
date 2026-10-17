@@ -9,8 +9,9 @@ use serde::Serialize;
 use crate::commands::bank_account::compute_total_cash;
 use crate::commands::liability::list_liabilities_view;
 use crate::commands::loan::list_loans_view;
+use crate::commands::option_position::list_option_positions_view;
 use crate::commands::transaction::compute_positions;
-use crate::domain::net_worth::{compute_leverage, sum_receivable_in_net_worth};
+use crate::domain::net_worth::{compute_leverage, sum_options_in_net_worth, sum_receivable_in_net_worth};
 use crate::entity::portfolio;
 use crate::error::AppError;
 
@@ -22,6 +23,11 @@ pub struct NetWorthSummary {
     /// Saldo a receber dos empréstimos concedidos marcados pra entrar no
     /// patrimônio (Fase 29). Os que ficaram de fora não aparecem aqui.
     pub total_loans_receivable: f64,
+    /// Posições em opções abertas com a flag ligada (Fase 18): comprada soma,
+    /// lançada subtrai. Fora de `total_debt`, então não muda a alavancagem.
+    pub total_options_value: f64,
+    /// Quantas dessas posições valeram o prêmio, por falta de preço guardado.
+    pub options_at_cost_count: usize,
     pub net_worth: f64,
     pub leverage_ratio: Option<f64>,
 }
@@ -62,7 +68,23 @@ pub async fn compute_net_worth(
             .collect::<Vec<_>>(),
     );
 
-    let net_worth = total_market_value + total_cash + total_loans_receivable - total_debt;
+    let mut option_values = Vec::new();
+    let mut options_at_cost_count = 0;
+    for p in &portfolios {
+        for position in list_option_positions_view(db, p.id).await? {
+            let Some(value) = position.net_worth_value else {
+                continue; // fechada
+            };
+            option_values.push((position.include_in_net_worth, value));
+            if position.include_in_net_worth && position.value_at_cost {
+                options_at_cost_count += 1;
+            }
+        }
+    }
+    let total_options_value = sum_options_in_net_worth(&option_values);
+
+    let net_worth =
+        total_market_value + total_cash + total_loans_receivable + total_options_value - total_debt;
     let leverage_ratio = compute_leverage(total_debt, net_worth);
 
     Ok(NetWorthSummary {
@@ -70,6 +92,8 @@ pub async fn compute_net_worth(
         total_cash,
         total_debt,
         total_loans_receivable,
+        total_options_value,
+        options_at_cost_count,
         net_worth,
         leverage_ratio,
     })

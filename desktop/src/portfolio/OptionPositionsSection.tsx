@@ -30,10 +30,12 @@ import {
 } from "@/components/ui/table";
 
 // Fase 18, 3ª fatia (Sessão 116) — posições em opções da B3, compradas ou
-// lançadas, numa aba da Carteira. Isolada de patrimônio, Resumo, rentabilidade
-// e IR: é um registro com resultado. O resultado realizado vem do backend; o a
-// mercado só aparece depois de "Refresh market prices", porque a primeira carga
-// do dia baixa ~80 MB da B3 (~2 min).
+// lançadas, numa aba da Carteira. Fora do Resumo e da rentabilidade. O
+// resultado realizado entra no imposto (Sessão 117) e as abertas entram no
+// patrimônio (Sessão 118), cada uma com seu liga/desliga. O resultado e o valor
+// no patrimônio vêm do backend; o preço é atualizado por "Refresh market
+// prices" (a primeira carga do dia baixa ~80 MB da B3, ~2 min) e fica guardado
+// na posição, porque o patrimônio não usa rede. Sem preço guardado vale o prêmio.
 
 type OptionPosition = {
   id: number;
@@ -57,6 +59,13 @@ type OptionPosition = {
   is_expired: boolean;
   days_to_expiry: number;
   realized_pnl: number | null;
+  include_in_net_worth: boolean;
+  mark_price: number | null;
+  mark_date: string | null;
+  marked_at: string | null;
+  net_worth_value: number | null;
+  value_at_cost: boolean;
+  market_pnl: number | null;
 };
 
 type OptionMark = {
@@ -159,6 +168,8 @@ function OptionPositionsSection({ portfolioId }: { portfolioId: number }) {
 
   function refresh() {
     queryClient.invalidateQueries({ queryKey: ["option-positions", portfolioId] });
+    // As abertas entram no patrimônio: qualquer mudança aqui muda o de Finanças.
+    queryClient.invalidateQueries({ queryKey: ["net-worth"] });
   }
 
   const createMutation = useMutation<unknown, AppError, void>({
@@ -217,7 +228,15 @@ function OptionPositionsSection({ portfolioId }: { portfolioId: number }) {
 
   const marksMutation = useMutation<OptionMarks, AppError, void>({
     mutationFn: () => invoke("get_option_marks", { portfolioId }),
-    onSuccess: setMarks,
+    onSuccess: (result) => {
+      setMarks(result);
+      refresh(); // o backend guardou os preços nas posições
+    },
+  });
+
+  const netWorthMutation = useMutation<unknown, AppError, { id: number; include: boolean }>({
+    mutationFn: (request) => invoke("set_option_position_net_worth", { request }),
+    onSuccess: refresh,
   });
 
   function handleCreate(event: FormEvent) {
@@ -235,20 +254,34 @@ function OptionPositionsSection({ portfolioId }: { portfolioId: number }) {
   }
 
   const markFor = (id: number) => marks?.marks.find((m) => m.position_id === id);
-  const marketResult = marks
-    ? marks.marks.reduce((sum, m) => sum + (m.unrealized_pnl ?? 0), 0)
-    : null;
-  const hasAnyMark = marks?.marks.some((m) => m.unrealized_pnl != null) ?? false;
+  const priced = open.filter((p) => p.market_pnl != null);
+  const marketResult = priced.reduce((sum, p) => sum + (p.market_pnl ?? 0), 0);
+  const counted = open.filter((p) => p.include_in_net_worth);
+  const netWorthImpact = counted.reduce((sum, p) => sum + (p.net_worth_value ?? 0), 0);
+  const atCostCount = counted.filter((p) => p.value_at_cost).length;
   const realizedTotal = closed.reduce((sum, p) => sum + (p.realized_pnl ?? 0), 0);
 
   return (
     <div className="flex flex-col gap-6" data-testid="option-positions">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard title="Open positions">
           <span data-testid="op-open-count">{open.length}</span>
         </KpiCard>
         <KpiCard title="Market result (open)">
-          {hasAnyMark && marketResult != null ? <Pnl value={marketResult} /> : "—"}
+          {priced.length > 0 ? <Pnl value={marketResult} /> : "—"}
+        </KpiCard>
+        <KpiCard title="Net worth impact">
+          <span data-testid="op-net-worth-impact">
+            {counted.length > 0 ? <Pnl value={netWorthImpact} /> : "—"}
+          </span>
+          {atCostCount > 0 && (
+            <span
+              className="mt-1 block text-xs font-normal text-muted-foreground"
+              data-testid="op-at-cost-note"
+            >
+              {atCostCount} at cost (no market price yet)
+            </span>
+          )}
         </KpiCard>
         <KpiCard title="Realized result">
           <span data-testid="op-realized-total">
@@ -435,6 +468,7 @@ function OptionPositionsSection({ portfolioId }: { portfolioId: number }) {
                   <TableHead>Premium</TableHead>
                   <TableHead>Last price</TableHead>
                   <TableHead>Market result</TableHead>
+                  <TableHead>Net worth</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -469,13 +503,46 @@ function OptionPositionsSection({ portfolioId }: { portfolioId: number }) {
                       <TableCell>{p.quantity}</TableCell>
                       <TableCell>{p.premium.toFixed(2)}</TableCell>
                       <TableCell>
-                        {mark?.last_price != null ? mark.last_price.toFixed(2) : "—"}
-                        {marks && mark?.last_price == null && (
+                        {p.mark_price != null ? p.mark_price.toFixed(2) : "—"}
+                        {p.mark_price != null && p.mark_date && (
+                          <span className="block text-xs text-muted-foreground">
+                            traded {formatDate(p.mark_date)}
+                          </span>
+                        )}
+                        {marks && mark && mark.last_price == null && (
                           <span className="block text-xs text-muted-foreground">never traded</span>
                         )}
                       </TableCell>
                       <TableCell>
-                        <Pnl value={mark?.unrealized_pnl} />
+                        <Pnl value={p.market_pnl} />
+                      </TableCell>
+                      <TableCell>
+                        <span data-testid={`op-nw-value-${p.id}`}>
+                          {p.include_in_net_worth && p.net_worth_value != null ? (
+                            <Pnl value={p.net_worth_value} />
+                          ) : (
+                            <span className="text-muted-foreground">Left out</span>
+                          )}
+                        </span>
+                        {p.include_in_net_worth && p.value_at_cost && (
+                          <span className="block text-xs text-muted-foreground">at cost</span>
+                        )}
+                        {p.include_in_net_worth && p.is_expired && (
+                          <span className="block text-xs text-muted-foreground">expired, counts 0</span>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="mt-1 h-6 px-1 text-xs"
+                          data-testid={`op-nw-toggle-${p.id}`}
+                          disabled={netWorthMutation.isPending}
+                          onClick={() =>
+                            netWorthMutation.mutate({ id: p.id, include: !p.include_in_net_worth })
+                          }
+                        >
+                          {p.include_in_net_worth ? "Leave out" : "Count it"}
+                        </Button>
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-right">
                         <Button

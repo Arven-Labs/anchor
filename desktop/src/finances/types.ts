@@ -120,6 +120,10 @@ export type NetWorthSummary = {
   total_cash: number;
   total_debt: number;
   total_loans_receivable: number;
+  /** Posições em opções abertas com a flag ligada (Fase 18): comprada soma, lançada subtrai. */
+  total_options_value: number;
+  /** Quantas dessas valeram o prêmio, por falta de preço atualizado. */
+  options_at_cost_count: number;
   net_worth: number;
   leverage_ratio: number | null;
 };

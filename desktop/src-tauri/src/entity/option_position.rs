@@ -35,6 +35,15 @@ pub struct Model {
     #[sea_orm(column_type = "Double", nullable)]
     pub close_fee: Option<f64>,
     pub created_at: String,
+    /// A posição aberta entra no patrimônio (liga/desliga por posição, nasce ligada).
+    pub include_in_net_worth: bool,
+    /// Último preço negociado guardado pela atualização de preços (o patrimônio não usa rede).
+    #[sea_orm(column_type = "Double", nullable)]
+    pub mark_price: Option<f64>,
+    /// Data do último negócio de onde veio `mark_price`.
+    pub mark_date: Option<String>,
+    /// Quando `mark_price` foi atualizado.
+    pub marked_at: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
