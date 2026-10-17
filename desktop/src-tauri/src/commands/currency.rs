@@ -5,12 +5,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use serde::Serialize;
 
 use crate::commands::transaction::{compute_positions, PositionView};
-use crate::domain::currency_conversion::FxRates;
+use crate::domain::currency_conversion::{FxHistory, FxRates};
 use crate::entity::{assets, portfolio, stock_price_history, transactions, workspace_settings};
 use crate::error::AppError;
 use crate::finance_api;
@@ -36,13 +36,9 @@ pub async fn workspace_of_portfolio(db: &DatabaseConnection, portfolio_id: i32) 
         .ok_or_else(|| AppError::NotFound(format!("portfolio {portfolio_id}")))
 }
 
-/// Último fechamento de cada par que pode servir de rota entre `currencies` e
-/// `base` (direto, inverso e as duas pernas via USD).
-pub async fn load_rates(
-    db: &DatabaseConnection,
-    base: &str,
-    currencies: &HashSet<String>,
-) -> Result<FxRates, AppError> {
+// Códigos de par que podem servir de rota entre `currencies` e `base`: direto,
+// inverso e as duas pernas via USD.
+fn candidate_pair_codes(base: &str, currencies: &HashSet<String>) -> HashSet<String> {
     let mut codes: HashSet<String> = HashSet::new();
     for currency in currencies.iter().filter(|c| c.as_str() != base) {
         for (a, b) in [(currency.as_str(), base), (base, currency.as_str()), (currency.as_str(), PIVOT), (PIVOT, currency.as_str())] {
@@ -55,7 +51,17 @@ pub async fn load_rates(
         codes.insert(format!("{PIVOT}{base}"));
         codes.insert(format!("{base}{PIVOT}"));
     }
+    codes
+}
 
+/// Último fechamento de cada par que pode servir de rota entre `currencies` e
+/// `base`.
+pub async fn load_rates(
+    db: &DatabaseConnection,
+    base: &str,
+    currencies: &HashSet<String>,
+) -> Result<FxRates, AppError> {
+    let codes = candidate_pair_codes(base, currencies);
     let mut latest: HashMap<String, (String, f64)> = HashMap::new();
     if !codes.is_empty() {
         for row in stock_price_history::Entity::find()
@@ -70,6 +76,29 @@ pub async fn load_rates(
         }
     }
     Ok(FxRates::new(base, latest.into_iter().map(|(code, (_, price))| (code, price)).collect()))
+}
+
+/// Série inteira dos pares candidatos, lida de uma vez (a rentabilidade converte
+/// dezenas de fluxos e fins de mês, cada um na sua data).
+pub async fn load_fx_history(
+    db: &DatabaseConnection,
+    base: &str,
+    currencies: &HashSet<String>,
+) -> Result<FxHistory, AppError> {
+    let codes = candidate_pair_codes(base, currencies);
+    let mut pairs: HashMap<String, Vec<(NaiveDate, f64)>> = HashMap::new();
+    if !codes.is_empty() {
+        for row in stock_price_history::Entity::find()
+            .filter(stock_price_history::Column::Ticker.is_in(codes))
+            .all(db)
+            .await?
+        {
+            if let Ok(date) = NaiveDate::parse_from_str(&row.price_date, "%Y-%m-%d") {
+                pairs.entry(row.ticker).or_default().push((date, row.close_price));
+            }
+        }
+    }
+    Ok(FxHistory::new(pairs))
 }
 
 /// Posição na moeda base. Sem taxa: valores zerados em `None`, moeda nativa

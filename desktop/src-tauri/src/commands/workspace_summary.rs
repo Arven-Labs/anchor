@@ -142,5 +142,6 @@ pub async fn get_workspace_profitability(
         .map(|p| p.id)
         .collect();
 
-    compute_profitability(db, &portfolio_ids, None).await
+    let base = base_currency(db, workspace_id).await?;
+    compute_profitability(db, &portfolio_ids, None, &base).await
 }

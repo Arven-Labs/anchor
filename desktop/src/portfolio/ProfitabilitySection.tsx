@@ -17,6 +17,7 @@ import {
 import type { AppError } from "../types";
 import type { MonthlyReturn, PositionView, ProfitabilityComparison } from "./types";
 import { Button } from "@/components/ui/button";
+import { formatMoney } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -100,10 +101,6 @@ function monthLabel(yearMonth: string): string {
 
 function formatPct(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
-}
-
-function formatCurrency(value: number): string {
-  return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function KpiCard({ title, value, subtext }: { title: string; value: string; subtext?: string }) {
@@ -269,6 +266,7 @@ function ProfitabilitySection({ portfolioId }: { portfolioId: number }) {
 
   const monthlyReturns = comparisonQuery.data?.portfolio ?? [];
   const benchmarks = comparisonQuery.data?.benchmarks ?? [];
+  const baseCurrency = comparisonQuery.data?.base_currency ?? "BRL";
   const chartData = monthlyReturns.map((row) => ({ ...row, label: monthLabel(row.year_month) }));
 
   const cdiSeries = benchmarks.find((b) => b.code === "cdi");
@@ -338,6 +336,13 @@ function ProfitabilitySection({ portfolioId }: { portfolioId: number }) {
               subtext={vsCdiSubtext(lastMonthPct, cdiLastMonthPct)}
             />
           </div>
+
+          {baseCurrency !== "BRL" && (
+            <p className="text-sm text-muted-foreground" data-testid="benchmarks-hidden">
+              Returns are in {baseCurrency}. The benchmarks (CDI, IPCA, Selic and the Brazilian indices) are in
+              BRL, so they are hidden while the base currency is {baseCurrency}.
+            </p>
+          )}
 
           <Card>
             <CardHeader>
@@ -532,9 +537,9 @@ function ProfitabilitySection({ portfolioId }: { portfolioId: number }) {
                 {monthlyReturns.map((row) => (
                   <TableRow key={row.year_month}>
                     <TableCell>{monthLabel(row.year_month)}</TableCell>
-                    <TableCell>{formatCurrency(row.bmv)}</TableCell>
-                    <TableCell>{formatCurrency(row.cf_total)}</TableCell>
-                    <TableCell>{formatCurrency(row.emv)}</TableCell>
+                    <TableCell>{formatMoney(row.bmv, baseCurrency)}</TableCell>
+                    <TableCell>{formatMoney(row.cf_total, baseCurrency)}</TableCell>
+                    <TableCell>{formatMoney(row.emv, baseCurrency)}</TableCell>
                     <TableCell>{formatPct(row.r_month_pct)}</TableCell>
                     <TableCell>{formatPct(row.r_cumulative_pct)}</TableCell>
                   </TableRow>

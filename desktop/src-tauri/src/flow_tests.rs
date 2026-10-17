@@ -10,6 +10,7 @@ use crate::commands::crypto_indicator::{
     apply_threshold, crypto_score_for, record_crypto_indicator_in, RecordCryptoIndicatorRequest,
 };
 use crate::commands::currency::{base_currency, positions_in_base, save_base_currency, sum_in_base};
+use crate::commands::profitability::{compare_with_benchmarks, compute_profitability};
 use crate::commands::loan::{
     create_borrower_in, create_loan_in, delete_loan_in, list_loans_view, register_loan_repayment_in,
     update_loan_in, CreateBorrowerRequest, CreateLoanRequest, RegisterLoanRepaymentRequest,
@@ -874,19 +875,23 @@ async fn backup_round_trips_the_real_schema_with_data_and_attachments() {
 // Moeda base (Fase 19)
 // ---------------------------------------------------------------------------
 
-async fn seed_fx_rate(db: &sea_orm::DatabaseConnection, pair: &str, rate: f64) {
+async fn seed_price(db: &sea_orm::DatabaseConnection, ticker: &str, date: &str, price: f64) {
     use sea_orm::{ActiveModelTrait, Set};
     crate::entity::stock_price_history::ActiveModel {
-        ticker: Set(pair.to_string()),
-        price_date: Set("2026-10-16".to_string()),
-        close_price: Set(rate),
+        ticker: Set(ticker.to_string()),
+        price_date: Set(date.to_string()),
+        close_price: Set(price),
         source: Set("test".to_string()),
         fetched_at: Set("2026-10-16T00:00:00Z".to_string()),
         ..Default::default()
     }
     .insert(db)
     .await
-    .expect("insert fx rate");
+    .expect("insert price");
+}
+
+async fn seed_fx_rate(db: &sea_orm::DatabaseConnection, pair: &str, rate: f64) {
+    seed_price(db, pair, "2026-10-16", rate).await;
 }
 
 #[tokio::test]
@@ -979,4 +984,109 @@ async fn dividends_are_summed_in_the_base_currency() {
 
     // 10 BRL + 4 USD × 5; o EUR sem cotação fica de fora da soma.
     assert!(close(sum_in_base(&db, &[a, b, c], "BRL").await.unwrap(), 30.0));
+}
+
+// Rentabilidade na moeda base. O TWR percorre os meses até hoje, então os
+// casos compram no dia 1 do mês corrente (peso do fluxo > 0 em qualquer dia) e
+// o fim do mês é "hoje" — uma linha só, sem depender da data da execução.
+struct ProfitabilityScenario {
+    portfolio_id: i32,
+    workspace_id: i32,
+    first_day: String,
+    today: String,
+    end_rate: f64,
+}
+
+async fn usd_stock_scenario(db: &sea_orm::DatabaseConnection) -> ProfitabilityScenario {
+    use chrono::Datelike;
+    let today = chrono::Utc::now().date_naive();
+    let first_day = today.with_day(1).unwrap().format("%Y-%m-%d").to_string();
+    let today = today.format("%Y-%m-%d").to_string();
+
+    let ws = workspace(db, "Return").await;
+    let pf = portfolio(db, ws.id, "Main").await;
+    let usd = asset_in(db, "AAPL", "acao_internacional", "USD").await;
+    trade(db, pf.id, usd.id, "compra", 2.0, 100.0, &first_day).await;
+    seed_price(db, "AAPL", &today, 60.0).await;
+    seed_price(db, "USDBRL", &first_day, 5.0).await;
+    // No dia 1 o início e o fim do mês são a mesma data (uma linha por par e dia).
+    let end_rate = if today == first_day { 5.0 } else { 6.0 };
+    if today != first_day {
+        seed_price(db, "USDBRL", &today, end_rate).await;
+    }
+    ProfitabilityScenario { portfolio_id: pf.id, workspace_id: ws.id, first_day, today, end_rate }
+}
+
+#[tokio::test]
+async fn profitability_converts_flows_and_month_end_at_their_own_dates() {
+    let db = memory_db().await;
+    let s = usd_stock_scenario(&db).await;
+
+    let rows = compute_profitability(&db, &[s.portfolio_id], None, "BRL").await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(close(rows[0].cf_total, 500.0)); // 100 USD × 5 no dia da compra
+    assert!(close(rows[0].emv, 120.0 * s.end_rate)); // 2 × 60 USD na taxa do fim do mês
+    assert!(rows[0].r_month_pct > 0.0);
+}
+
+#[tokio::test]
+async fn profitability_in_usd_has_no_exchange_effect() {
+    let db = memory_db().await;
+    let s = usd_stock_scenario(&db).await;
+
+    let rows = compute_profitability(&db, &[s.portfolio_id], None, "USD").await.unwrap();
+    assert!(close(rows[0].cf_total, 100.0));
+    assert!(close(rows[0].emv, 120.0)); // 2 × 60 USD
+    // Só o preço andou (50 → 60): o retorno em USD é o do ativo, sem o câmbio
+    // que soma ao retorno em BRL quando o dólar sobe no mês.
+    let in_brl = compute_profitability(&db, &[s.portfolio_id], None, "BRL").await.unwrap();
+    assert!(rows[0].r_month_pct <= in_brl[0].r_month_pct);
+}
+
+#[tokio::test]
+async fn profitability_of_a_brl_portfolio_needs_no_exchange_history() {
+    use chrono::Datelike;
+    let db = memory_db().await;
+    let today = chrono::Utc::now().date_naive();
+    let first_day = today.with_day(1).unwrap().format("%Y-%m-%d").to_string();
+    let ws = workspace(&db, "Return").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    trade(&db, pf.id, petr.id, "compra", 10.0, 250.0, &first_day).await;
+    seed_price(&db, "PETR4", &today.format("%Y-%m-%d").to_string(), 30.0).await;
+
+    let rows = compute_profitability(&db, &[pf.id], None, "BRL").await.unwrap();
+    assert!(close(rows[0].cf_total, 250.0));
+    assert!(close(rows[0].emv, 300.0));
+}
+
+#[tokio::test]
+async fn profitability_without_the_exchange_pair_names_the_pair() {
+    use chrono::Datelike;
+    let db = memory_db().await;
+    let today = chrono::Utc::now().date_naive();
+    let first_day = today.with_day(1).unwrap().format("%Y-%m-%d").to_string();
+    let ws = workspace(&db, "Return").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let usd = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    trade(&db, pf.id, usd.id, "compra", 2.0, 100.0, &first_day).await;
+    seed_price(&db, "AAPL", &today.format("%Y-%m-%d").to_string(), 60.0).await;
+
+    let err = compute_profitability(&db, &[pf.id], None, "BRL").await.err().unwrap();
+    assert!(err.to_string().contains("USD/BRL"), "mensagem: {err}");
+}
+
+#[tokio::test]
+async fn comparison_hides_the_brl_benchmarks_outside_brl() {
+    let db = memory_db().await;
+    let s = usd_stock_scenario(&db).await;
+    // Um benchmark que existiria em BRL: sem a regra, entraria na comparação.
+    seed_price(&db, "^BVSP", &s.first_day, 100_000.0).await;
+    seed_price(&db, "^BVSP", &s.today, 101_000.0).await;
+    save_base_currency(&db, s.workspace_id, "USD").await.unwrap();
+
+    let cmp = compare_with_benchmarks(&db, s.portfolio_id, "USD".to_string()).await.unwrap();
+    assert_eq!(cmp.base_currency, "USD");
+    assert!(cmp.benchmarks.is_empty());
+    assert_eq!(cmp.portfolio.len(), 1);
 }

@@ -1863,10 +1863,21 @@ moeda de origem: a conversão é só de exibição.
 **Efeito colateral deliberado**: antes, ativo em USD era somado cru como se fosse BRL; agora é convertido
 (com BRL como base e o `USDBRL` coletado). Sem o par coletado, a posição sai dos totais com aviso.
 
-**Pendente**: rentabilidade/TWR e benchmarks (muda a conta, não só a exibição); patrimônio líquido,
-caixa, dívidas e empréstimos (sem coluna de moeda, seguem BRL implícito); custo convertido na data de cada
-fluxo (hoje usa a taxa mais recente, então o P/L inclui variação cambial do custo); formatadores
-locais de Ledger, Dividendos, Rentabilidade e impostos; impostos ficam sempre em BRL (regra fiscal).
+**2ª entrega (Sessão 121) — rentabilidade na moeda base**: `compute_profitability` ganhou o parâmetro
+`base` e converte cada fluxo (compra/venda/provento) pela taxa da `transaction_date`, o EMV de cada mês pela taxa
+do fim do mês e o DARF (sempre BRL) pela data do pagamento — a variação cambial entra no retorno. Usa
+`FxHistory` (`domain/currency_conversion.rs`), que pega a cotação da data mais próxima em qualquer distância
+(decisão do dono do projeto); só falha, com `NotFound` nomeando o par, se o par nunca foi coletado. Com a base
+≠ BRL os benchmarks (CDI/IPCA/Selic e índices em BRL) vêm vazios e a tela avisa. O retorno alavancado de
+`liability.rs` fica em BRL fixo (a taxa da dívida é em reais).
+
+**Mudança de comportamento**: carteira com ativo em USD e base BRL, sem o `USDBRL` coletado, antes mostrava um
+TWR com USD somado cru e agora dá erro pedindo para coletar o par.
+
+**Pendente**: patrimônio líquido, caixa, dívidas e empréstimos (sem coluna de moeda, seguem BRL implícito);
+custo convertido na data de cada fluxo no P/L das posições (hoje usa a taxa mais recente, então o P/L inclui
+variação cambial do custo); formatadores locais de Ledger, Dividendos e impostos; benchmarks convertidos
+(hoje só escondidos fora do BRL); impostos ficam sempre em BRL (regra fiscal).
 
 
 ### Fase 20 — Remover a IA do Anchor (Warden vira a única interface de IA; decisão registrada na Sessão 100, **executada na Sessão 101**)

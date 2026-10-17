@@ -246,8 +246,10 @@ pub async fn list_liabilities_view(
                 Some(asset_id) if !portfolio_ids.is_empty() => {
                     let annualized = annualize_monthly_rate(l.taxa_percentual / 100.0) * 100.0;
                     // Um gap de preço nesse ativo específico não pode derrubar
-                    // a lista inteira de dívidas — engolido via `.ok()`.
-                    let asset_return = compute_profitability(db, &portfolio_ids, Some(asset_id))
+                    // a lista inteira de dívidas — engolido via `.ok()`. Em BRL
+                    // fixo: a taxa da dívida é em reais e o spread só faz
+                    // sentido contra o retorno na mesma moeda (Fase 19).
+                    let asset_return = compute_profitability(db, &portfolio_ids, Some(asset_id), "BRL")
                         .await
                         .ok()
                         .and_then(|monthly| {

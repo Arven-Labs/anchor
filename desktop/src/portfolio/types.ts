@@ -323,7 +323,12 @@ export type MonthlyReturn = {
 // sem fonte histórica gratuita — ver PHASE.md item 13.5).
 export type BenchmarkPoint = { year_month: string; r_month_pct: number; r_cumulative_pct: number };
 export type BenchmarkSeries = { code: string; label: string; monthly: BenchmarkPoint[] };
-export type ProfitabilityComparison = { portfolio: MonthlyReturn[]; benchmarks: BenchmarkSeries[] };
+export type ProfitabilityComparison = {
+  portfolio: MonthlyReturn[];
+  benchmarks: BenchmarkSeries[];
+  // Fase 19 — moeda do retorno; fora do BRL os benchmarks vêm vazios.
+  base_currency: string;
+};
 
 // Fase 13.1 — `current_price`/`market_value`/`unrealized_pl*` vêm de
 // `domain::position_pricing::price_position` (Rust). `price_source`:

@@ -2770,3 +2770,21 @@ do `PHASE.md`.
   Edit/Write; deixei também uma linha perdida no arquivo, removida antes de compilar.
 - **Pendente**: rentabilidade/TWR, patrimônio, caixa e dívidas em outra moeda; custo na taxa da data do fluxo;
   ingestão agendada e `DataProvider` com mais de uma fonte por categoria; E2E do câmbio pular em "No data found".
+  *(A rentabilidade foi feita na Sessão 121, abaixo.)*
+
+
+### 2026-10-17 — Sessão 121
+
+**Rentabilidade (TWR) na moeda base (Fase 19, 2ª entrega).** Plan mode; escolhas do dono do projeto: benchmarks
+escondidos com aviso fora do BRL; câmbio sem cotação na data usa a mais próxima. Detalhe na Fase 19 do `PHASE.md`.
+- **Feito**: `FxHistory` (série por par, taxa da data mais próxima), `load_fx_history`, `compute_profitability`
+  convertendo fluxos, fim de mês e DARF pela taxa da própria data, `compare_with_benchmarks` extraída (base ≠ BRL
+  devolve `benchmarks` vazio e `base_currency`), aviso e `formatMoney` na tabela mensal.
+- **Decisão de desenho**: o retorno alavancado de `liability.rs` fica em BRL fixo, porque compara com a taxa da
+  dívida em reais.
+- **Mudança de comportamento**: base BRL com ativo em USD e sem o `USDBRL` coletado passa a dar erro (antes dava
+  um TWR com USD somado cru).
+- **Verificado**: `./dev.sh check` limpo; 4 testes de domínio e 5 de fluxo novos. CI: ver abaixo.
+- **Não verificado**: a tela a olho e o cálculo contra dados reais de câmbio.
+- **Pendente**: patrimônio, caixa, dívidas e empréstimos em outra moeda; custo na taxa da data no P/L das
+  posições; formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.

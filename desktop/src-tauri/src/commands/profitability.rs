@@ -4,6 +4,9 @@ use chrono::{Datelike, Duration, NaiveDate, Utc};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Serialize;
 
+use crate::commands::currency::{
+    base_currency, load_fx_history, workspace_of_portfolio, DEFAULT_BASE_CURRENCY,
+};
 use crate::domain::benchmark::{self, PricePoint};
 use crate::domain::twr::{self, CashFlow, FlowKind};
 use crate::entity::{assets, macro_index_monthly, stock_price_history, transactions};
@@ -118,7 +121,9 @@ pub async fn get_portfolio_profitability(
     db: tauri::State<'_, DatabaseConnection>,
     portfolio_id: i32,
 ) -> Result<Vec<MonthlyReturn>, AppError> {
-    compute_profitability(db.inner(), &[portfolio_id], None).await
+    let db = db.inner();
+    let base = base_currency(db, workspace_of_portfolio(db, portfolio_id).await?).await?;
+    compute_profitability(db, &[portfolio_id], None, &base).await
 }
 
 // Extraída pra ser reaproveitada por `get_profitability_comparison` (Fase
@@ -133,6 +138,7 @@ pub async fn compute_profitability(
     db: &DatabaseConnection,
     portfolio_ids: &[i32],
     asset_id: Option<i32>,
+    base: &str,
 ) -> Result<Vec<MonthlyReturn>, AppError> {
     let txs = transactions::Entity::find()
         .filter(transactions::Column::PortfolioId.is_in(portfolio_ids.iter().copied()))
@@ -176,6 +182,23 @@ pub async fn compute_profitability(
     // ativo correspondente, reduz o retorno no mês do pagamento.
     let tax_flows = crate::commands::tax::tax_cost_flows(db, portfolio_ids, asset_id).await?;
 
+    // Fase 19 — fluxos e valor de fim de mês entram na moeda base pela taxa da
+    // própria data (a variação cambial faz parte do retorno); DARF é sempre BRL.
+    let mut currencies: HashSet<String> = relevant
+        .iter()
+        .filter_map(|t| t.asset_id)
+        .filter_map(|id| assets_map.get(&id).map(|a| a.currency.clone()))
+        .collect();
+    currencies.insert(DEFAULT_BASE_CURRENCY.to_string());
+    let fx = load_fx_history(db, base, &currencies).await?;
+    let to_base = |value: f64, currency: &str, date: NaiveDate| -> Result<f64, AppError> {
+        fx.rate_on(currency, base, date).map(|rate| value * rate).ok_or_else(|| {
+            AppError::NotFound(format!(
+                "sem câmbio {currency}/{base} — colete o par em Research → FX"
+            ))
+        })
+    };
+
     let today = Utc::now().date_naive();
     let first_date = NaiveDate::parse_from_str(&relevant[0].transaction_date, "%Y-%m-%d")
         .map_err(|_| AppError::InvalidGuard("data de transação inválida".to_string()))?;
@@ -208,12 +231,13 @@ pub async fn compute_profitability(
             let date = NaiveDate::parse_from_str(&tx.transaction_date, "%Y-%m-%d")
                 .map_err(|_| AppError::InvalidGuard("data de transação inválida".to_string()))?;
             let weight = flow_weight(date);
+            let value = to_base(tx.total_value, &assets_map[&tx.asset_id.unwrap()].currency, date)?;
             match tx.transaction_type.as_str() {
                 BUY => {
                     let qty = tx.quantity.unwrap_or(0.0);
                     *holdings.entry(tx.asset_id.unwrap()).or_insert(0.0) += qty;
                     cash_flows.push(CashFlow {
-                        amount: twr::flow_amount(FlowKind::Contribution, tx.total_value),
+                        amount: twr::flow_amount(FlowKind::Contribution, value),
                         weight,
                     });
                 }
@@ -221,13 +245,13 @@ pub async fn compute_profitability(
                     let qty = tx.quantity.unwrap_or(0.0);
                     *holdings.entry(tx.asset_id.unwrap()).or_insert(0.0) -= qty;
                     cash_flows.push(CashFlow {
-                        amount: twr::flow_amount(FlowKind::Withdrawal, tx.total_value),
+                        amount: twr::flow_amount(FlowKind::Withdrawal, value),
                         weight,
                     });
                 }
                 DIVIDEND => {
                     cash_flows.push(CashFlow {
-                        amount: twr::flow_amount(FlowKind::Income, tx.total_value),
+                        amount: twr::flow_amount(FlowKind::Income, value),
                         weight,
                     });
                 }
@@ -237,7 +261,10 @@ pub async fn compute_profitability(
         for (paid_date, amount) in &tax_flows {
             if paid_date.year() == year && paid_date.month() == month {
                 cash_flows.push(CashFlow {
-                    amount: twr::flow_amount(FlowKind::Cost, *amount),
+                    amount: twr::flow_amount(
+                        FlowKind::Cost,
+                        to_base(*amount, DEFAULT_BASE_CURRENCY, *paid_date)?,
+                    ),
                     weight: flow_weight(*paid_date),
                 });
             }
@@ -249,13 +276,14 @@ pub async fn compute_profitability(
             if qty.abs() < 1e-9 {
                 continue;
             }
-            let ticker = &assets_map[&asset_id].ticker;
+            let asset = &assets_map[&asset_id];
+            let ticker = &asset.ticker;
             let price = closest_price(db, ticker, target_date).await?.ok_or_else(|| {
                 AppError::NotFound(format!(
                     "sem preço histórico de {ticker} perto de {target_date} — rode \"Atualizar histórico de preços\""
                 ))
             })?;
-            emv += qty * price;
+            emv += to_base(qty * price, &asset.currency, target_date)?;
         }
 
         let r_month = if bmv == 0.0 && emv == 0.0 && cash_flows.is_empty() {
@@ -307,6 +335,8 @@ pub struct BenchmarkSeries {
 pub struct ProfitabilityComparison {
     pub portfolio: Vec<MonthlyReturn>,
     pub benchmarks: Vec<BenchmarkSeries>,
+    // Fase 19 — moeda em que `portfolio` está; ≠ BRL esconde os benchmarks.
+    pub base_currency: String,
 }
 
 // Encadeia uma sequência de retornos mensais (já na ordem certa) em pontos
@@ -409,10 +439,21 @@ pub async fn get_profitability_comparison(
     portfolio_id: i32,
 ) -> Result<ProfitabilityComparison, AppError> {
     let db = db.inner();
-    let portfolio = compute_profitability(db, &[portfolio_id], None).await?;
+    let base = base_currency(db, workspace_of_portfolio(db, portfolio_id).await?).await?;
+    compare_with_benchmarks(db, portfolio_id, base).await
+}
 
-    if portfolio.is_empty() {
-        return Ok(ProfitabilityComparison { portfolio, benchmarks: vec![] });
+pub async fn compare_with_benchmarks(
+    db: &DatabaseConnection,
+    portfolio_id: i32,
+    base_currency: String,
+) -> Result<ProfitabilityComparison, AppError> {
+    let portfolio = compute_profitability(db, &[portfolio_id], None, &base_currency).await?;
+
+    // CDI/IPCA/Selic são taxas em reais e os índices de preço estão em BRL:
+    // fora do BRL a comparação seria enganosa, então a tela avisa e não plota.
+    if portfolio.is_empty() || base_currency != DEFAULT_BASE_CURRENCY {
+        return Ok(ProfitabilityComparison { portfolio, benchmarks: vec![], base_currency });
     }
 
     let months: Vec<(i32, u32)> = portfolio
@@ -436,5 +477,5 @@ pub async fn get_profitability_comparison(
     ];
     let benchmarks = candidates.into_iter().flatten().collect();
 
-    Ok(ProfitabilityComparison { portfolio, benchmarks })
+    Ok(ProfitabilityComparison { portfolio, benchmarks, base_currency })
 }
