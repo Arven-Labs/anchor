@@ -3282,7 +3282,56 @@ suspeita. Em aberto: confirmar com a Receita/corretora se a retenção de swing 
 
 **Pendente da Fase 34**: importar proventos da B3, desdobramentos e bonificações na importação, anexos no arquivo de
 Workspace, conferência real do dono do projeto contra o Investidor10.
+**Peculiaridade do AUPO11 (Sessão 138, a resolver depois)**: o `AUPO11` é um ETF de renda fixa "Smart Selic" cujo IR é
+retido na fonte, então a venda não gera imposto a pagar nem entra na apuração mensal de IR. Hoje o motor trataria a venda
+como renda variável comum. Além disso, a planilha "Negociação" da B3 o traz com mercado "Renda Fixa", que o importador
+ainda recusa (a recusa cancela o arquivo inteiro). Nada disso foi mudado; é só o registro.
+
+**ETF, FII e unit: cuidar bem da distinção (Sessão 138, pedido do dono do projeto, nada mudado)**: o final `11` do ticker não
+diz o que o ativo é. Hoje o app resolve assim, e é aqui que mora o risco:
+- **Unit não é uma classe.** É `acao_br` com ticker terminado em `11` (`is_unit` em `domain/tax/classify.rs`), o que perde a
+  isenção de R$ 20 mil. Qualquer ação com final `11` vira unit, certa ou não, e um FII ou ETF cadastrado como `acao_br`
+  seria tributado como unit sem aviso.
+- **A classe decide o imposto.** `fii` → `TaxTreatment::Fii`; `etf_br` e `bdr` → comum sem isenção; `renda_fixa` → ignorada
+  na apuração. Escolher a classe errada na prévia de importação muda o IR sem erro nenhum.
+- **A importação não adivinha.** `infer_class` devolve `None` para final `11` (e para qualquer final desconhecido) e deixa a
+  escolha para o usuário na prévia, sem sugestão nem aviso de consequência. O `TAEE11` e o `AUPO11` da amostra real caem aqui.
+- **ETF não é uma coisa só**: `etf_br` não separa ETF de renda variável (BOVA11) de ETF de renda fixa (AUPO11), que tem
+  tributação própria (ver a peculiaridade do AUPO11 acima).
+- Ideias, sem decisão: guardar uma lista de referência (nome, CNPJ, tipo) vinda de fonte oficial para sugerir a classe de
+  um final `11`; mostrar na prévia o tratamento fiscal que a classe escolhida implica; avaliar se unit merece classe
+  própria em vez de heurística de ticker; separar ETF de renda fixa. Fonte e regra fiscal ainda não confirmadas.
+
 **Ideia registrada do dono do projeto (futura, não iniciada)**: IA por chave própria, sem chat, que lê planilha/
 extrato e propõe lançamentos e categorias para aprovação, e gera resumos na análise de ativos. Conflita com a
 decisão da Fase 20 (tirar a IA do Anchor), então precisa ser confirmada antes; o importador da Entrega 3 será
 desenhado para receber lançamentos propostos de qualquer origem.
+
+### Fase 35 — Revisão item a item da importação e fila de pendentes (Sessão 138)
+
+**Pedido do dono do projeto**: ao importar, em vez de uma tabela única, um popup com o primeiro item proposto, editável, com
+"correto" ou "errado" e passando para o próximo; o que ele fechar sem decidir vira pendente numa fila, e a mesma mecânica
+vale para qualquer tipo de item (como a tela de proventos pendentes). A IA futura seria só mais uma origem de itens.
+**Decisões**: popup na hora; certo grava e não vai para a fila; fechar o popup manda o não decidido para a fila; descartar
+recusa e não reaparece na reimportação; primeira entrega = fila + popup + B3 Negociação.
+
+**Entrega 1 (feita, Sessão 138)**:
+- Tabela `import_pending` (migration `m20261019_100000`, entidade, e linha nova em `SPEC` de `workspace_file.rs` para entrar
+  no arquivo de Workspace): `portfolio_id`, `kind` (hoje só `transaction`), `source`, `payload` (JSON do item proposto e da
+  classe), `status` `pending`/`discarded`. Aprovado sai da fila (o lançamento é o registro); descartado fica só para a
+  reimportação não recriar. Sem coluna de fingerprint: a chave de duplicata é calculada do payload (`dedup_key`).
+- `portfolio_io.rs`: `stage_import`/`stage_parsed` (lê, classifica e guarda o que é novo; duplicata é contada, erro de
+  leitura é devolvido e fica fora da fila), `list_import_pending`, `confirm_import_pending` (grava só esse item via
+  `commit_rows`; se a validação recusar, ex. venda acima do saldo, o item continua pendente), `discard_import_pending`,
+  `class_tax_hint` (tratamento fiscal da classe, de `domain/tax/classify.rs`). `preview_rows` conta também a fila como já
+  existente. O mercado "Renda Fixa" da B3 deixou de ser recusado e segue sem classe (o AUPO11 é ETF).
+- Mudança de comportamento: a importação deixou de ser tudo ou nada; cada item é gravado sozinho ao ser aprovado.
+  `preview_import` e `commit_import` continuam no backend, mas a UI não os usa mais.
+- UI: `ImportReviewDialog` (campos editáveis, seletor de classe com o aviso fiscal para ativo novo, Correct/Discard/Skip,
+  contador), `PendingItemsSection` (fila com Review e Discard) e `ImportExportPanel` reduzido a exportar e importar, ambos
+  montados no `LedgerSection`.
+
+**Fora do escopo / pendente**: leitor de dividendos da Movimentação; conciliação de "Transferência - Liquidação" com os
+negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
+Inter; CDB/porquinho visto também como conta corrente sem contar o patrimônio duas vezes; IR do AUPO11; unificar a fila com
+`suggested_dividends`; IA como origem. **Dúvida aberta**: o valor de resgate do CDB na Movimentação é bruto ou líquido de IR?

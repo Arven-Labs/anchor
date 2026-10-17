@@ -3,56 +3,21 @@ import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
-import { ASSET_CLASSES, ASSET_CLASS_LABELS, type AssetClass } from "./types";
+import { PENDING_QUERY_KEY } from "./ImportReviewDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 // Fase 34 — exportar os lançamentos da carteira em CSV e importar de um CSV do
-// Anchor ou da planilha "Negociação" da B3. A importação tem duas etapas: a
-// prévia mostra cada linha (nova, duplicada, com erro, ou ativo novo que precisa
-// de classe) sem gravar nada; só "Import" grava, e tudo ou nada.
+// Anchor ou da planilha "Negociação" da B3. Fase 35 — importar não grava nada
+// direto: o que é novo vai para a fila de pendentes e abre o popup de revisão,
+// onde o dono do projeto aprova, edita ou descarta item a item.
 
 type ImportFormat = "anchor_csv" | "b3_negociacao";
 
-type Proposed = {
-  line: number;
-  transaction_date: string;
-  transaction_type: string;
-  ticker: string;
-  asset_class: string | null;
-  quantity: number | null;
-  unit_price: number | null;
-  total_value: number;
-  custody: string | null;
-};
-
-type ImportRow = {
-  line: number;
-  proposed: Proposed | null;
-  status: "new" | "duplicate" | "error" | "needs_class";
-  message: string | null;
-  suggested_class: string | null;
-};
-
-type CommitResult = {
-  created: number;
-  skipped_duplicates: number;
+type StageResult = {
+  staged: number;
+  duplicates: number;
   errors: { line: number; message: string }[];
-};
-
-const STATUS_LABEL: Record<ImportRow["status"], string> = {
-  new: "New",
-  duplicate: "Already there",
-  error: "Error",
-  needs_class: "Choose a class",
 };
 
 const FORMAT_LABEL: Record<ImportFormat, string> = {
@@ -60,12 +25,15 @@ const FORMAT_LABEL: Record<ImportFormat, string> = {
   b3_negociacao: "B3 spreadsheet (Negociação)",
 };
 
-function ImportExportPanel({ portfolioId }: { portfolioId: number }) {
+function ImportExportPanel({
+  portfolioId,
+  onStaged,
+}: {
+  portfolioId: number;
+  onStaged: () => void;
+}) {
   const queryClient = useQueryClient();
-  const [rows, setRows] = useState<ImportRow[] | null>(null);
-  const [format, setFormat] = useState<ImportFormat | null>(null);
-  const [classes, setClasses] = useState<Record<number, string>>({});
-  const [result, setResult] = useState<CommitResult | null>(null);
+  const [result, setResult] = useState<StageResult | null>(null);
 
   const exportMutation = useMutation<number, AppError, void>({
     mutationFn: async () => {
@@ -78,7 +46,7 @@ function ImportExportPanel({ portfolioId }: { portfolioId: number }) {
     },
   });
 
-  const previewMutation = useMutation<ImportRow[], AppError, ImportFormat>({
+  const importMutation = useMutation<StageResult, AppError, ImportFormat>({
     mutationFn: async (chosen) => {
       const path = await open({
         multiple: false,
@@ -88,51 +56,14 @@ function ImportExportPanel({ portfolioId }: { portfolioId: number }) {
             : [{ name: "Excel", extensions: ["xlsx", "xls"] }],
       });
       if (typeof path !== "string") throw new Error("cancelled");
-      const preview = await invoke<{ rows: ImportRow[] }>("preview_import", {
-        portfolioId,
-        path,
-        format: chosen,
-      });
-      return preview.rows;
-    },
-    onSuccess: (previewRows, chosen) => {
-      setFormat(chosen);
-      setRows(previewRows);
-      setResult(null);
-      setClasses(
-        Object.fromEntries(
-          previewRows
-            .filter((r) => r.status === "needs_class" && r.suggested_class)
-            .map((r) => [r.line, r.suggested_class as string]),
-        ),
-      );
-    },
-  });
-
-  const commitMutation = useMutation<CommitResult, AppError, void>({
-    mutationFn: () => {
-      const items = (rows ?? [])
-        .filter((r) => r.proposed && (r.status === "new" || r.status === "needs_class"))
-        .map((r) => ({ proposed: r.proposed, asset_class: classes[r.line] ?? null }));
-      return invoke("commit_import", { portfolioId, items });
+      return invoke("stage_import", { portfolioId, path, format: chosen });
     },
     onSuccess: (outcome) => {
       setResult(outcome);
-      if (outcome.errors.length === 0) {
-        setRows(null);
-        for (const key of ["transactions", "positions", "portfolio-summary", "workspace-summary", "assets"]) {
-          queryClient.invalidateQueries({ queryKey: [key] });
-        }
-      }
+      queryClient.invalidateQueries({ queryKey: [PENDING_QUERY_KEY, portfolioId] });
+      if (outcome.staged > 0) onStaged();
     },
   });
-
-  const importable = (rows ?? []).filter((r) => r.status === "new" || r.status === "needs_class");
-  const missingClass = importable.some((r) => r.status === "needs_class" && !classes[r.line]);
-  const counts = (rows ?? []).reduce<Record<string, number>>((acc, r) => {
-    acc[r.status] = (acc[r.status] ?? 0) + 1;
-    return acc;
-  }, {});
 
   return (
     <Card data-testid="import-export-panel">
@@ -156,8 +87,8 @@ function ImportExportPanel({ portfolioId }: { portfolioId: number }) {
               type="button"
               variant="outline"
               data-testid={`import-${f}`}
-              disabled={previewMutation.isPending}
-              onClick={() => previewMutation.mutate(f)}
+              disabled={importMutation.isPending}
+              onClick={() => importMutation.mutate(f)}
             >
               Import {FORMAT_LABEL[f]}
             </Button>
@@ -172,100 +103,26 @@ function ImportExportPanel({ portfolioId }: { portfolioId: number }) {
         {exportMutation.isError && exportMutation.error.message !== "cancelled" && (
           <p className="text-sm text-destructive">{exportMutation.error.message}</p>
         )}
-        {previewMutation.isError && previewMutation.error.message !== "cancelled" && (
-          <p className="text-sm text-destructive">{previewMutation.error.message}</p>
+        {importMutation.isError && importMutation.error.message !== "cancelled" && (
+          <p className="text-sm text-destructive">{importMutation.error.message}</p>
         )}
-        {commitMutation.isError && <p className="text-sm text-destructive">{commitMutation.error.message}</p>}
 
         {result && (
           <div className="text-sm" data-testid="import-result">
-            {result.errors.length === 0 ? (
-              <p>
-                Imported {result.created} transaction(s)
-                {result.skipped_duplicates > 0 ? `, skipped ${result.skipped_duplicates} duplicate(s)` : ""}.
-              </p>
-            ) : (
-              <div className="text-destructive">
-                <p>Nothing was imported. Fix these lines and try again:</p>
-                <ul className="list-disc pl-5">
-                  {result.errors.map((e) => (
-                    <li key={e.line}>
-                      Line {e.line}: {e.message}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
-
-        {rows && (
-          <div className="flex flex-col gap-3" data-testid="import-preview">
-            <p className="text-sm text-muted-foreground">
-              {format ? FORMAT_LABEL[format] : ""}: {counts.new ?? 0} new, {counts.needs_class ?? 0} need a class,{" "}
-              {counts.duplicate ?? 0} already there, {counts.error ?? 0} with errors.
+            <p>
+              {result.staged} sent to review
+              {result.duplicates > 0 ? `, ${result.duplicates} already there` : ""}
+              {result.errors.length > 0 ? `, ${result.errors.length} could not be read` : ""}.
             </p>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Line</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Ticker</TableHead>
-                  <TableHead>Qty</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Class / note</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((r, index) => (
-                  <TableRow key={`${r.line}-${index}`} data-testid="import-row" data-status={r.status}>
-                    <TableCell>{r.line}</TableCell>
-                    <TableCell>{STATUS_LABEL[r.status]}</TableCell>
-                    <TableCell>{r.proposed?.transaction_date ?? "—"}</TableCell>
-                    <TableCell>{r.proposed?.transaction_type ?? "—"}</TableCell>
-                    <TableCell>{r.proposed?.ticker || "—"}</TableCell>
-                    <TableCell>{r.proposed?.quantity ?? "—"}</TableCell>
-                    <TableCell>{r.proposed ? r.proposed.total_value.toFixed(2) : "—"}</TableCell>
-                    <TableCell>
-                      {r.status === "needs_class" ? (
-                        <Select
-                          value={classes[r.line] ?? ""}
-                          onValueChange={(value) => setClasses((prev) => ({ ...prev, [r.line]: value }))}
-                        >
-                          <SelectTrigger className="w-[180px]" data-testid={`import-class-${r.line}`}>
-                            <SelectValue placeholder="Class" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ASSET_CLASSES.map((assetClass) => (
-                              <SelectItem key={assetClass} value={assetClass}>
-                                {ASSET_CLASS_LABELS[assetClass as AssetClass]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        (r.message ?? "")
-                      )}
-                    </TableCell>
-                  </TableRow>
+            {result.errors.length > 0 && (
+              <ul className="list-disc pl-5 text-destructive" data-testid="import-errors">
+                {result.errors.map((e) => (
+                  <li key={e.line}>
+                    Line {e.line}: {e.message}
+                  </li>
                 ))}
-              </TableBody>
-            </Table>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                data-testid="import-confirm"
-                disabled={importable.length === 0 || missingClass || commitMutation.isPending}
-                onClick={() => commitMutation.mutate()}
-              >
-                Import {importable.length} transaction(s)
-              </Button>
-              <Button type="button" variant="outline" onClick={() => setRows(null)}>
-                Cancel
-              </Button>
-            </div>
+              </ul>
+            )}
           </div>
         )}
       </CardContent>
