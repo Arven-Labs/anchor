@@ -4,7 +4,7 @@ use sea_orm::{
 };
 use serde::Deserialize;
 
-use crate::entity::general_transaction;
+use crate::entity::{bank_account, general_transaction};
 use crate::error::AppError;
 
 const RECEITA: &str = "receita";
@@ -71,10 +71,17 @@ pub async fn update_general_transaction(
     db: tauri::State<'_, DatabaseConnection>,
     request: UpdateGeneralTransactionRequest,
 ) -> Result<general_transaction::Model, AppError> {
+    update_general_transaction_in(db.inner(), request).await
+}
+
+pub async fn update_general_transaction_in(
+    db: &DatabaseConnection,
+    request: UpdateGeneralTransactionRequest,
+) -> Result<general_transaction::Model, AppError> {
     validate_type(&request.transaction_type)?;
 
     let existing = general_transaction::Entity::find_by_id(request.general_transaction_id)
-        .one(db.inner())
+        .one(db)
         .await?
         .ok_or_else(|| {
             AppError::NotFound(format!(
@@ -82,6 +89,27 @@ pub async fn update_general_transaction(
                 request.general_transaction_id
             ))
         })?;
+
+    // Fase 19 — o lançamento herda a moeda da conta; mudar de conta só é
+    // possível entre contas da mesma moeda (não há conversão do valor).
+    if request.bank_account_id != existing.bank_account_id {
+        let currency_of = |id: i32| async move {
+            bank_account::Entity::find_by_id(id)
+                .one(db)
+                .await?
+                .map(|a| a.currency)
+                .ok_or_else(|| AppError::NotFound(format!("bank account {id}")))
+        };
+        let (from, to) = (
+            currency_of(existing.bank_account_id).await?,
+            currency_of(request.bank_account_id).await?,
+        );
+        if from != to {
+            return Err(AppError::InvalidInput(format!(
+                "cannot move a transaction from a {from} account to a {to} account"
+            )));
+        }
+    }
 
     let updated = general_transaction::ActiveModel {
         id: Unchanged(existing.id),
@@ -94,7 +122,7 @@ pub async fn update_general_transaction(
         notes: Set(request.notes),
         ..Default::default()
     }
-    .update(db.inner())
+    .update(db)
     .await?;
 
     Ok(updated)

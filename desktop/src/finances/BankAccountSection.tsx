@@ -10,6 +10,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import Field from "../components/Field";
+import { CURRENCIES } from "../stock-lookup/FxLookupSection";
+import ConvertedHint from "./ConvertedHint";
+import { useBaseCurrency } from "./useBaseCurrency";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +41,7 @@ type CreateBankAccountRequest = {
   workspace_id: number;
   nome: string;
   titular: string;
+  currency: string;
 };
 
 type UpdateBankAccountRequest = {
@@ -43,12 +54,14 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [nome, setNome] = useState("");
   const [titular, setTitular] = useState("");
+  const [currency, setCurrency] = useState("BRL");
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editNome, setEditNome] = useState("");
   const [editTitular, setEditTitular] = useState("");
 
   const queryClient = useQueryClient();
+  const baseCurrency = useBaseCurrency(workspaceId);
 
   const accountsQuery = useQuery<BankAccountView[], AppError>({
     queryKey: ["bank-accounts", workspaceId],
@@ -65,6 +78,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
       invalidate();
       setNome("");
       setTitular("");
+      setCurrency("BRL");
       setIsAddDialogOpen(false);
     },
   });
@@ -87,7 +101,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    createMutation.mutate({ workspace_id: workspaceId, nome, titular });
+    createMutation.mutate({ workspace_id: workspaceId, nome, titular, currency });
   }
 
   function handleDeleteClick(id: number) {
@@ -124,7 +138,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
           </p>
 
           <div className="mb-4 flex justify-end">
-            <Button type="button" onClick={() => setIsAddDialogOpen(true)}>
+            <Button type="button" data-testid="account-new" onClick={() => setIsAddDialogOpen(true)}>
               New account
             </Button>
           </div>
@@ -138,6 +152,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Holder</TableHead>
+                <TableHead>Currency</TableHead>
                 <TableHead>Balance</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -145,7 +160,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
             <TableBody>
               {accounts.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
                     No bank account registered yet.
                   </TableCell>
                 </TableRow>
@@ -169,6 +184,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
                             onChange={(e) => setEditTitular(e.currentTarget.value)}
                           />
                         </TableCell>
+                        <TableCell>{account.currency}</TableCell>
                         <TableCell>{account.balance.toFixed(2)}</TableCell>
                         <TableCell className="flex gap-2">
                           <Button size="sm" onClick={handleSaveEdit} disabled={updateMutation.isPending}>
@@ -183,7 +199,15 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
                       <>
                         <TableCell>{account.nome}</TableCell>
                         <TableCell>{account.titular}</TableCell>
-                        <TableCell>{account.balance.toFixed(2)}</TableCell>
+                        <TableCell data-testid="account-currency">{account.currency}</TableCell>
+                        <TableCell>
+                          {account.balance.toFixed(2)}
+                          <ConvertedHint
+                            currency={account.currency}
+                            baseCurrency={baseCurrency}
+                            inBase={account.balance_in_base}
+                          />
+                        </TableCell>
                         <TableCell className="flex gap-2">
                           <Button size="sm" variant="outline" onClick={() => startEditing(account)}>
                             Edit
@@ -216,6 +240,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
             <Field label="Name">
               <Input
                 required
+                data-testid="account-name"
                 placeholder="e.g.: Nubank PJ"
                 value={nome}
                 onChange={(e) => setNome(e.currentTarget.value)}
@@ -224,17 +249,40 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
             <Field label="Holder">
               <Input
                 required
+                data-testid="account-holder"
                 placeholder="e.g.: CPF/CNPJ"
                 value={titular}
                 onChange={(e) => setTitular(e.currentTarget.value)}
               />
             </Field>
+            <Field label="Currency">
+              <Select value={currency} onValueChange={setCurrency}>
+                <SelectTrigger data-testid="account-currency-select" className="w-full">
+                  <SelectValue>{currency}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {CURRENCIES.map(([code, name]) => (
+                    <SelectItem key={code} value={code}>
+                      {code} — {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <p className="text-xs text-muted-foreground">
+              The currency can't change once the account has transactions, debts or loans.
+            </p>
 
             {createMutation.isError && (
               <p className="text-red-600">{createMutation.error.message}</p>
             )}
 
-            <Button type="submit" disabled={createMutation.isPending} className="w-fit">
+            <Button
+              type="submit"
+              data-testid="account-create"
+              disabled={createMutation.isPending}
+              className="w-fit"
+            >
               {createMutation.isPending ? "Adding..." : "Add account"}
             </Button>
           </form>

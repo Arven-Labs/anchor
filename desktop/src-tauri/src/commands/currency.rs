@@ -186,16 +186,32 @@ pub async fn get_workspace_settings(
     Ok(WorkspaceSettingsView { base_currency: base_currency(db.inner(), workspace_id).await? })
 }
 
+/// Código ISO do catálogo de câmbio, normalizado em maiúsculas.
+pub fn validate_currency(code: &str) -> Result<String, AppError> {
+    let code = code.trim().to_uppercase();
+    if !CURRENCIES.iter().any(|(known, _)| *known == code) {
+        return Err(AppError::InvalidInput(format!("unsupported currency '{code}'")));
+    }
+    Ok(code)
+}
+
+/// Base do workspace e as taxas dela pras `currencies` pedidas.
+pub async fn rates_for(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+    currencies: &HashSet<String>,
+) -> Result<FxRates, AppError> {
+    let base = base_currency(db, workspace_id).await?;
+    load_rates(db, &base, currencies).await
+}
+
 /// Valida e grava a moeda base (upsert da linha única do workspace).
 pub async fn save_base_currency(
     db: &DatabaseConnection,
     workspace_id: i32,
     currency: &str,
 ) -> Result<String, AppError> {
-    let currency = currency.trim().to_uppercase();
-    if !CURRENCIES.iter().any(|(code, _)| *code == currency) {
-        return Err(AppError::InvalidInput(format!("unsupported base currency '{currency}'")));
-    }
+    let currency = validate_currency(currency)?;
     let now = Utc::now().to_rfc3339();
     let existing = workspace_settings::Entity::find()
         .filter(workspace_settings::Column::WorkspaceId.eq(workspace_id))

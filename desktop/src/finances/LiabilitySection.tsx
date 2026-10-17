@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import type { Asset } from "../portfolio/types";
+import ConvertedHint from "./ConvertedHint";
 import type { BankAccountView } from "./types";
 import {
   LIABILITY_AMORTIZATION_SYSTEMS,
@@ -62,8 +63,12 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Fase 19 — a dívida está na moeda da conta; o código aparece junto do nome
+// quando não é BRL.
 function accountLabel(accounts: BankAccountView[], id: number): string {
-  return accounts.find((a) => a.id === id)?.nome ?? "—";
+  const account = accounts.find((a) => a.id === id);
+  if (!account) return "—";
+  return account.currency === "BRL" ? account.nome : `${account.nome} (${account.currency})`;
 }
 
 function assetTicker(assets: Asset[], id: number): string | null {
@@ -232,6 +237,14 @@ function LiabilitySection({ workspaceId }: { workspaceId: number }) {
             due date. Outstanding balance is always derived, never entered directly.
           </p>
 
+          {netWorth && (
+            <p className="mb-2 text-sm text-muted-foreground" data-testid="nw-base-currency">
+              Totals in {netWorth.base_currency}.
+              {netWorth.items_missing_fx > 0 &&
+                ` ${netWorth.items_missing_fx} item${netWorth.items_missing_fx === 1 ? " is" : "s are"} left out for lack of an exchange rate.`}
+            </p>
+          )}
+
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
             <KpiCard title="Market value" value={(netWorth?.total_market_value ?? 0).toFixed(2)} />
             <KpiCard title="Cash" value={(netWorth?.total_cash ?? 0).toFixed(2)} />
@@ -306,7 +319,14 @@ function LiabilitySection({ workspaceId }: { workspaceId: number }) {
                     <TableCell>{liability.titular}</TableCell>
                     <TableCell>{accountLabel(accounts, liability.bank_account_id)}</TableCell>
                     <TableCell>{liability.principal.toFixed(2)}</TableCell>
-                    <TableCell>{liability.saldo_devedor_atual.toFixed(2)}</TableCell>
+                    <TableCell>
+                      {liability.saldo_devedor_atual.toFixed(2)}
+                      <ConvertedHint
+                        currency={liability.currency}
+                        baseCurrency={netWorth?.base_currency}
+                        inBase={liability.saldo_devedor_in_base}
+                      />
+                    </TableCell>
                     <TableCell>{liability.prazo_meses}mo</TableCell>
                     <TableCell>
                       {LIABILITY_AMORTIZATION_SYSTEM_LABELS[
@@ -378,7 +398,7 @@ function LiabilitySection({ workspaceId }: { workspaceId: number }) {
                   <SelectContent>
                     {accounts.map((account) => (
                       <SelectItem key={account.id} value={String(account.id)}>
-                        {account.nome} ({account.titular})
+                        {account.nome} ({account.titular}) · {account.currency}
                       </SelectItem>
                     ))}
                   </SelectContent>

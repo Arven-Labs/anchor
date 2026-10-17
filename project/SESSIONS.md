@@ -2788,4 +2788,21 @@ escondidos com aviso fora do BRL; câmbio sem cotação na data usa a mais próx
   nos três workflows, de primeira.
 - **Não verificado**: a tela a olho e o cálculo contra dados reais de câmbio.
 - **Pendente**: patrimônio, caixa, dívidas e empréstimos em outra moeda; custo na taxa da data no P/L das
-  posições; formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.
+  posições; formatadores de Ledger, Dividendos e impostos; benchmarks convertidos. *(O patrimônio, o caixa, as
+  dívidas e os empréstimos foram feitos na Sessão 122, abaixo.)*
+
+
+### 2026-10-17 — Sessão 122
+
+**Moeda por conta e patrimônio na moeda base (Fase 19, 3ª entrega).** Plan mode; escolhas do dono do projeto:
+moeda por conta (coluna `currency`) e listas de Finanças também convertidas. Detalhe na Fase 19 do `PHASE.md`.
+- **Feito**: migration com `bank_accounts.currency` e `loans.currency`; criação de conta e de empréstimo com moeda;
+  regras de imutabilidade da moeda da conta, de troca de conta do lançamento, de conta da baixa e do DARF;
+  `compute_net_worth` convertendo tudo e contando `items_missing_fx`; `balance_in_base`, `saldo_devedor_in_base` e
+  `saldo_a_receber_in_base` nas listas; `ConvertedHint`, seletores de moeda e filtro de contas BRL no DARF.
+- **Decisão de desenho**: dívida não ganhou coluna (herda da conta); empréstimo ganhou, porque pode existir sem
+  conta; opções ficam em BRL fixo.
+- **Mudança de comportamento**: o patrimônio deixou de somar posição em USD crua.
+- **Processo**: rodei outro heredoc de Python vazio via Bash, sem efeito mas contra a regra de usar Edit/Write.
+- **Pendente**: orçamento por categoria; transferência entre contas; trocar a moeda pela edição da conta; custo na
+  taxa da data no P/L das posições; formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.

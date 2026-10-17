@@ -453,6 +453,14 @@ pub async fn mark_tax_paid(
     if account.workspace_id != request.workspace_id {
         return Err(AppError::InvalidGuard("bank account belongs to another workspace".to_string()));
     }
+    // O DARF é sempre em reais; numa conta em outra moeda o débito sairia no
+    // valor errado.
+    if account.currency != "BRL" {
+        return Err(AppError::InvalidInput(format!(
+            "the tax is paid in BRL, but the account is in {}",
+            account.currency
+        )));
+    }
 
     let now = Utc::now().to_rfc3339();
     let txn = db.begin().await?;

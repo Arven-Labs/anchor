@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use chrono::{Datelike, NaiveDate};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
@@ -5,12 +7,13 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::commands::currency::{rates_for, DEFAULT_BASE_CURRENCY};
 use crate::commands::profitability::compute_profitability;
 use crate::domain::liability::{
     annualize_monthly_rate, compute_installments, compute_outstanding_balance, AmortizationSystem,
 };
 use crate::domain::twr::trailing_twelve_month_pct;
-use crate::entity::{general_transaction, liability, liability_installment, portfolio};
+use crate::entity::{bank_account, general_transaction, liability, liability_installment, portfolio};
 use crate::error::AppError;
 
 const PARCELA_DIVIDA: &str = "parcela_divida";
@@ -72,7 +75,11 @@ pub struct LiabilityView {
     pub sistema_amortizacao: String,
     pub data_inicio: String,
     pub created_at: String,
+    // Fase 19 — moeda da conta da dívida, e o saldo na moeda base do
+    // workspace (`None` sem cotação do par).
+    pub currency: String,
     pub saldo_devedor_atual: f64,
+    pub saldo_devedor_in_base: Option<f64>,
     // Fase 12 — retorno alavancado. Os 3 campos abaixo já vêm em pontos
     // percentuais (ex. `42.58`), igual `MonthlyReturn::r_cumulative_pct` —
     // diverge da convenção em fração de `unrealized_pl_pct` (Fase 13.1),
@@ -166,7 +173,17 @@ pub async fn create_liability(
         .linked_asset_id
         .map(|_| annualize_monthly_rate(liability_model.taxa_percentual / 100.0) * 100.0);
 
+    let currency = bank_account::Entity::find_by_id(request.bank_account_id)
+        .one(db.inner())
+        .await?
+        .map(|a| a.currency)
+        .unwrap_or_else(|| DEFAULT_BASE_CURRENCY.to_string());
+    let rates =
+        rates_for(db.inner(), request.workspace_id, &HashSet::from([currency.clone()])).await?;
+
     Ok(LiabilityView {
+        saldo_devedor_in_base: rates.convert(request.principal, &currency),
+        currency,
         id: liability_model.id,
         workspace_id: liability_model.workspace_id,
         bank_account_id: liability_model.bank_account_id,
@@ -232,8 +249,22 @@ pub async fn list_liabilities_view(
         .map(|p| p.id)
         .collect();
 
+    let currency_of: HashMap<i32, String> = bank_account::Entity::find()
+        .filter(bank_account::Column::WorkspaceId.eq(workspace_id))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|a| (a.id, a.currency))
+        .collect();
+    let currencies: HashSet<String> = currency_of.values().cloned().collect();
+    let rates = rates_for(db, workspace_id, &currencies).await?;
+
     let mut views = Vec::with_capacity(liabilities.len());
     for l in liabilities {
+        let currency = currency_of
+            .get(&l.bank_account_id)
+            .cloned()
+            .unwrap_or_else(|| DEFAULT_BASE_CURRENCY.to_string());
         let pairs: Vec<(&str, f64)> = installments
             .iter()
             .filter(|i| i.liability_id == l.id)
@@ -263,6 +294,8 @@ pub async fn list_liabilities_view(
             };
 
         views.push(LiabilityView {
+            saldo_devedor_in_base: rates.convert(saldo_devedor_atual, &currency),
+            currency,
             id: l.id,
             workspace_id: l.workspace_id,
             bank_account_id: l.bank_account_id,

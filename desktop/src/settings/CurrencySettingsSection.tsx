@@ -32,6 +32,12 @@ function CurrencySettingsSection({ workspaceId }: { workspaceId: number }) {
       queryClient.invalidateQueries({ queryKey: ["workspace-summary"] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-summary"] });
       queryClient.invalidateQueries({ queryKey: ["positions"] });
+      queryClient.invalidateQueries({ queryKey: ["profitability-comparison"] });
+      queryClient.invalidateQueries({ queryKey: ["workspace-profitability"] });
+      queryClient.invalidateQueries({ queryKey: ["net-worth"] });
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["liabilities"] });
+      queryClient.invalidateQueries({ queryKey: ["loans"] });
     },
   });
 

@@ -55,8 +55,12 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Fase 19 — o valor do lançamento está na moeda da conta; o código aparece
+// junto do nome quando não é BRL (a moeda de antes de existir moeda por conta).
 function accountLabel(accounts: BankAccountView[], id: number): string {
-  return accounts.find((a) => a.id === id)?.nome ?? "—";
+  const account = accounts.find((a) => a.id === id);
+  if (!account) return "—";
+  return account.currency === "BRL" ? account.nome : `${account.nome} (${account.currency})`;
 }
 
 function categoryLabel(categories: GeneralTransactionCategory[], id: number | null): string {
@@ -249,7 +253,7 @@ function GeneralTransactionSection({ workspaceId }: { workspaceId: number }) {
                   <SelectContent>
                     {accounts.map((account) => (
                       <SelectItem key={account.id} value={String(account.id)}>
-                        {account.nome} ({account.titular})
+                        {account.nome} ({account.titular}) · {account.currency}
                       </SelectItem>
                     ))}
                   </SelectContent>

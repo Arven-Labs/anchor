@@ -11,6 +11,8 @@ pub struct Model {
     pub workspace_id: i32,
     pub nome: String,
     pub titular: String,
+    // Fase 19 — moeda do saldo, das dívidas e dos lançamentos da conta.
+    pub currency: String,
     pub created_at: String,
 }
 

@@ -185,6 +185,9 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
     queryFn: () => invoke("list_bank_accounts", { workspaceId }),
   });
 
+  // O DARF é em reais: só contas BRL servem (o backend também recusa as outras).
+  const brlAccounts = (bankAccountsQuery.data ?? []).filter((a) => a.currency === "BRL");
+
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["tax-assessment", workspaceId] });
     queryClient.invalidateQueries({ queryKey: ["profitability"] });
@@ -490,7 +493,7 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
                         <SelectValue placeholder="Choose…" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(bankAccountsQuery.data ?? []).map((a) => (
+                        {brlAccounts.map((a) => (
                           <SelectItem key={a.id} value={String(a.id)}>
                             {a.nome}
                           </SelectItem>
@@ -516,9 +519,9 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
                     />
                   </Field>
                 </div>
-                {(bankAccountsQuery.data ?? []).length === 0 && (
+                {brlAccounts.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    Create a bank account in General Finances first.
+                    Create a BRL bank account in General Finances first — the tax is paid in reais.
                   </p>
                 )}
                 {markPaidMutation.isError && (

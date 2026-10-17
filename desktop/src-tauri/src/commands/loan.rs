@@ -4,6 +4,8 @@
 // empréstimo e cada baixa geram lançamento em Finanças Gerais; sem conta,
 // só registro.
 
+use std::collections::HashSet;
+
 use chrono::NaiveDate;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
@@ -11,6 +13,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::commands::currency::{rates_for, validate_currency, DEFAULT_BASE_CURRENCY};
 use crate::domain::loan::{
     accrued_interest, extra_received, outstanding_balance, validate_positive,
 };
@@ -38,7 +41,7 @@ async fn ensure_account_in_workspace<C: sea_orm::ConnectionTrait>(
     db: &C,
     bank_account_id: i32,
     workspace_id: i32,
-) -> Result<(), AppError> {
+) -> Result<bank_account::Model, AppError> {
     let account = bank_account::Entity::find_by_id(bank_account_id)
         .one(db)
         .await?
@@ -48,7 +51,7 @@ async fn ensure_account_in_workspace<C: sea_orm::ConnectionTrait>(
             "bank account belongs to another workspace".to_string(),
         ));
     }
-    Ok(())
+    Ok(account)
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +143,10 @@ pub struct CreateLoanRequest {
     pub data_inicio: String,
     pub include_in_net_worth: bool,
     pub notes: Option<String>,
+    /// Fase 19 — moeda do empréstimo sem conta (BRL se omitida). Com conta
+    /// vale sempre a da conta, e o valor pedido aqui é ignorado.
+    #[serde(default)]
+    pub currency: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -176,10 +183,13 @@ pub struct LoanView {
     pub include_in_net_worth: bool,
     pub notes: Option<String>,
     pub created_at: String,
+    pub currency: String,
     pub accrued_interest: f64,
     pub total_written_off: f64,
     pub extra_received: f64,
     pub saldo_a_receber: f64,
+    /// `saldo_a_receber` na moeda base do workspace; `None` sem cotação do par.
+    pub saldo_a_receber_in_base: Option<f64>,
     pub repayments: Vec<loan_repayment::Model>,
 }
 
@@ -215,9 +225,13 @@ pub async fn create_loan_in(
         ));
     }
 
+    let mut currency = match request.currency.as_deref() {
+        Some(code) => validate_currency(code)?,
+        None => DEFAULT_BASE_CURRENCY.to_string(),
+    };
     let mut general_transaction_id = None;
     if let Some(account_id) = request.bank_account_id {
-        ensure_account_in_workspace(&txn, account_id, request.workspace_id).await?;
+        currency = ensure_account_in_workspace(&txn, account_id, request.workspace_id).await?.currency;
         let tx = general_transaction::ActiveModel {
             workspace_id: Set(request.workspace_id),
             bank_account_id: Set(account_id),
@@ -243,6 +257,7 @@ pub async fn create_loan_in(
         taxa_mensal_percentual: Set(request.taxa_mensal_percentual.filter(|t| *t > 0.0)),
         data_inicio: Set(request.data_inicio),
         include_in_net_worth: Set(request.include_in_net_worth),
+        currency: Set(currency),
         notes: Set(request.notes.and_then(clean_text)),
         created_at: Set(chrono::Utc::now().to_rfc3339()),
         ..Default::default()
@@ -317,6 +332,9 @@ pub async fn list_loans_view(
         .all(db)
         .await?;
 
+    let currencies: HashSet<String> = loans.iter().map(|l| l.currency.clone()).collect();
+    let rates = rates_for(db, workspace_id, &currencies).await?;
+
     let hoje = chrono::Utc::now().date_naive();
     let mut views = Vec::with_capacity(loans.len());
     for l in loans {
@@ -331,7 +349,9 @@ pub async fn list_loans_view(
             .map(|inicio| accrued_interest(l.principal, l.taxa_mensal_percentual, inicio, hoje))
             .unwrap_or(0.0);
 
+        let saldo_a_receber = outstanding_balance(l.principal, interest, &baixados);
         views.push(LoanView {
+            saldo_a_receber_in_base: rates.convert(saldo_a_receber, &l.currency),
             id: l.id,
             workspace_id: l.workspace_id,
             borrower_id: l.borrower_id,
@@ -347,10 +367,11 @@ pub async fn list_loans_view(
             include_in_net_worth: l.include_in_net_worth,
             notes: l.notes,
             created_at: l.created_at,
+            currency: l.currency,
             accrued_interest: interest,
             total_written_off: baixados.iter().sum(),
             extra_received: extra_received(&pairs),
-            saldo_a_receber: outstanding_balance(l.principal, interest, &baixados),
+            saldo_a_receber,
             repayments: own,
         });
     }
@@ -434,7 +455,13 @@ pub async fn register_loan_repayment_in(
 
     let mut general_transaction_id = None;
     if let Some(account_id) = request.bank_account_id {
-        ensure_account_in_workspace(&txn, account_id, l.workspace_id).await?;
+        let account = ensure_account_in_workspace(&txn, account_id, l.workspace_id).await?;
+        if account.currency != l.currency {
+            return Err(AppError::InvalidInput(format!(
+                "the loan is in {} but the account is in {}",
+                l.currency, account.currency
+            )));
+        }
         if request.valor_recebido > 0.0 {
             let tx = general_transaction::ActiveModel {
                 workspace_id: Set(l.workspace_id),

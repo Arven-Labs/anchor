@@ -5,6 +5,8 @@ import type { AppError } from "../types";
 import type { BankAccountView, Borrower, LoanView, NetWorthSummary } from "./types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import Field from "../components/Field";
+import { CURRENCIES } from "../stock-lookup/FxLookupSection";
+import ConvertedHint from "./ConvertedHint";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,6 +60,8 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
   const [isLoanDialogOpen, setIsLoanDialogOpen] = useState(false);
   const [borrowerId, setBorrowerId] = useState("");
   const [loanAccountId, setLoanAccountId] = useState(NO_ACCOUNT);
+  // Só vale sem conta; com conta o backend usa a moeda dela.
+  const [loanCurrency, setLoanCurrency] = useState("BRL");
   const [principal, setPrincipal] = useState("");
   const [taxa, setTaxa] = useState("");
   const [dataInicio, setDataInicio] = useState(todayIso());
@@ -130,6 +134,7 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
           workspace_id: workspaceId,
           borrower_id: Number(borrowerId),
           bank_account_id: optionalAccountId(loanAccountId),
+          currency: loanCurrency,
           principal: Number(principal),
           taxa_mensal_percentual: taxa !== "" ? Number(taxa) : null,
           data_inicio: dataInicio,
@@ -144,6 +149,7 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
       setTaxa("");
       setLoanNotes("");
       setLoanAccountId(NO_ACCOUNT);
+      setLoanCurrency("BRL");
       setDataInicio(todayIso());
     },
   });
@@ -244,7 +250,10 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
   }
 
   const netWorth = netWorthQuery.data;
-  const totalReceivable = loans.reduce((sum, l) => sum + l.saldo_a_receber, 0);
+  const baseCurrency = netWorth?.base_currency;
+  // Na moeda base; empréstimo sem cotação do par fica fora (o aviso do
+  // patrimônio já conta esses itens).
+  const totalReceivable = loans.reduce((sum, l) => sum + (l.saldo_a_receber_in_base ?? 0), 0);
   const canCreateLoan = borrowerId !== "" && principal !== "" && Number(principal) > 0;
   const canRepay =
     repayWrittenOff !== "" &&
@@ -380,7 +389,12 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
                         )}
                       </TableCell>
                       <TableCell>{loan.data_inicio}</TableCell>
-                      <TableCell>{loan.principal.toFixed(2)}</TableCell>
+                      <TableCell>
+                        {loan.principal.toFixed(2)}
+                        {baseCurrency && loan.currency !== baseCurrency && (
+                          <span className="ml-1 text-xs text-muted-foreground">{loan.currency}</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {loan.taxa_mensal_percentual != null
                           ? `${loan.taxa_mensal_percentual}%`
@@ -393,6 +407,11 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
                       </TableCell>
                       <TableCell className="font-medium" data-testid={`loan-receivable-${loan.id}`}>
                         {loan.saldo_a_receber.toFixed(2)}
+                        <ConvertedHint
+                          currency={loan.currency}
+                          baseCurrency={baseCurrency}
+                          inBase={loan.saldo_a_receber_in_base}
+                        />
                       </TableCell>
                       <TableCell>
                         <input
@@ -496,12 +515,28 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
                     <SelectItem value={NO_ACCOUNT}>None — record only</SelectItem>
                     {accounts.map((a) => (
                       <SelectItem key={a.id} value={String(a.id)}>
-                        {a.nome} ({a.titular})
+                        {a.nome} ({a.titular}) · {a.currency}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </Field>
+              {loanAccountId === NO_ACCOUNT && (
+                <Field label="Currency">
+                  <Select value={loanCurrency} onValueChange={setLoanCurrency}>
+                    <SelectTrigger className="w-full" data-testid="loan-currency-select">
+                      <SelectValue>{loanCurrency}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CURRENCIES.map(([code, name]) => (
+                        <SelectItem key={code} value={code}>
+                          {code} — {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -615,11 +650,13 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NO_ACCOUNT}>None — record only</SelectItem>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={String(a.id)}>
-                      {a.nome} ({a.titular})
-                    </SelectItem>
-                  ))}
+                  {accounts
+                    .filter((a) => a.currency === repayingLoan?.currency)
+                    .map((a) => (
+                      <SelectItem key={a.id} value={String(a.id)}>
+                        {a.nome} ({a.titular}) · {a.currency}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </Field>

@@ -1,11 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set, Unchanged,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::entity::{bank_account, general_transaction};
+use crate::commands::currency::{rates_for, validate_currency, DEFAULT_BASE_CURRENCY};
+use crate::entity::{bank_account, general_transaction, liability, loan, loan_repayment};
 use crate::error::AppError;
 
 #[derive(Deserialize)]
@@ -13,6 +14,9 @@ pub struct CreateBankAccountRequest {
     pub workspace_id: i32,
     pub nome: String,
     pub titular: String,
+    /// Fase 19 — BRL se omitida.
+    #[serde(default)]
+    pub currency: Option<String>,
 }
 
 #[tauri::command]
@@ -20,14 +24,26 @@ pub async fn create_bank_account(
     db: tauri::State<'_, DatabaseConnection>,
     request: CreateBankAccountRequest,
 ) -> Result<bank_account::Model, AppError> {
+    create_bank_account_in(db.inner(), request).await
+}
+
+pub async fn create_bank_account_in(
+    db: &DatabaseConnection,
+    request: CreateBankAccountRequest,
+) -> Result<bank_account::Model, AppError> {
+    let currency = match request.currency.as_deref() {
+        Some(code) => validate_currency(code)?,
+        None => DEFAULT_BASE_CURRENCY.to_string(),
+    };
     let account = bank_account::ActiveModel {
         workspace_id: Set(request.workspace_id),
         nome: Set(request.nome),
         titular: Set(request.titular),
+        currency: Set(currency),
         created_at: Set(chrono::Utc::now().to_rfc3339()),
         ..Default::default()
     }
-    .insert(db.inner())
+    .insert(db)
     .await?;
 
     Ok(account)
@@ -38,6 +54,11 @@ pub struct UpdateBankAccountRequest {
     pub bank_account_id: i32,
     pub nome: String,
     pub titular: String,
+    /// Fase 19 — omitida = não muda. Trocar só é aceito enquanto a conta não
+    /// tem uso (lançamento, dívida, empréstimo ou baixa); senão o histórico
+    /// seria reinterpretado em outra moeda.
+    #[serde(default)]
+    pub currency: Option<String>,
 }
 
 #[tauri::command]
@@ -45,22 +66,65 @@ pub async fn update_bank_account(
     db: tauri::State<'_, DatabaseConnection>,
     request: UpdateBankAccountRequest,
 ) -> Result<bank_account::Model, AppError> {
+    update_bank_account_in(db.inner(), request).await
+}
+
+pub async fn update_bank_account_in(
+    db: &DatabaseConnection,
+    request: UpdateBankAccountRequest,
+) -> Result<bank_account::Model, AppError> {
     let existing = bank_account::Entity::find_by_id(request.bank_account_id)
-        .one(db.inner())
+        .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("bank account {}", request.bank_account_id)))?;
+
+    let currency = match request.currency.as_deref() {
+        Some(code) => validate_currency(code)?,
+        None => existing.currency.clone(),
+    };
+    if currency != existing.currency && account_in_use(db, existing.id).await? {
+        return Err(AppError::InvalidInput(
+            "the currency of an account with transactions, debts or loans cannot change".to_string(),
+        ));
+    }
 
     let updated = bank_account::ActiveModel {
         id: Unchanged(existing.id),
         workspace_id: Unchanged(existing.workspace_id),
         nome: Set(request.nome),
         titular: Set(request.titular),
+        currency: Set(currency),
         ..Default::default()
     }
-    .update(db.inner())
+    .update(db)
     .await?;
 
     Ok(updated)
+}
+
+/// Conta com lançamento, dívida, empréstimo ou baixa apontando pra ela.
+pub async fn account_in_use(db: &DatabaseConnection, bank_account_id: i32) -> Result<bool, AppError> {
+    let has_transactions = general_transaction::Entity::find()
+        .filter(general_transaction::Column::BankAccountId.eq(bank_account_id))
+        .one(db)
+        .await?
+        .is_some();
+    let has_liabilities = liability::Entity::find()
+        .filter(liability::Column::BankAccountId.eq(bank_account_id))
+        .one(db)
+        .await?
+        .is_some();
+    let has_loans = loan::Entity::find()
+        .filter(loan::Column::BankAccountId.eq(bank_account_id))
+        .one(db)
+        .await?
+        .is_some();
+    let has_repayments = loan_repayment::Entity::find()
+        .filter(loan_repayment::Column::BankAccountId.eq(bank_account_id))
+        .one(db)
+        .await?
+        .is_some();
+    Ok(has_transactions || has_liabilities || has_loans || has_repayments)
 }
 
 #[tauri::command]
@@ -82,7 +146,11 @@ pub struct BankAccountView {
     pub nome: String,
     pub titular: String,
     pub created_at: String,
+    pub currency: String,
+    /// Saldo na moeda da conta.
     pub balance: f64,
+    /// Saldo na moeda base do workspace; `None` sem cotação do par.
+    pub balance_in_base: Option<f64>,
 }
 
 /// Saldo é sempre derivado, nunca gravado — soma de `receita` menos soma de
@@ -120,14 +188,24 @@ fn compute_balances(
 pub async fn compute_total_cash(
     db: &DatabaseConnection,
     workspace_id: i32,
-) -> Result<f64, AppError> {
-    let transactions = general_transaction::Entity::find()
-        .filter(general_transaction::Column::WorkspaceId.eq(workspace_id))
-        .all(db)
-        .await?;
+) -> Result<TotalCash, AppError> {
+    let accounts = list_bank_accounts_view(db, workspace_id).await?;
+    let mut total_in_base = 0.0;
+    let mut accounts_missing_fx = 0;
+    for account in &accounts {
+        match account.balance_in_base {
+            Some(value) => total_in_base += value,
+            None => accounts_missing_fx += 1,
+        }
+    }
+    Ok(TotalCash { total_in_base, accounts_missing_fx })
+}
 
-    let hoje = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    Ok(compute_balances(&transactions, &hoje).values().sum())
+/// Caixa do workspace na moeda base. Conta sem cotação do par fica fora da
+/// soma e é contada, pra a tela avisar que o total está incompleto.
+pub struct TotalCash {
+    pub total_in_base: f64,
+    pub accounts_missing_fx: usize,
 }
 
 #[tauri::command]
@@ -135,28 +213,42 @@ pub async fn list_bank_accounts(
     db: tauri::State<'_, DatabaseConnection>,
     workspace_id: i32,
 ) -> Result<Vec<BankAccountView>, AppError> {
+    list_bank_accounts_view(db.inner(), workspace_id).await
+}
+
+pub async fn list_bank_accounts_view(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+) -> Result<Vec<BankAccountView>, AppError> {
     let accounts = bank_account::Entity::find()
         .filter(bank_account::Column::WorkspaceId.eq(workspace_id))
-        .all(db.inner())
+        .all(db)
         .await?;
 
     let transactions = general_transaction::Entity::find()
         .filter(general_transaction::Column::WorkspaceId.eq(workspace_id))
-        .all(db.inner())
+        .all(db)
         .await?;
 
     let hoje = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let balances = compute_balances(&transactions, &hoje);
+    let currencies: HashSet<String> = accounts.iter().map(|a| a.currency.clone()).collect();
+    let rates = rates_for(db, workspace_id, &currencies).await?;
 
     Ok(accounts
         .into_iter()
-        .map(|account| BankAccountView {
-            balance: balances.get(&account.id).copied().unwrap_or(0.0),
-            id: account.id,
-            workspace_id: account.workspace_id,
-            nome: account.nome,
-            titular: account.titular,
-            created_at: account.created_at,
+        .map(|account| {
+            let balance = balances.get(&account.id).copied().unwrap_or(0.0);
+            BankAccountView {
+                balance_in_base: rates.convert(balance, &account.currency),
+                balance,
+                id: account.id,
+                workspace_id: account.workspace_id,
+                nome: account.nome,
+                titular: account.titular,
+                created_at: account.created_at,
+                currency: account.currency,
+            }
         })
         .collect())
 }

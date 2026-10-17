@@ -18,6 +18,8 @@ pub struct Model {
     pub taxa_mensal_percentual: Option<f64>,
     pub data_inicio: String,
     pub include_in_net_worth: bool,
+    // Fase 19 — moeda do principal e dos recebimentos; com conta, a da conta.
+    pub currency: String,
     pub notes: Option<String>,
     pub created_at: String,
 }

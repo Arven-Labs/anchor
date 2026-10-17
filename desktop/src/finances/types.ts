@@ -4,7 +4,11 @@ export type BankAccountView = {
   nome: string;
   titular: string;
   created_at: string;
+  // Fase 19 — moeda da conta; `balance` está nela e `balance_in_base` na moeda
+  // base do Workspace (`null` sem cotação do par).
+  currency: string;
   balance: number;
+  balance_in_base: number | null;
 };
 
 export type GeneralTransactionCategory = {
@@ -80,10 +84,12 @@ export type LoanView = {
   include_in_net_worth: boolean;
   notes: string | null;
   created_at: string;
+  currency: string;
   accrued_interest: number;
   total_written_off: number;
   extra_received: number;
   saldo_a_receber: number;
+  saldo_a_receber_in_base: number | null;
   repayments: LoanRepayment[];
 };
 
@@ -104,7 +110,10 @@ export type Liability = {
 };
 
 export type LiabilityView = Liability & {
+  // Fase 19 — moeda da conta da dívida e o saldo na moeda base (`null` sem cotação).
+  currency: string;
   saldo_devedor_atual: number;
+  saldo_devedor_in_base: number | null;
   // Fase 12 — retorno alavancado. Os 3 campos abaixo aparecem juntos (todos
   // presentes ou todos `null`): sem `linked_asset_id`, "custo da dívida"
   // sozinho não tem com o que ser comparado (ver `commands/liability.rs`).
@@ -116,6 +125,10 @@ export type LiabilityView = Liability & {
 // Fase 12 — Patrimônio Líquido/Alavancagem cruzando Portfolio + Finanças
 // Gerais (`commands::net_worth::get_net_worth_summary`).
 export type NetWorthSummary = {
+  /** Fase 19 — moeda de todos os totais abaixo. */
+  base_currency: string;
+  /** Itens deixados de fora por falta de cotação do par pra moeda base. */
+  items_missing_fx: number;
   total_market_value: number;
   total_cash: number;
   total_debt: number;

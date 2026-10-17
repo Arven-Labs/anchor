@@ -1874,10 +1874,24 @@ do fim do mês e o DARF (sempre BRL) pela data do pagamento — a variação cam
 **Mudança de comportamento**: carteira com ativo em USD e base BRL, sem o `USDBRL` coletado, antes mostrava um
 TWR com USD somado cru e agora dá erro pedindo para coletar o par.
 
-**Pendente**: patrimônio líquido, caixa, dívidas e empréstimos (sem coluna de moeda, seguem BRL implícito);
-custo convertido na data de cada fluxo no P/L das posições (hoje usa a taxa mais recente, então o P/L inclui
-variação cambial do custo); formatadores locais de Ledger, Dividendos e impostos; benchmarks convertidos
-(hoje só escondidos fora do BRL); impostos ficam sempre em BRL (regra fiscal).
+**3ª entrega (Sessão 122) — moeda por conta e patrimônio na moeda base**: migration
+`m20261017_150000` (`bank_accounts.currency` e `loans.currency`, default `'BRL'`, sem backfill). Regras:
+- dívida e lançamento herdam a moeda da conta; empréstimo com conta usa a dela, sem conta usa a do pedido;
+- a moeda de uma conta só muda enquanto ela não tem lançamento, dívida, empréstimo ou baixa;
+- lançamento só muda de conta entre contas da mesma moeda; baixa de empréstimo só entra em conta da moeda dele;
+- o DARF só aceita conta em BRL (o seletor da aba Taxes filtra); opções (B3) são BRL fixo.
+`compute_net_worth` converte posições (`positions_in_base`), caixa, dívidas, empréstimos e opções para a base;
+item sem cotação do par fica de fora e entra em `items_missing_fx`. As listas de Finanças mostram o valor na moeda
+do item e, quando difere da base, o equivalente (`ConvertedHint`). Seletor de moeda no formulário de conta e de
+empréstimo sem conta.
+
+**Mudança de comportamento**: o patrimônio deixou de somar posição em USD crua e passou a converter.
+
+**Pendente**: orçamento por categoria (`limite_mensal` soma `despesa` de contas em moedas diferentes sem converter);
+transferência entre contas (não existe hoje); trocar a moeda de uma conta pela edição (hoje só na criação; pela
+regra, só valeria para conta sem uso); custo convertido na data de cada fluxo no P/L das posições (hoje usa a taxa
+mais recente, então o P/L inclui variação cambial do custo); formatadores locais de Ledger, Dividendos e impostos;
+benchmarks convertidos (hoje só escondidos fora do BRL); impostos ficam sempre em BRL (regra fiscal).
 
 
 ### Fase 20 — Remover a IA do Anchor (Warden vira a única interface de IA; decisão registrada na Sessão 100, **executada na Sessão 101**)

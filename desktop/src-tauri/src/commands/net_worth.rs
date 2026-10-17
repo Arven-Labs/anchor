@@ -3,20 +3,27 @@
 // `BankAccountView.balance`/`PositionView.market_value`/
 // `LiabilityView.saldo_devedor_atual`).
 
+use std::collections::HashSet;
+
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Serialize;
 
 use crate::commands::bank_account::compute_total_cash;
+use crate::commands::currency::{base_currency, positions_in_base, rates_for, DEFAULT_BASE_CURRENCY};
 use crate::commands::liability::list_liabilities_view;
 use crate::commands::loan::list_loans_view;
 use crate::commands::option_position::list_option_positions_view;
-use crate::commands::transaction::compute_positions;
 use crate::domain::net_worth::{compute_leverage, sum_options_in_net_worth, sum_receivable_in_net_worth};
 use crate::entity::portfolio;
 use crate::error::AppError;
 
 #[derive(Serialize)]
 pub struct NetWorthSummary {
+    /// Fase 19 — moeda de todos os totais abaixo.
+    pub base_currency: String,
+    /// Posições, contas, dívidas, empréstimos e opções deixados de fora por
+    /// falta de cotação do par pra moeda base.
+    pub items_missing_fx: usize,
     pub total_market_value: f64,
     pub total_cash: f64,
     pub total_debt: f64,
@@ -49,31 +56,64 @@ pub async fn compute_net_worth(
         .all(db)
         .await?;
 
+    // Fase 19 — tudo entra na moeda base do workspace. Item sem cotação do par
+    // fica fora da soma e é contado em `items_missing_fx`.
+    let base_currency = base_currency(db, workspace_id).await?;
+    let mut items_missing_fx = 0;
+
     let mut total_market_value = 0.0;
     for p in &portfolios {
-        let positions = compute_positions(db, p.id).await?;
-        total_market_value += positions.iter().filter_map(|pos| pos.market_value).sum::<f64>();
+        let (positions, _) = positions_in_base(db, p.id).await?;
+        for pos in &positions {
+            if pos.fx_missing {
+                if pos.quantity > 0.0 {
+                    items_missing_fx += 1;
+                }
+            } else if let Some(value) = pos.market_value {
+                total_market_value += value;
+            }
+        }
     }
 
-    let total_cash = compute_total_cash(db, workspace_id).await?;
+    let cash = compute_total_cash(db, workspace_id).await?;
+    let total_cash = cash.total_in_base;
+    items_missing_fx += cash.accounts_missing_fx;
 
     let liabilities = list_liabilities_view(db, workspace_id).await?;
-    let total_debt: f64 = liabilities.iter().map(|l| l.saldo_devedor_atual).sum();
+    let mut total_debt = 0.0;
+    for l in &liabilities {
+        match l.saldo_devedor_in_base {
+            Some(value) => total_debt += value,
+            None => items_missing_fx += 1,
+        }
+    }
 
     let loans = list_loans_view(db, workspace_id).await?;
+    items_missing_fx += loans
+        .iter()
+        .filter(|l| l.include_in_net_worth && l.saldo_a_receber_in_base.is_none())
+        .count();
     let total_loans_receivable = sum_receivable_in_net_worth(
         &loans
             .iter()
-            .map(|l| (l.include_in_net_worth, l.saldo_a_receber))
+            .filter_map(|l| l.saldo_a_receber_in_base.map(|v| (l.include_in_net_worth, v)))
             .collect::<Vec<_>>(),
     );
 
+    // Opções são da B3, em BRL.
+    let option_rates = rates_for(db, workspace_id, &HashSet::from([DEFAULT_BASE_CURRENCY.to_string()])).await?;
     let mut option_values = Vec::new();
     let mut options_at_cost_count = 0;
     for p in &portfolios {
         for position in list_option_positions_view(db, p.id).await? {
             let Some(value) = position.net_worth_value else {
                 continue; // fechada
+            };
+            let Some(value) = option_rates.convert(value, DEFAULT_BASE_CURRENCY) else {
+                if position.include_in_net_worth {
+                    items_missing_fx += 1;
+                }
+                continue;
             };
             option_values.push((position.include_in_net_worth, value));
             if position.include_in_net_worth && position.value_at_cost {
@@ -88,6 +128,8 @@ pub async fn compute_net_worth(
     let leverage_ratio = compute_leverage(total_debt, net_worth);
 
     Ok(NetWorthSummary {
+        base_currency,
+        items_missing_fx,
         total_market_value,
         total_cash,
         total_debt,

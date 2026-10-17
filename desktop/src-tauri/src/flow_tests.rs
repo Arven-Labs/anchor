@@ -29,7 +29,14 @@ use crate::domain::crypto_score::{
     default_thresholds, ScoreVerdict, BTC_DEFAULT_THRESHOLDS, ETH_DEFAULT_THRESHOLDS,
 };
 use crate::entity::{indicator_thresholds, tax_rules};
-use crate::test_support::{asset, asset_in, bank_account, cash_in, memory_db, portfolio, trade, workspace};
+use crate::commands::bank_account::{
+    create_bank_account_in, list_bank_accounts_view, update_bank_account_in, CreateBankAccountRequest,
+    UpdateBankAccountRequest,
+};
+use crate::commands::general_transaction::{update_general_transaction_in, UpdateGeneralTransactionRequest};
+use crate::test_support::{
+    asset, asset_in, bank_account, bank_account_in, cash_in, memory_db, portfolio, trade, workspace,
+};
 
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-6
@@ -107,6 +114,7 @@ async fn loan_flow_moves_cash_and_net_worth() {
             data_inicio: "2026-02-01".to_string(),
             include_in_net_worth: true,
             notes: None,
+            currency: None,
         },
     )
     .await
@@ -174,6 +182,7 @@ async fn loan_flagged_out_of_net_worth_is_excluded_until_toggled() {
             data_inicio: "2026-02-01".to_string(),
             include_in_net_worth: false,
             notes: None,
+            currency: None,
         },
     )
     .await
@@ -222,6 +231,7 @@ async fn loan_for_a_borrower_of_another_workspace_is_rejected() {
             data_inicio: "2026-02-01".to_string(),
             include_in_net_worth: true,
             notes: None,
+            currency: None,
         },
     )
     .await;
@@ -823,6 +833,7 @@ async fn backup_round_trips_the_real_schema_with_data_and_attachments() {
             data_inicio: "2026-02-01".to_string(),
             include_in_net_worth: false,
             notes: Some("acordo verbal".to_string()),
+            currency: None,
         },
     )
     .await
@@ -1089,4 +1100,176 @@ async fn comparison_hides_the_brl_benchmarks_outside_brl() {
     assert_eq!(cmp.base_currency, "USD");
     assert!(cmp.benchmarks.is_empty());
     assert_eq!(cmp.portfolio.len(), 1);
+}
+
+// Moeda por conta (Fase 19)
+
+async fn borrower_of(db: &sea_orm::DatabaseConnection, workspace_id: i32) -> i32 {
+    create_borrower_in(
+        db,
+        CreateBorrowerRequest { workspace_id, nome: "Friend".to_string(), notes: None },
+    )
+    .await
+    .unwrap()
+    .id
+}
+
+fn loan_request(workspace_id: i32, borrower_id: i32, account: Option<i32>, principal: f64) -> CreateLoanRequest {
+    CreateLoanRequest {
+        workspace_id,
+        borrower_id,
+        bank_account_id: account,
+        principal,
+        taxa_mensal_percentual: None,
+        data_inicio: "2026-02-01".to_string(),
+        include_in_net_worth: true,
+        notes: None,
+        currency: None,
+    }
+}
+
+#[tokio::test]
+async fn net_worth_converts_each_account_and_loan_by_its_currency() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Abroad").await;
+    let brl = bank_account(&db, ws.id, "Nubank").await;
+    let usd = bank_account_in(&db, ws.id, "Chase", "USD").await;
+    cash_in(&db, ws.id, brl.id, 1000.0, "2026-01-01").await;
+    cash_in(&db, ws.id, usd.id, 400.0, "2026-01-01").await;
+    seed_fx_rate(&db, "USDBRL", 5.0).await;
+    let borrower = borrower_of(&db, ws.id).await;
+    // 100 USD saem da conta em dólar: caixa USD 300 e a receber USD 100.
+    create_loan_in(&db, loan_request(ws.id, borrower, Some(usd.id), 100.0)).await.unwrap();
+
+    let in_brl = compute_net_worth(&db, ws.id).await.unwrap();
+    assert_eq!(in_brl.base_currency, "BRL");
+    assert!(close(in_brl.total_cash, 1000.0 + 300.0 * 5.0));
+    assert!(close(in_brl.total_loans_receivable, 100.0 * 5.0));
+    assert_eq!(in_brl.items_missing_fx, 0);
+
+    save_base_currency(&db, ws.id, "USD").await.unwrap();
+    let in_usd = compute_net_worth(&db, ws.id).await.unwrap();
+    assert_eq!(in_usd.base_currency, "USD");
+    assert!(close(in_usd.total_cash, 1000.0 / 5.0 + 300.0));
+    assert!(close(in_usd.total_loans_receivable, 100.0));
+
+    let accounts = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    let chase = accounts.iter().find(|a| a.id == usd.id).unwrap();
+    assert_eq!(chase.currency, "USD");
+    assert!(close(chase.balance, 300.0));
+    assert!(close(chase.balance_in_base.unwrap(), 300.0));
+}
+
+#[tokio::test]
+async fn net_worth_counts_a_usd_position_converted() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Abroad").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let usd = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    trade(&db, pf.id, usd.id, "compra", 2.0, 100.0, "2026-01-10").await;
+    seed_fx_rate(&db, "USDBRL", 5.0).await;
+
+    let summary = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(summary.total_market_value, 500.0)); // 100 USD × 5, não 100
+}
+
+#[tokio::test]
+async fn an_account_without_an_exchange_rate_stays_out_of_the_total() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Abroad").await;
+    let usd = bank_account_in(&db, ws.id, "Chase", "USD").await;
+    cash_in(&db, ws.id, usd.id, 400.0, "2026-01-01").await;
+
+    let summary = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(summary.total_cash, 0.0));
+    assert_eq!(summary.items_missing_fx, 1);
+    let accounts = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    assert!(accounts[0].balance_in_base.is_none());
+    assert!(close(accounts[0].balance, 400.0)); // o saldo na moeda da conta segue certo
+}
+
+#[tokio::test]
+async fn an_account_currency_only_changes_while_the_account_is_unused() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Abroad").await;
+    let account = create_bank_account_in(
+        &db,
+        CreateBankAccountRequest {
+            workspace_id: ws.id,
+            nome: "Chase".to_string(),
+            titular: "Me".to_string(),
+            currency: Some("usd".to_string()),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(account.currency, "USD");
+
+    let update = |currency: &str| UpdateBankAccountRequest {
+        bank_account_id: account.id,
+        nome: "Chase".to_string(),
+        titular: "Me".to_string(),
+        currency: Some(currency.to_string()),
+    };
+    assert_eq!(update_bank_account_in(&db, update("EUR")).await.unwrap().currency, "EUR");
+    assert!(update_bank_account_in(&db, update("VND")).await.is_err());
+
+    cash_in(&db, ws.id, account.id, 10.0, "2026-01-01").await;
+    assert!(update_bank_account_in(&db, update("GBP")).await.is_err());
+    // Repetir a mesma moeda não conta como troca.
+    assert_eq!(update_bank_account_in(&db, update("EUR")).await.unwrap().currency, "EUR");
+}
+
+#[tokio::test]
+async fn a_transaction_cannot_move_between_accounts_of_different_currencies() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Abroad").await;
+    let brl = bank_account(&db, ws.id, "Nubank").await;
+    let brl2 = bank_account(&db, ws.id, "Itaú").await;
+    let usd = bank_account_in(&db, ws.id, "Chase", "USD").await;
+    let tx = cash_in(&db, ws.id, brl.id, 100.0, "2026-01-01").await;
+
+    let request = |account_id: i32| UpdateGeneralTransactionRequest {
+        general_transaction_id: tx.id,
+        bank_account_id: account_id,
+        transaction_type: "receita".to_string(),
+        category_id: None,
+        valor: 100.0,
+        transaction_date: "2026-01-01".to_string(),
+        notes: None,
+    };
+    assert!(update_general_transaction_in(&db, request(usd.id)).await.is_err());
+    assert_eq!(update_general_transaction_in(&db, request(brl2.id)).await.unwrap().bank_account_id, brl2.id);
+}
+
+#[tokio::test]
+async fn a_loan_takes_the_account_currency_and_repays_only_into_the_same_one() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Abroad").await;
+    let brl = bank_account(&db, ws.id, "Nubank").await;
+    let usd = bank_account_in(&db, ws.id, "Chase", "USD").await;
+    let borrower = borrower_of(&db, ws.id).await;
+
+    // Com conta, a moeda pedida é ignorada.
+    let mut request = loan_request(ws.id, borrower, Some(usd.id), 100.0);
+    request.currency = Some("BRL".to_string());
+    let loan = create_loan_in(&db, request).await.unwrap();
+    assert_eq!(loan.currency, "USD");
+
+    let repay = |account_id: i32| RegisterLoanRepaymentRequest {
+        loan_id: loan.id,
+        data: "2026-03-01".to_string(),
+        valor_recebido: 50.0,
+        valor_baixado: 50.0,
+        bank_account_id: Some(account_id),
+        notes: None,
+    };
+    assert!(register_loan_repayment_in(&db, repay(brl.id)).await.is_err());
+    assert!(register_loan_repayment_in(&db, repay(usd.id)).await.is_ok());
+
+    // Sem conta, vale a moeda do pedido (e BRL por padrão).
+    let mut no_account = loan_request(ws.id, borrower, None, 80.0);
+    no_account.currency = Some("eur".to_string());
+    assert_eq!(create_loan_in(&db, no_account).await.unwrap().currency, "EUR");
+    assert_eq!(create_loan_in(&db, loan_request(ws.id, borrower, None, 80.0)).await.unwrap().currency, "BRL");
 }

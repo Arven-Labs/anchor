@@ -58,6 +58,26 @@ pub async fn bank_account(db: &DatabaseConnection, workspace_id: i32, nome: &str
     .expect("insert bank account")
 }
 
+/// Conta bancária numa moeda específica (`bank_account` usa a default, BRL).
+pub async fn bank_account_in(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+    nome: &str,
+    currency: &str,
+) -> bank_account::Model {
+    bank_account::ActiveModel {
+        workspace_id: Set(workspace_id),
+        nome: Set(nome.to_string()),
+        titular: Set("Test holder".to_string()),
+        currency: Set(currency.to_string()),
+        created_at: Set(now()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .expect("insert bank account")
+}
+
 pub async fn asset(db: &DatabaseConnection, ticker: &str, asset_class: &str) -> assets::Model {
     asset_in(db, ticker, asset_class, "BRL").await
 }
