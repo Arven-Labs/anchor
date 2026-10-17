@@ -9,15 +9,15 @@ use chrono::{NaiveDate, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use serde::Serialize;
 
-use crate::commands::transaction::{compute_positions, PositionView};
-use crate::domain::currency_conversion::{average_cost_in_base, FxHistory, FxRates};
+use crate::commands::transaction::{compute_positions, cost_events, PositionView};
+use crate::domain::cost_basis;
+use crate::domain::currency_conversion::{FxHistory, FxRates};
 use crate::entity::{assets, portfolio, stock_price_history, transactions, workspace_settings};
 use crate::error::AppError;
 use crate::finance_api;
 use crate::finance_core::fx::CURRENCIES;
 
 pub const DEFAULT_BASE_CURRENCY: &str = "BRL";
-const BUY: &str = "compra";
 const PIVOT: &str = "USD";
 
 pub async fn base_currency(db: &DatabaseConnection, workspace_id: i32) -> Result<String, AppError> {
@@ -111,11 +111,14 @@ pub async fn load_fx_history(
 pub fn convert_position(
     mut position: PositionView,
     rates: &FxRates,
-    average_cost_in_base: Option<f64>,
+    // (preço médio, ganho realizado) na base, já na taxa da data de cada lançamento.
+    cost_in_base: Option<(Option<f64>, f64)>,
 ) -> PositionView {
     let native = position.native_currency.clone();
+    let average_cost_in_base = cost_in_base.and_then(|(avg, _)| avg);
     let Some(rate) = rates.rate(&native) else {
         position.fx_missing = true;
+        position.realized_pl = 0.0;
         position.current_price = None;
         position.market_value = None;
         position.unrealized_pl = None;
@@ -124,6 +127,10 @@ pub fn convert_position(
         return position;
     };
     position.currency = rates.base().to_string();
+    position.realized_pl = match cost_in_base {
+        Some((_, realized)) => realized,
+        None => position.realized_pl * rate,
+    };
     let native_average = position.average_buy_price;
     let native_market_value = position.market_value;
     let average = average_cost_in_base.or(position.average_buy_price.map(|v| v * rate));
@@ -179,32 +186,29 @@ pub async fn positions_in_base(
     let currencies: HashSet<String> = positions.iter().map(|p| p.native_currency.clone()).collect();
     let rates = load_rates(db, &base, &currencies).await?;
 
-    // Custo na taxa da data de cada compra; só vale a pena quando há posição em
+    // Custo na taxa da data de cada compra e ganho realizado na taxa de cada
+    // venda: o mesmo motor de custo médio, com o valor de cada lançamento
+    // convertido pela taxa da própria data. Só vale a pena quando há posição em
     // moeda diferente da base (com a mesma moeda a taxa é 1 em qualquer data).
-    let mut average_costs: HashMap<i32, f64> = HashMap::new();
+    let mut base_costs: HashMap<i32, (Option<f64>, f64)> = HashMap::new();
     if currencies.iter().any(|c| *c != base) {
         let history = load_fx_history(db, &base, &currencies).await?;
-        let mut lots: HashMap<i32, Vec<(NaiveDate, f64, f64)>> = HashMap::new();
-        for tx in transactions::Entity::find()
+        let txs = transactions::Entity::find()
             .filter(transactions::Column::PortfolioId.eq(portfolio_id))
-            .filter(transactions::Column::TransactionType.eq(BUY))
             .all(db)
-            .await?
-        {
-            let (Some(asset_id), Ok(date)) =
-                (tx.asset_id, NaiveDate::parse_from_str(&tx.transaction_date, "%Y-%m-%d"))
-            else {
-                continue;
-            };
-            lots.entry(asset_id).or_default().push((date, tx.total_value, tx.quantity.unwrap_or(0.0)));
+            .await?;
+        let mut by_asset: HashMap<i32, Vec<&transactions::Model>> = HashMap::new();
+        for tx in &txs {
+            if let Some(asset_id) = tx.asset_id {
+                by_asset.entry(asset_id).or_default().push(tx);
+            }
         }
-        for position in &positions {
-            if let Some(asset_lots) = lots.get(&position.asset_id) {
-                if let Some(avg) =
-                    average_cost_in_base(asset_lots, &position.native_currency, &history, &base)
-                {
-                    average_costs.insert(position.asset_id, avg);
-                }
+        for position in positions.iter().filter(|p| p.native_currency != base) {
+            let Some(asset_txs) = by_asset.get(&position.asset_id) else { continue };
+            let native = position.native_currency.as_str();
+            let rate = |date: NaiveDate| history.rate_on(native, &base, date);
+            if let Some(state) = cost_basis::replay(&cost_events(asset_txs)?, &rate) {
+                base_costs.insert(position.asset_id, (state.average_price(), state.realized_pl));
             }
         }
     }
@@ -213,8 +217,8 @@ pub async fn positions_in_base(
         positions
             .into_iter()
             .map(|p| {
-                let avg = average_costs.get(&p.asset_id).copied();
-                convert_position(p, &rates, avg)
+                let converted = base_costs.get(&p.asset_id).copied();
+                convert_position(p, &rates, converted)
             })
             .collect(),
         base,

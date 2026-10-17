@@ -14,6 +14,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::commands::transaction::{split_ratio, BONUS, REVERSE_SPLIT, SPLIT};
 use crate::domain::option_position as option_calc;
 use crate::domain::tax::assessment::{self, Assessment, OptionResult, Side, Trade};
 use crate::domain::tax::classify::{treatment, TaxTreatment};
@@ -74,7 +75,7 @@ async fn load_trades(db: &DatabaseConnection, workspace_id: i32) -> Result<Vec<T
 
     let txs = transactions::Entity::find()
         .filter(transactions::Column::PortfolioId.is_in(portfolio_ids))
-        .filter(transactions::Column::TransactionType.is_in([BUY, SELL]))
+        .filter(transactions::Column::TransactionType.is_in([BUY, SELL, SPLIT, REVERSE_SPLIT, BONUS]))
         .all(db)
         .await?;
 
@@ -105,8 +106,16 @@ async fn load_trades(db: &DatabaseConnection, workspace_id: i32) -> Result<Vec<T
             currency: asset.currency.clone(),
             custodia_id: tx.custodia_id,
             date: parse_date(&tx.transaction_date)?,
-            side: if tx.transaction_type == BUY { Side::Buy } else { Side::Sell },
-            quantity: tx.quantity.unwrap_or(0.0),
+            side: match tx.transaction_type.as_str() {
+                BUY => Side::Buy,
+                SPLIT | REVERSE_SPLIT => Side::Split,
+                BONUS => Side::Bonus,
+                _ => Side::Sell,
+            },
+            quantity: match tx.transaction_type.as_str() {
+                SPLIT | REVERSE_SPLIT => split_ratio(&tx.transaction_type, tx.quantity.unwrap_or(0.0)),
+                _ => tx.quantity.unwrap_or(0.0),
+            },
             gross_value: tx.total_value,
             fee: tx.fee.unwrap_or(0.0),
         });

@@ -3198,3 +3198,44 @@ funcione: continuam só com o Yahoo.
 **Fora do escopo / pendente**: intraday; execução com o app fechado; segunda fonte de técnicos e dividendos
 (a Alpha Vantage cobre só cotação e histórico); prioridade "premium não é
 sobrescrito por grátis" (só faz sentido com fonte paga).
+
+
+### Fase 34 — Carteira confiável, importação e exportação (meta do dono do projeto: substituir o Investidor10)
+
+O dono do projeto disse que a primeira expectativa do produto é a carteira funcionando direito, depois importar e
+exportar o Workspace, e que o resto nasce do uso. Auditoria do código achou o motor de IR sólido (27 testes) e a
+**camada de posição errada**: o preço médio era a média histórica de todas as compras (venda não reduzia o custo,
+sem reset ao zerar), as taxas não entravam no custo, e não havia desdobramento, grupamento, bonificação, lucro
+realizado nem validação de data, quantidade e saldo. Decisões: importar de Excel da B3 (Negociação) + CSV do Anchor;
+eventos corporativos como novos tipos de lançamento; taxa entra no custo fiscal.
+
+**Entrega 1 e 2 (Sessão 134) — motor de posição único**
+- `domain/cost_basis.rs`: `replay` reproduz os lançamentos de um ativo em ordem (data, id): compra soma valor+taxa ao
+  custo; venda baixa ao custo médio e realiza ganho = valor − taxa − custo baixado; zerou, o médio recomeça;
+  desdobramento/grupamento multiplicam a quantidade sem mexer no custo; bonificação soma ações com o custo atribuído.
+  Aceita um conversor de taxa por data, então o custo e o ganho realizado em moeda base saem do mesmo motor
+  (`average_cost_in_base` foi removido). O motor de IR passou a usar o mesmo `Position`/`take_from_position` e ganhou
+  `Side::Split`/`Side::Bonus`.
+- Novos tipos de lançamento `desdobramento`, `grupamento` (`quantity` = razão) e `bonificacao` (`quantity` = ações novas,
+  `total_value` = custo atribuído). `split_factors`/`factor_after` convertem a quantidade de um mês passado para ações
+  de hoje no TWR, **premissa não confirmada**: o histórico de preço do Yahoo vir ajustado a desdobramentos.
+- `PositionView.realized_pl` e `PortfolioSummary.realized_pl` (Resumo mostra "Realized"). Posição encerrada continua na
+  lista com quantidade 0 e sem preço médio.
+- Validação (`create_transaction_in`, reutilizável pela importação): data `AAAA-MM-DD`, quantidade > 0, taxa e valor
+  não negativos, total ≈ quantidade × preço, e venda que passaria do saldo é recusada (inclusive a retroativa que
+  deixaria uma venda posterior descoberta). Histórico legado já descoberto não bloqueia.
+- Correções: proventos "recebidos 12M" do Resumo passa a vir de `proventos_summary_in` (líquido, igual à aba Proventos);
+  `avg_monthly_12m` divide pelos meses com histórico (até 12); `list_transactions` desempata por id; TWR conta a taxa
+  nos fluxos e trata denominador zero como mês de retorno 0 em vez de derrubar a série.
+- Auditoria que **não** se confirmou: o custo do Resumo já excluía posições sem câmbio (o `average_buy_price` delas vem
+  `None`). O suspeito IRRF de FII em swing não foi investigado ainda.
+- Testes: unitários do motor (11) e de fluxo com o cenário calculado à mão (compra com taxa, venda parcial,
+  desdobramento, recompra, zerar, recomprar), consistência posição × IR (mesmo lucro realizado), bonificação,
+  grupamento, validações, venda retroativa e ganho realizado em dólar na taxa de cada venda.
+
+**Pendente da Fase 34**: Entrega 3 (exportar CSV e importar CSV do Anchor e Excel da B3, em duas etapas com prévia),
+Entrega 4 (exportar/importar um Workspace como arquivo portátil), IRRF de FII em swing, E2E do fluxo de compra/venda.
+**Ideia registrada do dono do projeto (futura, não iniciada)**: IA por chave própria, sem chat, que lê planilha/
+extrato e propõe lançamentos e categorias para aprovação, e gera resumos na análise de ativos. Conflita com a
+decisão da Fase 20 (tirar a IA do Anchor), então precisa ser confirmada antes; o importador da Entrega 3 será
+desenhado para receber lançamentos propostos de qualquer origem.

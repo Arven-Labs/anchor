@@ -62,7 +62,24 @@ function needsAsset(type: TransactionType): boolean {
 }
 
 function needsQuantity(type: TransactionType): boolean {
-  return type === "compra" || type === "venda" || type === "transferencia";
+  return type === "compra" || type === "venda" || type === "transferencia" || isCorporateAction(type);
+}
+
+// Fase 34 — desdobramento/grupamento (quantidade = razão) e bonificação
+// (quantidade = ações novas, valor = custo atribuído a elas).
+function isCorporateAction(type: TransactionType): boolean {
+  return type === "desdobramento" || type === "grupamento" || type === "bonificacao";
+}
+
+function needsTotalValue(type: TransactionType): boolean {
+  return type !== "desdobramento" && type !== "grupamento";
+}
+
+function quantityLabel(type: TransactionType): string {
+  if (type === "desdobramento") return "Ratio (2 = each share becomes 2)";
+  if (type === "grupamento") return "Ratio (10 = 10 shares become 1)";
+  if (type === "bonificacao") return "New shares";
+  return "Quantity";
 }
 
 function needsUnitPrice(type: TransactionType): boolean {
@@ -153,7 +170,7 @@ function TransactionSection({
       payment_type: needsPaymentType(transactionType) ? paymentType : null,
       quantity: needsQuantity(transactionType) && quantity !== "" ? Number(quantity) : null,
       unit_price: needsUnitPrice(transactionType) && unitPrice !== "" ? Number(unitPrice) : null,
-      total_value: Number(totalValue),
+      total_value: needsTotalValue(transactionType) ? Number(totalValue) : 0,
       fee: fee !== "" ? Number(fee) : null,
       transaction_date: transactionDate,
       notes: notes.trim() === "" ? null : notes,
@@ -165,8 +182,14 @@ function TransactionSection({
     });
   }
 
+  // Compra/venda: o total acompanha quantidade × preço (continua editável).
+  function updateTotal(nextQuantity: string, nextUnitPrice: string) {
+    if (!needsUnitPrice(transactionType) || nextQuantity === "" || nextUnitPrice === "") return;
+    setTotalValue((Number(nextQuantity) * Number(nextUnitPrice)).toFixed(2));
+  }
+
   const canSubmit =
-    totalValue !== "" &&
+    (totalValue !== "" || !needsTotalValue(transactionType)) &&
     (!needsAsset(transactionType) || assetId !== "") &&
     (!needsQuantity(transactionType) || quantity !== "") &&
     (!needsUnitPrice(transactionType) || unitPrice !== "") &&
@@ -229,13 +252,16 @@ function TransactionSection({
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
               {needsQuantity(transactionType) && (
-                <Field label="Quantity">
+                <Field label={quantityLabel(transactionType)}>
                   <Input
                     required
                     type="number"
                     step="any"
                     value={quantity}
-                    onChange={(e) => setQuantity(e.currentTarget.value)}
+                    onChange={(e) => {
+                      setQuantity(e.currentTarget.value);
+                      updateTotal(e.currentTarget.value, unitPrice);
+                    }}
                   />
                 </Field>
               )}
@@ -246,19 +272,24 @@ function TransactionSection({
                     type="number"
                     step="any"
                     value={unitPrice}
-                    onChange={(e) => setUnitPrice(e.currentTarget.value)}
+                    onChange={(e) => {
+                      setUnitPrice(e.currentTarget.value);
+                      updateTotal(quantity, e.currentTarget.value);
+                    }}
                   />
                 </Field>
               )}
-              <Field label="Total value">
-                <Input
-                  required
-                  type="number"
-                  step="any"
-                  value={totalValue}
-                  onChange={(e) => setTotalValue(e.currentTarget.value)}
-                />
-              </Field>
+              {needsTotalValue(transactionType) && (
+                <Field label={transactionType === "bonificacao" ? "Cost attributed to the new shares" : "Total value"}>
+                  <Input
+                    required
+                    type="number"
+                    step="any"
+                    value={totalValue}
+                    onChange={(e) => setTotalValue(e.currentTarget.value)}
+                  />
+                </Field>
+              )}
               <Field label="Fee (optional)">
                 <Input
                   type="number"

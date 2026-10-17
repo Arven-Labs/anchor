@@ -1788,3 +1788,197 @@ async fn the_tax_is_only_paid_from_a_brl_account() {
     assert_eq!(expense.transaction_type, "despesa");
     assert_eq!(expense.bank_account_id, brl.id);
 }
+
+// ---------------------------------------------------------------------------
+// Carteira: custo médio, vendas, taxas e eventos corporativos (Fase 34)
+// ---------------------------------------------------------------------------
+
+fn tx_request(
+    portfolio_id: i32,
+    asset_id: i32,
+    kind: &str,
+    quantity: f64,
+    unit_price: f64,
+    date: &str,
+    fee: f64,
+) -> crate::commands::transaction::CreateTransactionRequest {
+    crate::commands::transaction::CreateTransactionRequest {
+        portfolio_id,
+        asset_id: Some(asset_id),
+        custodia_id: None,
+        transfer_to_custodia_id: None,
+        transaction_type: kind.to_string(),
+        payment_type: None,
+        quantity: Some(quantity),
+        unit_price: Some(unit_price),
+        total_value: quantity * unit_price,
+        fee: (fee > 0.0).then_some(fee),
+        transaction_date: date.to_string(),
+        notes: None,
+        fi_emissor: None,
+        fi_indexador: None,
+        fi_taxa_percentual: None,
+        fi_data_vencimento: None,
+        fi_liquidez: None,
+    }
+}
+
+/// Desdobramento/grupamento: só a razão em `quantity`, sem preço nem valor.
+fn corporate_request(
+    portfolio_id: i32,
+    asset_id: i32,
+    kind: &str,
+    ratio: f64,
+    date: &str,
+) -> crate::commands::transaction::CreateTransactionRequest {
+    let mut request = tx_request(portfolio_id, asset_id, kind, ratio, 0.0, date, 0.0);
+    request.unit_price = None;
+    request.total_value = 0.0;
+    request
+}
+
+async fn add(db: &sea_orm::DatabaseConnection, request: crate::commands::transaction::CreateTransactionRequest) {
+    crate::commands::transaction::create_transaction_in(db, request).await.expect("create transaction");
+}
+
+#[tokio::test]
+async fn a_realistic_portfolio_history_gives_the_hand_computed_position() {
+    use crate::commands::transaction::{compute_positions, REVERSE_SPLIT, SPLIT};
+    let _ = REVERSE_SPLIT;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Realistic").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+
+    // 1) 100 @ 10 + taxa 5            custo 1005
+    add(&db, tx_request(pf.id, petr.id, "compra", 100.0, 10.0, "2026-01-05", 5.0)).await;
+    // 2) vende 40 @ 15 − taxa 3       custo baixado 40 × 10,05 = 402; recebe 597; ganho 195
+    add(&db, tx_request(pf.id, petr.id, "venda", 40.0, 15.0, "2026-02-10", 3.0)).await;
+    let positions = compute_positions(&db, pf.id).await.unwrap();
+    assert!(close(positions[0].quantity, 60.0));
+    assert!(close(positions[0].average_buy_price.unwrap(), 10.05), "a venda não muda o preço médio");
+    assert!(close(positions[0].realized_pl, 195.0));
+
+    // 3) desdobramento 2:1            120 ações, custo 603 → médio 5,025
+    add(&db, corporate_request(pf.id, petr.id, SPLIT, 2.0, "2026-03-10")).await;
+    // 4) compra 30 @ 6                150 ações, custo 783 → médio 5,22
+    add(&db, tx_request(pf.id, petr.id, "compra", 30.0, 6.0, "2026-04-10", 0.0)).await;
+    let positions = compute_positions(&db, pf.id).await.unwrap();
+    assert!(close(positions[0].quantity, 150.0));
+    assert!(close(positions[0].average_buy_price.unwrap(), 5.22));
+
+    // 5) vende tudo @ 7               recebe 1050, custo 783, ganho 267 → acumulado 462
+    add(&db, tx_request(pf.id, petr.id, "venda", 150.0, 7.0, "2026-05-10", 0.0)).await;
+    let positions = compute_positions(&db, pf.id).await.unwrap();
+    assert!(close(positions[0].quantity, 0.0));
+    assert_eq!(positions[0].average_buy_price, None, "posição encerrada não tem preço médio");
+    assert!(close(positions[0].realized_pl, 462.0));
+
+    // 6) recompra depois de zerar: o médio recomeça do zero
+    add(&db, tx_request(pf.id, petr.id, "compra", 10.0, 8.0, "2026-06-01", 0.0)).await;
+    let positions = compute_positions(&db, pf.id).await.unwrap();
+    assert!(close(positions[0].quantity, 10.0));
+    assert!(close(positions[0].average_buy_price.unwrap(), 8.0));
+    assert!(close(positions[0].realized_pl, 462.0));
+
+    // O motor de IR enxerga o mesmo histórico: a soma dos ganhos das vendas
+    // é o lucro realizado que a posição mostra.
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    let tax_gain: f64 = assessment.months.iter().flat_map(|m| m.sales.iter()).map(|s| s.gain).sum();
+    assert!(close(tax_gain, 462.0), "IR {tax_gain} × posição 462");
+    assert!(assessment.warnings.is_empty());
+}
+
+#[tokio::test]
+async fn a_bonus_and_a_reverse_split_adjust_quantity_and_cost() {
+    use crate::commands::transaction::{compute_positions, REVERSE_SPLIT};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Corporate").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let vale = asset(&db, "VALE3", "acao_br").await;
+    let bbas = asset(&db, "BBAS3", "acao_br").await;
+
+    add(&db, tx_request(pf.id, vale.id, "compra", 100.0, 10.0, "2026-01-05", 0.0)).await;
+    // Bonificação: 10 ações novas atribuídas a R$ 2 cada (custo 20).
+    let mut bonus = tx_request(pf.id, vale.id, "bonificacao", 10.0, 2.0, "2026-02-05", 0.0);
+    bonus.total_value = 20.0;
+    add(&db, bonus).await;
+    // Grupamento 10:1 em outro ativo.
+    add(&db, tx_request(pf.id, bbas.id, "compra", 100.0, 1.0, "2026-01-05", 0.0)).await;
+    add(&db, corporate_request(pf.id, bbas.id, REVERSE_SPLIT, 10.0, "2026-02-05")).await;
+
+    let positions = compute_positions(&db, pf.id).await.unwrap();
+    let by_ticker = |t: &str| positions.iter().find(|p| p.ticker == t).unwrap();
+    assert!(close(by_ticker("VALE3").quantity, 110.0));
+    assert!(close(by_ticker("VALE3").average_buy_price.unwrap(), 1020.0 / 110.0));
+    assert!(close(by_ticker("BBAS3").quantity, 10.0));
+    assert!(close(by_ticker("BBAS3").average_buy_price.unwrap(), 10.0));
+}
+
+#[tokio::test]
+async fn invalid_transactions_are_rejected_before_they_reach_the_ledger() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Validation").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    add(&db, tx_request(pf.id, petr.id, "compra", 100.0, 10.0, "2026-01-05", 0.0)).await;
+
+    let rejected = |request| async {
+        crate::commands::transaction::create_transaction_in(&db, request).await.is_err()
+    };
+
+    // Data fora do formato, quantidade zero e total que não bate com quantidade × preço.
+    assert!(rejected(tx_request(pf.id, petr.id, "compra", 1.0, 10.0, "05/01/2026", 0.0)).await);
+    assert!(rejected(tx_request(pf.id, petr.id, "compra", 0.0, 10.0, "2026-01-06", 0.0)).await);
+    let mut off = tx_request(pf.id, petr.id, "compra", 10.0, 10.0, "2026-01-06", 0.0);
+    off.total_value = 150.0;
+    assert!(rejected(off).await);
+    // Venda acima do saldo.
+    assert!(rejected(tx_request(pf.id, petr.id, "venda", 101.0, 12.0, "2026-02-01", 0.0)).await);
+    // Venda retroativa à compra: nesse dia ainda não havia ações.
+    assert!(rejected(tx_request(pf.id, petr.id, "venda", 10.0, 12.0, "2026-01-01", 0.0)).await);
+    // A venda do saldo todo vale.
+    assert!(!rejected(tx_request(pf.id, petr.id, "venda", 100.0, 12.0, "2026-02-01", 0.0)).await);
+}
+
+#[tokio::test]
+async fn a_backdated_sale_cannot_leave_a_later_sale_uncovered() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Backdated").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    add(&db, tx_request(pf.id, petr.id, "compra", 100.0, 10.0, "2026-01-05", 0.0)).await;
+    add(&db, tx_request(pf.id, petr.id, "venda", 80.0, 12.0, "2026-03-01", 0.0)).await;
+    // Hoje há 20 de saldo; vender 30 em fevereiro deixaria a venda de março sem cobertura.
+    let result = crate::commands::transaction::create_transaction_in(
+        &db,
+        tx_request(pf.id, petr.id, "venda", 30.0, 11.0, "2026-02-01", 0.0),
+    )
+    .await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn the_position_in_another_currency_realizes_at_the_rate_of_each_sale() {
+    use crate::commands::currency::positions_in_base;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Dollar").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    seed_price(&db, "USDBRL", "2026-01-05", 5.0).await;
+    seed_price(&db, "USDBRL", "2026-02-10", 6.0).await;
+    seed_price(&db, "USDBRL", "2026-10-16", 6.0).await;
+
+    // Compra 10 @ US$ 10 (dólar a 5 → R$ 500) e vende 5 @ US$ 20 (dólar a 6 → recebe R$ 600, custo R$ 250).
+    add(&db, tx_request(pf.id, aapl.id, "compra", 10.0, 10.0, "2026-01-05", 0.0)).await;
+    add(&db, tx_request(pf.id, aapl.id, "venda", 5.0, 20.0, "2026-02-10", 0.0)).await;
+
+    let (positions, base) = positions_in_base(&db, pf.id).await.unwrap();
+    assert_eq!(base, "BRL");
+    assert!(close(positions[0].quantity, 5.0));
+    assert!(close(positions[0].average_buy_price.unwrap(), 50.0), "custo na taxa da compra: R$ 50 por ação");
+    assert!(close(positions[0].realized_pl, 350.0));
+}

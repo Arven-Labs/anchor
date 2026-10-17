@@ -6,15 +6,12 @@
 
 use std::collections::HashMap;
 
-use chrono::{Duration, Utc};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::DatabaseConnection;
 use serde::Serialize;
 
-use crate::commands::currency::{positions_in_base, sum_in_base};
-use crate::entity::transactions;
+use crate::commands::currency::positions_in_base;
+use crate::commands::proventos::proventos_summary_in;
 use crate::error::AppError;
-
-const DIVIDEND: &str = "provento";
 
 #[derive(Serialize)]
 pub struct ClassAllocation {
@@ -39,6 +36,8 @@ pub struct PortfolioSummary {
     // falta de cotação do par pra ela.
     pub base_currency: String,
     pub positions_missing_fx: i32,
+    /// Fase 34 — ganho/perda já realizado nas vendas (posições encerradas incluídas).
+    pub realized_pl: f64,
 }
 
 #[tauri::command]
@@ -88,17 +87,14 @@ pub async fn get_portfolio_summary(
         .collect();
     allocation_by_class.sort_by(|a, b| b.market_value.partial_cmp(&a.market_value).unwrap());
 
-    let since = (Utc::now() - Duration::days(365)).format("%Y-%m-%d").to_string();
-    let dividend_txs = transactions::Entity::find()
-        .filter(transactions::Column::PortfolioId.eq(portfolio_id))
-        .filter(transactions::Column::TransactionType.eq(DIVIDEND))
-        .filter(transactions::Column::TransactionDate.gte(since))
-        .all(db)
-        .await?;
-    let dividends_received_12m = sum_in_base(db, &dividend_txs, &base_currency).await?;
+    // Mesma fonte da aba Proventos (líquido de IR do JCP, só o que já foi pago),
+    // pra os dois números de "recebido nos últimos 12 meses" serem um só.
+    let dividends_received_12m = proventos_summary_in(db, portfolio_id).await?.total_12m;
+    let realized_pl: f64 = positions.iter().filter(|p| !p.fx_missing).map(|p| p.realized_pl).sum();
 
     Ok(PortfolioSummary {
         base_currency,
+        realized_pl,
         positions_missing_fx,
         total_market_value,
         total_cost_basis,

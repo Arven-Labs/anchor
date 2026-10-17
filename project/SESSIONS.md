@@ -2972,3 +2972,19 @@ segunda fonte de ações, o item que eu tinha deixado esperando a decisão dele,
   (`PETR4.SAO`) nem o que a chave grátis faz com `outputsize=full`; a tela a olho. A queda para o histórico compacto
   depende de a mensagem de recurso premium conter "premium", que não pude confirmar.
 - **Pendente**: técnicos e dividendos sem segunda fonte; benchmarks convertidos (adiado).
+
+
+### 2026-10-18 — Sessão 134
+
+**Fase 34, entregas 1 e 2: motor de posição único e bateria de testes.** Plan mode, plano aprovado. Detalhe na Fase 34
+do `PHASE.md`.
+- **Achado**: `compute_positions` calculava o preço médio como média de todas as compras, ignorando vendas e
+  taxas; a recompra depois de zerar divergia do motor de IR.
+- **Feito**: `domain/cost_basis.rs`, tipos `desdobramento`/`grupamento`/`bonificacao`, `realized_pl`, validação na
+  entrada com `create_transaction_in`, ligação em posições, moeda base, TWR e IR, correções do resumo e dos proventos.
+- **Verificado**: `./dev.sh check` limpo (tsc e `cargo check --all-targets`).
+- **Não verificado**: os testes não rodaram localmente (só no CI); a tela a olho; a premissa de o Yahoo ajustar o
+  histórico a desdobramentos; nenhum E2E do formulário de lançamento.
+- **Processo**: voltei a anexar o teste de fluxo com `cat >>` via Bash em vez de Edit, contra a regra salva.
+- **Ideia do dono do projeto**: IA sem chat para propor lançamentos a partir de planilha/extrato; registrada na Fase 34.
+- **Pendente**: importação (entrega 3), exportação de Workspace (entrega 4), IRRF de FII em swing.

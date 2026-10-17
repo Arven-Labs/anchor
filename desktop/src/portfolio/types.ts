@@ -234,7 +234,10 @@ export type TransactionType =
   | "aporte"
   | "retirada"
   | "provento"
-  | "transferencia";
+  | "transferencia"
+  | "desdobramento"
+  | "grupamento"
+  | "bonificacao";
 
 export const TRANSACTION_TYPES: TransactionType[] = [
   "compra",
@@ -243,6 +246,9 @@ export const TRANSACTION_TYPES: TransactionType[] = [
   "retirada",
   "provento",
   "transferencia",
+  "desdobramento",
+  "grupamento",
+  "bonificacao",
 ];
 
 export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
@@ -252,6 +258,9 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
   retirada: "Withdrawal",
   provento: "Dividend",
   transferencia: "Transfer between custodies",
+  desdobramento: "Stock split",
+  grupamento: "Reverse split",
+  bonificacao: "Bonus shares",
 };
 
 // Fase 13.4 — Dividendo vs. JSCP (juros sobre capital próprio, retido 15% de
@@ -352,6 +361,8 @@ export type PositionView = {
   fx_missing: boolean;
   quantity: number;
   average_buy_price: number | null;
+  // Fase 34 — ganho/perda já realizado nas vendas (posição encerrada inclusive).
+  realized_pl: number;
   by_custodia: CustodiaBreakdown[];
   current_price: number | null;
   market_value: number | null;
@@ -376,6 +387,8 @@ export type PortfolioSummary = {
   total_cost_basis: number;
   unrealized_pl: number;
   unrealized_pl_pct: number | null;
+  // Fase 34 — ganho/perda já realizado nas vendas.
+  realized_pl: number;
   dividends_received_12m: number;
   allocation_by_class: ClassAllocation[];
   positions_missing_price: number;

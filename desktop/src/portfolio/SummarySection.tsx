@@ -205,11 +205,12 @@ function SummarySection({ portfolioId }: { portfolioId: number }) {
           title="Profit"
           value={formatMoney(summary.unrealized_pl, summary.base_currency)}
           valueClassName={plColorClass(summary.unrealized_pl)}
-          subtext={
-            summary.unrealized_pl_pct != null
-              ? formatPct(summary.unrealized_pl_pct * 100)
-              : undefined
-          }
+          subtext={[
+            summary.unrealized_pl_pct != null ? formatPct(summary.unrealized_pl_pct * 100) : null,
+            `Realized: ${formatMoney(summary.realized_pl, summary.base_currency)}`,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         />
         <KpiCard
           title="Dividends received (12M)"

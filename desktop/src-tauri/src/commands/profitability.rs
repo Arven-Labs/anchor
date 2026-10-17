@@ -7,7 +7,9 @@ use serde::Serialize;
 use crate::commands::currency::{
     base_currency, load_fx_history, workspace_of_portfolio, DEFAULT_BASE_CURRENCY,
 };
+use crate::commands::transaction::{cost_events, split_ratio, BONUS, REVERSE_SPLIT, SPLIT};
 use crate::domain::benchmark::{self, PricePoint};
+use crate::domain::cost_basis;
 use crate::domain::twr::{self, CashFlow, FlowKind};
 use crate::entity::{assets, macro_index_monthly, stock_price_history, transactions};
 use crate::error::AppError;
@@ -167,12 +169,29 @@ pub async fn compute_profitability(
     let mut relevant: Vec<&transactions::Model> = txs
         .iter()
         .filter(|t| {
-            matches!(t.transaction_type.as_str(), BUY | SELL | DIVIDEND)
+            matches!(t.transaction_type.as_str(), BUY | SELL | DIVIDEND | SPLIT | REVERSE_SPLIT | BONUS)
                 && t.asset_id.is_some_and(|id| auto_quote_ids.contains(&id))
                 && asset_id.is_none_or(|target| t.asset_id == Some(target))
         })
         .collect();
-    relevant.sort_by(|a, b| a.transaction_date.cmp(&b.transaction_date));
+    relevant.sort_by(|a, b| (&a.transaction_date, a.id).cmp(&(&b.transaction_date, b.id)));
+
+    // Fase 34 — o histórico de preço vem ajustado a desdobramentos, então a
+    // quantidade de um mês anterior ao evento é convertida pro número de ações
+    // de hoje antes de multiplicar pelo preço.
+    let mut factors_by_asset: HashMap<i32, Vec<(NaiveDate, f64)>> = HashMap::new();
+    {
+        let mut by_asset: HashMap<i32, Vec<&transactions::Model>> = HashMap::new();
+        for tx in relevant.iter().filter(|t| t.transaction_type != DIVIDEND) {
+            by_asset.entry(tx.asset_id.unwrap()).or_default().push(tx);
+        }
+        for (id, txs) in by_asset {
+            let factors = cost_basis::split_factors(&cost_events(&txs)?);
+            if !factors.is_empty() {
+                factors_by_asset.insert(id, factors);
+            }
+        }
+    }
 
     if relevant.is_empty() {
         return Ok(vec![]);
@@ -231,13 +250,16 @@ pub async fn compute_profitability(
             let date = NaiveDate::parse_from_str(&tx.transaction_date, "%Y-%m-%d")
                 .map_err(|_| AppError::InvalidGuard("data de transação inválida".to_string()))?;
             let weight = flow_weight(date);
-            let value = to_base(tx.total_value, &assets_map[&tx.asset_id.unwrap()].currency, date)?;
+            let currency = &assets_map[&tx.asset_id.unwrap()].currency;
+            let value = to_base(tx.total_value, currency, date)?;
+            let fee = to_base(tx.fee.unwrap_or(0.0), currency, date)?;
             match tx.transaction_type.as_str() {
+                // A taxa é dinheiro que saiu do bolso na compra e que não chegou na venda.
                 BUY => {
                     let qty = tx.quantity.unwrap_or(0.0);
                     *holdings.entry(tx.asset_id.unwrap()).or_insert(0.0) += qty;
                     cash_flows.push(CashFlow {
-                        amount: twr::flow_amount(FlowKind::Contribution, value),
+                        amount: twr::flow_amount(FlowKind::Contribution, value + fee),
                         weight,
                     });
                 }
@@ -245,9 +267,17 @@ pub async fn compute_profitability(
                     let qty = tx.quantity.unwrap_or(0.0);
                     *holdings.entry(tx.asset_id.unwrap()).or_insert(0.0) -= qty;
                     cash_flows.push(CashFlow {
-                        amount: twr::flow_amount(FlowKind::Withdrawal, value),
+                        amount: twr::flow_amount(FlowKind::Withdrawal, value - fee),
                         weight,
                     });
+                }
+                // Evento corporativo muda a quantidade sem fluxo de caixa.
+                SPLIT | REVERSE_SPLIT => {
+                    *holdings.entry(tx.asset_id.unwrap()).or_insert(0.0) *=
+                        split_ratio(&tx.transaction_type, tx.quantity.unwrap_or(0.0));
+                }
+                BONUS => {
+                    *holdings.entry(tx.asset_id.unwrap()).or_insert(0.0) += tx.quantity.unwrap_or(0.0);
                 }
                 DIVIDEND => {
                     cash_flows.push(CashFlow {
@@ -283,13 +313,21 @@ pub async fn compute_profitability(
                     "sem preço histórico de {ticker} perto de {target_date} — rode \"Atualizar histórico de preços\""
                 ))
             })?;
-            emv += to_base(qty * price, &asset.currency, target_date)?;
+            let adjusted_qty = qty
+                * factors_by_asset.get(&asset_id).map_or(1.0, |f| cost_basis::factor_after(f, target_date));
+            emv += to_base(adjusted_qty * price, &asset.currency, target_date)?;
         }
 
         let r_month = if bmv == 0.0 && emv == 0.0 && cash_flows.is_empty() {
             0.0
         } else {
-            twr::modified_dietz(bmv, emv, &cash_flows)?
+            // Denominador zero = nada investido durante o mês (ex.: compra no
+            // último dia sem saldo anterior): o mês rende 0 em vez de derrubar a série.
+            match twr::modified_dietz(bmv, emv, &cash_flows) {
+                Ok(r) => r,
+                Err(AppError::InvalidGuard(_)) => 0.0,
+                Err(err) => return Err(err),
+            }
         };
 
         monthly_r.push(r_month);

@@ -6,14 +6,17 @@ use serde::Serialize;
 use super::calendar::darf_due_date;
 use super::classify::{is_unit, treatment, TaxTreatment};
 use super::rules::{self, RuleSet};
+use crate::domain::cost_basis::{take_from_position, Position, EPS};
 use crate::error::AppError;
-
-const EPS: f64 = 1e-9;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Side {
     Buy,
     Sell,
+    /// Desdobramento/grupamento: `quantity` é a razão (2 = 1→2; 0,1 = 10→1).
+    Split,
+    /// Bonificação: `quantity` são as ações novas e `gross_value` o custo atribuído.
+    Bonus,
 }
 
 /// Uma compra ou venda, já resolvida com os dados do ativo.
@@ -157,12 +160,6 @@ pub struct Assessment {
 }
 
 #[derive(Default)]
-struct Position {
-    quantity: f64,
-    cost: f64,
-}
-
-#[derive(Default)]
 struct DayGroup {
     buy_qty: f64,
     buy_cost: f64,
@@ -174,21 +171,6 @@ struct DayGroup {
 
 fn period_of(date: NaiveDate) -> String {
     format!("{:04}-{:02}", date.year(), date.month())
-}
-
-/// Baixa `quantity` da posição ao custo médio. Devolve (custo, quantidade
-/// realmente coberta pelo histórico).
-fn take_from_position(pos: &mut Position, quantity: f64) -> (f64, f64) {
-    let covered = quantity.min(pos.quantity.max(0.0));
-    let avg = if pos.quantity > EPS { pos.cost / pos.quantity } else { 0.0 };
-    let cost = avg * covered;
-    pos.quantity -= covered;
-    pos.cost -= cost;
-    // Posição zerada → preço médio recomeça do zero na próxima compra.
-    if pos.quantity <= EPS {
-        *pos = Position::default();
-    }
-    (cost, covered)
 }
 
 /// Apura mês a mês o imposto de renda variável (B3) a partir das compras e
@@ -240,10 +222,24 @@ pub fn assess_with_options(
         }
 
         for (date, day_trades) in by_day {
-            let mut groups: BTreeMap<Option<i32>, DayGroup> = BTreeMap::new();
+            // Eventos corporativos mexem na posição antes dos negócios do dia.
             for t in &day_trades {
+                match t.side {
+                    Side::Split => {
+                        pos.quantity *= t.quantity;
+                    }
+                    Side::Bonus => {
+                        pos.quantity += t.quantity;
+                        pos.cost += t.gross_value;
+                    }
+                    Side::Buy | Side::Sell => {}
+                }
+            }
+            let mut groups: BTreeMap<Option<i32>, DayGroup> = BTreeMap::new();
+            for t in day_trades.iter().filter(|t| matches!(t.side, Side::Buy | Side::Sell)) {
                 let g = groups.entry(t.custodia_id).or_default();
                 match t.side {
+                    Side::Split | Side::Bonus => {}
                     Side::Buy => {
                         g.buy_qty += t.quantity;
                         g.buy_cost += t.gross_value + t.fee;

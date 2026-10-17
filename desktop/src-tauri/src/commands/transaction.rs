@@ -1,12 +1,15 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::commands::currency::{
     base_currency, load_fx_history, positions_in_base, workspace_of_portfolio,
 };
+use crate::domain::cost_basis::{self, EventKind};
 use crate::domain::position_pricing::{self, PricingResult};
 use crate::domain::proventos::{PAYMENT_TYPE_DIVIDENDO, PAYMENT_TYPE_JSCP};
 use crate::domain::transaction_ledger::{self, LedgerEntry};
@@ -19,7 +22,55 @@ const DEPOSIT: &str = "aporte";
 const WITHDRAWAL: &str = "retirada";
 const DIVIDEND: &str = "provento";
 const TRANSFER: &str = "transferencia";
-const TRANSACTION_TYPES: [&str; 6] = [BUY, SELL, DEPOSIT, WITHDRAWAL, DIVIDEND, TRANSFER];
+// Fase 34 — eventos corporativos. `quantity` é a razão (desdobramento 2 = 1→2;
+// grupamento 10 = 10→1) ou, na bonificação, as ações novas (com `total_value`
+// como custo atribuído a elas).
+pub const SPLIT: &str = "desdobramento";
+pub const REVERSE_SPLIT: &str = "grupamento";
+pub const BONUS: &str = "bonificacao";
+const TRANSACTION_TYPES: [&str; 9] =
+    [BUY, SELL, DEPOSIT, WITHDRAWAL, DIVIDEND, TRANSFER, SPLIT, REVERSE_SPLIT, BONUS];
+
+/// Fator multiplicativo da quantidade de um desdobramento (`quantity` = 2 → ×2)
+/// ou grupamento (`quantity` = 10 → ×0,1).
+pub fn split_ratio(transaction_type: &str, quantity: f64) -> f64 {
+    if transaction_type == REVERSE_SPLIT && quantity > 0.0 {
+        1.0 / quantity
+    } else {
+        quantity
+    }
+}
+
+/// Lançamentos do ativo como eventos do motor de custo médio. Só entram os
+/// tipos que mexem na posição; data inválida é erro (não some em silêncio).
+pub fn cost_events(txs: &[&transactions::Model]) -> Result<Vec<cost_basis::Event>, AppError> {
+    let mut events = Vec::new();
+    for tx in txs {
+        let kind = match tx.transaction_type.as_str() {
+            BUY => EventKind::Buy,
+            SELL => EventKind::Sell,
+            TRANSFER => EventKind::Transfer,
+            SPLIT | REVERSE_SPLIT => EventKind::Split,
+            BONUS => EventKind::Bonus,
+            _ => continue,
+        };
+        let date = NaiveDate::parse_from_str(&tx.transaction_date, "%Y-%m-%d").map_err(|_| {
+            AppError::InvalidGuard(format!("data de transação inválida: '{}'", tx.transaction_date))
+        })?;
+        let quantity = tx.quantity.unwrap_or(0.0);
+        events.push(cost_basis::Event {
+            date,
+            id: tx.id,
+            kind,
+            quantity: if kind == EventKind::Split { split_ratio(&tx.transaction_type, quantity) } else { quantity },
+            value: tx.total_value,
+            fee: tx.fee.unwrap_or(0.0),
+            custodia_id: tx.custodia_id,
+            to_custodia_id: tx.transfer_to_custodia_id,
+        });
+    }
+    Ok(events)
+}
 
 #[derive(Deserialize)]
 pub struct CreateTransactionRequest {
@@ -54,6 +105,22 @@ fn validate(request: &CreateTransactionRequest) -> Result<(), AppError> {
         )));
     }
 
+    NaiveDate::parse_from_str(&request.transaction_date, "%Y-%m-%d").map_err(|_| {
+        AppError::InvalidGuard(format!(
+            "transaction_date '{}' inválida (esperado AAAA-MM-DD)",
+            request.transaction_date
+        ))
+    })?;
+    if !request.total_value.is_finite() || request.total_value < 0.0 {
+        return Err(AppError::InvalidGuard("total_value não pode ser negativo".to_string()));
+    }
+    if request.fee.is_some_and(|fee| !fee.is_finite() || fee < 0.0) {
+        return Err(AppError::InvalidGuard("fee não pode ser negativa".to_string()));
+    }
+    if request.quantity.is_some_and(|qty| !qty.is_finite() || qty <= 0.0) {
+        return Err(AppError::InvalidGuard("quantity deve ser maior que zero".to_string()));
+    }
+
     match request.transaction_type.as_str() {
         BUY | SELL => {
             if request.asset_id.is_none() {
@@ -62,9 +129,28 @@ fn validate(request: &CreateTransactionRequest) -> Result<(), AppError> {
                     request.transaction_type
                 )));
             }
-            if request.quantity.is_none() || request.unit_price.is_none() {
+            let (Some(quantity), Some(unit_price)) = (request.quantity, request.unit_price) else {
                 return Err(AppError::InvalidGuard(format!(
                     "quantity e unit_price são obrigatórios para '{}'",
+                    request.transaction_type
+                )));
+            };
+            if !unit_price.is_finite() || unit_price < 0.0 {
+                return Err(AppError::InvalidGuard("unit_price não pode ser negativo".to_string()));
+            }
+            // total_value = quantidade × preço (sem taxas); tolera arredondamento de centavos.
+            let expected = quantity * unit_price;
+            if (request.total_value - expected).abs() > 0.011_f64.max(expected.abs() * 0.001) {
+                return Err(AppError::InvalidGuard(format!(
+                    "total_value ({:.2}) não bate com quantity × unit_price ({expected:.2})",
+                    request.total_value
+                )));
+            }
+        }
+        SPLIT | REVERSE_SPLIT | BONUS => {
+            if request.asset_id.is_none() || request.quantity.is_none() {
+                return Err(AppError::InvalidGuard(format!(
+                    "asset_id e quantity são obrigatórios para '{}'",
                     request.transaction_type
                 )));
             }
@@ -124,13 +210,25 @@ pub async fn create_transaction(
     db: tauri::State<'_, DatabaseConnection>,
     request: CreateTransactionRequest,
 ) -> Result<transactions::Model, AppError> {
+    create_transaction_in(db.inner(), request).await
+}
+
+/// Valida e grava um lançamento. Fora do comando Tauri pra servir também à
+/// importação em lote (que passa uma conexão dentro de uma transação).
+pub async fn create_transaction_in<C: ConnectionTrait>(
+    db: &C,
+    request: CreateTransactionRequest,
+) -> Result<transactions::Model, AppError> {
     validate(&request)?;
 
     if let Some(asset_id) = request.asset_id {
         assets::Entity::find_by_id(asset_id)
-            .one(db.inner())
+            .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("asset {asset_id}")))?;
+    }
+    if request.transaction_type == SELL {
+        ensure_covered_sale(db, &request).await?;
     }
 
     let tx = transactions::ActiveModel {
@@ -154,10 +252,49 @@ pub async fn create_transaction(
         created_at: Set(chrono::Utc::now().to_rfc3339()),
         ..Default::default()
     }
-    .insert(db.inner())
+    .insert(db)
     .await?;
 
     Ok(tx)
+}
+
+/// Recusa a venda que deixaria o ativo com saldo negativo em algum ponto do
+/// histórico (inclusive vendas posteriores, se esta é retroativa). Histórico que
+/// já estava descoberto antes não bloqueia: só a venda que o piora.
+async fn ensure_covered_sale<C: ConnectionTrait>(
+    db: &C,
+    request: &CreateTransactionRequest,
+) -> Result<(), AppError> {
+    let Some(asset_id) = request.asset_id else { return Ok(()) };
+    let existing = transactions::Entity::find()
+        .filter(transactions::Column::PortfolioId.eq(request.portfolio_id))
+        .filter(transactions::Column::AssetId.eq(asset_id))
+        .all(db)
+        .await?;
+    let refs: Vec<&transactions::Model> = existing.iter().collect();
+    let before = cost_basis::replay(&cost_events(&refs)?, &cost_basis::native_rate)
+        .is_some_and(|state| state.uncovered_sale);
+
+    let date = NaiveDate::parse_from_str(&request.transaction_date, "%Y-%m-%d")
+        .map_err(|_| AppError::InvalidGuard("transaction_date inválida".to_string()))?;
+    let mut events = cost_events(&refs)?;
+    events.push(cost_basis::Event {
+        date,
+        id: i32::MAX,
+        kind: EventKind::Sell,
+        quantity: request.quantity.unwrap_or(0.0),
+        value: request.total_value,
+        fee: request.fee.unwrap_or(0.0),
+        custodia_id: request.custodia_id,
+        to_custodia_id: None,
+    });
+    let after = cost_basis::replay(&events, &cost_basis::native_rate).is_some_and(|state| state.uncovered_sale);
+    if after && !before {
+        return Err(AppError::InvalidGuard(
+            "a venda passa da quantidade em carteira nessa data".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -227,6 +364,7 @@ pub async fn list_transactions_in(
     let txs = transactions::Entity::find()
         .filter(transactions::Column::PortfolioId.eq(portfolio_id))
         .order_by_desc(transactions::Column::TransactionDate)
+        .order_by_desc(transactions::Column::Id)
         .all(db)
         .await?;
 
@@ -331,12 +469,11 @@ pub struct CustodiaBreakdown {
     pub quantity: f64,
 }
 
-// MVP deliberadamente simples (decisão implícita da Sessão 33, escopo desta
-// fatia): preço médio é a média das compras, sem redução proporcional do
-// custo por venda (FIFO/custo médio "de verdade" fica pra quando a Fase
-// 10.3 — rentabilidade histórica — for desenhada). `provento` não move
-// quantidade (é caixa recebido, não ativo). `transferencia` move quantidade
-// entre custódias sem alterar o total líquido do ativo no portfolio.
+// Preço médio = custo médio com baixa por venda, taxa no custo e reset ao
+// zerar (`domain::cost_basis`, Fase 34 — antes era a média histórica das
+// compras). `provento` não move quantidade (é caixa recebido, não ativo).
+// `transferencia` move quantidade entre custódias sem alterar o total líquido
+// do ativo no portfolio.
 #[derive(Serialize)]
 pub struct PositionView {
     pub asset_id: i32,
@@ -357,6 +494,9 @@ pub struct PositionView {
     pub unrealized_pl_fx: Option<f64>,
     pub quantity: f64,
     pub average_buy_price: Option<f64>,
+    // Fase 34 — ganho/perda já realizado nas vendas, na mesma moeda dos demais
+    // valores. Posição encerrada (quantidade 0) continua na lista com ele.
+    pub realized_pl: f64,
     pub by_custodia: Vec<CustodiaBreakdown>,
     // Fase 13.1 — preço/valor de mercado calculado por
     // `domain::position_pricing::price_position`, ver ali as regras por
@@ -473,37 +613,16 @@ pub async fn compute_positions(
             continue;
         };
 
-        let mut net_qty = 0.0;
-        let mut buy_qty_sum = 0.0;
-        let mut buy_value_sum = 0.0;
-        let mut custodia_qty: HashMap<Option<i32>, f64> = HashMap::new();
+        // Custo médio com baixa por venda, taxa no custo e reset ao zerar
+        // (`domain::cost_basis`, o mesmo motor da apuração de IR).
+        let state = cost_basis::replay(&cost_events(&asset_txs)?, &cost_basis::native_rate)
+            .expect("a taxa nativa sempre existe");
+        let net_qty = state.quantity;
+        let average_buy_price = state.average_price();
+        let realized_pl = state.realized_pl;
 
-        for tx in asset_txs {
-            match tx.transaction_type.as_str() {
-                BUY => {
-                    let qty = tx.quantity.unwrap_or(0.0);
-                    net_qty += qty;
-                    buy_qty_sum += qty;
-                    buy_value_sum += tx.total_value;
-                    *custodia_qty.entry(tx.custodia_id).or_insert(0.0) += qty;
-                }
-                SELL => {
-                    let qty = tx.quantity.unwrap_or(0.0);
-                    net_qty -= qty;
-                    *custodia_qty.entry(tx.custodia_id).or_insert(0.0) -= qty;
-                }
-                TRANSFER => {
-                    let qty = tx.quantity.unwrap_or(0.0);
-                    *custodia_qty.entry(tx.custodia_id).or_insert(0.0) -= qty;
-                    *custodia_qty.entry(tx.transfer_to_custodia_id).or_insert(0.0) += qty;
-                }
-                _ => {}
-            }
-        }
-
-        let average_buy_price = (buy_qty_sum > 0.0).then_some(buy_value_sum / buy_qty_sum);
-
-        let by_custodia = custodia_qty
+        let by_custodia = state
+            .by_custodia
             .into_iter()
             .map(|(cid, quantity)| CustodiaBreakdown {
                 custodia_id: cid,
@@ -538,6 +657,7 @@ pub async fn compute_positions(
             unrealized_pl_fx: None,
             quantity: net_qty,
             average_buy_price,
+            realized_pl,
             by_custodia,
             current_price,
             market_value,

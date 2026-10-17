@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{Datelike, Duration, NaiveDate, Utc};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Serialize;
 
@@ -246,7 +246,18 @@ pub async fn proventos_summary_in(
         })
         .collect();
     let total_12m: f64 = last_12m.iter().map(|e| e.net_total).sum();
-    let avg_monthly_12m = total_12m / 12.0;
+    // Média dos meses com histórico (até 12): quem começou há 3 meses não divide por 12.
+    let months_with_history = paid_entries
+        .iter()
+        .filter_map(|e| NaiveDate::parse_from_str(&e.payment_date, "%Y-%m-%d").ok())
+        .min()
+        .map(|first| {
+            let today = Utc::now().date_naive();
+            let months = (today.year() - first.year()) * 12 + today.month() as i32 - first.month() as i32 + 1;
+            months.clamp(1, 12)
+        })
+        .unwrap_or(12);
+    let avg_monthly_12m = total_12m / months_with_history as f64;
 
     let by_asset_totals = by_asset(&last_12m);
     let mut by_asset_12m: Vec<ProventosAssetTotal> = by_asset_totals

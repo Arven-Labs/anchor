@@ -2,6 +2,7 @@ pub mod alert_check;
 pub mod banks;
 pub mod bazin;
 pub mod benchmark;
+pub mod cost_basis;
 pub mod crypto_score;
 pub mod currency_conversion;
 pub mod dcf;
