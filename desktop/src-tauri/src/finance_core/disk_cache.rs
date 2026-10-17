@@ -68,12 +68,25 @@ pub async fn get_or_download_with_headers(
     max_age: Option<Duration>,
     headers: &[(&str, &str)],
 ) -> Result<PathBuf, AppError> {
+    get_or_download_with(source, relative_path, url, max_age, headers, DOWNLOAD_TIMEOUT).await
+}
+
+/// Igual a `get_or_download_with_headers`, com o timeout do download escolhido
+/// por quem chama (o COTAHIST da B3, ~80 MB, passa dos 120 s do padrão).
+pub async fn get_or_download_with(
+    source: &str,
+    relative_path: &str,
+    url: &str,
+    max_age: Option<Duration>,
+    headers: &[(&str, &str)],
+    timeout: Duration,
+) -> Result<PathBuf, AppError> {
     let path = dir().join(relative_path);
     let age = age_of(&path);
     if !needs_download(age, max_age) {
         return Ok(path);
     }
-    match http::get_bytes_with_headers(source, url, DOWNLOAD_TIMEOUT, headers).await {
+    match http::get_bytes_with_headers(source, url, timeout, headers).await {
         Ok(bytes) => {
             write_atomic(&path, &bytes)?;
             Ok(path)

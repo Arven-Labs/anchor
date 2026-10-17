@@ -23,12 +23,17 @@
 //   IPE: protocolo, data e link; valor e datas ficam no PDF). Fase 32, seção F.
 // - `sec_edgar`: domínio 7 (fundamentos, DCF, payout e REITs dos EUA, direto do
 //   XBRL da SEC; o e-mail de contato exigido por eles vem do keyring/ambiente).
+// - `b3_options`, `black_scholes`, `option_greeks`: opções da B3 (Fase 32, seção H):
+//   séries autorizadas e último preço do COTAHIST, Black-Scholes com vol implícita
+//   e as gregas ponta a ponta (spot do chamador, taxa livre de risco da curva DI).
 // - `fx`: câmbio multi-moeda (Fase 32, seção I): catálogo de 17 moedas e
 //   validação do par; a cotação e o histórico vêm do `yahoo` (`EURUSD=X`).
 pub mod api_keys;
 pub mod b3_index_stats;
+pub mod b3_options;
 pub mod b3_taxa_swap;
 pub mod bcb_sgs;
+pub mod black_scholes;
 pub mod bolsai;
 pub mod cache;
 pub mod coingecko;
@@ -42,6 +47,7 @@ pub mod fx;
 pub mod http;
 pub mod market;
 pub mod metals;
+pub mod option_greeks;
 pub mod provider;
 pub mod sec_edgar;
 pub mod tax_rules;

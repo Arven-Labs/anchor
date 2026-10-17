@@ -228,6 +228,7 @@ dependencies = [
  "if-addrs",
  "k256",
  "keyring",
+ "libm",
  "migration",
  "notify-rust",
  "rand 0.8.6",

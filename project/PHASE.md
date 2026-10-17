@@ -1661,7 +1661,9 @@ depois", palavras do dono do projeto). Não decidido: se vira uma classe de ativ
 cotação de opções.
 
 **Estado**: puro registro de intenção, o mais em aberto de todas as ideias desta sessão — nenhuma
-decisão tomada além de "existe vontade de ter isso um dia".
+decisão tomada além de "existe vontade de ter isso um dia". **Atualização (Sessão 109)**: a camada de
+dados existe em `finance_core` (séries da B3, último preço, Black-Scholes, IV e gregas; ver seção H da
+Fase 32), sem tela nem classe de ativo; nada do desenho de produto foi decidido.
 
 ### Fase 19 — Moeda base seletiva da carteira (ideia trazida em conversa pelo dono do projeto na Sessão 96, puro registro, não iniciada)
 
@@ -2536,10 +2538,12 @@ desatualizado e foi avançado com `git pull --ff-only` até `7767069`).
 - **Já portado para Rust (`finance_core/`)**: Selic diária e curva DI; índices B3 (IFIX, SMLL, IDIV);
   metais; FII (indicadores mensais, imóveis, resolução ticker→CNPJ); SEC EDGAR (fundamentos, DCF,
   payout, REIT); CVM DFP; Yahoo (B3 e EUA); cripto (CoinGecko, Fear & Greed, os indicadores do ETH);
-  regras de IR (`tax_rules`); **câmbio multi-moeda e avisos de dividendos da CVM (Sessão 109)**.
+  regras de IR (`tax_rules`); **câmbio multi-moeda, avisos de dividendos da CVM e opções da B3 com
+  gregas (Sessão 109)**. Com isso, **tudo que era só do Lume está no Anchor**.
 - **NÃO portado, só existe no Lume** (é o que se perde se o repo for apagado sem copiar o desenho):
   1. ~~**Câmbio multi-moeda**~~ — **portado na Sessão 109** (ver o fim da seção I).
-  2. **Opções: catálogo de séries, preço EOD e gregas** (seção H abaixo) — base da Fase 18.
+  2. ~~**Opções: catálogo de séries, preço EOD e gregas**~~ — **portado na Sessão 109, só a camada de
+     dados** (ver o fim da seção H); base da Fase 18, que segue sem consumidor.
   3. ~~**Avisos de dividendos da CVM (IPE)**~~ (`companies/{cvm}/dividend-notices`) — **portado na
      Sessão 109, só a camada de dados** (ver abaixo); o "provento esperado" (Sessão 77.2) segue sem
      consumidor.
@@ -2622,7 +2626,38 @@ Valem para qualquer reescrita ou nova fonte; vários já aparecem nos comentári
   atributo do módulo na hora da chamada; importar a função direto congela a referência e o `patch` dos
   testes fica inerte.
 
-#### H. Opções: catálogo, preço EOD e gregas (existe só no Lume; base da Fase 18)
+#### H. Opções: catálogo, preço EOD e gregas (portado na Sessão 109; base da Fase 18)
+
+**Portado (Sessão 109)**, paridade completa só na camada de dados (sem tela, tabela, comando Tauri nem
+`AssetClass`; escolha do dono do projeto):
+- `finance_core/black_scholes.rs` (preço, gregas, IV por Newton com bisseção, `libm::erf`),
+  `finance_core/b3_options.rs` (Séries Autorizadas + COTAHIST, cache global de 24 h em memória) e
+  `finance_core/option_greeks.rs` (taxa livre de risco da curva DI por dias corridos, spot do chamador).
+  Fachada `fetch_option_series(raiz)` e `fetch_option_greeks(série, ativo-objeto)` em `finance_api/client.rs`.
+  `disk_cache` ganhou `get_or_download_with` (timeout por chamada: 300 s para o COTAHIST de ~93 MB).
+- **Diferenças em relação ao Lume**: (1) sem tabelas `option_series`/`option_eod_quotes`: os dois arquivos
+  ficam no `disk_cache` (24 h) e o mercado parseado em memória (`TtlCache`, `stale` se a B3 cair);
+  (2) `TPREG == "01"` explícito no COTAHIST; (3) o COTAHIST do ano anterior só entra **em janeiro**
+  (juntos, vale o negócio mais recente); fora de janeiro a falha do arquivo corrente sobe, porque servir o
+  ano anterior daria preço de meses atrás como atual (aconteceu num teste ao vivo); (4) a busca da curva DI
+  recua também em falha de provider (no máximo 2 falhas), porque o arquivo do dia mais recente costuma
+  vir quebrado ou lento, e a resposta informa a data da curva usada; (5) `dias_corridos` vem direto de
+  `b3_taxa_swap::di_curve` (a fachada `fetch_di_futures_curve` o descarta); (6) mapa de raízes só com a
+  exceção `EMBR3` → `EMBJ`.
+- **Achados ao vivo**: (a) o `fileId` das Séries Autorizadas **mudou** (o antigo passou a redirecionar
+  para a página de erro da B3, com status 200): o novo é `8AA8D0CDA134A78701A146F166082C07`, achado em
+  `.../mercado-a-vista/opcoes/series-autorizadas/` (página que leva ~70 s); o `disk_cache` guardaria o HTML
+  como zip por 24 h, então `ensure_zip` confere o `PK` e apaga o arquivo ruim; (b) o layout das séries não
+  mudou (77.002 linhas `02` e 2.282 `03`); (c) o COTAHIST de 2026 tem 93,5 MB; (d) mercado inteiro:
+  77.002 séries e 204.153 últimos preços; PETR: 3.658 séries, 2.804 com negócio; (e) a B3 oscila muito:
+  timeouts e 520 em páginas e arquivos que minutos depois baixam em 0,2 s; (f) uma call ATM de 16 meses
+  (PETRB620) negociada abaixo do piso do modelo sem dividendos (juros de 14 %) não tem IV: dá
+  `InvalidInput`, igual ao 422 do Lume, e a mensagem agora diz isso em vez de só "abaixo do intrínseco".
+- Verificado: `./dev.sh check` limpo; 6 testes de Black-Scholes (Hull, paridade, round-trip de IV), 14 de
+  `b3_options` e 13 de `option_greeks`; ao vivo, `live_options_series` e `live_option_greeks`:
+  PETRK611 (call de PETR4, strike 59,91, 33 dias, spot 59,68) → IV 40,9 %, delta 0,55, gamma 0,054,
+  theta −0,055/dia, vega 0,071, taxa 13,56 % (curva de 2026-10-16). Mesma ordem de grandeza do exemplo
+  do Lume (PETRL522: IV 46,5 %, taxa 13,59 %).
 
 - **Fontes (todas grátis, da B3)**: *Séries Autorizadas* (arquivo estático pipe-delimited em
   `b3.com.br/lumis/portal/file/fileDownload.jsp?fileId=...`) dá o universo de séries (ativo-objeto,
@@ -2796,6 +2831,7 @@ Valem para qualquer reescrita ou nova fonte; vários já aparecem nos comentári
 
 **Estado**: registro completo do `project/` do Lume (arquivos lidos: `OVERVIEW`, `CONTEXT`, `GUIDELINES`,
 `INDEX`, `PENDING`, `ARCHITECTURE`, `PHASE`, `ROADMAP`, `DESMONTAGEM` e as sessões 1 a 24). Sessão 108.
-Próximo passo natural: marcar, item a item, o que migra (opções com gregas é o único candidato concreto
-que sobrou), o que adia e o que descarta. Na Sessão 109 a série mensal do BCB ganhou o retry da Selic e
-o câmbio e os avisos de dividendos da CVM foram portados.
+Na Sessão 109 a série mensal do BCB ganhou o retry da Selic e o câmbio, os avisos de dividendos da CVM e
+as opções com gregas foram portados: **não sobrou nenhum domínio de dados só do Lume**. Resta a decisão
+do dono do projeto sobre arquivar ou apagar o repo do Lume e, no que é produto, os consumidores
+(Fases 18, 19 e o provento esperado).

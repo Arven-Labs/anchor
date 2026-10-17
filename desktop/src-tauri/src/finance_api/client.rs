@@ -17,8 +17,8 @@ use crate::error::AppError;
 use crate::finance_api::selic_store;
 use crate::finance_core::market::{self, Instrument};
 use crate::finance_core::{
-    b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, coingecko, cvm_dfp, cvm_fii, cvm_ipe, eth_indicators, fear_greed,
-    fx, metals, sec_edgar, tax_rules, yahoo,
+    b3_index_stats, b3_options, b3_taxa_swap, bcb_sgs, bolsai, coingecko, cvm_dfp, cvm_fii, cvm_ipe, eth_indicators, fear_greed,
+    fx, metals, option_greeks, sec_edgar, tax_rules, yahoo,
 };
 
 /// Origem do dado, presente em toda resposta: quem respondeu (`source`), se veio
@@ -490,6 +490,58 @@ pub async fn fetch_fx_price_history(base: &str, quote: &str) -> Result<FxPriceHi
         meta: now_meta(h.source),
         data: price_points(h.value),
     })
+}
+
+// ---------------------------------------------------------------------------
+// options — séries da B3, último preço e gregas
+// ---------------------------------------------------------------------------
+
+#[derive(Debug)]
+pub struct OptionSeriesResponse {
+    /// Raiz que a B3 registra (`PETR`), não o ticker pedido.
+    pub underlying_symbol: String,
+    pub meta: ResponseMeta,
+    pub data: Vec<OptionSeriesPoint>,
+}
+
+#[derive(Debug)]
+pub struct OptionSeriesPoint {
+    pub series: b3_options::OptionSeries,
+    /// `None` em série registrada que nunca negociou.
+    pub last_trade: Option<b3_options::LastTrade>,
+}
+
+/// Séries registradas de uma raiz (`PETR`; `PETR4` e `EMBR3` também servem: viram
+/// a raiz da opção), por vencimento e strike. Raiz desconhecida devolve `data`
+/// vazio, nunca erro. A primeira chamada baixa ~80 MB (~2 min); depois, 24 h de cache.
+pub async fn fetch_option_series(underlying: &str) -> Result<OptionSeriesResponse, AppError> {
+    let root = b3_options::option_root(underlying);
+    let found = b3_options::series_for_root(&root).await?;
+    let meta = native_meta(found.value.source, found.cached, found.stale, found.fetched_at);
+    let data = found
+        .value
+        .value
+        .into_iter()
+        .map(|(series, last_trade)| OptionSeriesPoint { series, last_trade })
+        .collect();
+    Ok(OptionSeriesResponse { underlying_symbol: root, meta, data })
+}
+
+#[derive(Debug)]
+pub struct OptionGreeksResponse {
+    pub meta: ResponseMeta,
+    pub greeks: option_greeks::OptionGreeks,
+}
+
+/// Gregas e IV de uma série (`PETRL522`) usando o preço de `underlying_ticker`
+/// (`PETR4`) como spot. Série desconhecida ou nunca negociada é `NoData`; opção
+/// vencida ou preço abaixo do intrínseco é `InvalidInput`.
+pub async fn fetch_option_greeks(
+    series_ticker: &str,
+    underlying_ticker: &str,
+) -> Result<OptionGreeksResponse, AppError> {
+    let greeks = option_greeks::option_greeks(series_ticker, underlying_ticker).await?;
+    Ok(OptionGreeksResponse { meta: now_meta(b3_options::SOURCE), greeks })
 }
 
 // ---------------------------------------------------------------------------

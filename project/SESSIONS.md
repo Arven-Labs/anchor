@@ -2542,7 +2542,19 @@ gosto de fazer"), então virou E2E.
   (anterior), diferente do DFP. Detalhe na seção F da Fase 32.
 - **Verificado (avisos)**: `./dev.sh check` limpo, 11 testes unitários e teste ao vivo (Banco do Brasil,
   18 avisos nos dois anos, último de 2026-09-09). CI do push `00805b9` verde (Rust e E2E).
-- **Pendente**: decisão do dono sobre o repo do Lume; opções com gregas (seção F da Fase 32); consumidor
-  dos avisos (alerta de "aviso novo" ou leitura do PDF para o provento esperado, com `resolve_cvm_code`);
-  moeda base e conversão na carteira (Fase 19); ingestão agendada e `DataProvider` com mais de uma fonte
-  por categoria.
+- **Opções da B3 com gregas portadas, paridade completa só na camada de dados** (plan mode; escolhas do
+  dono: só dados, timeout configurável no `disk_cache`). `black_scholes.rs`, `b3_options.rs` (séries +
+  COTAHIST) e `option_greeks.rs`, fachada `fetch_option_series`/`fetch_option_greeks`. Diferenças, achados
+  e números ao vivo na seção H da Fase 32.
+- **Achados que quase passaram batido**: (1) o `fileId` das Séries Autorizadas mudou e a B3 responde 200
+  com uma página de erro, que o `disk_cache` guardaria 24 h como zip (agora `ensure_zip` confere `PK`);
+  (2) meu fallback para o COTAHIST do ano anterior serviria preços de 2025 como atuais quando o download
+  de 2026 falhava (só em janeiro faz sentido); (3) o arquivo da curva DI do dia mais recente costuma vir
+  quebrado, então a busca recua também em falha de provider (máx. 2); (4) a escolha da série no teste
+  ao vivo (menor strike) era ruim e escondia tudo isso; ATM e de 31 a 120 dias funciona.
+- **Verificado (opções)**: `./dev.sh check` limpo, 33 testes unitários novos e o ao vivo: PETRK611, IV
+  40,9 %, delta 0,55, taxa 13,56 %. Sem E2E (não há tela). CI do push por conferir.
+- **Pendente**: decisão do dono sobre o repo do Lume (agora **nenhum domínio de dados é só dele**);
+  consumidores: avisos da CVM (alerta ou leitura do PDF para o provento esperado, com `resolve_cvm_code`),
+  opções (Fase 18) e moeda base (Fase 19); ingestão agendada e `DataProvider` com mais de uma fonte por
+  categoria.
