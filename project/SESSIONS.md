@@ -2758,8 +2758,12 @@ do `PHASE.md`.
 - **Decisão de desenho**: `compute_positions` segue nativo para não mexer em patrimônio, rentabilidade e
   impostos; a conversão é uma camada em cima (`positions_in_base`).
 - **Mudança de comportamento**: ativo em USD deixa de ser somado cru como BRL.
-- **Verificado**: `./dev.sh check` limpo (tsc e `cargo check --all-targets`). Testes de domínio e de fluxo e o
-  E2E novo ainda não rodaram; dependem do CI.
+- **Verificado**: `./dev.sh check` limpo; 6 testes de domínio e 6 de fluxo novos; CI verde nos três workflows
+  (Rust e Frontend no push `7250f6f`, E2E no `9551cdf`).
+- **Erros meus**: o E2E novo falhou duas vezes. Primeiro cliquei direto no item do Select (`7250f6f`); depois,
+  com o `pickOption`, o item USD ficava cortado no topo da janela porque a lista abre alinhada ao BRL, e o
+  dropdown aberto derrubou os três casos seguintes de Settings (`a6ea43d`). Resolvi trocando para ARS, vizinho do
+  BRL. O código da moeda base estava certo nas duas; o problema era o teste.
 - **Não verificado**: a tela a olho, a coleta real do par ao trocar a moeda e os resumos de ponta a ponta (os
   testes cobrem `positions_in_base` e `sum_in_base`, não os comandos Tauri).
 - **Processo**: rodei um heredoc de shell vazio contra o `flow_tests.rs`, sem efeito mas contra a regra de usar
