@@ -2726,4 +2726,22 @@ posição sem preço vale o prêmio (custo) e a flag nasce ligada. Detalhe na Fa
 - **Não verificado**: a gravação de preços pelo `get_option_marks` real contra a B3, a tela a olho e o clique
   manual.
 - **Pendente**: "salvar estratégia do simulador como posições"; moeda base (Fase 19); ingestão agendada e
-  `DataProvider` com mais de uma fonte por categoria; E2E do câmbio pular em "No data found".
+  `DataProvider` com mais de uma fonte por categoria; E2E do câmbio pular em "No data found". *(A estratégia foi
+  salva na Sessão 119, abaixo.)*
+
+
+### 2026-10-17 — Sessão 119
+
+**Salvar a estratégia do simulador como posições (Fase 18).** Plan mode; sem perguntas de escopo (o pedido já
+definia o que fazer). Detalhe na Fase 18 do `PHASE.md`.
+- **Feito**: comando `create_option_positions` (lote tudo ou nada), diálogo "Save as positions" no simulador,
+  pernas da cadeia carregando série e vencimento, `workspaceId`/ativo-objeto/vencimento passados ao simulador.
+- **Decisão de desenho**: cada perna vira uma posição independente (sem grupo) e a de ação é ignorada com aviso;
+  pernas manuais pedem a série no diálogo.
+- **Verificado**: `./dev.sh check` limpo; 3 testes de fluxo novos; CI do push `a83762f` verde nos três workflows.
+- **Erros meus**: (1) variável `current` do callback escondia a da cadeia (pego pelo `tsc` antes do push); (2) o
+  E2E deixou o diálogo modal aberto e quebrou os casos seguintes no primeiro push (`476a5f6`); o salvamento em si
+  funcionava, o teste é que não fechava o diálogo.
+- **Não verificado**: pernas vindas da cadeia real, a tela a olho e o clique manual.
+- **Pendente**: moeda base (Fase 19); ingestão agendada e `DataProvider` com mais de uma fonte por categoria;
+  E2E do câmbio pular em "No data found".

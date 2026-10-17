@@ -1802,6 +1802,33 @@ o **prêmio, como custo** (igual ao que a carteira faz sem cotação) e a flag "
   posição aberta, histórico de preços das posições, opções no Resumo da carteira, na alocação e na
   rentabilidade, atualização automática dos preços.
 
+**Salvar a estratégia do simulador como posições (Sessão 119, 2026-10-17)**: leva as pernas de opção do
+simulador para uma carteira de uma vez, em vez de redigitar cada uma na aba Options.
+- **O que falta numa perna**: o simulador só tem tipo, lado, strike, preço e quantidade; uma posição exige
+  também série, vencimento, ativo-objeto, abertura e carteira. Pernas vindas da cadeia (atalhos e "Add as
+  buy/sell leg") agora **carregam** `seriesTicker` e `expiration` (`LegDraft`, `buildPreset`, `legFromSeries`);
+  as manuais pedem a série no diálogo, com o vencimento já em hoje + 30 dias. Editar o tipo ou o strike de uma
+  perna solta a série que veio da cadeia (deixaria de bater). Ativo-objeto = ticker da análise; abertura = hoje.
+- **Perna de ação não vira posição** (as posições só rastreiam opções); o diálogo avisa quantas foram ignoradas.
+- **Backend**: `create_option_position_in` ficou genérica em `ConnectionTrait` e o comando novo
+  `create_option_positions(request { portfolio_id, underlying_ticker, open_date, legs })` salva de 1 a 8 pernas
+  **tudo ou nada** numa transação, reaproveitando toda a validação. Cada perna é uma posição independente (a
+  estratégia não vira grupo) e a taxa de abertura não é pedida.
+- **Tela**: botão "Save as positions" no simulador (só com perna de opção válida); diálogo com o seletor de
+  carteira (já escolhida se for a única; mensagem se o Workspace não tem nenhuma), uma linha por perna com série,
+  vencimento, prêmio e quantidade editáveis, e a confirmação com o caminho Portfolio → Options. Invalida as
+  consultas de posições e de patrimônio.
+- **Verificado**: `./dev.sh check` limpo; 3 testes de fluxo no schema real (trava de 2 pernas salva de uma vez,
+  perna inválida não salva nenhuma, limites de 1 a 8 pernas e carteira inexistente); CI do push `a83762f` verde
+  nos três workflows, com o E2E salvando uma call manual e conferindo no banco `PETRK400:long:2.0:PETR4`.
+  **Não verificado**: pernas vindas da cadeia real carregando série e vencimento (dependem dos 80 MB da B3), a
+  tela a olho e o clique manual.
+- **Erros no caminho**: um nome de variável de callback escondia o vencimento da cadeia (pego pelo `tsc`); e o
+  primeiro push do E2E falhou porque o teste terminava com o diálogo de sucesso aberto, e o diálogo modal
+  deixava a busca global inerte para os casos seguintes (corrigido fechando-o no teste).
+- **Fora de escopo, decidido**: taxa por perna, agrupar a estratégia, salvar a perna de ação, criar carteira no
+  diálogo, editar posição já salva.
+
 ### Fase 19 — Moeda base seletiva da carteira (ideia trazida em conversa pelo dono do projeto na Sessão 96, puro registro, não iniciada)
 
 **Objetivo**: permitir escolher, nas Configurações, a moeda base em que a carteira é exibida (ex.:
