@@ -2855,7 +2855,8 @@ Detalhe na Fase 19 do `PHASE.md`.
   bloqueio de edição, `TransferDialog`, linha única na lista, caso novo em `accounts.e2e.mjs`.
 - **Decisão de desenho**: o `transfer_id` é o id da linha de saída, sem tabela nova nem FK; a exclusão do par é feita
   pelo comando.
-- **Verificado**: `./dev.sh check` limpo; 1 teste de unidade e 5 de fluxo novos. CI: ver abaixo.
+- **Verificado**: `./dev.sh check` limpo; 1 teste de unidade e 5 de fluxo novos; CI do push `e7d7ce7` verde
+  nos três workflows, de primeira.
 - **Não verificado**: a tela a olho.
 - **Pendente**: trocar a moeda pela edição da conta; separar P/L por preço e por câmbio; formatadores de Ledger,
   Dividendos e impostos; benchmarks convertidos.
