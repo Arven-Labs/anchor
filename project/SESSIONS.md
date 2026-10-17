@@ -2838,8 +2838,8 @@ um número na moeda base do Workspace. Detalhe na Fase 19 do `PHASE.md`.
 - **Feito**: `list_categories_view` (extraída do comando), `compute_spent_this_month` convertendo cada despesa pela
   conta e pela taxa da data, `base_currency` e `spent_missing_fx` na view, aviso no diálogo de categorias.
 - **Decisão de desenho**: o limite não ganhou moeda própria; trocar a base muda o significado do número.
-- **Verificado**: `./dev.sh check` limpo; 2 testes de unidade e 1 de fluxo novos, 5 de unidade ajustados. CI: ver
-  abaixo.
+- **Verificado**: `./dev.sh check` limpo; 2 testes de unidade e 1 de fluxo novos, 5 de unidade ajustados; CI do push
+  `be9e5f2` verde nos três workflows, de primeira.
 - **Não verificado**: a tela a olho.
 - **Pendente**: transferência entre contas; trocar a moeda pela edição da conta; separar P/L por preço e por câmbio;
   formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.
