@@ -2541,7 +2541,7 @@ gosto de fazer"), então virou E2E.
   `fetch_company_dividend_notices`; zip em `disk_cache` com `max_age` de 12 h (ano corrente) e 7 dias
   (anterior), diferente do DFP. Detalhe na seção F da Fase 32.
 - **Verificado (avisos)**: `./dev.sh check` limpo, 11 testes unitários e teste ao vivo (Banco do Brasil,
-  18 avisos nos dois anos, último de 2026-09-09). CI do push ainda por conferir.
+  18 avisos nos dois anos, último de 2026-09-09). CI do push `00805b9` verde (Rust e E2E).
 - **Pendente**: decisão do dono sobre o repo do Lume; opções com gregas (seção F da Fase 32); consumidor
   dos avisos (alerta de "aviso novo" ou leitura do PDF para o provento esperado, com `resolve_cvm_code`);
   moeda base e conversão na carteira (Fase 19); ingestão agendada e `DataProvider` com mais de uma fonte
