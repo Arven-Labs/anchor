@@ -2884,7 +2884,7 @@ mode. Detalhe na Fase 19 do `PHASE.md`.
   o P/L exato), e a linha "price X · FX Y" na aba Positions.
 - **Decisão de desenho**: o preço é medido na taxa da compra e o câmbio sobre o valor de mercado na moeda do ativo,
   que é a decomposição que fecha sem resto.
-- **Verificado**: `./dev.sh check` limpo; 3 testes de fluxo existentes ganharam asserções da decomposição. CI: ver
-  abaixo.
+- **Verificado**: `./dev.sh check` limpo; 3 testes de fluxo existentes ganharam asserções da decomposição; CI do push
+  `ad923b2` verde nos três workflows, de primeira.
 - **Não verificado**: a tela a olho. O Resumo não mostra a decomposição (só tem a coluna de percentual).
 - **Pendente**: formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.
