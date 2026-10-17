@@ -2823,7 +2823,8 @@ Detalhe na Fase 19 do `PHASE.md`.
   `convert_position` (inclui o câmbio), proventos 12m na taxa da data do pagamento.
 - **Decisão de desenho**: posição sem cotação (preço = custo) vale o custo na base, para o câmbio não virar lucro.
 - **Mudança de comportamento**: o P/L de ativo em outra moeda passa a incluir o câmbio desde a compra.
-- **Verificado**: `./dev.sh check` limpo; 3 testes de domínio e 2 de fluxo novos, 2 de fluxo ajustados. CI: ver abaixo.
+- **Verificado**: `./dev.sh check` limpo; 3 testes de domínio e 2 de fluxo novos, 2 de fluxo ajustados; CI do push `aca40f0`
+  verde em Rust e E2E (o workflow de Frontend não roda sem mudança em `src/`).
 - **Não verificado**: a tela a olho e o cálculo com cotações reais.
 - **Pendente**: orçamento por categoria; transferência entre contas; trocar a moeda pela edição da conta; separar
   P/L por preço e por câmbio; formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.
