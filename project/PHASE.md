@@ -2536,9 +2536,9 @@ desatualizado e foi avançado com `git pull --ff-only` até `7767069`).
 - **Já portado para Rust (`finance_core/`)**: Selic diária e curva DI; índices B3 (IFIX, SMLL, IDIV);
   metais; FII (indicadores mensais, imóveis, resolução ticker→CNPJ); SEC EDGAR (fundamentos, DCF,
   payout, REIT); CVM DFP; Yahoo (B3 e EUA); cripto (CoinGecko, Fear & Greed, os indicadores do ETH);
-  regras de IR (`tax_rules`).
+  regras de IR (`tax_rules`); **câmbio multi-moeda (Sessão 109)**.
 - **NÃO portado, só existe no Lume** (é o que se perde se o repo for apagado sem copiar o desenho):
-  1. **Câmbio multi-moeda** (seção I abaixo) — base das Fases 19 e 30.
+  1. ~~**Câmbio multi-moeda**~~ — **portado na Sessão 109** (ver o fim da seção I).
   2. **Opções: catálogo de séries, preço EOD e gregas** (seção H abaixo) — base da Fase 18.
   3. **Avisos de dividendos da CVM (IPE)**, `companies/{cvm}/dividend-notices` — alimentaria o
      "provento esperado" (Sessão 77.2).
@@ -2645,7 +2645,28 @@ Valem para qualquer reescrita ou nova fonte; vários já aparecem nos comentári
 - **Erros**: 404 série desconhecida ou nunca negociada, 422 opção vencida ou preço abaixo do intrínseco,
   502 fonte fora do ar.
 
-#### I. Câmbio multi-moeda (existe só no Lume; base das Fases 19 e 30)
+#### I. Câmbio multi-moeda (portado na Sessão 109; base das Fases 19 e 30)
+
+**Portado (Sessão 109)**, escopo "dados + tela de consulta"; moeda base e conversão na carteira
+(Fase 19) seguem fora.
+- `finance_core/fx.rs`: as 17 moedas do `currency_catalog.py` do Lume e `pair_info(base, quote)`, que
+  valida o par antes de qualquer rede (moeda fora do catálogo ou par igual → `NoData`) e devolve o
+  código (`EURUSD`), o ticker (`EURUSD=X`) e o nome (`EUR/USD`). Cotação e histórico saem de
+  `yahoo::quote`/`price_history` sem mudança (`Instrument::global("EURUSD=X")`).
+- Fachada `fetch_fx_quote`/`fetch_fx_price_history` em `finance_api/client.rs`; coletor
+  `finance_api/fx.rs::collect_pair` grava em `stock_quotes`/`stock_price_history` com o código do par
+  como ticker, `exchange = "FX"` e `currency` = moeda cotada (**sem migration**); comando Tauri
+  `run_fx_collector(base, quote)`, com o mesmo lock dos outros coletores.
+- Tela: `FxLookupSection` numa `view = "fx"` do Research ("Or see currency exchange rates" no estado
+  vazio), com dois selects de moeda. **Não virou `AssetClass`** (que também define as classes de ativo
+  da carteira), igual aos juros. O `PriceHistoryChart` ganhou `decimals` opcional porque 1,1244 não cabe
+  em 0 casas.
+- Verificado: `./dev.sh check` limpo; 6 testes unitários passando; `live_fx_pairs` contra o Yahoo real
+  (EUR/USD 1,1244, 2.603 pontos de histórico, cross GBP/JPY ok). **Não verificado**: o E2E novo
+  (`lookup.e2e.mjs`, USD→BRL; roda no CI) e o clique na tela.
+- Diferenças em relação ao Lume: o TTL de 5 min/1 h não foi portado (como nos metais, a tela lê a
+  última linha gravada e só coleta se não houver nenhuma; "Refresh data" força); a resposta não carrega
+  `cached`/`stale`.
 
 - **Uma fonte só, o Yahoo**, pelo ticker `{BASE}{QUOTE}=X` (`EURUSD=X`, `USDBRL=X`, `ARSUSD=X`, e até
   cross entre moedas não-BRL como `GBPJPY=X`, 208,5 JPY). A hipótese do roadmap (BCB PTAX para BRL e
@@ -2755,5 +2776,6 @@ Valem para qualquer reescrita ou nova fonte; vários já aparecem nos comentári
 
 **Estado**: registro completo do `project/` do Lume (arquivos lidos: `OVERVIEW`, `CONTEXT`, `GUIDELINES`,
 `INDEX`, `PENDING`, `ARCHITECTURE`, `PHASE`, `ROADMAP`, `DESMONTAGEM` e as sessões 1 a 24). Sessão 108.
-Próximo passo natural: marcar, item a item, o que migra (câmbio e opções são os candidatos concretos), o
-que adia e o que descarta; e dar à série mensal do BCB o mesmo retry da Selic.
+Próximo passo natural: marcar, item a item, o que migra (opções e avisos de dividendos da CVM são os
+candidatos que sobraram), o que adia e o que descarta. Na Sessão 109 a série mensal do BCB ganhou o
+retry da Selic e o câmbio foi portado.

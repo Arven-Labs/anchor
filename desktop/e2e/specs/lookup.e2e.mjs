@@ -33,8 +33,21 @@ async function expectQuoteScreen(test, ticker, marker) {
 }
 
 describe("Anchor — Research com dados de rede", function () {
-  it("ação da B3 (PETR4) coleta a cotação e mostra os indicadores", async function () {
+  // Primeiro caso de propósito: o atalho do câmbio só aparece no estado vazio do
+  // Research, antes de qualquer busca.
+  it("câmbio (USD → BRL) coleta a cotação e grava o par", async function () {
     await enterWorkspace("Lookup E2E");
+    await byId("nav-lookup").click();
+    await byId("open-fx").click();
+    await pickOption(byId("fx-base"), "USD — US Dollar");
+    await pickOption(byId("fx-quote"), "BRL — Brazilian Real");
+    await expectQuoteScreen(this, "USDBRL", "Rate (BRL)");
+
+    expect(sql("SELECT currency FROM stock_quotes WHERE ticker = 'USDBRL' LIMIT 1")).toBe("BRL");
+    expect(Number(sql("SELECT count(*) FROM stock_price_history WHERE ticker = 'USDBRL'"))).toBeGreaterThan(0);
+  });
+
+  it("ação da B3 (PETR4) coleta a cotação e mostra os indicadores", async function () {
     await search("Stock (B3)", "PETR4");
     await expectQuoteScreen(this, "PETR4", "SMA 200");
 

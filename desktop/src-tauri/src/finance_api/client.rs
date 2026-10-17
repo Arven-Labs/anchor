@@ -18,7 +18,7 @@ use crate::finance_api::selic_store;
 use crate::finance_core::market::{self, Instrument};
 use crate::finance_core::{
     b3_index_stats, b3_taxa_swap, bcb_sgs, bolsai, coingecko, cvm_dfp, cvm_fii, eth_indicators, fear_greed,
-    metals, sec_edgar, tax_rules, yahoo,
+    fx, metals, sec_edgar, tax_rules, yahoo,
 };
 
 /// Origem do dado, presente em toda resposta: quem respondeu (`source`), se veio
@@ -428,6 +428,49 @@ pub async fn fetch_metal_price_history(
     let h = yahoo::price_history(&Instrument::global(info.yahoo_symbol)).await?;
     Ok(MetalPriceHistoryResponse {
         metal_code: info.code.to_string(),
+        meta: now_meta(h.source),
+        data: price_points(h.value),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// fx — pares `{BASE}{QUOTE}=X` do Yahoo
+// ---------------------------------------------------------------------------
+
+#[derive(Debug)]
+pub struct FxQuoteResponse {
+    pub pair_code: String,
+    pub name: String,
+    pub quote_currency: String,
+    pub meta: ResponseMeta,
+    pub price: f64,
+}
+
+/// Par inválido vira `NoData` antes de qualquer chamada de rede (`fx::pair_info`).
+pub async fn fetch_fx_quote(base: &str, quote: &str) -> Result<FxQuoteResponse, AppError> {
+    let info = fx::pair_info(base, quote)?;
+    let q = yahoo::quote(&Instrument::global(&info.yahoo_symbol)).await?;
+    Ok(FxQuoteResponse {
+        pair_code: info.code,
+        name: info.name,
+        quote_currency: info.quote,
+        meta: now_meta(q.source),
+        price: q.value.price,
+    })
+}
+
+#[derive(Debug)]
+pub struct FxPriceHistoryResponse {
+    pub pair_code: String,
+    pub meta: ResponseMeta,
+    pub data: Vec<PriceHistoryPoint>,
+}
+
+pub async fn fetch_fx_price_history(base: &str, quote: &str) -> Result<FxPriceHistoryResponse, AppError> {
+    let info = fx::pair_info(base, quote)?;
+    let h = yahoo::price_history(&Instrument::global(&info.yahoo_symbol)).await?;
+    Ok(FxPriceHistoryResponse {
+        pair_code: info.code,
         meta: now_meta(h.source),
         data: price_points(h.value),
     })

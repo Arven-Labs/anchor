@@ -2523,5 +2523,18 @@ gosto de fazer"), então virou E2E.
   o código `CRYPTO_SOURCE_ERROR` e o fallback Binance→Bybit dependem dele.
 - **Verificado**: `./dev.sh check` limpo nas duas mudanças. Os testes rodam no CI (o `dev.sh` não tem
   `test`); não há teste novo, o retry e o HTTP dependem de rede.
-- **Pendente**: decisão do dono sobre o repo do Lume; plano de câmbio e opções (seção F da Fase 32);
-  ingestão agendada e `DataProvider` com mais de uma fonte por categoria.
+- **Câmbio multi-moeda portado** (plan mode; escopo "dados + tela de consulta", armazenamento nas
+  tabelas de cotação existentes, sem migration). `finance_core/fx.rs` (17 moedas do Lume, par validado
+  sem rede), fachada, coletor `finance_api/fx.rs`, comando `run_fx_collector` e `FxLookupSection` numa
+  `view = "fx"` do Research. Detalhe e diferenças em relação ao Lume na seção I da Fase 32.
+- **Escolha de desenho**: a moeda **não** virou `AssetClass` (o seletor do Research usa o mesmo tipo que
+  define as classes de ativo da carteira, e isso vazaria para criação de ativo e posições); seguiu o
+  padrão dos juros, com `view` própria e dois selects de moeda.
+- **Verificado (câmbio)**: `./dev.sh check` limpo, 6 testes unitários e `live_fx_pairs` contra o Yahoo
+  real (EUR/USD 1,1244, 2.603 pontos, cross GBP/JPY). **Não verificado**: o E2E novo (USD→BRL, primeiro
+  caso do `lookup.e2e.mjs`, porque o atalho só existe no estado vazio do Research) e o clique na tela.
+- **Achado**: a lista de moedas que eu tinha de cabeça estava errada (incluía SEK, NOK, DKK, que não
+  estão no catálogo); a certa veio do `currency_catalog.py` do Lume, lido antes de codar.
+- **Pendente**: decisão do dono sobre o repo do Lume; opções com gregas e avisos de dividendos da CVM
+  (seção F da Fase 32); moeda base e conversão na carteira (Fase 19); ingestão agendada e `DataProvider`
+  com mais de uma fonte por categoria.

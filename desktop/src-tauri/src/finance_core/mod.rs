@@ -21,6 +21,8 @@
 //   empresas, direto dos zips anuais da CVM; cache em disco compartilhado).
 // - `sec_edgar`: domínio 7 (fundamentos, DCF, payout e REITs dos EUA, direto do
 //   XBRL da SEC; o e-mail de contato exigido por eles vem do keyring/ambiente).
+// - `fx`: câmbio multi-moeda (Fase 32, seção I): catálogo de 17 moedas e
+//   validação do par; a cotação e o histórico vêm do `yahoo` (`EURUSD=X`).
 pub mod api_keys;
 pub mod b3_index_stats;
 pub mod b3_taxa_swap;
@@ -33,6 +35,7 @@ pub mod cvm_fii;
 pub mod disk_cache;
 pub mod eth_indicators;
 pub mod fear_greed;
+pub mod fx;
 pub mod http;
 pub mod market;
 pub mod metals;

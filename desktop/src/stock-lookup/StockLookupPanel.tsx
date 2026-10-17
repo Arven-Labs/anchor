@@ -1,4 +1,4 @@
-import { PercentIcon, SearchIcon } from "lucide-react";
+import { BanknoteIcon, PercentIcon, SearchIcon } from "lucide-react";
 import type { AssetClass } from "../portfolio/types";
 import RatesSection from "./RatesSection";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import EtfLookupSection from "./EtfLookupSection";
 import CryptoLookupSection from "./CryptoLookupSection";
 import BdrLookupSection from "./BdrLookupSection";
 import MetalLookupSection from "./MetalLookupSection";
+import FxLookupSection from "./FxLookupSection";
 import UsStockLookupSection from "./UsStockLookupSection";
 import ReitLookupSection from "./ReitLookupSection";
 import EtfUsLookupSection from "./EtfUsLookupSection";
@@ -47,7 +48,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 /// Fase 17 — `view = "rates"` mostra a tela de juros (Selic + curva DI), que
 /// não tem ticker. Entra pelo atalho no estado vazio daqui ou pelo
 /// "Details" do widget da Home; a busca global volta pro modo "asset".
-export type ResearchView = "asset" | "rates";
+/// Fase 32, seção I — `view = "fx"` mostra o câmbio multi-moeda (o par é
+/// escolhido na própria tela, sem ticker). Mesmo desenho dos juros: moeda não é
+/// classe de ativo, então fica fora de `AssetClass` e da busca global.
+export type ResearchView = "asset" | "rates" | "fx";
+
+const VIEW_TITLES: Record<ResearchView, string> = {
+  asset: "Research",
+  rates: "Research — Interest rates",
+  fx: "Research — Currencies",
+};
 
 function StockLookupPanel({
   workspaceId,
@@ -55,29 +65,39 @@ function StockLookupPanel({
   activeTicker,
   view,
   onOpenRates,
+  onOpenFx,
 }: {
   workspaceId: number;
   assetClass: AssetClass;
   activeTicker: string | null;
   view: ResearchView;
   onOpenRates: () => void;
+  onOpenFx: () => void;
 }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{view === "rates" ? "Research — Interest rates" : "Research"}</CardTitle>
+        <CardTitle>{VIEW_TITLES[view]}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         {view === "rates" && <RatesSection />}
+
+        {view === "fx" && <FxLookupSection />}
 
         {view === "asset" && !activeTicker && (
           <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border py-10 text-center text-muted-foreground">
             <SearchIcon className="size-5" />
             <p className="text-sm">Use the search bar at the top to analyze an asset.</p>
-            <Button variant="outline" size="sm" onClick={onOpenRates}>
-              <PercentIcon />
-              Or see Brazilian interest rates
-            </Button>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="outline" size="sm" onClick={onOpenRates}>
+                <PercentIcon />
+                Or see Brazilian interest rates
+              </Button>
+              <Button variant="outline" size="sm" onClick={onOpenFx} data-testid="open-fx">
+                <BanknoteIcon />
+                Or see currency exchange rates
+              </Button>
+            </div>
           </div>
         )}
 

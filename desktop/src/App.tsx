@@ -75,6 +75,11 @@ function App() {
     setSection("lookup");
   }
 
+  function openFx() {
+    setResearchView("fx");
+    setSection("lookup");
+  }
+
   if (workspaceId === null) {
     return (
       <main className="mx-auto max-w-6xl p-8">
@@ -185,6 +190,7 @@ function App() {
               activeTicker={activeTicker}
               view={researchView}
               onOpenRates={openRates}
+              onOpenFx={openFx}
             />
           </TabsContent>
 

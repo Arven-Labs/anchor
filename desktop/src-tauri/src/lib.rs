@@ -87,6 +87,7 @@ pub fn run() {
             commands::alert_rule::set_alert_rule_active,
             commands::alert_rule::delete_alert_rule,
             commands::collector::run_stock_collector,
+            commands::collector::run_fx_collector,
             commands::collector::run_crypto_collector,
             commands::collector::list_stock_quotes,
             commands::collector::list_stock_fundamentals,

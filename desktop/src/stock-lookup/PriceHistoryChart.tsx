@@ -63,10 +63,12 @@ function PriceTooltip({
   active,
   payload,
   currencyPrefix,
+  decimals,
 }: {
   active?: boolean;
   payload?: { payload: StockPriceHistory }[];
   currencyPrefix: string;
+  decimals: number;
 }) {
   if (!active || !payload?.length) return null;
   const point = payload[0].payload;
@@ -77,7 +79,7 @@ function PriceTooltip({
     >
       <p className="font-medium">{formatDateLabel(point.price_date)}</p>
       <p className="text-muted-foreground">
-        {currencyPrefix} {point.close_price.toFixed(2)}
+        {currencyPrefix} {point.close_price.toFixed(decimals)}
       </p>
     </div>
   );
@@ -93,13 +95,16 @@ function PriceTooltip({
 /// `history` já buscado, sem requisição nova por período. Recebe `history`
 /// já buscado (mesmo comando genérico `list_stock_price_history` que toda
 /// classe auto-quote grava, ver PHASE.md item 8) — não faz fetch próprio,
-/// cada seção decide quando buscar.
+/// cada seção decide quando buscar. `decimals` só existe pro câmbio, onde uma
+/// cotação como 1,0832 não cabe nas 0 casas do eixo nem nas 2 do tooltip.
 function PriceHistoryChart({
   history,
   currencyPrefix,
+  decimals,
 }: {
   history: StockPriceHistory[];
   currencyPrefix: string;
+  decimals?: number;
 }) {
   const [period, setPeriod] = useState<PeriodKey>("12m");
   const filtered = useMemo(() => filterByPeriod(history, period), [history, period]);
@@ -142,10 +147,10 @@ function PriceHistoryChart({
             axisLine={false}
             width={56}
             domain={["auto", "auto"]}
-            tickFormatter={(value: number) => value.toFixed(0)}
+            tickFormatter={(value: number) => value.toFixed(decimals ?? 0)}
           />
           <Tooltip
-            content={<PriceTooltip currencyPrefix={currencyPrefix} />}
+            content={<PriceTooltip currencyPrefix={currencyPrefix} decimals={decimals ?? 2} />}
             cursor={{ stroke: GRID_COLOR }}
           />
           <Line

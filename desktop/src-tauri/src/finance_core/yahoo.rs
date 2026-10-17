@@ -520,4 +520,24 @@ mod tests {
         let err = quote(&Instrument::b3("XXXXNOPE")).await.unwrap_err();
         assert!(matches!(err, AppError::NoData(_)), "{err}");
     }
+
+    // Câmbio (Fase 32, seção I): par `{BASE}{QUOTE}=X`, inclusive cross sem BRL.
+    #[tokio::test]
+    #[ignore]
+    async fn live_fx_pairs() {
+        let eurusd = quote(&Instrument::global("EURUSD=X")).await.unwrap().value;
+        println!("EURUSD {eurusd:?}");
+        assert!(eurusd.price > 0.5 && eurusd.price < 2.0);
+        assert_eq!(eurusd.currency.as_deref(), Some("USD"));
+
+        let usdbrl = quote(&Instrument::global("USDBRL=X")).await.unwrap().value;
+        assert!(usdbrl.price > 2.0 && usdbrl.price < 20.0, "{}", usdbrl.price);
+
+        let gbpjpy = quote(&Instrument::global("GBPJPY=X")).await.unwrap().value;
+        assert!(gbpjpy.price > 50.0, "{}", gbpjpy.price);
+
+        let h = price_history(&Instrument::global("EURUSD=X")).await.unwrap().value;
+        println!("EURUSD history {} last {:?}", h.len(), h.last());
+        assert!(h.len() > 2000, "{} points", h.len());
+    }
 }

@@ -10,7 +10,7 @@ use crate::entity::{
 use crate::error::AppError;
 use crate::finance_api::{
     benchmark as finance_api_benchmark, crypto as finance_api_crypto,
-    metals as finance_api_metals, reit as finance_api_reit, stocks as finance_api_stocks,
+    fx as finance_api_fx, metals as finance_api_metals, reit as finance_api_reit, stocks as finance_api_stocks,
     us_stock as finance_api_us_stock,
 };
 
@@ -31,6 +31,32 @@ pub struct CollectorSummary {
 // Cada branch chama o coletor da classe: `_` usa `finance_api::stocks`,
 // "cripto"/"metal" usam `finance_api::{crypto,metals}` e
 // "acao_internacional"/"reit"/"etf_us" usam `finance_api::{us_stock,reit}`.
+/// Fase 32, seção I — câmbio. Comando próprio (não é uma `asset_class`): o par
+/// vira `EURUSD` em `stock_quotes`/`stock_price_history` e a tela lê pelos
+/// mesmos `list_stock_quotes`/`list_stock_price_history`.
+#[tauri::command]
+pub async fn run_fx_collector(
+    lock: tauri::State<'_, AtomicBool>,
+    db: tauri::State<'_, DatabaseConnection>,
+    base: String,
+    quote: String,
+) -> Result<CollectorSummary, AppError> {
+    if lock.swap(true, Ordering::SeqCst) {
+        return Err(AppError::CollectorBusy);
+    }
+    let result = finance_api_fx::collect_pair(db.inner(), &base, &quote)
+        .await
+        .map(|r| CollectorSummary {
+            success: true,
+            output: format!(
+                "{}: {:.4} {} — {} history point(s)",
+                r.name, r.price, r.quote_currency, r.history_points,
+            ),
+        });
+    lock.store(false, Ordering::SeqCst);
+    result
+}
+
 #[tauri::command]
 pub async fn run_stock_collector(
     lock: tauri::State<'_, AtomicBool>,

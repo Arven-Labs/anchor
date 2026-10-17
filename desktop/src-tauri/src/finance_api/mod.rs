@@ -6,6 +6,7 @@ pub mod benchmark;
 pub mod client;
 pub mod crypto;
 pub mod fii;
+pub mod fx;
 pub mod metals;
 pub mod reit;
 pub mod selic_store;
