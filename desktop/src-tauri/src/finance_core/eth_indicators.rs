@@ -199,15 +199,29 @@ pub fn exchange_netflow_ratio(inflow: &[f64], outflow: &[f64]) -> Result<f64, Ap
     Ok((inflow - outflow) / total)
 }
 
-fn metrics_url(metrics: &[&str], page_size: usize) -> String {
+fn metrics_url(asset: &str, metrics: &[&str], page_size: usize) -> String {
     format!(
-        "{COINMETRICS}/timeseries/asset-metrics?assets=eth&metrics={}&frequency=1d&page_size={page_size}",
+        "{COINMETRICS}/timeseries/asset-metrics?assets={asset}&metrics={}&frequency=1d&page_size={page_size}",
         metrics.join(",")
     )
 }
 
-async fn coinmetrics(metrics: &[&str], page_size: usize) -> Result<String, AppError> {
-    http::get_text("CoinMetrics", &metrics_url(metrics, page_size), http::DEFAULT_TIMEOUT).await
+/// `asset` é o id do CoinMetrics (`eth`, `btc`), em minúsculas.
+async fn coinmetrics(asset: &str, metrics: &[&str], page_size: usize) -> Result<String, AppError> {
+    http::get_text("CoinMetrics", &metrics_url(asset, metrics, page_size), http::DEFAULT_TIMEOUT).await
+}
+
+/// Códigos que só existem para o ETH (a fonte ou o conceito é do Ethereum); pedir
+/// um deles para outra moeda é `NoData`.
+const ETH_ONLY_CODES: [&str; 4] = ["tvl-trend", "net-issuance", "fees-vs-emission", "eth-btc-trend"];
+
+/// Id da moeda no CoinGecko; só as que o score cobre.
+fn coingecko_id(coin: &str) -> Result<&'static str, AppError> {
+    match coin.to_ascii_uppercase().as_str() {
+        "ETH" => Ok("ethereum"),
+        "BTC" => Ok("bitcoin"),
+        other => Err(AppError::NoData(format!("no CoinGecko id for '{other}'"))),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -217,7 +231,8 @@ async fn coinmetrics(metrics: &[&str], page_size: usize) -> Result<String, AppEr
 pub trait EthIndicatorProvider: DataProvider {
     /// Códigos da Finance API que este provider atende (`tvl-trend`, ...).
     fn supports(&self, code: &str) -> bool;
-    fn indicator<'a>(&'a self, code: &'a str) -> BoxFuture<'a, Result<f64, AppError>>;
+    /// `coin` é o símbolo (`ETH`, `BTC`); os providers de código só do ETH o ignoram.
+    fn indicator<'a>(&'a self, coin: &'a str, code: &'a str) -> BoxFuture<'a, Result<f64, AppError>>;
 }
 
 struct DefiLlama;
@@ -250,7 +265,7 @@ impl EthIndicatorProvider for DefiLlama {
     fn supports(&self, code: &str) -> bool {
         code == "tvl-trend"
     }
-    fn indicator<'a>(&'a self, _code: &'a str) -> BoxFuture<'a, Result<f64, AppError>> {
+    fn indicator<'a>(&'a self, _coin: &'a str, _code: &'a str) -> BoxFuture<'a, Result<f64, AppError>> {
         Box::pin(async {
             let url = format!("{DEFILLAMA}/v2/historicalChainTvl/Ethereum");
             tvl_trend_mom(&http::get_text("DefiLlama", &url, http::DEFAULT_TIMEOUT).await?)
@@ -262,7 +277,7 @@ impl EthIndicatorProvider for Ultrasound {
     fn supports(&self, code: &str) -> bool {
         matches!(code, "net-issuance" | "fees-vs-emission")
     }
-    fn indicator<'a>(&'a self, code: &'a str) -> BoxFuture<'a, Result<f64, AppError>> {
+    fn indicator<'a>(&'a self, _coin: &'a str, code: &'a str) -> BoxFuture<'a, Result<f64, AppError>> {
         Box::pin(async move {
             let supply =
                 http::get_text("ultrasound.money", &format!("{ULTRASOUND}/supply-over-time"), http::DEFAULT_TIMEOUT)
@@ -281,8 +296,8 @@ impl EthIndicatorProvider for CoinGeckoNvt {
     fn supports(&self, code: &str) -> bool {
         code == "nvt-ratio"
     }
-    fn indicator<'a>(&'a self, _code: &'a str) -> BoxFuture<'a, Result<f64, AppError>> {
-        Box::pin(coingecko::fetch_nvt_ratio_vs_ma90())
+    fn indicator<'a>(&'a self, coin: &'a str, _code: &'a str) -> BoxFuture<'a, Result<f64, AppError>> {
+        Box::pin(async move { coingecko::fetch_nvt_ratio_vs_ma90(coingecko_id(coin)?).await })
     }
 }
 
@@ -298,31 +313,34 @@ impl EthIndicatorProvider for CoinMetrics {
                 | "eth-btc-trend"
         )
     }
-    fn indicator<'a>(&'a self, code: &'a str) -> BoxFuture<'a, Result<f64, AppError>> {
+    fn indicator<'a>(&'a self, coin: &'a str, code: &'a str) -> BoxFuture<'a, Result<f64, AppError>> {
         Box::pin(async move {
+            let asset = coin.to_ascii_lowercase();
+            let asset = asset.as_str();
             match code {
                 "mvrv-z-score" => {
-                    let body = coinmetrics(&["CapMrktCurUSD", "CapMVRVCur"], FULL_HISTORY_PAGE_SIZE).await?;
+                    let body = coinmetrics(asset, &["CapMrktCurUSD", "CapMVRVCur"], FULL_HISTORY_PAGE_SIZE).await?;
                     mvrv_z_score(&metric_column(&body, "CapMrktCurUSD")?, &metric_column(&body, "CapMVRVCur")?)
                 }
                 "puell-multiple" => {
-                    let body = coinmetrics(&["IssTotUSD"], FULL_HISTORY_PAGE_SIZE).await?;
+                    let body = coinmetrics(asset, &["IssTotUSD"], FULL_HISTORY_PAGE_SIZE).await?;
                     puell_multiple(&metric_column(&body, "IssTotUSD")?)
                 }
                 "active-addresses-trend" => {
-                    let body = coinmetrics(&["AdrActCnt"], TREND_LOOKBACK_DAYS + 5).await?;
+                    let body = coinmetrics(asset, &["AdrActCnt"], TREND_LOOKBACK_DAYS + 5).await?;
                     active_addresses_trend_mom(metric_column(&body, "AdrActCnt")?)
                 }
                 "exchange-supply-trend" => {
-                    let body = coinmetrics(&["SplyExNtv"], TREND_LOOKBACK_DAYS + 5).await?;
+                    let body = coinmetrics(asset, &["SplyExNtv"], TREND_LOOKBACK_DAYS + 5).await?;
                     exchange_supply_change_30d(metric_column(&body, "SplyExNtv")?)
                 }
                 "eth-btc-trend" => {
-                    let body = coinmetrics(&["PriceBTC"], TREND_LOOKBACK_DAYS + 5).await?;
+                    let body = coinmetrics(asset, &["PriceBTC"], TREND_LOOKBACK_DAYS + 5).await?;
                     eth_btc_trend_30d(metric_column(&body, "PriceBTC")?)
                 }
                 _ => {
-                    let body = coinmetrics(&["FlowInExUSD", "FlowOutExUSD"], NETFLOW_WINDOW_DAYS + 5).await?;
+                    let body =
+                        coinmetrics(asset, &["FlowInExUSD", "FlowOutExUSD"], NETFLOW_WINDOW_DAYS + 5).await?;
                     exchange_netflow_ratio(
                         &metric_column(&body, "FlowInExUSD")?,
                         &metric_column(&body, "FlowOutExUSD")?,
@@ -337,16 +355,23 @@ fn providers() -> Vec<Box<dyn EthIndicatorProvider>> {
     vec![Box::new(DefiLlama), Box::new(Ultrasound), Box::new(CoinGeckoNvt), Box::new(CoinMetrics)]
 }
 
-/// Valor bruto do indicador `code` (como na Finance API). Código fora do
-/// catálogo é `NoData`.
-pub async fn indicator(code: &str) -> Result<Sourced<f64>, AppError> {
-    let providers = providers();
-    let attempts: Vec<_> =
-        providers.iter().filter(|p| p.supports(code)).map(|p| (p.id(), p.indicator(code))).collect();
-    if attempts.is_empty() {
-        return Err(AppError::NoData(format!("unknown ETH indicator '{code}'")));
+/// Valor bruto do indicador `code` da moeda `coin` (`ETH` ou `BTC`; como na
+/// Finance API). Código fora do catálogo, ou que só existe para o ETH pedido
+/// para outra moeda, é `NoData`.
+pub async fn indicator(coin: &str, code: &str) -> Result<Sourced<f64>, AppError> {
+    if !coin.eq_ignore_ascii_case("ETH") && ETH_ONLY_CODES.contains(&code) {
+        return Err(AppError::NoData(format!("indicator '{code}' only exists for ETH")));
     }
-    cascade(&format!("ETH indicator '{code}'"), attempts).await
+    let providers = providers();
+    let attempts: Vec<_> = providers
+        .iter()
+        .filter(|p| p.supports(code))
+        .map(|p| (p.id(), p.indicator(coin, code)))
+        .collect();
+    if attempts.is_empty() {
+        return Err(AppError::NoData(format!("unknown indicator '{code}'")));
+    }
+    cascade(&format!("{coin} indicator '{code}'"), attempts).await
 }
 
 #[cfg(test)]
@@ -461,7 +486,22 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_code_is_no_data() {
-        assert!(matches!(indicator("does-not-exist").await.unwrap_err(), AppError::NoData(_)));
+        assert!(matches!(indicator("ETH", "does-not-exist").await.unwrap_err(), AppError::NoData(_)));
+    }
+
+    #[tokio::test]
+    async fn eth_only_codes_are_no_data_for_btc_without_touching_the_network() {
+        for code in ETH_ONLY_CODES {
+            assert!(matches!(indicator("BTC", code).await.unwrap_err(), AppError::NoData(_)), "{code}");
+        }
+    }
+
+    #[test]
+    fn coinmetrics_url_uses_the_requested_asset() {
+        assert!(metrics_url("btc", &["AdrActCnt"], 35).contains("assets=btc&metrics=AdrActCnt"));
+        assert_eq!(coingecko_id("btc").unwrap(), "bitcoin");
+        assert_eq!(coingecko_id("ETH").unwrap(), "ethereum");
+        assert!(matches!(coingecko_id("SOL"), Err(AppError::NoData(_))));
     }
 
     #[test]
@@ -500,8 +540,25 @@ mod tests {
             "exchange-supply-trend",
             "eth-btc-trend",
         ] {
-            let got = indicator(code).await.unwrap_or_else(|e| panic!("{code}: {e}"));
+            let got = indicator("ETH", code).await.unwrap_or_else(|e| panic!("{code}: {e}"));
             println!("{code} = {} ({})", got.value, got.source);
+            assert!(got.value.is_finite(), "{code}");
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_btc_indicators() {
+        for code in [
+            "nvt-ratio",
+            "mvrv-z-score",
+            "puell-multiple",
+            "exchange-netflow",
+            "active-addresses-trend",
+            "exchange-supply-trend",
+        ] {
+            let got = indicator("BTC", code).await.unwrap_or_else(|e| panic!("{code}: {e}"));
+            println!("BTC {code} = {} ({})", got.value, got.source);
             assert!(got.value.is_finite(), "{code}");
         }
     }

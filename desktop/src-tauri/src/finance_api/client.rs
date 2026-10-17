@@ -316,10 +316,11 @@ pub struct CryptoIndicatorResponse {
     pub raw_value: f64,
 }
 
-pub async fn fetch_eth_indicator(
+pub async fn fetch_crypto_indicator(
+    coin: &str,
     indicator_code: &str,
 ) -> Result<CryptoIndicatorResponse, AppError> {
-    let reading = eth_indicators::indicator(indicator_code).await?;
+    let reading = eth_indicators::indicator(coin, indicator_code).await?;
     Ok(CryptoIndicatorResponse {
         indicator_code: indicator_code.to_string(),
         meta: now_meta(reading.source),
@@ -1080,7 +1081,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn live_fetch_unknown_indicator_is_no_data() {
-        let err = fetch_eth_indicator("does-not-exist").await.unwrap_err();
+        let err = fetch_crypto_indicator("ETH", "does-not-exist").await.unwrap_err();
         assert!(matches!(err, AppError::NoData(_)));
     }
 }

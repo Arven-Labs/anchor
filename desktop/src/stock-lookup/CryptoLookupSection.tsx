@@ -4,7 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import { latestForTicker } from "../collector/latestForTicker";
 import type { StockPriceHistory, StockQuote } from "../collector/types";
-import { INDICATORS, INDICATOR_KEYS, type IndicatorKey } from "./cryptoIndicators";
+import {
+  INDICATORS,
+  INDICATOR_KEYS,
+  hasOwnScore,
+  indicatorKeysFor,
+  type IndicatorKey,
+} from "./cryptoIndicators";
 import { AddToAssetsButton, CryptoFearGreedGauge, StatTile, type StockNote } from "./shared";
 import PriceHistoryChart from "./PriceHistoryChart";
 import ThresholdEditorDialog from "./ThresholdEditorDialog";
@@ -179,13 +185,11 @@ function IndicatorTile({
 /// tabela — ver `collect_crypto_ticker` no coletor Python), e (2) o antigo
 /// painel solto "Crypto Score" (9 indicadores de topo de ciclo, Fase 3),
 /// movido pra cá igual — pedido explícito do dono do projeto: "unificar a
-/// tela de análise de cripto na tela de research". O bloco de indicadores
-/// automatizados (`run_crypto_collector`) continua gravando sob `coin`
-/// fixo "ETH" no backend (`_record_crypto_indicator`, não mudou nesta
-/// sessão) — os thresholds em `indicator_thresholds` também foram
-/// calibrados só pra ETH (Fase 3 spec), então esse botão só aparece
-/// buscando ETH; o registro manual dos 9 indicadores continua livre pra
-/// qualquer coin, como já era antes.
+/// tela de análise de cripto na tela de research". Desde a Sessão 112 ETH e
+/// BTC têm cada um o seu conjunto de indicadores, coletor
+/// (`run_crypto_collector`) e limites em `indicator_thresholds`; o botão do
+/// coletor só aparece buscando uma dessas duas. Qualquer outra moeda segue
+/// com o registro manual, classificado pelos limites do ETH.
 function CryptoLookupSection({ ticker }: { ticker: string }) {
   const [readingDate, setReadingDate] = useState(today());
   const [drafts, setDrafts] = useState<Drafts>(emptyDrafts());
@@ -194,6 +198,10 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
   const autoFetchedTickerRef = useRef<string | null>(null);
 
   const queryClient = useQueryClient();
+  // ETH and BTC have their own indicator set, collector and thresholds; any other
+  // coin is scored with the ETH set.
+  const scoreKeys = indicatorKeysFor(ticker);
+  const ownScore = hasOwnScore(ticker);
 
   const quoteQuery = useQuery<StockQuote | null, AppError>({
     queryKey: ["crypto-lookup-quote", ticker],
@@ -256,7 +264,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
   });
 
   const runCryptoCollectorMutation = useMutation<CollectorSummary, AppError, void>({
-    mutationFn: () => invoke("run_crypto_collector"),
+    mutationFn: () => invoke("run_crypto_collector", { coin: ticker }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["crypto-score", ticker] });
     },
@@ -264,7 +272,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
 
   const updateAllMutation = useMutation<void, AppError, void>({
     mutationFn: async () => {
-      const entries = INDICATOR_KEYS.filter((key) => drafts[key].rawValue.trim() !== "");
+      const entries = scoreKeys.filter((key) => drafts[key].rawValue.trim() !== "");
       await Promise.all(
         entries.map((indicator) => {
           const request: RecordCryptoIndicatorRequest = {
@@ -393,16 +401,16 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
               className="mb-1 text-sm font-semibold text-muted-foreground"
               data-testid="crypto-score-header"
             >
-              Cycle-top score ({score?.green ?? 0}/{score?.total ?? 17} green,{" "}
-              {score?.logged ?? 0} of {score?.total ?? 17} logged)
+              Cycle-top score ({score?.green ?? 0}/{score?.total ?? scoreKeys.length} green,{" "}
+              {score?.logged ?? 0} of {score?.total ?? scoreKeys.length} logged)
             </h3>
             {score && (
               <p className="mb-1 text-sm font-medium">{VERDICT_LABEL[score.verdict]}</p>
             )}
             <p className="mb-4 text-sm text-muted-foreground">
-              These indicators (Fase 3 and 31) are split into groups, each with its own subscore,
-              and were calibrated for Ethereum specifically — logging them under {ticker} is
-              fine, but the green/red thresholds are ETH's, not {ticker}'s.
+              {ownScore
+                ? `These indicators are split into groups, each with its own subscore. ${ticker} has its own green/red thresholds, calibrated for it.`
+                : `These indicators are split into groups, each with its own subscore, and were calibrated for Ethereum — logging them under ${ticker} is fine, but the green/red thresholds are ETH's, not ${ticker}'s.`}
             </p>
             <Button
               type="button"
@@ -416,7 +424,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
             </Button>
             <ThresholdEditorDialog coin={ticker} open={thresholdsOpen} onOpenChange={setThresholdsOpen} />
 
-            {ticker === "ETH" && (
+            {ownScore && (
               <div className="mb-4 flex flex-col gap-2">
                 <Button
                   type="button"
@@ -427,7 +435,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
                 >
                   {runCryptoCollectorMutation.isPending
                     ? "Running..."
-                    : "Run crypto collector (all 17 indicators)"}
+                    : `Run crypto collector (all ${scoreKeys.length} indicators)`}
                 </Button>
                 {collectorErrors.length > 0 && (
                   <p className="whitespace-pre-wrap text-red-600">
@@ -492,7 +500,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {INDICATOR_KEYS.map((key) => (
+                  {scoreKeys.map((key) => (
                     <TableRow key={key}>
                       <TableCell className="whitespace-normal">{INDICATORS[key]}</TableCell>
                       <TableCell>

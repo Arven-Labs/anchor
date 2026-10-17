@@ -127,9 +127,10 @@ pub fn nvt_vs_ma90(body: &str) -> Result<f64, AppError> {
 // Fetch
 // ---------------------------------------------------------------------------
 
-pub async fn fetch_nvt_ratio_vs_ma90() -> Result<f64, AppError> {
+/// `coin_id` é o id do CoinGecko (`ethereum`, `bitcoin`), não o símbolo.
+pub async fn fetch_nvt_ratio_vs_ma90(coin_id: &str) -> Result<f64, AppError> {
     let url = format!(
-        "{BASE_URL}/coins/ethereum/market_chart?vs_currency=usd&days={NVT_MA_WINDOW_DAYS}&interval=daily"
+        "{BASE_URL}/coins/{coin_id}/market_chart?vs_currency=usd&days={NVT_MA_WINDOW_DAYS}&interval=daily"
     );
     nvt_vs_ma90(&http::get_text("CoinGecko", &url, http::DEFAULT_TIMEOUT).await?)
 }
@@ -263,7 +264,7 @@ mod tests {
         println!("BTC {date} {price}");
         assert!(price > 1000.0);
         assert!(coin_market("BTC").await.unwrap().cached);
-        let nvt = fetch_nvt_ratio_vs_ma90().await.unwrap();
+        let nvt = fetch_nvt_ratio_vs_ma90("ethereum").await.unwrap();
         println!("NVT vs MA90 {nvt}");
         assert!(nvt > 0.1 && nvt < 10.0);
         assert!(matches!(coin_market("ZZZNOPE9").await.unwrap_err(), AppError::NoData(_)));

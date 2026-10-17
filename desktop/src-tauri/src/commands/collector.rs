@@ -161,19 +161,20 @@ pub async fn run_stock_collector(
 }
 
 // Fase 14.4 — trocou de `run_collector` (subprocess Python, `crypto`) pra
-// `finance_api::crypto::collect_eth_indicators` direto — os indicadores do
-// ciclo ETH, sempre `coin = "ETH"`. Desde a Fase 31 são 17 automáticos e uma
+// `finance_api::crypto::collect_indicators` direto — os indicadores do ciclo
+// da moeda (ETH: 17, BTC: 12 desde a Sessão 112), gravados sob essa moeda. Uma
 // fonte fora do ar não derruba as outras: as falhas vão como linhas `ERROR`
-// no resumo.
+// no resumo. `coin` é parâmetro top-level (camelCase igual no `invoke`).
 #[tauri::command]
 pub async fn run_crypto_collector(
     lock: tauri::State<'_, AtomicBool>,
     db: tauri::State<'_, DatabaseConnection>,
+    coin: String,
 ) -> Result<CollectorSummary, AppError> {
     if lock.swap(true, Ordering::SeqCst) {
         return Err(AppError::CollectorBusy);
     }
-    let result = finance_api_crypto::collect_eth_indicators(db.inner())
+    let result = finance_api_crypto::collect_indicators(db.inner(), &coin)
         .await
         .map(|collection| CollectorSummary {
             success: collection.errors.is_empty(),

@@ -403,21 +403,29 @@ fn long_short_value(ratios: &[f64], source: &str) -> Result<f64, AppError> {
     mean(ratios).ok_or_else(|| source_err(source, "no data"))
 }
 
-async fn binance_funding() -> Result<f64, AppError> {
-    let url = format!("{BINANCE_FAPI}/fapi/v1/fundingRate?symbol=ETHUSDT&limit={FUNDING_WINDOW}");
+/// Símbolo do perpétuo em USDT (`ETHUSDT`, `BTCUSDT`), igual na Binance e na Bybit.
+fn perp_symbol(coin: &str) -> String {
+    format!("{}USDT", coin.to_ascii_uppercase())
+}
+
+async fn binance_funding(coin: &str) -> Result<f64, AppError> {
+    let symbol = perp_symbol(coin);
+    let url = format!("{BINANCE_FAPI}/fapi/v1/fundingRate?symbol={symbol}&limit={FUNDING_WINDOW}");
     funding_value(&parse_funding_rates(&get_text("Binance funding", &url).await?)?, "Binance funding")
 }
 
-async fn bybit_funding() -> Result<f64, AppError> {
+async fn bybit_funding(coin: &str) -> Result<f64, AppError> {
+    let symbol = perp_symbol(coin);
     let url = format!(
-        "{BYBIT_API}/v5/market/funding/history?category=linear&symbol=ETHUSDT&limit={FUNDING_WINDOW}"
+        "{BYBIT_API}/v5/market/funding/history?category=linear&symbol={symbol}&limit={FUNDING_WINDOW}"
     );
     funding_value(&parse_bybit_funding(&get_text("Bybit funding", &url).await?)?, "Bybit funding")
 }
 
-async fn binance_open_interest() -> Result<f64, AppError> {
+async fn binance_open_interest(coin: &str) -> Result<f64, AppError> {
+    let symbol = perp_symbol(coin);
     let url = format!(
-        "{BINANCE_FAPI}/futures/data/openInterestHist?symbol=ETHUSDT&period=1d&limit={HISTORY_DAYS}"
+        "{BINANCE_FAPI}/futures/data/openInterestHist?symbol={symbol}&period=1d&limit={HISTORY_DAYS}"
     );
     open_interest_value(
         &parse_open_interest(&get_text("Binance open interest", &url).await?)?,
@@ -425,9 +433,10 @@ async fn binance_open_interest() -> Result<f64, AppError> {
     )
 }
 
-async fn bybit_open_interest() -> Result<f64, AppError> {
+async fn bybit_open_interest(coin: &str) -> Result<f64, AppError> {
+    let symbol = perp_symbol(coin);
     let url = format!(
-        "{BYBIT_API}/v5/market/open-interest?category=linear&symbol=ETHUSDT&intervalTime=1d&limit={HISTORY_DAYS}"
+        "{BYBIT_API}/v5/market/open-interest?category=linear&symbol={symbol}&intervalTime=1d&limit={HISTORY_DAYS}"
     );
     open_interest_value(
         &parse_bybit_open_interest(&get_text("Bybit open interest", &url).await?)?,
@@ -435,48 +444,52 @@ async fn bybit_open_interest() -> Result<f64, AppError> {
     )
 }
 
-async fn binance_long_short() -> Result<f64, AppError> {
+async fn binance_long_short(coin: &str) -> Result<f64, AppError> {
+    let symbol = perp_symbol(coin);
     let url = format!(
-        "{BINANCE_FAPI}/futures/data/globalLongShortAccountRatio?symbol=ETHUSDT&period=1d&limit={LONG_SHORT_WINDOW}"
+        "{BINANCE_FAPI}/futures/data/globalLongShortAccountRatio?symbol={symbol}&period=1d&limit={LONG_SHORT_WINDOW}"
     );
     long_short_value(&parse_long_short(&get_text("Binance long/short", &url).await?)?, "Binance long/short")
 }
 
-async fn bybit_long_short() -> Result<f64, AppError> {
+async fn bybit_long_short(coin: &str) -> Result<f64, AppError> {
+    let symbol = perp_symbol(coin);
     let url = format!(
-        "{BYBIT_API}/v5/market/account-ratio?category=linear&symbol=ETHUSDT&period=1d&limit={LONG_SHORT_WINDOW}"
+        "{BYBIT_API}/v5/market/account-ratio?category=linear&symbol={symbol}&period=1d&limit={LONG_SHORT_WINDOW}"
     );
     long_short_value(&parse_bybit_long_short(&get_text("Bybit long/short", &url).await?)?, "Bybit long/short")
 }
 
-/// Funding médio de 7 dias do ETHUSDT perpétuo, anualizado em %.
-pub async fn fetch_funding_rate_7d() -> Result<Sourced, AppError> {
-    binance_then_bybit("funding", binance_funding(), bybit_funding()).await
+/// Funding médio de 7 dias do perpétuo `{coin}USDT`, anualizado em %.
+pub async fn fetch_funding_rate_7d(coin: &str) -> Result<Sourced, AppError> {
+    binance_then_bybit("funding", binance_funding(coin), bybit_funding(coin)).await
 }
 
-/// Variação do open interest em ETH nos últimos ~30 dias, em %.
-pub async fn fetch_open_interest_change_30d() -> Result<Sourced, AppError> {
-    binance_then_bybit("open interest", binance_open_interest(), bybit_open_interest()).await
+/// Variação do open interest, em unidades da moeda, nos últimos ~30 dias, em %.
+pub async fn fetch_open_interest_change_30d(coin: &str) -> Result<Sourced, AppError> {
+    binance_then_bybit("open interest", binance_open_interest(coin), bybit_open_interest(coin)).await
 }
 
-/// Média de 7 dias da razão long/short de contas do ETHUSDT.
-pub async fn fetch_long_short_ratio() -> Result<Sourced, AppError> {
-    binance_then_bybit("long/short", binance_long_short(), bybit_long_short()).await
+/// Média de 7 dias da razão long/short de contas do perpétuo `{coin}USDT`.
+pub async fn fetch_long_short_ratio(coin: &str) -> Result<Sourced, AppError> {
+    binance_then_bybit("long/short", binance_long_short(coin), bybit_long_short(coin)).await
 }
 
-/// Último fechamento do DVOL (volatilidade implícita) do ETH na Deribit.
-pub async fn fetch_dvol() -> Result<f64, AppError> {
+/// Último fechamento do DVOL (volatilidade implícita) da moeda na Deribit (só ETH e BTC têm).
+pub async fn fetch_dvol(coin: &str) -> Result<f64, AppError> {
+    let currency = coin.to_ascii_uppercase();
     let end = chrono::Utc::now().timestamp_millis();
     let start = end - 3 * 86_400_000;
     let url = format!(
-        "{DERIBIT_API}/public/get_volatility_index_data?currency=ETH&start_timestamp={start}&end_timestamp={end}&resolution=86400"
+        "{DERIBIT_API}/public/get_volatility_index_data?currency={currency}&start_timestamp={start}&end_timestamp={end}&resolution=86400"
     );
     parse_dvol_latest(&get_text("Deribit DVOL", &url).await?)
 }
 
-/// Put/call por open interest de todas as opções de ETH na Deribit.
-pub async fn fetch_put_call_ratio() -> Result<f64, AppError> {
-    let url = format!("{DERIBIT_API}/public/get_book_summary_by_currency?currency=ETH&kind=option");
+/// Put/call por open interest de todas as opções da moeda na Deribit.
+pub async fn fetch_put_call_ratio(coin: &str) -> Result<f64, AppError> {
+    let currency = coin.to_ascii_uppercase();
+    let url = format!("{DERIBIT_API}/public/get_book_summary_by_currency?currency={currency}&kind=option");
     let open_interest = parse_option_open_interest(&get_text("Deribit options", &url).await?)?;
     put_call_ratio(&open_interest)
         .ok_or_else(|| source_err("Deribit options", "no call open interest"))
@@ -679,29 +692,39 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn live_sources_return_plausible_values() {
-        let (funding, source) = fetch_funding_rate_7d().await.unwrap();
-        assert!(funding.abs() < 200.0 && !source.is_empty());
-        let (oi, _) = fetch_open_interest_change_30d().await.unwrap();
-        assert!(oi.abs() < 500.0);
-        let (ls, _) = fetch_long_short_ratio().await.unwrap();
-        assert!(ls > 0.0 && ls < 20.0);
+        for coin in ["ETH", "BTC"] {
+            let (funding, source) = fetch_funding_rate_7d(coin).await.unwrap();
+            assert!(funding.abs() < 200.0 && !source.is_empty(), "{coin}");
+            let (oi, _) = fetch_open_interest_change_30d(coin).await.unwrap();
+            assert!(oi.abs() < 500.0, "{coin}");
+            let (ls, _) = fetch_long_short_ratio(coin).await.unwrap();
+            assert!(ls > 0.0 && ls < 20.0, "{coin}");
+            let dvol = fetch_dvol(coin).await.unwrap();
+            assert!(dvol > 10.0 && dvol < 300.0, "{coin}");
+            let put_call = fetch_put_call_ratio(coin).await.unwrap();
+            assert!(put_call > 0.05 && put_call < 5.0, "{coin}");
+        }
         let staking = fetch_staking_yield_real().await.unwrap();
         assert!(staking > -5.0 && staking < 15.0);
-        let dvol = fetch_dvol().await.unwrap();
-        assert!(dvol > 10.0 && dvol < 300.0);
-        let put_call = fetch_put_call_ratio().await.unwrap();
-        assert!(put_call > 0.05 && put_call < 5.0);
         let stable = fetch_stablecoin_supply_change_30d().await.unwrap();
         assert!(stable.abs() < 50.0);
+    }
+
+    #[test]
+    fn perp_symbol_follows_the_coin() {
+        assert_eq!(perp_symbol("ETH"), "ETHUSDT");
+        assert_eq!(perp_symbol("btc"), "BTCUSDT");
     }
 
     // Ao vivo: a Bybit sozinha entrega valores plausíveis (o fallback).
     #[tokio::test]
     #[ignore]
     async fn live_bybit_fallback_returns_plausible_values() {
-        assert!(bybit_funding().await.unwrap().abs() < 200.0);
-        assert!(bybit_open_interest().await.unwrap().abs() < 500.0);
-        let ls = bybit_long_short().await.unwrap();
-        assert!(ls > 0.0 && ls < 20.0);
+        for coin in ["ETH", "BTC"] {
+            assert!(bybit_funding(coin).await.unwrap().abs() < 200.0, "{coin}");
+            assert!(bybit_open_interest(coin).await.unwrap().abs() < 500.0, "{coin}");
+            let ls = bybit_long_short(coin).await.unwrap();
+            assert!(ls > 0.0 && ls < 20.0, "{coin}");
+        }
     }
 }

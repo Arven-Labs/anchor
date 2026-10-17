@@ -172,61 +172,73 @@ async fn record_crypto_indicator(
 
 /// Resultado de uma rodada de coleta: o que foi gravado e o que falhou. Uma
 /// fonte fora do ar (ex.: Binance bloqueada na região) não derruba as demais.
-pub struct EthCollection {
+pub struct IndicatorCollection {
     pub readings: Vec<crypto_indicators::Model>,
     /// Uma linha por indicador que falhou, já com o nome dele.
     pub errors: Vec<String>,
 }
 
-/// Indicadores do score ETH (`run_crypto_collector`), sempre `coin = "ETH"`:
-/// os 8 do Lume (Finance API) e, desde a Fase 31, 7 coletados direto pelo
+/// Indicadores do score de `coin` (`run_crypto_collector`), gravados sob essa
+/// moeda. Só ETH e BTC têm score próprio; cada um coleta o seu conjunto
+/// (`domain::crypto_score::IndicatorGroup::indicators`): 17 no ETH, 12 no BTC.
+/// Os que passam por `finance_core::eth_indicators` (CoinMetrics, CoinGecko,
+/// DefiLlama, ultrasound.money) e, desde a Fase 31, os coletados direto pelo
 /// Anchor (`crypto_sources`) — derivativos (Binance, com fallback Bybit),
-/// opções (Deribit), stablecoins (DefiLlama) e `staking_yield` real.
+/// opções (Deribit), stablecoins (DefiLlama) e, só no ETH, `staking_yield` real.
 /// Só devolve erro se **nenhum** indicador foi coletado.
-pub async fn collect_eth_indicators(
+pub async fn collect_indicators(
     db: &DatabaseConnection,
-) -> Result<EthCollection, AppError> {
-    let mut readings = Vec::with_capacity(ETH_INDICATORS.len() + 7);
+    coin: &str,
+) -> Result<IndicatorCollection, AppError> {
+    let coin = coin.to_ascii_uppercase();
+    if coin != crypto_score::COIN_ETH && coin != crypto_score::COIN_BTC {
+        return Err(AppError::InvalidInput(format!(
+            "the crypto score collector only supports ETH and BTC, not '{coin}'"
+        )));
+    }
+    let wanted: Vec<&str> = crypto_score::IndicatorGroup::ALL
+        .iter()
+        .flat_map(|group| group.indicators(&coin).iter().copied())
+        .collect();
+    let wants = |indicator: &str| wanted.contains(&indicator);
+
+    let mut readings = Vec::with_capacity(wanted.len());
     let mut errors = Vec::new();
 
     for (internal_name, api_code, source) in ETH_INDICATORS {
-        let fetched = client::fetch_eth_indicator(api_code)
+        if !wants(internal_name) {
+            continue;
+        }
+        let fetched = client::fetch_crypto_indicator(&coin, api_code)
             .await
             .map(|response| response.raw_value);
-        record_or_collect_error(db, crypto_score::COIN_ETH, internal_name, source, fetched, &mut readings, &mut errors)
-            .await;
+        record_or_collect_error(db, &coin, internal_name, source, fetched, &mut readings, &mut errors).await;
     }
 
     // Cada fonte devolve o valor e quem respondeu (os de derivativos tentam
     // a Binance e caem pra Bybit; os demais têm fonte única).
-    let direct: [(&str, Result<crypto_sources::Sourced, AppError>); 7] = [
-        ("funding_rate_7d", crypto_sources::fetch_funding_rate_7d().await),
-        ("open_interest_change_30d", crypto_sources::fetch_open_interest_change_30d().await),
-        ("long_short_ratio", crypto_sources::fetch_long_short_ratio().await),
-        (
-            "staking_yield",
-            crypto_sources::fetch_staking_yield_real().await.map(|v| (v, "defillama+coinmetrics")),
-        ),
-        ("dvol", crypto_sources::fetch_dvol().await.map(|v| (v, "deribit"))),
-        ("put_call_ratio", crypto_sources::fetch_put_call_ratio().await.map(|v| (v, "deribit"))),
+    let mut direct: Vec<(&str, Result<crypto_sources::Sourced, AppError>)> = vec![
+        ("funding_rate_7d", crypto_sources::fetch_funding_rate_7d(&coin).await),
+        ("open_interest_change_30d", crypto_sources::fetch_open_interest_change_30d(&coin).await),
+        ("long_short_ratio", crypto_sources::fetch_long_short_ratio(&coin).await),
+        ("dvol", crypto_sources::fetch_dvol(&coin).await.map(|v| (v, "deribit"))),
+        ("put_call_ratio", crypto_sources::fetch_put_call_ratio(&coin).await.map(|v| (v, "deribit"))),
         (
             "stablecoin_supply_change_30d",
             crypto_sources::fetch_stablecoin_supply_change_30d().await.map(|v| (v, "defillama")),
         ),
     ];
+    if wants("staking_yield") {
+        direct.push((
+            "staking_yield",
+            crypto_sources::fetch_staking_yield_real().await.map(|v| (v, "defillama+coinmetrics")),
+        ));
+    }
     for (internal_name, fetched) in direct {
         match fetched {
             Ok((raw_value, source)) => {
-                record_or_collect_error(
-                    db,
-                    crypto_score::COIN_ETH,
-                    internal_name,
-                    source,
-                    Ok(raw_value),
-                    &mut readings,
-                    &mut errors,
-                )
-                .await;
+                record_or_collect_error(db, &coin, internal_name, source, Ok(raw_value), &mut readings, &mut errors)
+                    .await;
             }
             Err(e) => errors.push(format!("{internal_name}: {e}")),
         }
@@ -235,7 +247,7 @@ pub async fn collect_eth_indicators(
     if readings.is_empty() && !errors.is_empty() {
         return Err(AppError::CryptoSource(errors.join("; ")));
     }
-    Ok(EthCollection { readings, errors })
+    Ok(IndicatorCollection { readings, errors })
 }
 
 async fn record_or_collect_error(
@@ -286,10 +298,30 @@ mod tests {
     #[ignore]
     async fn live_collect_eth_indicators_writes_seventeen_readings() {
         let db = dev_db().await;
-        let collection = collect_eth_indicators(&db).await.unwrap();
+        let collection = collect_indicators(&db, "ETH").await.unwrap();
         assert_eq!(collection.readings.len() + collection.errors.len(), 17);
         for reading in &collection.readings {
             assert!(matches!(reading.signal.as_str(), "GREEN" | "NEUTRAL" | "RED"));
+            assert_eq!(reading.coin, "ETH");
         }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_collect_btc_indicators_writes_twelve_readings() {
+        let db = dev_db().await;
+        let collection = collect_indicators(&db, "BTC").await.unwrap();
+        assert_eq!(collection.readings.len() + collection.errors.len(), 12);
+        for reading in &collection.readings {
+            assert!(matches!(reading.signal.as_str(), "GREEN" | "NEUTRAL" | "RED"));
+            assert_eq!(reading.coin, "BTC");
+        }
+    }
+
+    #[tokio::test]
+    async fn only_eth_and_btc_can_be_collected() {
+        let db = sea_orm::Database::connect("sqlite::memory:").await.unwrap();
+        let err = collect_indicators(&db, "SOL").await.err().expect("SOL is rejected");
+        assert!(matches!(err, AppError::InvalidInput(_)));
     }
 }
