@@ -1923,9 +1923,15 @@ do ativo × (taxa de hoje − taxa da compra)`, que somam exatamente o `unrealiz
 custo) dá zero nas duas. A aba Positions mostra "price X · FX Y" sob o P/L; o Resumo mostra só o percentual e não
 ganhou a decomposição.
 
-**Pendente**: formatadores locais de Ledger,
-Dividendos e impostos; benchmarks convertidos (hoje só escondidos fora do BRL); impostos ficam sempre em BRL (regra
-fiscal).
+**Ledger e Proventos na moeda base (Sessão 128)**: `get_proventos_summary` converte cada linha (`total_value`,
+`net_total`) pela taxa da data de pagamento (a receber, com data futura, usa a cotação mais próxima), então KPIs,
+gráfico mensal e donut agregam na base; a linha traz `native_currency`/`native_total_value` e, sem rota de câmbio,
+`fx_missing` (fora dos agregados). `list_transactions` traz `currency` (aporte/retirada valem na base),
+`total_value_in_base` (taxa da data do lançamento) e `base_currency`; o gráfico de compras/vendas do Ledger soma a
+base e a tabela mostra o valor original com o equivalente. **Impostos**: o formatador de `TaxesSection` já era BRL
+fixo e a regra fiscal é brasileira, então ficaram como estão (o DARF só aceita conta BRL desde a Sessão 122).
+
+**Pendente**: benchmarks convertidos (hoje só escondidos fora do BRL).
 
 
 ### Fase 20 — Remover a IA do Anchor (Warden vira a única interface de IA; decisão registrada na Sessão 100, **executada na Sessão 101**)

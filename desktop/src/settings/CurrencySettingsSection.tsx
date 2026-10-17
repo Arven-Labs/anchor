@@ -39,6 +39,8 @@ function CurrencySettingsSection({ workspaceId }: { workspaceId: number }) {
       queryClient.invalidateQueries({ queryKey: ["liabilities"] });
       queryClient.invalidateQueries({ queryKey: ["loans"] });
       queryClient.invalidateQueries({ queryKey: ["general-transaction-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["proventos-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
     },
   });
 

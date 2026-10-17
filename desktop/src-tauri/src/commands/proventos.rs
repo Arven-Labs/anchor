@@ -6,10 +6,11 @@
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::{Duration, Utc};
+use chrono::{Duration, NaiveDate, Utc};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Serialize;
 
+use crate::commands::currency::{base_currency, load_fx_history};
 use crate::commands::tax::{jcp_rate_on, load_rule_set};
 use crate::domain::proventos::{bucket_monthly, by_asset, net_total, ProventoEntry, PAYMENT_TYPE_DIVIDENDO};
 use crate::entity::{assets, portfolio, suggested_dividends, transactions};
@@ -30,9 +31,17 @@ pub struct ProventoRow {
     pub com_date: Option<String>,
     pub payment_date: String,
     pub quantity: f64,
+    /// Na moeda do ativo (`native_currency`).
     pub amount_per_share: f64,
+    /// Fase 19 — `total_value` e `net_total` estão na moeda base, convertidos
+    /// pela taxa da data do pagamento; `native_total_value` é o original, em
+    /// `native_currency`. Sem rota de câmbio, `fx_missing` liga, os dois ficam
+    /// em 0 e a linha não entra nos agregados.
     pub total_value: f64,
     pub net_total: f64,
+    pub native_currency: String,
+    pub native_total_value: f64,
+    pub fx_missing: bool,
 }
 
 #[derive(Serialize)]
@@ -57,6 +66,8 @@ pub struct ProventosSummary {
     pub by_asset_12m: Vec<ProventosAssetTotal>,
     pub monthly: Vec<ProventosMonthlyBucketView>,
     pub rows: Vec<ProventoRow>,
+    /// Fase 19 — moeda dos totais, do gráfico e de `total_value`/`net_total`.
+    pub base_currency: String,
 }
 
 #[tauri::command]
@@ -64,12 +75,18 @@ pub async fn get_proventos_summary(
     db: tauri::State<'_, DatabaseConnection>,
     portfolio_id: i32,
 ) -> Result<ProventosSummary, AppError> {
-    let db = db.inner();
+    proventos_summary_in(db.inner(), portfolio_id).await
+}
 
-    portfolio::Entity::find_by_id(portfolio_id)
+pub async fn proventos_summary_in(
+    db: &DatabaseConnection,
+    portfolio_id: i32,
+) -> Result<ProventosSummary, AppError> {
+    let portfolio = portfolio::Entity::find_by_id(portfolio_id)
         .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("portfolio {portfolio_id}")))?;
+    let base = base_currency(db, portfolio.workspace_id).await?;
 
     let paid_txs = transactions::Entity::find()
         .filter(transactions::Column::PortfolioId.eq(portfolio_id))
@@ -141,6 +158,9 @@ pub async fn get_proventos_summary(
             quantity: tx.quantity.unwrap_or(0.0),
             amount_per_share: tx.unit_price.unwrap_or(0.0),
             total_value: tx.total_value,
+            native_currency: asset.currency.clone(),
+            native_total_value: tx.total_value,
+            fx_missing: false,
         });
     }
 
@@ -163,13 +183,38 @@ pub async fn get_proventos_summary(
             quantity: s.quantity,
             amount_per_share: s.amount,
             total_value: s.total,
+            native_currency: asset.currency.clone(),
+            native_total_value: s.total,
+            fx_missing: false,
         });
     }
 
     rows.sort_by(|a, b| b.payment_date.cmp(&a.payment_date));
 
+    // Fase 19 — valores na moeda base pela taxa da data de pagamento (a
+    // receber, com data futura, usa a cotação mais próxima, a mais recente).
+    let currencies: HashSet<String> = rows.iter().map(|r| r.native_currency.clone()).collect();
+    let history = load_fx_history(db, &base, &currencies).await?;
+    for row in rows.iter_mut() {
+        let rate = NaiveDate::parse_from_str(&row.payment_date, "%Y-%m-%d")
+            .ok()
+            .and_then(|date| history.rate_on(&row.native_currency, &base, date));
+        match rate {
+            Some(rate) => {
+                row.total_value *= rate;
+                row.net_total *= rate;
+            }
+            None => {
+                row.fx_missing = true;
+                row.total_value = 0.0;
+                row.net_total = 0.0;
+            }
+        }
+    }
+
     let entries: Vec<ProventoEntry> = rows
         .iter()
+        .filter(|r| !r.fx_missing)
         .map(|r| ProventoEntry {
             asset_id: r.asset_id,
             payment_date: r.payment_date.clone(),
@@ -221,5 +266,6 @@ pub async fn get_proventos_summary(
         by_asset_12m,
         monthly,
         rows,
+        base_currency: base,
     })
 }

@@ -279,6 +279,11 @@ export type TransactionView = {
   custodia_label: string | null;
   transfer_to_custodia_id: number | null;
   transfer_to_custodia_label: string | null;
+  // Fase 19 — moeda do `total_value`, o valor na moeda base pela taxa da data
+  // do lançamento (`null` sem cotação do par) e a moeda base.
+  currency: string;
+  total_value_in_base: number | null;
+  base_currency: string;
   transaction_type: string;
   quantity: number | null;
   unit_price: number | null;
@@ -418,8 +423,13 @@ export type ProventoRow = {
   payment_date: string;
   quantity: number;
   amount_per_share: number;
+  // Fase 19 — `total_value`/`net_total` na moeda base (taxa da data do
+  // pagamento); `amount_per_share` e `native_total_value` na moeda do ativo.
   total_value: number;
   net_total: number;
+  native_currency: string;
+  native_total_value: number;
+  fx_missing: boolean;
 };
 
 export type ProventosMonthlyBucket = {
@@ -441,6 +451,7 @@ export type ProventosSummary = {
   by_asset_12m: ProventosAssetTotal[];
   monthly: ProventosMonthlyBucket[];
   rows: ProventoRow[];
+  base_currency: string;
 };
 
 // Fase 10.4 — listas nomeadas de ativos (preço-alvo/notas) e favoritos

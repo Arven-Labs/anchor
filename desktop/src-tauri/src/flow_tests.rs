@@ -11,6 +11,8 @@ use crate::commands::crypto_indicator::{
 };
 use crate::commands::currency::{base_currency, positions_in_base, save_base_currency, sum_in_base};
 use crate::commands::profitability::{compare_with_benchmarks, compute_profitability};
+use crate::commands::proventos::proventos_summary_in;
+use crate::commands::transaction::list_transactions_in;
 use crate::commands::loan::{
     create_borrower_in, create_loan_in, delete_loan_in, list_loans_view, register_loan_repayment_in,
     update_loan_in, CreateBorrowerRequest, CreateLoanRequest, RegisterLoanRepaymentRequest,
@@ -1247,6 +1249,55 @@ async fn invalid_transfers_are_rejected_and_a_transfer_cannot_be_edited() {
         notes: None,
     };
     assert!(update_general_transaction_in(&db, edit).await.is_err());
+}
+
+#[tokio::test]
+async fn the_dividends_summary_converts_each_payment_at_its_own_date() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Income").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let brl = asset(&db, "PETR4", "acao_br").await;
+    let usd = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    let eur = asset_in(&db, "SAP", "acao_internacional", "EUR").await;
+    trade(&db, pf.id, brl.id, "provento", 1.0, 10.0, "2026-05-01").await;
+    trade(&db, pf.id, usd.id, "provento", 1.0, 4.0, "2026-05-01").await;
+    trade(&db, pf.id, eur.id, "provento", 1.0, 99.0, "2026-05-01").await;
+    seed_price(&db, "USDBRL", "2026-05-01", 4.0).await;
+    seed_fx_rate(&db, "USDBRL", 5.0).await;
+
+    let summary = proventos_summary_in(&db, pf.id).await.unwrap();
+    assert_eq!(summary.base_currency, "BRL");
+    // 10 BRL + 4 USD × 4 (a taxa do dia do pagamento, não a de hoje); o EUR sem câmbio fica de fora.
+    assert!(close(summary.total_all_time, 26.0));
+    let aapl = summary.rows.iter().find(|r| r.ticker == "AAPL").unwrap();
+    assert!(close(aapl.total_value, 16.0) && close(aapl.native_total_value, 4.0));
+    assert_eq!(aapl.native_currency, "USD");
+    let sap = summary.rows.iter().find(|r| r.ticker == "SAP").unwrap();
+    assert!(sap.fx_missing && close(sap.total_value, 0.0));
+}
+
+#[tokio::test]
+async fn the_ledger_shows_each_entry_in_its_own_currency_and_in_the_base() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Ledger").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let usd = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    trade(&db, pf.id, usd.id, "compra", 2.0, 100.0, "2026-01-10").await;
+    seed_price(&db, "USDBRL", "2026-01-10", 5.0).await;
+    seed_fx_rate(&db, "USDBRL", 6.0).await;
+
+    let entries = list_transactions_in(&db, pf.id).await.unwrap();
+    assert_eq!(entries[0].currency, "USD");
+    assert!(close(entries[0].total_value, 100.0));
+    assert!(close(entries[0].total_value_in_base.unwrap(), 500.0)); // a taxa de 10/01, não a de hoje
+
+    // Sem o par, o valor na base fica vazio em vez de errado.
+    let ws2 = workspace(&db, "Ledger 2").await;
+    let pf2 = portfolio(&db, ws2.id, "Main").await;
+    let eur = asset_in(&db, "SAP", "acao_internacional", "EUR").await;
+    trade(&db, pf2.id, eur.id, "compra", 1.0, 50.0, "2026-01-10").await;
+    let without_rate = list_transactions_in(&db, pf2.id).await.unwrap();
+    assert!(without_rate[0].total_value_in_base.is_none());
 }
 
 #[tokio::test]

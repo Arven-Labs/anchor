@@ -1,9 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use chrono::NaiveDate;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::{Deserialize, Serialize};
 
-use crate::commands::currency::positions_in_base;
+use crate::commands::currency::{
+    base_currency, load_fx_history, positions_in_base, workspace_of_portfolio,
+};
 use crate::domain::position_pricing::{self, PricingResult};
 use crate::domain::proventos::{PAYMENT_TYPE_DIVIDENDO, PAYMENT_TYPE_JSCP};
 use crate::domain::transaction_ledger::{self, LedgerEntry};
@@ -184,6 +187,12 @@ pub struct TransactionView {
     pub custodia_label: Option<String>,
     pub transfer_to_custodia_id: Option<i32>,
     pub transfer_to_custodia_label: Option<String>,
+    // Fase 19 — moeda do `total_value` (a do ativo; aporte/retirada, sem ativo,
+    // valem na moeda base) e o valor na moeda base pela taxa da data do
+    // lançamento (`None` sem rota de câmbio).
+    pub currency: String,
+    pub total_value_in_base: Option<f64>,
+    pub base_currency: String,
     pub transaction_type: String,
     pub quantity: Option<f64>,
     pub unit_price: Option<f64>,
@@ -208,10 +217,17 @@ pub async fn list_transactions(
     db: tauri::State<'_, DatabaseConnection>,
     portfolio_id: i32,
 ) -> Result<Vec<TransactionView>, AppError> {
+    list_transactions_in(db.inner(), portfolio_id).await
+}
+
+pub async fn list_transactions_in(
+    db: &DatabaseConnection,
+    portfolio_id: i32,
+) -> Result<Vec<TransactionView>, AppError> {
     let txs = transactions::Entity::find()
         .filter(transactions::Column::PortfolioId.eq(portfolio_id))
         .order_by_desc(transactions::Column::TransactionDate)
-        .all(db.inner())
+        .all(db)
         .await?;
 
     let asset_ids: Vec<i32> = txs.iter().filter_map(|t| t.asset_id).collect();
@@ -220,7 +236,7 @@ pub async fn list_transactions(
     } else {
         assets::Entity::find()
             .filter(assets::Column::Id.is_in(asset_ids))
-            .all(db.inner())
+            .all(db)
             .await?
             .into_iter()
             .map(|a| (a.id, a))
@@ -237,12 +253,17 @@ pub async fn list_transactions(
     } else {
         custodia::Entity::find()
             .filter(custodia::Column::Id.is_in(custodia_ids))
-            .all(db.inner())
+            .all(db)
             .await?
             .into_iter()
             .map(|c| (c.id, c))
             .collect()
     };
+
+    let base = base_currency(db, workspace_of_portfolio(db, portfolio_id).await?).await?;
+    let currencies: HashSet<String> =
+        assets_map.values().map(|a| a.currency.clone()).chain([base.clone()]).collect();
+    let history = load_fx_history(db, &base, &currencies).await?;
 
     let ledger_entries: Vec<LedgerEntry> = txs
         .iter()
@@ -260,7 +281,21 @@ pub async fn list_transactions(
 
     let views = txs
         .into_iter()
-        .map(|tx| TransactionView {
+        .map(|tx| {
+            let currency = tx
+                .asset_id
+                .and_then(|id| assets_map.get(&id))
+                .map_or_else(|| base.clone(), |a| a.currency.clone());
+            let total_value_in_base = NaiveDate::parse_from_str(&tx.transaction_date, "%Y-%m-%d")
+                .ok()
+                .and_then(|date| history.rate_on(&currency, &base, date))
+                .map(|rate| tx.total_value * rate);
+            (tx, currency, total_value_in_base)
+        })
+        .map(|(tx, currency, total_value_in_base)| TransactionView {
+            currency,
+            total_value_in_base,
+            base_currency: base.clone(),
             ticker: tx.asset_id.and_then(|id| assets_map.get(&id)).map(|a| a.ticker.clone()),
             asset_class: tx.asset_id.and_then(|id| assets_map.get(&id)).map(|a| a.asset_class.clone()),
             custodia_label: custodia_label(&custodias_map, tx.custodia_id),

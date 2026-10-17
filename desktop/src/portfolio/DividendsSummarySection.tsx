@@ -226,9 +226,15 @@ function DividendsSummarySection({ portfolioId }: { portfolioId: number }) {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
         <div className="flex flex-col gap-4">
-          <KpiCard title="Avg. monthly (12M)" value={formatCurrency(summary.avg_monthly_12m)} />
-          <KpiCard title="Total (12M)" value={formatCurrency(summary.total_12m)} />
-          <KpiCard title="Total (all time)" value={formatCurrency(summary.total_all_time)} />
+          <KpiCard
+            title={`Avg. monthly (12M) · ${summary.base_currency}`}
+            value={formatCurrency(summary.avg_monthly_12m)}
+          />
+          <KpiCard title={`Total (12M) · ${summary.base_currency}`} value={formatCurrency(summary.total_12m)} />
+          <KpiCard
+            title={`Total (all time) · ${summary.base_currency}`}
+            value={formatCurrency(summary.total_all_time)}
+          />
           <Card>
             <CardHeader>
               <CardTitle>Dividend distribution (12M)</CardTitle>
@@ -409,9 +415,25 @@ function DividendsSummarySection({ portfolioId }: { portfolioId: number }) {
                     <TableCell>{formatDate(row.com_date)}</TableCell>
                     <TableCell>{formatDate(row.payment_date)}</TableCell>
                     <TableCell>{row.quantity}</TableCell>
-                    <TableCell>{row.amount_per_share.toFixed(3)}</TableCell>
-                    <TableCell>{formatCurrency(row.total_value)}</TableCell>
-                    <TableCell className="font-medium">{formatCurrency(row.net_total)}</TableCell>
+                    <TableCell>
+                      {row.amount_per_share.toFixed(3)}
+                      {row.native_currency !== summary.base_currency && (
+                        <span className="ml-1 text-xs text-muted-foreground">{row.native_currency}</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {row.fx_missing ? "—" : formatCurrency(row.total_value)}
+                      {row.native_currency !== summary.base_currency && (
+                        <span className="block text-xs text-muted-foreground" data-testid="dividend-native">
+                          {row.fx_missing
+                            ? `no ${row.native_currency}/${summary.base_currency} rate`
+                            : `${formatCurrency(row.native_total_value)} ${row.native_currency}`}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {row.fx_missing ? "—" : formatCurrency(row.net_total)}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

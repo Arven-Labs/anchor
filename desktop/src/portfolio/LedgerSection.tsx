@@ -184,8 +184,10 @@ function LedgerSection({ portfolioId }: { portfolioId: number }) {
     for (const tx of tradeTxs) {
       const ym = tx.transaction_date.slice(0, 7);
       const entry = byMonth.get(ym) ?? { buys: 0, sells: 0 };
-      if (tx.transaction_type === "compra") entry.buys += tx.total_value;
-      else entry.sells += tx.total_value;
+      // Na moeda base (Fase 19); lançamento sem cotação do par fica fora do gráfico.
+      const value = tx.total_value_in_base ?? 0;
+      if (tx.transaction_type === "compra") entry.buys += value;
+      else entry.sells += value;
       byMonth.set(ym, entry);
     }
     return [...byMonth.entries()]
@@ -361,7 +363,17 @@ function LedgerSection({ portfolioId }: { portfolioId: number }) {
                             </TableCell>
                             <TableCell>{formatQuantity(tx.quantity)}</TableCell>
                             <TableCell>{tx.unit_price?.toFixed(2) ?? "—"}</TableCell>
-                            <TableCell>{tx.total_value.toFixed(2)}</TableCell>
+                            <TableCell>
+                              {tx.total_value.toFixed(2)}
+                              {tx.currency !== tx.base_currency && (
+                                <span className="ml-1 text-xs text-muted-foreground" data-testid="ledger-converted">
+                                  {tx.currency} ·{" "}
+                                  {tx.total_value_in_base != null
+                                    ? `≈ ${tx.total_value_in_base.toFixed(2)} ${tx.base_currency}`
+                                    : `no ${tx.currency}/${tx.base_currency} rate`}
+                                </span>
+                              )}
+                            </TableCell>
                             <TableCell>{formatQuantity(tx.running_quantity)}</TableCell>
                             <TableCell>{tx.transaction_date}</TableCell>
                             <TableCell>

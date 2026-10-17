@@ -2887,4 +2887,22 @@ mode. Detalhe na Fase 19 do `PHASE.md`.
 - **Verificado**: `./dev.sh check` limpo; 3 testes de fluxo existentes ganharam asserções da decomposição; CI do push
   `ad923b2` verde nos três workflows, de primeira.
 - **Não verificado**: a tela a olho. O Resumo não mostra a decomposição (só tem a coluna de percentual).
-- **Pendente**: formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.
+- **Pendente**: formatadores de Ledger, Dividendos e impostos; benchmarks convertidos. *(Ledger e Dividendos foram
+  feitos na Sessão 128, abaixo; os impostos ficaram em BRL.)*
+
+
+### 2026-10-17 — Sessão 128
+
+**Ledger e Proventos na moeda base (Fase 19).** O dono do projeto mandou seguir ("pode seguir"), então sem plan
+mode. Detalhe na Fase 19 do `PHASE.md`.
+- **Erro de escopo meu**: eu tinha anunciado isso como "formatadores sem símbolo de moeda", mas os agregados (KPIs e
+  gráfico de proventos, gráfico de compras e vendas do Ledger) somavam moedas diferentes sem converter; trocar a
+  formatação não resolvia, foi preciso converter no backend.
+- **Feito**: `proventos_summary_in` convertendo cada linha pela taxa da data de pagamento (com `native_currency`,
+  `native_total_value` e `fx_missing`), `list_transactions_in` com `currency`, `total_value_in_base` e
+  `base_currency`, KPIs rotulados com a base, gráfico do Ledger na base, valor original ao lado do convertido nas duas
+  tabelas.
+- **Decisão**: impostos ficam como estão (o formatador já era BRL fixo e a regra é fiscal brasileira).
+- **Verificado**: `./dev.sh check` limpo; 2 testes de fluxo novos. CI: ver abaixo.
+- **Não verificado**: a tela a olho.
+- **Pendente**: benchmarks convertidos (hoje só escondidos fora do BRL).
