@@ -67,7 +67,7 @@ describe("Anchor — score cripto e editor de thresholds", () => {
     );
     await waitForText(
       byId("crypto-score-header"),
-      (text) => text.includes("1/15 green"),
+      (text) => text.includes("1/17 green"),
       "o score deveria contar o verde novo",
     );
 
@@ -81,6 +81,6 @@ describe("Anchor — score cripto e editor de thresholds", () => {
       (text) => text === "NEUTRAL",
       "o Reset deveria devolver o sinal NEUTRAL",
     );
-    expect(await textOf(byId("crypto-score-header"))).toContain("0/15 green");
+    expect(await textOf(byId("crypto-score-header"))).toContain("0/17 green");
   });
 });

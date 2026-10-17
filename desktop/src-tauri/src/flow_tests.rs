@@ -315,7 +315,7 @@ async fn crypto_score_groups_readings_and_reacts_to_threshold_edits() {
     record_crypto_indicator_in(&db, reading("mvrv_z_score", -1.0)).await.unwrap();
 
     let score = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
-    assert_eq!(score.total, 15);
+    assert_eq!(score.total, 17);
     assert_eq!(score.logged, 2);
     assert_eq!(score.green, 1); // só o MVRV
     let derivatives = score.groups.iter().find(|g| g.label == "Derivatives & options").unwrap();
