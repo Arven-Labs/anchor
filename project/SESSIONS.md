@@ -2665,3 +2665,26 @@ atalhos prontos e só resultado no vencimento. Detalhe na Fase 18 do `PHASE.md`.
   skill ficou por fazer), os atalhos e "Add as buy/sell leg" com a cadeia real, e o clique manual.
 - **Pendente**: posições de opções na carteira (sem desenho); moeda base (Fase 19); ingestão agendada e
   `DataProvider` com mais de uma fonte por categoria; E2E do câmbio pular em "No data found".
+  *(As posições foram feitas na Sessão 116, abaixo.)*
+
+
+### 2026-10-17 — Sessão 116
+
+**Posições de opções na Carteira (Fase 18, 3ª fatia).** O "sim" do dono do projeto respondeu a uma pergunta
+com três caminhos; interpretei como o primeiro item em aberto (as posições) e as perguntas de escopo do plan
+mode confirmaram. Escolhas: tabela própria e encerramento manual com marcação a mercado. Detalhe na Fase 18
+do `PHASE.md`.
+- **Feito**: migration `option_positions`, domínio do resultado, 5 comandos (`option_position.rs`) e a aba
+  "Options" da Carteira, isolada de patrimônio, Resumo, rentabilidade e IR.
+- **Decisão de desenho**: tabela própria porque o livro de compra/venda não comporta opção lançada; a lista
+  não usa rede e a marcação a mercado só roda por clique (primeira carga ~80 MB).
+- **Verificado**: `./dev.sh check` limpo; 9 testes novos (5 de domínio, 4 de fluxo) mais o roundtrip do
+  backup com a tabela nova; CI do push `f6e904d` verde nos três workflows, com 2 casos de E2E novos que
+  rodaram e passaram.
+- **Não verificado**: a marcação a mercado contra a B3 real, a tela a olho e o clique manual.
+- **Processo**: rodei por engano um heredoc de Python que só imprimia um texto (sem efeito, mas contra a
+  regra de editar com Edit/Write), e um bloco de código com uma constante só para silenciar um import sem uso,
+  que removi antes de commitar.
+- **Pendente**: integração das posições com patrimônio e IR; "salvar estratégia do simulador como posições";
+  moeda base (Fase 19); ingestão agendada e `DataProvider` com mais de uma fonte por categoria; E2E do câmbio
+  pular em "No data found".

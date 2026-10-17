@@ -1707,8 +1707,39 @@ motor de **pernas livres + atalhos prontos** e **só resultado no vencimento** (
   call (strike 40, prêmio 2, 100 opções) e conferindo perda de R$ 200, equilíbrio em R$ 42, ganho ilimitado e
   débito de R$ 200. **Não verificado**: o gráfico a olho (o passo de renderizar e olhar da skill não foi
   feito), os atalhos e "Add as buy/sell leg" contra a cadeia real (dependem dos 80 MB da B3) e o clique manual.
-- **Fora de escopo, decidido**: curva teórica de hoje, posições de opções na carteira, custos e IR,
-  dividendos e exercício antecipado, seção em ETF/BDR.
+- **Fora de escopo, decidido**: curva teórica de hoje, custos e IR, dividendos e exercício antecipado, seção
+  em ETF/BDR. (As posições na carteira entraram na 3ª fatia, abaixo.)
+
+**3ª fatia implementada (Sessão 116, 2026-10-17)**: **posições em opções na Carteira**, escolhas do dono do
+projeto: **tabela própria** (não classe de ativo) e **encerramento manual + marcação a mercado**.
+- **Por que tabela própria**: o livro de compra/venda só tem posição comprada (quantidade líquida de compras
+  menos vendas) e não comporta opção lançada; classe nova também obrigaria a adaptar cotação (COTAHIST, não
+  Yahoo), vencimento e IR de opções. Isolada como o `Loans` da Fase 29: **não entra** em patrimônio, Resumo,
+  alocação, rentabilidade nem IR.
+- **Schema**: `option_positions` (migration `m20261017_120000`), FK em `portfolio` com cascade; série e
+  ativo-objeto, tipo, strike, vencimento, comprada/lançada, quantidade, prêmio por opção, taxa de abertura, e
+  as colunas de encerramento (`close_kind` closed/expired/exercised, preço, data, taxa). Aberta = `close_date`
+  nulo. O Backup do Workspace cobre por introspecção; o teste de roundtrip ganhou uma posição.
+- **Domínio** (`domain/option_position.rs`): resultado = `sinal · (preço − prêmio) · quantidade − taxas`, com
+  comprada +1 e lançada −1; serve para o realizado e para a marcação. Dias até o vencimento e o aviso de
+  "vencida e ainda aberta".
+- **Comandos** (`commands/option_position.rs`, padrão `*_in` do `loan.rs`): criar (valida tipo, lado, strike,
+  quantidade, prêmio, taxas, datas e vencimento >= abertura), listar (**só banco, sem rede**), encerrar
+  (`expired` força preço 0; `closed` e `exercised` exigem preço; só posição aberta; data >= abertura), apagar e
+  `get_option_marks` (último preço negociado via `b3_options::market()`, **só sob clique**, porque a primeira
+  carga baixa ~80 MB). Série que nunca negociou fica sem preço, sem erro.
+- **Tela**: aba "Options" na Carteira (`OptionPositionsSection.tsx`): formulário (vencimento já vem daqui a
+  30 dias, abertura hoje), três tiles (abertas, resultado a mercado, resultado realizado), tabela de abertas
+  com "Expired: close it" quando o vencimento passou, "Refresh market prices", Close e Delete (com confirmação),
+  diálogo de encerramento e tabela de fechadas. Ganho e perda levam sinal explícito, não só cor.
+- **Exercício**: o usuário informa o valor intrínseco por opção; a ação comprada ou vendida pelo exercício
+  **não** é registrada (avisado na tela).
+- **Verificado**: `./dev.sh check` limpo; 5 testes unitários do domínio e 4 testes de fluxo no schema real
+  (criar/encerrar/realizado com os dois lados, validações e isolamento por carteira, vencida e marcação com
+  mercado sintético, cascade ao apagar a carteira) mais o roundtrip do backup; CI do push `f6e904d` verde nos
+  três workflows, com um spec E2E novo (registra uma call lançada, encerra sem valor e confere o realizado de
+  +R$ 150,00; e o erro do backend na quantidade zero). **Não verificado**: `get_option_marks` contra a B3 real
+  (80 MB, só sob clique), a tela a olho e o clique manual.
 
 ### Fase 19 — Moeda base seletiva da carteira (ideia trazida em conversa pelo dono do projeto na Sessão 96, puro registro, não iniciada)
 
