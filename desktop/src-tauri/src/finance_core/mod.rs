@@ -28,6 +28,8 @@
 //   e as gregas ponta a ponta (spot do chamador, taxa livre de risco da curva DI).
 // - `fx`: câmbio multi-moeda (Fase 32, seção I): catálogo de 17 moedas e
 //   validação do par; a cotação e o histórico vêm do `yahoo` (`EURUSD=X`).
+// - `frankfurter`: segunda fonte de câmbio (taxas do BCE), atrás do Yahoo na
+//   cascata de `yahoo::providers()`; só atende pares de moeda.
 pub mod api_keys;
 pub mod b3_index_stats;
 pub mod b3_options;
@@ -43,6 +45,7 @@ pub mod cvm_ipe;
 pub mod disk_cache;
 pub mod eth_indicators;
 pub mod fear_greed;
+pub mod frankfurter;
 pub mod fx;
 pub mod http;
 pub mod market;

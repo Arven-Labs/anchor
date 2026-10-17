@@ -332,7 +332,7 @@ pub async fn save_base_currency(
 }
 
 /// Moedas dos ativos com lançamento nas carteiras do workspace.
-async fn workspace_asset_currencies(
+pub(crate) async fn workspace_asset_currencies(
     db: &DatabaseConnection,
     workspace_id: i32,
 ) -> Result<HashSet<String>, AppError> {

@@ -73,6 +73,7 @@ mod m20261017_130000_add_net_worth_to_option_positions;
 mod m20261017_140000_create_workspace_settings;
 mod m20261017_150000_add_currency_to_accounts_and_loans;
 mod m20261017_160000_add_transfer_id_to_general_transactions;
+mod m20261018_100000_create_ingestion_runs;
 
 pub struct Migrator;
 
@@ -153,6 +154,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261017_140000_create_workspace_settings::Migration),
             Box::new(m20261017_150000_add_currency_to_accounts_and_loans::Migration),
             Box::new(m20261017_160000_add_transfer_id_to_general_transactions::Migration),
+            Box::new(m20261018_100000_create_ingestion_runs::Migration),
         ]
     }
 }

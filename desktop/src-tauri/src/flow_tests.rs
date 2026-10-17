@@ -1614,3 +1614,109 @@ async fn a_loan_takes_the_account_currency_and_repays_only_into_the_same_one() {
     assert_eq!(create_loan_in(&db, no_account).await.unwrap().currency, "EUR");
     assert_eq!(create_loan_in(&db, loan_request(ws.id, borrower, None, 80.0)).await.unwrap().currency, "BRL");
 }
+
+// ---------------------------------------------------------------------------
+// Ingestão diária (Fase 33)
+// ---------------------------------------------------------------------------
+
+fn pair(a: &str, b: &str) -> (String, String) {
+    (a.to_string(), b.to_string())
+}
+
+#[tokio::test]
+async fn ingestion_targets_are_only_what_the_user_has() {
+    use crate::entity::asset_favorites;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Ingestion").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    trade(&db, pf.id, aapl.id, "compra", 1.0, 100.0, "2026-01-02").await;
+    // Favoritado sem lançamento: entra. Sem lançamento nem favorito: fica de fora.
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    asset_favorites::ActiveModel {
+        workspace_id: Set(ws.id),
+        asset_id: Set(petr.id),
+        created_at: Set("2026-01-01".to_string()),
+        ..Default::default()
+    }
+    .insert(&db)
+    .await
+    .unwrap();
+    asset(&db, "VALE3", "acao_br").await;
+    // Sem cotação automática: nunca entra, mesmo com lançamento.
+    let house = asset(&db, "CASA", "imovel").await;
+    trade(&db, pf.id, house.id, "compra", 1.0, 500.0, "2026-01-03").await;
+
+    bank_account_in(&db, ws.id, "Euro account", "EUR").await;
+    bank_account_in(&db, ws.id, "Real account", "BRL").await;
+
+    // Segundo workspace com outra base: o par é contra a base dele.
+    let ws2 = workspace(&db, "Ingestion USD").await;
+    save_base_currency(&db, ws2.id, "USD").await.unwrap();
+    bank_account_in(&db, ws2.id, "Real in USD base", "BRL").await;
+
+    let targets = crate::ingestion::collection_targets(&db).await.unwrap();
+    assert_eq!(
+        targets.assets.into_iter().collect::<Vec<_>>(),
+        vec![pair("AAPL", "acao_internacional"), pair("PETR4", "acao_br")]
+    );
+    assert_eq!(
+        targets.fx_pairs.into_iter().collect::<Vec<_>>(),
+        vec![pair("BRL", "USD"), pair("EUR", "BRL"), pair("USD", "BRL")]
+    );
+}
+
+#[tokio::test]
+async fn ingestion_with_nothing_owned_still_lists_no_targets() {
+    let db = memory_db().await;
+    workspace(&db, "Empty").await;
+    let targets = crate::ingestion::collection_targets(&db).await.unwrap();
+    assert!(targets.assets.is_empty());
+    assert!(targets.fx_pairs.is_empty());
+}
+
+#[tokio::test]
+async fn ingestion_yields_to_a_running_manual_collection() {
+    use crate::entity::ingestion_runs;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let db = memory_db().await;
+    let lock = AtomicBool::new(true);
+    let err = crate::ingestion::run_ingestion(&db, &lock, "scheduled").await.unwrap_err();
+    assert!(matches!(err, crate::error::AppError::CollectorBusy));
+    assert!(ingestion_runs::Entity::find().all(&db).await.unwrap().is_empty());
+    // Quem segurava o trinco continua segurando: a ingestão não o libera.
+    assert!(lock.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn the_next_ingestion_waits_only_on_finished_runs() {
+    use crate::entity::ingestion_runs;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let db = memory_db().await;
+    assert!(crate::ingestion::last_finished_at(&db).await.unwrap().is_none());
+
+    let add = |status: &str, finished: Option<&str>| {
+        ingestion_runs::ActiveModel {
+            trigger_kind: Set("scheduled".to_string()),
+            started_at: Set("2026-10-17T00:00:00+00:00".to_string()),
+            finished_at: Set(finished.map(str::to_string)),
+            status: Set(status.to_string()),
+            items_ok: Set(0),
+            items_failed: Set(0),
+            ..Default::default()
+        }
+        .insert(&db)
+    };
+    add("partial", Some("2026-10-15T10:00:00+00:00")).await.unwrap();
+    // Rodada que falhou inteira ou nunca fechou não conta como "atualizado".
+    add("error", Some("2026-10-17T10:00:00+00:00")).await.unwrap();
+    add("running", None).await.unwrap();
+
+    let last = crate::ingestion::last_finished_at(&db).await.unwrap().unwrap();
+    assert_eq!(last.to_rfc3339(), "2026-10-15T10:00:00+00:00");
+}

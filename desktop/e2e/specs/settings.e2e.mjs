@@ -53,7 +53,7 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
 
     const sections = await elementsOf('[data-testid^="settings-section-"]');
     const names = await Promise.all(sections.map((el) => textOf(el)));
-    expect(names).toEqual(["TruthID", "Data sources", "Storage", "Backup", "Taxes", "Currency"]);
+    expect(names).toEqual(["TruthID", "Data sources", "Storage", "Backup", "Taxes", "Currency", "Updates"]);
   });
 
   it("Currency: a moeda base começa em BRL e a troca fica gravada", async () => {
@@ -169,5 +169,30 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
       (text) => text.includes("75,00"),
       "depois do Reset o imposto volta a R$ 75,00",
     );
+  });
+
+  // Fase 33. Sem ativos neste workspace a rodada só busca os benchmarks (rede real,
+  // que pode falhar ou limitar); o que o teste garante é que a rodada é registrada
+  // e termina, não o resultado das fontes.
+  it("Updates: 'Update now' registra uma rodada manual e libera o botão", async function () {
+    this.timeout(240_000);
+    await byId("open-settings").click();
+    await byId("settings-section-Updates").click();
+    await byId("ingestion-run-now").waitForDisplayed({ timeout: 20_000 });
+    await byId("ingestion-run-now").click();
+
+    await browser.waitUntil(
+      async () => Number(sql("SELECT count(*) FROM ingestion_runs WHERE trigger_kind = 'manual'")) === 1,
+      { timeout: 20_000, timeoutMsg: "a rodada manual deveria ter sido registrada" },
+    );
+    await waitForText(
+      byId("ingestion-run-now"),
+      (text) => text.includes("Update now"),
+      "o botão deveria voltar quando a rodada terminasse",
+      180_000,
+    );
+    const status = sql("SELECT status FROM ingestion_runs WHERE trigger_kind = 'manual'");
+    expect(["ok", "partial", "error"]).toContain(status);
+    await waitForText(byId("ingestion-runs"), (text) => text.includes("Manual"), "a rodada aparece no histórico");
   });
 });

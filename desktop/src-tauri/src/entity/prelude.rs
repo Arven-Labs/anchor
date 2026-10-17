@@ -54,4 +54,5 @@ pub use super::watchlist_items::Entity as WatchlistItems;
 pub use super::watchlists::Entity as Watchlists;
 pub use super::workspace::Entity as Workspace;
 pub use super::workspace_settings::Entity as WorkspaceSettings;
+pub use super::ingestion_runs::Entity as IngestionRuns;
 pub use super::selic_daily::Entity as SelicDaily;

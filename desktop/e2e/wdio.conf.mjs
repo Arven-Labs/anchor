@@ -20,6 +20,9 @@ const artifactsDir = path.resolve(here, "artifacts");
 // de ambiente, o app), então cada um ter o próprio diretório não atrapalha.
 const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), "anchor-e2e-"));
 process.env.ANCHOR_DB_PATH = path.join(dbDir, "anchor.db");
+// A ingestão diária buscaria na rede ao abrir o app e seguraria o trinco das
+// coletas; os testes disparam as próprias.
+process.env.ANCHOR_DISABLE_INGESTION = "1";
 
 let tauriDriver;
 

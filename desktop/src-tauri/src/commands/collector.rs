@@ -57,6 +57,58 @@ pub async fn run_fx_collector(
     result
 }
 
+/// Fase 33 — o trinco que serializa as coletas. `acquire` falha com
+/// `CollectorBusy` se outra coleta (manual ou agendada) está rodando, e o `Drop`
+/// libera mesmo se a tarefa for cancelada no meio.
+pub struct CollectorGuard<'a>(&'a AtomicBool);
+
+impl<'a> CollectorGuard<'a> {
+    pub fn acquire(lock: &'a AtomicBool) -> Result<Self, AppError> {
+        if lock.swap(true, Ordering::SeqCst) {
+            return Err(AppError::CollectorBusy);
+        }
+        Ok(CollectorGuard(lock))
+    }
+}
+
+impl Drop for CollectorGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Coleta um ativo pelo coletor da sua classe (ver o comentário acima). Sem o
+/// trinco: quem chama (o comando ou a ingestão diária) já o segura.
+pub async fn collect_asset(
+    db: &DatabaseConnection,
+    ticker: &str,
+    asset_class: Option<&str>,
+) -> Result<CollectorSummary, AppError> {
+    let summary = |output: String| CollectorSummary { success: true, output };
+    match asset_class {
+        Some("cripto") => finance_api_crypto::collect_ticker(db, ticker).await.map(|r| {
+            summary(format!(
+                "{} ({}): US$ {:.2} — {} history point(s) — Fear & Greed: {} ({})",
+                r.symbol, r.name, r.price, r.history_points, r.fear_greed_value, r.fear_greed_classification,
+            ))
+        }),
+        Some("metal") => finance_api_metals::collect_ticker(db, ticker).await.map(|r| {
+            summary(format!(
+                "{} ({}): US$ {:.2}/oz — {} history point(s)",
+                r.ticker, r.name, r.price, r.history_points,
+            ))
+        }),
+        Some("acao_internacional") => {
+            finance_api_us_stock::run_us_stock_collector(db, &[ticker.to_string()]).await.map(summary)
+        }
+        Some("reit") => finance_api_reit::run_reit_collector(db, &[ticker.to_string()]).await.map(summary),
+        Some("etf_us") => {
+            finance_api_us_stock::run_etf_us_collector(db, &[ticker.to_string()]).await.map(summary)
+        }
+        _ => finance_api_stocks::run_stock_collector(db, &[ticker.to_string()]).await.map(summary),
+    }
+}
+
 #[tauri::command]
 pub async fn run_stock_collector(
     lock: tauri::State<'_, AtomicBool>,
@@ -64,100 +116,8 @@ pub async fn run_stock_collector(
     ticker: String,
     asset_class: Option<String>,
 ) -> Result<CollectorSummary, AppError> {
-    match asset_class.as_deref() {
-        Some("cripto") => {
-            if lock.swap(true, Ordering::SeqCst) {
-                return Err(AppError::CollectorBusy);
-            }
-            let result = finance_api_crypto::collect_ticker(db.inner(),&ticker)
-                .await
-                .map(|r| CollectorSummary {
-                    success: true,
-                    output: format!(
-                        "{} ({}): US$ {:.2} — {} history point(s) — Fear & Greed: {} ({})",
-                        r.symbol,
-                        r.name,
-                        r.price,
-                        r.history_points,
-                        r.fear_greed_value,
-                        r.fear_greed_classification,
-                    ),
-                });
-            lock.store(false, Ordering::SeqCst);
-            result
-        }
-        Some("metal") => {
-            if lock.swap(true, Ordering::SeqCst) {
-                return Err(AppError::CollectorBusy);
-            }
-            let result = finance_api_metals::collect_ticker(db.inner(),&ticker)
-                .await
-                .map(|r| CollectorSummary {
-                    success: true,
-                    output: format!(
-                        "{} ({}): US$ {:.2}/oz — {} history point(s)",
-                        r.ticker, r.name, r.price, r.history_points,
-                    ),
-                });
-            lock.store(false, Ordering::SeqCst);
-            result
-        }
-        Some("acao_internacional") => {
-            if lock.swap(true, Ordering::SeqCst) {
-                return Err(AppError::CollectorBusy);
-            }
-            let result =
-                finance_api_us_stock::run_us_stock_collector(db.inner(),&[ticker])
-                    .await;
-            lock.store(false, Ordering::SeqCst);
-
-            result.map(|output| CollectorSummary {
-                success: true,
-                output,
-            })
-        }
-        Some("reit") => {
-            if lock.swap(true, Ordering::SeqCst) {
-                return Err(AppError::CollectorBusy);
-            }
-            let result =
-                finance_api_reit::run_reit_collector(db.inner(),&[ticker]).await;
-            lock.store(false, Ordering::SeqCst);
-
-            result.map(|output| CollectorSummary {
-                success: true,
-                output,
-            })
-        }
-        Some("etf_us") => {
-            if lock.swap(true, Ordering::SeqCst) {
-                return Err(AppError::CollectorBusy);
-            }
-            let result =
-                finance_api_us_stock::run_etf_us_collector(db.inner(),&[ticker])
-                    .await;
-            lock.store(false, Ordering::SeqCst);
-
-            result.map(|output| CollectorSummary {
-                success: true,
-                output,
-            })
-        }
-        _ => {
-            if lock.swap(true, Ordering::SeqCst) {
-                return Err(AppError::CollectorBusy);
-            }
-            let result =
-                finance_api_stocks::run_stock_collector(db.inner(),&[ticker])
-                    .await;
-            lock.store(false, Ordering::SeqCst);
-
-            result.map(|output| CollectorSummary {
-                success: true,
-                output,
-            })
-        }
-    }
+    let _guard = CollectorGuard::acquire(lock.inner())?;
+    collect_asset(db.inner(), &ticker, asset_class.as_deref()).await
 }
 
 // Fase 14.4 — trocou de `run_collector` (subprocess Python, `crypto`) pra

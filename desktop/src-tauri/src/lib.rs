@@ -6,6 +6,7 @@ mod alert_checker;
 mod arweave;
 mod backup;
 mod commands;
+mod ingestion;
 mod crypto_sources;
 mod db;
 mod dead_drop;
@@ -44,6 +45,7 @@ pub fn run() {
             let db = tauri::async_runtime::block_on(db::connect(&handle))
                 .expect("failed to open or migrate the database");
             alert_checker::spawn_periodic_check(db.clone());
+            ingestion::spawn_daily_ingestion(handle.clone(), db.clone());
             app.manage(db);
 
             // Fase 26 — zips grandes das fontes públicas (CVM, SEC) ficam no
@@ -97,6 +99,8 @@ pub fn run() {
             commands::collector::list_stock_dividend_payments,
             commands::collector::run_price_history_backfill,
             commands::collector::run_benchmark_backfill,
+            ingestion::list_ingestion_runs,
+            ingestion::run_ingestion_now,
             commands::collector::list_stock_price_history,
             commands::collector::get_latest_crypto_fear_greed,
             commands::stock_notes::list_stock_notes,

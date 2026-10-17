@@ -3149,3 +3149,41 @@ Na Sessão 109 a série mensal do BCB ganhou o retry da Selic e o câmbio, os av
 as opções com gregas foram portados: **não sobrou nenhum domínio de dados só do Lume**. Resta a decisão
 do dono do projeto sobre arquivar ou apagar o repo do Lume e, no que é produto, os consumidores
 (Fases 18, 19 e o provento esperado).
+
+
+### Fase 33 — Ingestão diária e segunda fonte de câmbio (Sessão 130)
+
+Antes, toda coleta de mercado era um botão (decisão da Sessão 1: "sem cron"). **Essa decisão foi revogada** pelo
+dono do projeto: com a Fase 19 o app converte carteira, patrimônio e P/L pelo câmbio gravado, e dado velho vira
+número errado em silêncio.
+
+**Decisões do dono do projeto**: cadência diária; só o que o usuário tem; só com o app aberto; segunda fonte para
+mercado/câmbio.
+
+**Entregue**
+- **Agendador** (`ingestion.rs`): tarefa Tokio iniciada em `lib.rs` ao lado do `alert_checker`. Na abertura e a cada
+  30 min confere se a última rodada concluída (`ok` ou `partial`) tem 24 h ou mais. Uma rodada busca, nesta ordem:
+  o câmbio de cada moeda em uso (ativos, contas e empréstimos) contra a base de cada Workspace; a cotação dos ativos
+  com lançamento, favoritados ou em watchlist, só de classes com cotação automática; os benchmarks. Sequencial, com
+  500 ms entre itens; falha de um item não para a rodada.
+- **`ingestion_runs`** (migration `m20261018_100000`): `trigger_kind` (`startup`/`scheduled`/`manual`), início, fim,
+  `status` (`running`/`ok`/`partial`/`error`), itens ok e com falha, até 5 mensagens de erro. Settings → Updates lista
+  as últimas 10 e tem "Update now".
+- **Trinco das coletas**: `CollectorGuard` (RAII) no lugar do `swap`/`store` solto, liberando mesmo se a tarefa for
+  cancelada. A coleta manual e a agendada dividem o mesmo trinco; se a manual está rodando, a agendada espera a
+  próxima conferência. `run_stock_collector` virou `collect_asset` (sem trinco) + o comando; a ingestão reaproveita.
+- **Frankfurter** (`finance_core/frankfurter.rs`): segunda fonte de câmbio (taxas do BCE, sem chave), depois do
+  Yahoo em `yahoo::providers()`. Só atende `XXXYYY=X`; qualquer outro instrumento é `NoData`, então a cascata
+  segue sem afetar ações. `finance_api::fx` passou a gravar em `source` quem de fato respondeu (antes fixo
+  `yahoo_finance`), separadamente para a cotação e para o histórico.
+- **429**: `http::check_status` marca "rate limited"; `get_text_with_headers` tenta uma segunda vez após esperar o
+  `Retry-After` (teto de 10 s, padrão 2 s).
+- **Desligável** por `ANCHOR_DISABLE_INGESTION` (o E2E liga, pra a coleta de fundo não disputar o trinco).
+
+**Achado**: o Stooq, primeira candidata a segunda fonte, devolve uma página de prova de trabalho em JavaScript em
+vez do CSV, então não serve para um cliente HTTP. Para ações, ETFs e dividendos não há fonte grátis e sem chave que
+funcione: continuam só com o Yahoo.
+
+**Fora do escopo / pendente**: intraday; execução com o app fechado; segunda fonte de ações (exige BYO-key, como
+Twelve Data ou Alpha Vantage); aviso na tela quando o câmbio usado está velho; prioridade "premium não é
+sobrescrito por grátis" (só faz sentido com fonte paga).

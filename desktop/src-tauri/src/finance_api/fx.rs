@@ -29,7 +29,7 @@ pub async fn collect_pair(
         id: ActiveValue::NotSet,
         ticker: Set(q.pair_code.clone()),
         price: Set(q.price),
-        source: Set("yahoo_finance".to_string()),
+        source: Set(q.meta.source.clone()),
         fetched_at: Set(now.clone()),
         name: Set(Some(q.name.clone())),
         exchange: Set(Some("FX".to_string())),
@@ -39,6 +39,7 @@ pub async fn collect_pair(
     .await?;
 
     let history_points = history.data.len();
+    let history_source = history.meta.source.clone();
     let models: Vec<stock_price_history::ActiveModel> = history
         .data
         .into_iter()
@@ -47,7 +48,7 @@ pub async fn collect_pair(
             ticker: Set(q.pair_code.clone()),
             price_date: Set(point.price_date.to_string()),
             close_price: Set(point.close_price),
-            source: Set("yahoo_finance".to_string()),
+            source: Set(history_source.clone()),
             fetched_at: Set(now.clone()),
         })
         .collect();

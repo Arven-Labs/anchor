@@ -16,9 +16,10 @@ export async function textOf(element) {
 }
 
 /** Espera o texto do elemento passar no predicado (retry até o timeout). */
-export async function waitForText(element, predicate, message) {
+export async function waitForText(element, predicate, message, timeout) {
   await browser.waitUntil(async () => predicate(await textOf(element)), {
     timeoutMsg: message,
+    ...(timeout ? { timeout } : {}),
   });
 }
 

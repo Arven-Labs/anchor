@@ -301,7 +301,9 @@ impl MarketDataProvider for Yahoo {
 }
 
 fn providers() -> Vec<Box<dyn MarketDataProvider>> {
-    vec![Box::new(Yahoo)]
+    // Frankfurter só responde pares de moeda (o resto é `NoData`), então fica
+    // como reserva do câmbio sem afetar ações.
+    vec![Box::new(Yahoo), Box::new(crate::finance_core::frankfurter::Frankfurter)]
 }
 
 /// Roda `call` em cada provider de mercado, em ordem, e devolve o primeiro que responde.

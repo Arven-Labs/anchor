@@ -2916,3 +2916,19 @@ mode. Detalhe na Fase 19 do `PHASE.md`.
   demais tickers continuam falhando em "No data found".
 - **Não verificado**: só roda no CI (rede real do Yahoo).
 - **Pendente**: ingestão agendada e `DataProvider` com mais de uma fonte por categoria; benchmarks convertidos.
+  *(A ingestão e a segunda fonte de câmbio foram feitas na Sessão 130, abaixo.)*
+
+
+### 2026-10-18 — Sessão 130
+
+**Ingestão diária e segunda fonte de câmbio (Fase 33).** Plan mode, plano aprovado. Detalhe na Fase 33 do `PHASE.md`.
+- **Decisões do dono do projeto**: diária, só o que o usuário tem, só com o app aberto, segunda fonte de mercado/câmbio.
+  Isso revoga a decisão "sem cron" da Sessão 1.
+- **Achado na pesquisa**: o Stooq não serve (prova de trabalho em JavaScript). O Frankfurter (BCE) responde em JSON,
+  sem chave, com série diária; vale só para câmbio. Ações ficam só com o Yahoo.
+- **Feito**: `frankfurter.rs`, retry de 429, `ingestion_runs`, `ingestion.rs` (alvos, rodada, laço, 2 comandos),
+  `CollectorGuard` e `collect_asset` em `collector.rs`, Settings → Updates, `ANCHOR_DISABLE_INGESTION` no E2E.
+- **Verificado**: `./dev.sh check` limpo (tsc e `cargo check --all-targets`).
+- **Não verificado**: nada rodou ainda (testes de Rust, E2E e Frankfurter contra a API real ficam para o CI e a
+  tela nunca foi vista); o agendador em si não é exercitado em nenhum teste, só a decisão de quando rodar.
+- **Pendente**: aviso de câmbio velho na tela; segunda fonte de ações (BYO-key).
