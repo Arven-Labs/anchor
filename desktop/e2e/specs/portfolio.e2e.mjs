@@ -15,11 +15,17 @@ async function logTrade(type, quantity, unitPrice) {
 describe("Anchor — carteira: compra, venda e recompra", () => {
   it("cria um Workspace e semeia o ativo", async () => {
     await enterWorkspace("E2E Portfolio");
+    // Um Workspace novo não tem carteira nem ativos: semeia os dois.
+    const workspace = sql("SELECT id FROM workspace WHERE name = 'E2E Portfolio'");
+    sql(
+      `INSERT INTO portfolio (workspace_id, name, created_at) VALUES (${workspace}, 'Main', '2026-01-01T00:00:00Z')`,
+    );
     sql(
       "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
         "VALUES ('PETR4', 'Petrobras', 'acao_br', 'BRL', 'pais', 'BR', '2026-01-01T00:00:00Z')",
     );
     await byId("nav-portfolio").click();
+    await byId("portfolio-tab-transactions").waitForDisplayed({ timeout: 30_000 });
     await byId("portfolio-tab-transactions").click();
     await byId("tx-type").waitForDisplayed({ timeout: 30_000 });
   });
