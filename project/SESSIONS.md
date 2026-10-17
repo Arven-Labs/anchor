@@ -2618,3 +2618,16 @@ só os análogos diretos do ETH. Duas fatias com CI entre elas. Detalhe na Fase 
   dev), e o clique na tela do BTC (o E2E cobre a montagem do score, não a coleta nem o editor de limites).
 - **Pendente**: fluxo de ETFs (sem fonte grátis); opções (Fase 18) e moeda base (Fase 19); ingestão agendada e
   `DataProvider` com mais de uma fonte por categoria; E2E do câmbio pular em "No data found".
+
+
+### 2026-10-17 — Sessão 113
+
+**Fluxo de ETFs: rechecagem de fontes, nada implementado.** Pedido: seguir pelo primeiro item pendente.
+- **Feito**: só pesquisa, com GETs de leitura. Farside e SoSoValue seguem em 403 (Cloudflare); CoinGlass pede
+  chave paga; The Block tem o dataset do BTC mas `data.tbstat.com` dá `AccessDenied`; o Bitbo serve uma tabela
+  HTML só de BTC, sem API nem licença clara. ETH sem nenhuma fonte. Detalhe na Fase 31 do `PHASE.md`.
+- **Decisão do dono do projeto**: manter bloqueado e seguir. Ofereci também o indicador manual e a raspagem do
+  Bitbo (só BTC); nenhum foi escolhido.
+- **Não verificado**: nada de código mudou, então não rodei check nem CI.
+- **Pendente**: opções (Fase 18) e moeda base (Fase 19); ingestão agendada e `DataProvider` com mais de uma
+  fonte por categoria; E2E do câmbio pular em "No data found".

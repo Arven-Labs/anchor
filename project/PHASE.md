@@ -2407,6 +2407,15 @@ liquidity 2). Fonte: CoinMetrics Community, sem chave.
   por grupo em `crypto_score.rs`) além do código; meu grep inicial pegou só parte e o CI pegou o resto.
   Ao mudar o número de indicadores, buscar `15` em `e2e/` e `flow_tests.rs`.
 
+**Fluxo de ETFs, rechecado na Sessão 113 (2026-10-17), segue sem fonte utilizável**; decisão do dono do
+projeto: manter bloqueado. Testado ao vivo: Farside e SoSoValue respondem 403 (Cloudflare); a API da
+CoinGlass exige chave ("API key missing"); The Block publica o dataset do BTC (licença nos termos de serviço
+deles), mas `data.tbstat.com` responde `AccessDenied` e não há endpoint aberto; o Bitbo
+(`bitbo.io/treasuries/etf-flows/`) responde 200 com uma **tabela HTML só de BTC** (IBIT, FBTC, GBTC...),
+sem API e sem licença esclarecida. **Para ETH não achei nenhuma fonte.** Alternativas descartadas por
+ora: indicador manual (`etf_flow_7d`, sem coletor) e raspagem do Bitbo (só BTC, frágil). Só vale reabrir se
+surgir API grátis ou se o dono assinar uma fonte paga.
+
 **Score próprio do BTC (Sessão 112)**, decisões do dono do projeto: limites **por moeda** e só os
 **análogos diretos** do ETH. **12 indicadores em 3 grupos** (On-chain 6, Derivatives & options 5, Market
 liquidity 1; sem Network fundamentals). Ficam fora, por serem do ETH: `staking_yield`, `tvl_trend`,
