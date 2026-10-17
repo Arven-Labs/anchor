@@ -34,6 +34,7 @@ use crate::commands::bank_account::{
     UpdateBankAccountRequest,
 };
 use crate::commands::general_transaction::{update_general_transaction_in, UpdateGeneralTransactionRequest};
+use crate::commands::general_transaction_category::list_categories_view;
 use crate::test_support::{
     asset, asset_in, bank_account, bank_account_in, cash_in, memory_db, portfolio, trade, workspace,
 };
@@ -1025,6 +1026,70 @@ async fn unrealized_pl_includes_the_exchange_move_since_each_purchase() {
     save_base_currency(&db, ws.id, "USD").await.unwrap();
     let (in_usd, _) = positions_in_base(&db, pf.id).await.unwrap();
     assert!(close(in_usd[0].unrealized_pl.unwrap(), 20.0));
+}
+
+async fn expense(
+    db: &sea_orm::DatabaseConnection,
+    workspace_id: i32,
+    account_id: i32,
+    category_id: i32,
+    valor: f64,
+    date: &str,
+) {
+    use sea_orm::{ActiveModelTrait, Set};
+    crate::entity::general_transaction::ActiveModel {
+        workspace_id: Set(workspace_id),
+        bank_account_id: Set(account_id),
+        transaction_type: Set("despesa".to_string()),
+        category_id: Set(Some(category_id)),
+        valor: Set(valor),
+        transaction_date: Set(date.to_string()),
+        notes: Set(None),
+        created_at: Set("2026-10-01T00:00:00Z".to_string()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .expect("insert expense");
+}
+
+#[tokio::test]
+async fn a_category_budget_sums_expenses_in_the_base_currency() {
+    use chrono::Datelike;
+    use sea_orm::{ActiveModelTrait, Set};
+    let db = memory_db().await;
+    let ws = workspace(&db, "Budget").await;
+    let brl = bank_account(&db, ws.id, "Nubank").await;
+    let usd = bank_account_in(&db, ws.id, "Chase", "USD").await;
+    let category = crate::entity::general_transaction_category::ActiveModel {
+        workspace_id: Set(ws.id),
+        nome: Set("Food".to_string()),
+        limite_mensal: Set(Some(200.0)),
+        created_at: Set("2026-10-01T00:00:00Z".to_string()),
+        ..Default::default()
+    }
+    .insert(&db)
+    .await
+    .unwrap();
+    let day = chrono::Utc::now().date_naive().with_day(1).unwrap().format("%Y-%m-%d").to_string();
+    expense(&db, ws.id, brl.id, category.id, 100.0, &day).await;
+    expense(&db, ws.id, usd.id, category.id, 10.0, &day).await;
+
+    // Sem o par USD/BRL a despesa em dólar fica de fora e é contada.
+    let without_rate = list_categories_view(&db, ws.id).await.unwrap();
+    assert!(close(without_rate[0].spent_this_month, 100.0));
+    assert_eq!(without_rate[0].spent_missing_fx, 1);
+    assert_eq!(without_rate[0].base_currency, "BRL");
+
+    seed_fx_rate(&db, "USDBRL", 5.0).await;
+    let in_brl = list_categories_view(&db, ws.id).await.unwrap();
+    assert!(close(in_brl[0].spent_this_month, 150.0)); // 100 + 10 × 5
+    assert_eq!(in_brl[0].spent_missing_fx, 0);
+
+    save_base_currency(&db, ws.id, "USD").await.unwrap();
+    let in_usd = list_categories_view(&db, ws.id).await.unwrap();
+    assert!(close(in_usd[0].spent_this_month, 30.0)); // 100 ÷ 5 + 10
+    assert_eq!(in_usd[0].base_currency, "USD");
 }
 
 #[tokio::test]

@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import Field from "../components/Field";
+import { useBaseCurrency } from "./useBaseCurrency";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -62,6 +63,9 @@ function CategoryManagerDialog({
     queryKey: ["general-transaction-categories", workspaceId],
     queryFn: () => invoke("list_general_transaction_categories", { workspaceId }),
   });
+
+  const baseCurrency = useBaseCurrency(workspaceId);
+  const missingFx = (categoriesQuery.data ?? []).reduce((sum, c) => sum + c.spent_missing_fx, 0);
 
   function invalidate() {
     queryClient.invalidateQueries({
@@ -141,6 +145,14 @@ function CategoryManagerDialog({
           opcional e recorrente (mesmo valor todo mês) — comparado contra a soma de despesas da
           categoria no mês atual.
         </p>
+        {baseCurrency && (
+          <p className="text-sm text-muted-foreground" data-testid="category-base-currency">
+            Limits and spending are in {baseCurrency}. Expenses from accounts in other currencies are
+            converted at the rate of their day.
+            {missingFx > 0 &&
+              ` ${missingFx} expense${missingFx === 1 ? " is" : "s are"} left out for lack of an exchange rate.`}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="flex items-end gap-4">
           <Field label="Name" className="flex-1">

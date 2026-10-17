@@ -2827,4 +2827,19 @@ Detalhe na Fase 19 do `PHASE.md`.
   verde em Rust e E2E (o workflow de Frontend não roda sem mudança em `src/`).
 - **Não verificado**: a tela a olho e o cálculo com cotações reais.
 - **Pendente**: orçamento por categoria; transferência entre contas; trocar a moeda pela edição da conta; separar
-  P/L por preço e por câmbio; formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.
+  P/L por preço e por câmbio; formatadores de Ledger, Dividendos e impostos; benchmarks convertidos. *(O orçamento
+  foi feito na Sessão 124, abaixo.)*
+
+
+### 2026-10-17 — Sessão 124
+
+**Orçamento por categoria na moeda base (Fase 19, 5ª entrega).** Plan mode; escolha do dono do projeto: o limite é
+um número na moeda base do Workspace. Detalhe na Fase 19 do `PHASE.md`.
+- **Feito**: `list_categories_view` (extraída do comando), `compute_spent_this_month` convertendo cada despesa pela
+  conta e pela taxa da data, `base_currency` e `spent_missing_fx` na view, aviso no diálogo de categorias.
+- **Decisão de desenho**: o limite não ganhou moeda própria; trocar a base muda o significado do número.
+- **Verificado**: `./dev.sh check` limpo; 2 testes de unidade e 1 de fluxo novos, 5 de unidade ajustados. CI: ver
+  abaixo.
+- **Não verificado**: a tela a olho.
+- **Pendente**: transferência entre contas; trocar a moeda pela edição da conta; separar P/L por preço e por câmbio;
+  formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.

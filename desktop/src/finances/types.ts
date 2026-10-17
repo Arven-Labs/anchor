@@ -17,7 +17,11 @@ export type GeneralTransactionCategory = {
   nome: string;
   limite_mensal: number | null;
   created_at: string;
+  // Fase 19 — gasto do mês e limite estão na moeda base do Workspace; despesas
+  // sem cotação do par ficam fora do gasto e são contadas em `spent_missing_fx`.
   spent_this_month: number;
+  base_currency: string;
+  spent_missing_fx: number;
 };
 
 export type GeneralTransaction = {

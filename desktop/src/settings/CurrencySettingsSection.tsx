@@ -38,6 +38,7 @@ function CurrencySettingsSection({ workspaceId }: { workspaceId: number }) {
       queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
       queryClient.invalidateQueries({ queryKey: ["liabilities"] });
       queryClient.invalidateQueries({ queryKey: ["loans"] });
+      queryClient.invalidateQueries({ queryKey: ["general-transaction-categories"] });
     },
   });
 

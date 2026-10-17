@@ -1898,8 +1898,13 @@ sai de `average_buy_price × quantity` das posições convertidas.
 **Mudança de comportamento**: o P/L de quem tem ativo em outra moeda (ou base ≠ moeda do ativo) passa a incluir o
 câmbio desde a compra; o valor muda em relação ao que a tela mostrava.
 
-**Pendente**: orçamento por categoria (`limite_mensal` soma `despesa` de contas em moedas diferentes sem converter);
-transferência entre contas (não existe hoje); trocar a moeda de uma conta pela edição (hoje só na criação; pela
+**5ª entrega (Sessão 124) — orçamento por categoria na moeda base**: o `limite_mensal` é um número **na moeda base
+do Workspace** (sem migration; decisão do dono do projeto) e o gasto do mês (`spent_this_month`) converte cada
+despesa pela moeda da conta e a taxa da data dela (`FxHistory`). Despesa sem rota de câmbio fica fora do gasto e é
+contada em `spent_missing_fx`; a view traz `base_currency` e o diálogo de categorias avisa. Consequência aceita:
+trocar a base em Settings mantém o número do limite e muda o significado dele.
+
+**Pendente**: transferência entre contas (não existe hoje); trocar a moeda de uma conta pela edição (hoje só na criação; pela
 regra, só valeria para conta sem uso); separar "P/L por preço" de "P/L por câmbio"; formatadores locais de Ledger,
 Dividendos e impostos; benchmarks convertidos (hoje só escondidos fora do BRL); impostos ficam sempre em BRL (regra
 fiscal).
