@@ -9,6 +9,8 @@ export type BankAccountView = {
   currency: string;
   balance: number;
   balance_in_base: number | null;
+  // Fase 19 — com lançamento, dívida, empréstimo ou baixa a moeda não muda mais.
+  in_use: boolean;
 };
 
 export type GeneralTransactionCategory = {

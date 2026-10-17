@@ -2859,4 +2859,17 @@ Detalhe na Fase 19 do `PHASE.md`.
   nos três workflows, de primeira.
 - **Não verificado**: a tela a olho.
 - **Pendente**: trocar a moeda pela edição da conta; separar P/L por preço e por câmbio; formatadores de Ledger,
-  Dividendos e impostos; benchmarks convertidos.
+  Dividendos e impostos; benchmarks convertidos. *(A moeda pela edição foi feita na Sessão 126, abaixo.)*
+
+
+### 2026-10-17 — Sessão 126
+
+**Moeda pela edição da conta (Fase 19).** O dono do projeto pediu para ir direto ("manda bala"), então sem plan
+mode; a mudança é pequena. Detalhe na Fase 19 do `PHASE.md`.
+- **Feito**: `in_use` em `BankAccountView` (reaproveita `account_in_use`) e seletor de moeda na edição inline da
+  conta, trocado por texto quando a conta está em uso.
+- **Verificado**: `./dev.sh check` limpo; 1 teste de fluxo novo e 1 ajustado. CI: ver abaixo.
+- **Não verificado**: a tela a olho. Sem caso de E2E: as contas do spec já têm uso (a transferência), e criar uma só
+  para isso não valeu o custo.
+- **Pendente**: separar P/L por preço e por câmbio; formatadores de Ledger, Dividendos e impostos; benchmarks
+  convertidos.

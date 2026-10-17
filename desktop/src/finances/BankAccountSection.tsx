@@ -48,6 +48,7 @@ type UpdateBankAccountRequest = {
   bank_account_id: number;
   nome: string;
   titular: string;
+  currency: string;
 };
 
 function BankAccountSection({ workspaceId }: { workspaceId: number }) {
@@ -59,6 +60,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editNome, setEditNome] = useState("");
   const [editTitular, setEditTitular] = useState("");
+  const [editCurrency, setEditCurrency] = useState("BRL");
 
   const queryClient = useQueryClient();
   const baseCurrency = useBaseCurrency(workspaceId);
@@ -116,11 +118,17 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
     setEditingId(account.id);
     setEditNome(account.nome);
     setEditTitular(account.titular);
+    setEditCurrency(account.currency);
   }
 
   function handleSaveEdit() {
     if (editingId === null) return;
-    updateMutation.mutate({ bank_account_id: editingId, nome: editNome, titular: editTitular });
+    updateMutation.mutate({
+      bank_account_id: editingId,
+      nome: editNome,
+      titular: editTitular,
+      currency: editCurrency,
+    });
   }
 
   const accounts = accountsQuery.data ?? [];
@@ -184,7 +192,26 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
                             onChange={(e) => setEditTitular(e.currentTarget.value)}
                           />
                         </TableCell>
-                        <TableCell>{account.currency}</TableCell>
+                        <TableCell>
+                          {account.in_use ? (
+                            <span title="The currency can't change once the account has transactions, debts or loans.">
+                              {account.currency}
+                            </span>
+                          ) : (
+                            <Select value={editCurrency} onValueChange={setEditCurrency}>
+                              <SelectTrigger data-testid="account-edit-currency" className="w-24">
+                                <SelectValue>{editCurrency}</SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {CURRENCIES.map(([code, name]) => (
+                                  <SelectItem key={code} value={code}>
+                                    {code} — {name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </TableCell>
                         <TableCell>{account.balance.toFixed(2)}</TableCell>
                         <TableCell className="flex gap-2">
                           <Button size="sm" onClick={handleSaveEdit} disabled={updateMutation.isPending}>

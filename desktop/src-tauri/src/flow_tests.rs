@@ -1484,6 +1484,21 @@ async fn an_account_currency_only_changes_while_the_account_is_unused() {
     assert!(update_bank_account_in(&db, update("GBP")).await.is_err());
     // Repetir a mesma moeda não conta como troca.
     assert_eq!(update_bank_account_in(&db, update("EUR")).await.unwrap().currency, "EUR");
+
+    // A lista avisa a tela: a conta com lançamento está em uso.
+    let accounts = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    assert!(accounts[0].in_use);
+}
+
+#[tokio::test]
+async fn a_new_account_is_not_in_use_until_it_gets_a_transaction() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Abroad").await;
+    let account = bank_account(&db, ws.id, "Nubank").await;
+    assert!(!list_bank_accounts_view(&db, ws.id).await.unwrap()[0].in_use);
+
+    cash_in(&db, ws.id, account.id, 10.0, "2026-01-01").await;
+    assert!(list_bank_accounts_view(&db, ws.id).await.unwrap()[0].in_use);
 }
 
 #[tokio::test]

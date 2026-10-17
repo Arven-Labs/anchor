@@ -173,6 +173,8 @@ pub struct BankAccountView {
     pub balance: f64,
     /// Saldo na moeda base do workspace; `None` sem cotação do par.
     pub balance_in_base: Option<f64>,
+    /// Tem lançamento, dívida, empréstimo ou baixa: a moeda não pode mais mudar.
+    pub in_use: bool,
 }
 
 /// Saldo é sempre derivado, nunca gravado — soma de `receita` menos soma de
@@ -257,22 +259,22 @@ pub async fn list_bank_accounts_view(
     let currencies: HashSet<String> = accounts.iter().map(|a| a.currency.clone()).collect();
     let rates = rates_for(db, workspace_id, &currencies).await?;
 
-    Ok(accounts
-        .into_iter()
-        .map(|account| {
-            let balance = balances.get(&account.id).copied().unwrap_or(0.0);
-            BankAccountView {
-                balance_in_base: rates.convert(balance, &account.currency),
-                balance,
-                id: account.id,
-                workspace_id: account.workspace_id,
-                nome: account.nome,
-                titular: account.titular,
-                created_at: account.created_at,
-                currency: account.currency,
-            }
-        })
-        .collect())
+    let mut views = Vec::with_capacity(accounts.len());
+    for account in accounts {
+        let balance = balances.get(&account.id).copied().unwrap_or(0.0);
+        views.push(BankAccountView {
+            balance_in_base: rates.convert(balance, &account.currency),
+            in_use: account_in_use(db, account.id).await?,
+            balance,
+            id: account.id,
+            workspace_id: account.workspace_id,
+            nome: account.nome,
+            titular: account.titular,
+            created_at: account.created_at,
+            currency: account.currency,
+        });
+    }
+    Ok(views)
 }
 
 #[cfg(test)]

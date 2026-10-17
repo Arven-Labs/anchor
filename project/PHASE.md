@@ -1913,8 +1913,11 @@ efetiva é derivada. Apagar uma perna apaga a outra; apagar uma conta apaga as p
 oposta); a transferência não se edita (exclui e recria). Não entra em receita nem em gasto de categoria. Na lista as
 duas pernas viram uma linha "Transfer"; `TransferDialog` mostra a taxa ao vivo.
 
-**Pendente**: trocar a moeda de uma conta pela edição (hoje só na criação; pela
-regra, só valeria para conta sem uso); separar "P/L por preço" de "P/L por câmbio"; formatadores locais de Ledger,
+**Moeda pela edição da conta (Sessão 126)**: `BankAccountView.in_use` (lançamento, dívida, empréstimo ou baixa)
+avisa a tela; a edição inline ganhou o seletor de moeda, trocado por texto quando a conta está em uso (o backend
+já recusava a troca nesse caso, Sessão 122).
+
+**Pendente**: separar "P/L por preço" de "P/L por câmbio"; formatadores locais de Ledger,
 Dividendos e impostos; benchmarks convertidos (hoje só escondidos fora do BRL); impostos ficam sempre em BRL (regra
 fiscal).
 
