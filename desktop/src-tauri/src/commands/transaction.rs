@@ -316,6 +316,10 @@ pub struct PositionView {
     // Fase 19 — sem cotação do par pra moeda base: valores vêm `None` e a
     // posição fica fora dos totais.
     pub fx_missing: bool,
+    // Fase 19 — só com moeda do ativo ≠ base: quanto do `unrealized_pl` veio da
+    // variação do preço e quanto da variação do câmbio desde a compra.
+    pub unrealized_pl_price: Option<f64>,
+    pub unrealized_pl_fx: Option<f64>,
     pub quantity: f64,
     pub average_buy_price: Option<f64>,
     pub by_custodia: Vec<CustodiaBreakdown>,
@@ -495,6 +499,8 @@ pub async fn compute_positions(
             currency: asset.currency.clone(),
             native_currency: asset.currency.clone(),
             fx_missing: false,
+            unrealized_pl_price: None,
+            unrealized_pl_fx: None,
             quantity: net_qty,
             average_buy_price,
             by_custodia,

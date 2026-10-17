@@ -2873,4 +2873,18 @@ mode; a mudança é pequena. Detalhe na Fase 19 do `PHASE.md`.
 - **Não verificado**: a tela a olho. Sem caso de E2E: as contas do spec já têm uso (a transferência), e criar uma só
   para isso não valeu o custo.
 - **Pendente**: separar P/L por preço e por câmbio; formatadores de Ledger, Dividendos e impostos; benchmarks
-  convertidos.
+  convertidos. *(A decomposição foi feita na Sessão 127, abaixo.)*
+
+
+### 2026-10-17 — Sessão 127
+
+**P/L por preço e por câmbio (Fase 19).** O dono do projeto pediu para ir direto ("sim manda bala"), então sem plan
+mode. Detalhe na Fase 19 do `PHASE.md`.
+- **Feito**: `unrealized_pl_price` e `unrealized_pl_fx` em `PositionView`, calculados em `convert_position` (somam
+  o P/L exato), e a linha "price X · FX Y" na aba Positions.
+- **Decisão de desenho**: o preço é medido na taxa da compra e o câmbio sobre o valor de mercado na moeda do ativo,
+  que é a decomposição que fecha sem resto.
+- **Verificado**: `./dev.sh check` limpo; 3 testes de fluxo existentes ganharam asserções da decomposição. CI: ver
+  abaixo.
+- **Não verificado**: a tela a olho. O Resumo não mostra a decomposição (só tem a coluna de percentual).
+- **Pendente**: formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.

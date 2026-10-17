@@ -1024,11 +1024,16 @@ async fn unrealized_pl_includes_the_exchange_move_since_each_purchase() {
     assert!(close(aapl.market_value.unwrap(), 720.0));
     assert!(close(aapl.unrealized_pl.unwrap(), 220.0)); // em USD seria 20 × 6 = 120
     assert!(close(aapl.unrealized_pl_pct.unwrap(), 0.44)); // 220 ÷ 500
+    // Preço: (60 − 50) × 2 × 5 = 100; câmbio: 120 USD × (6 − 5) = 120; juntos, os 220.
+    assert!(close(aapl.unrealized_pl_price.unwrap(), 100.0));
+    assert!(close(aapl.unrealized_pl_fx.unwrap(), 120.0));
 
     // Na base USD só o preço andou.
     save_base_currency(&db, ws.id, "USD").await.unwrap();
     let (in_usd, _) = positions_in_base(&db, pf.id).await.unwrap();
     assert!(close(in_usd[0].unrealized_pl.unwrap(), 20.0));
+    // Na moeda do próprio ativo não há decomposição.
+    assert!(in_usd[0].unrealized_pl_price.is_none() && in_usd[0].unrealized_pl_fx.is_none());
 }
 
 async fn expense(
@@ -1261,6 +1266,10 @@ async fn a_brl_position_with_a_usd_base_uses_the_rate_of_the_purchase_date() {
     assert!(close(positions[0].average_buy_price.unwrap(), 10.0)); // R$ 50 ÷ 5
     assert!(close(positions[0].market_value.unwrap(), 100.0)); // R$ 600 ÷ 6
     assert!(close(positions[0].unrealized_pl.unwrap(), 0.0)); // a alta em reais foi só o câmbio
+    // Em USD o ativo subiu 20% (R$ 500 → R$ 600) e o real perdeu o mesmo tanto: os efeitos se anulam.
+    assert!(close(positions[0].unrealized_pl_price.unwrap() + positions[0].unrealized_pl_fx.unwrap(), 0.0));
+    assert!(positions[0].unrealized_pl_price.unwrap() > 0.0);
+    assert!(positions[0].unrealized_pl_fx.unwrap() < 0.0);
 }
 
 // Rentabilidade na moeda base. O TWR percorre os meses até hoje, então os

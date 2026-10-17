@@ -124,6 +124,8 @@ pub fn convert_position(
         return position;
     };
     position.currency = rates.base().to_string();
+    let native_average = position.average_buy_price;
+    let native_market_value = position.market_value;
     let average = average_cost_in_base.or(position.average_buy_price.map(|v| v * rate));
     if position.price_source == "avg_buy_price" {
         // Sem cotação, o "preço atual" é o próprio custo: vale o custo na base,
@@ -143,6 +145,26 @@ pub fn convert_position(
         }
         _ => (None, None),
     };
+    // P/L = (mercado − custo) na moeda do ativo × taxa da compra  [preço]
+    //     + mercado na moeda do ativo × (taxa de hoje − taxa da compra)  [câmbio]
+    // e as duas parcelas somam exatamente o `unrealized_pl` de cima. Só existe
+    // quando a moeda do ativo difere da base.
+    if native != rates.base() {
+        if let (Some(native_avg), Some(native_mv), Some(avg)) = (native_average, native_market_value, average) {
+            if native_avg > 0.0 {
+                let purchase_rate = avg / native_avg;
+                if position.price_source == "avg_buy_price" {
+                    // Sem cotação o valor é o próprio custo: nada de preço nem de câmbio.
+                    position.unrealized_pl_price = Some(0.0);
+                    position.unrealized_pl_fx = Some(0.0);
+                } else {
+                    position.unrealized_pl_price =
+                        Some((native_mv - native_avg * position.quantity) * purchase_rate);
+                    position.unrealized_pl_fx = Some(native_mv * (rate - purchase_rate));
+                }
+            }
+        }
+    }
     position
 }
 

@@ -1917,7 +1917,13 @@ duas pernas viram uma linha "Transfer"; `TransferDialog` mostra a taxa ao vivo.
 avisa a tela; a edição inline ganhou o seletor de moeda, trocado por texto quando a conta está em uso (o backend
 já recusava a troca nesse caso, Sessão 122).
 
-**Pendente**: separar "P/L por preço" de "P/L por câmbio"; formatadores locais de Ledger,
+**P/L por preço e por câmbio (Sessão 127)**: com a moeda do ativo ≠ base, `PositionView` traz
+`unrealized_pl_price = (mercado − custo na moeda do ativo) × taxa da compra` e `unrealized_pl_fx = mercado na moeda
+do ativo × (taxa de hoje − taxa da compra)`, que somam exatamente o `unrealized_pl`. Ativo sem cotação (valor =
+custo) dá zero nas duas. A aba Positions mostra "price X · FX Y" sob o P/L; o Resumo mostra só o percentual e não
+ganhou a decomposição.
+
+**Pendente**: formatadores locais de Ledger,
 Dividendos e impostos; benchmarks convertidos (hoje só escondidos fora do BRL); impostos ficam sempre em BRL (regra
 fiscal).
 

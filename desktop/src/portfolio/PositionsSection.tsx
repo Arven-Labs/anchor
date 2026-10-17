@@ -202,6 +202,15 @@ function PositionsSection({ portfolioId }: { portfolioId: number }) {
                               {position.unrealized_pl != null
                                 ? `${position.currency} ${position.unrealized_pl.toFixed(2)}`
                                 : "—"}
+                              {position.unrealized_pl_price != null && position.unrealized_pl_fx != null && (
+                                <span
+                                  className="block text-xs text-muted-foreground"
+                                  data-testid="pl-breakdown"
+                                >
+                                  price {position.unrealized_pl_price.toFixed(2)} · FX{" "}
+                                  {position.unrealized_pl_fx.toFixed(2)}
+                                </span>
+                              )}
                             </TableCell>
                             <TableCell className={plColorClass(position.unrealized_pl_pct)}>
                               {position.unrealized_pl_pct != null

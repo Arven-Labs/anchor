@@ -352,6 +352,10 @@ export type PositionView = {
   market_value: number | null;
   unrealized_pl: number | null;
   unrealized_pl_pct: number | null;
+  // Fase 19 — só quando a moeda do ativo difere da base: quanto do P/L veio do
+  // preço e quanto do câmbio desde a compra (somam `unrealized_pl`).
+  unrealized_pl_price: number | null;
+  unrealized_pl_fx: number | null;
   price_source: "market" | "manual_valuation" | "avg_buy_price" | "none";
 };
 
