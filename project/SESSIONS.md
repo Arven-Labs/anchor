@@ -2803,6 +2803,12 @@ moeda por conta (coluna `currency`) e listas de Finanças também convertidas. D
 - **Decisão de desenho**: dívida não ganhou coluna (herda da conta); empréstimo ganhou, porque pode existir sem
   conta; opções ficam em BRL fixo.
 - **Mudança de comportamento**: o patrimônio deixou de somar posição em USD crua.
+- **Verificado**: `./dev.sh check` limpo; 6 testes de fluxo novos; CI verde nos três workflows (Rust e Frontend
+  no push `1135ae9`, E2E no `182382d`).
+- **Erro meu**: o spec novo de E2E (`accounts.e2e.mjs`) quebrou no primeiro push (`1135ae9`) porque usei o `$$` do
+  wdio como lista, e ele não é iterável; `Array.from` resolveu. O código estava certo.
+- **Não verificado**: a tela a olho, `mark_tax_paid` com conta em outra moeda (sem teste: é comando Tauri com
+  `State`) e o diálogo de empréstimo sem conta com moeda escolhida.
 - **Processo**: rodei outro heredoc de Python vazio via Bash, sem efeito mas contra a regra de usar Edit/Write.
 - **Pendente**: orçamento por categoria; transferência entre contas; trocar a moeda pela edição da conta; custo na
   taxa da data no P/L das posições; formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.
