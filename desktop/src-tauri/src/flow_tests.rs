@@ -2271,6 +2271,7 @@ async fn a_workspace_file_loads_into_a_fresh_database_with_its_assets() {
 
     let destination = memory_db().await;
     workspace(&destination, "Family").await; // já existe um com esse nome
+    let before = crate::entity::workspace::Entity::find().all(&destination).await.unwrap().len();
     let summary = import_workspace(&destination, serde_json::from_str(&json).unwrap()).await.unwrap();
 
     assert_eq!(summary.workspace_name, "Family (imported)");
@@ -2278,6 +2279,7 @@ async fn a_workspace_file_loads_into_a_fresh_database_with_its_assets() {
         workspace_snapshot(&destination, summary.workspace_id as i32).await,
         workspace_snapshot(&source, original).await
     );
+    assert_eq!(crate::entity::workspace::Entity::find().all(&destination).await.unwrap().len(), before + 1);
     let tickers: std::collections::BTreeSet<String> = crate::entity::assets::Entity::find()
         .all(&destination)
         .await
@@ -2312,6 +2314,7 @@ async fn a_file_that_is_not_a_workspace_file_is_rejected() {
         r#"{"format":"outra-coisa","version":1,"exported_at":"","schema_version":"","workspace":{},"tables":{},"assets":[],"asset_tables":{}}"#,
     )
     .unwrap();
+    let before = crate::entity::workspace::Entity::find().all(&db).await.unwrap().len();
     assert!(import_workspace(&db, bogus).await.is_err());
-    assert!(crate::entity::workspace::Entity::find().all(&db).await.unwrap().is_empty());
+    assert_eq!(crate::entity::workspace::Entity::find().all(&db).await.unwrap().len(), before);
 }

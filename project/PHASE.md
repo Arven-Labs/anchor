@@ -3254,16 +3254,18 @@ eventos corporativos como novos tipos de lançamento; taxa entra no custo fiscal
 - `workspace_file.rs` (motor) e `commands/workspace_file.rs` (Tauri). O backup (`backup.rs`) segue como estava: banco
   inteiro, mesmos ids, restauração total, preso ao `schema_version`. O arquivo portátil é outra coisa: JSON
   `anchor-workspace` v1 de **um** Workspace.
-- **Exportar** segue as FKs a partir do Workspace (`PRAGMA foreign_key_list`, sem uma lista de joins escrita à mão): 20
-  tabelas (carteiras, custódias, lançamentos, opções, favoritos, watchlists, contas, lançamentos gerais, categorias,
-  empréstimos, dívidas, impostos pagos, layout da Home, moeda base…). Leva junto as linhas de `assets` que elas
-  referenciam e as `asset_valuations` desses ativos.
-- **Importar cria um Workspace novo** (nome com sufixo "(imported)" se colidir), numa transação: ordena as tabelas por FK,
-  renumera cada id, casa ativos por (ticker, classe) com os do destino (só cria os que faltam, e só copia valorações dos
-  criados) e reescreve `general_transactions.transfer_id` (a outra perna da transferência, único vínculo sem FK).
-  Insere só as colunas presentes nos dois lados, então um arquivo de uma versão anterior entra com os defaults.
-- Teste guarda-corpo: toda coluna `*_id` de tabela do Workspace precisa ter FK declarada ou constar em `UNDECLARED_REFS`;
-  uma migration futura que quebre isso falha no CI em vez de importar com referência errada em silêncio.
+- **Exportar** usa uma lista explícita `SPEC` de 20 tabelas (tabela, coluna que a prende ao dono, tabela dona), já em ordem
+  de inserção: carteiras, custódias, lançamentos, opções, favoritos, watchlists, contas, lançamentos gerais, categorias,
+  empréstimos, dívidas, impostos pagos, layout da Home, moeda base… Leva junto as linhas de `assets` que elas referenciam
+  e as `asset_valuations` desses ativos. A primeira versão seguia as FKs declaradas para achar o dono e perdia os
+  lançamentos (escolhia a FK de uma tabela vazia, a custódia); a lista explícita resolveu.
+- **Importar cria um Workspace novo** (nome com sufixo "(imported)" se colidir), numa transação: renumera cada id na ordem de
+  `SPEC`, casa ativos por (ticker, classe) com os do destino (só cria os que faltam, e só copia valorações dos criados) e
+  reescreve `general_transactions.transfer_id` (a outra perna da transferência). Insere só as colunas presentes nos dois
+  lados, então um arquivo de uma versão anterior entra com os defaults.
+- Testes guarda-corpo: toda coluna `*_id` de tabela do Workspace precisa ser FK declarada, âncora, `EXTRA_REFS` ou
+  `SELF_REFS` (o teste achou `general_transactions.category_id`, que não tem FK), e a ordem de `SPEC` precisa pôr os pais
+  antes dos filhos; uma migration futura que quebre isso falha no CI em vez de importar com referência errada em silêncio.
 - **Fora do v1**: anexos de tese e de ativo, notas por ticker, entradas de valuation, segredos do keyring.
 - UI: Settings → Backup ganhou o bloco "Workspace file" (exportar este Workspace / importar como novo).
 - Testes: cópia no mesmo banco igual ao original (posições, saldos, empréstimo, moeda base, transferência apontando pra
