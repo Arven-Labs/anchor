@@ -64,14 +64,15 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
       "sem configuração gravada, a moeda base deveria ser BRL",
     );
 
-    // Nenhum ativo em USD neste workspace, então a troca não consulta a rede.
-    await pickOption(byId("base-currency-select"), "USD — US Dollar");
+    // Nenhum ativo em ARS neste workspace, então a troca não consulta a rede. O ARS (e não
+    // o USD) porque a lista abre alinhada ao BRL e o item do topo fica cortado pela janela.
+    await pickOption(byId("base-currency-select"), "ARS — Argentine Peso");
     await waitForText(
       byId("base-currency-select"),
-      (text) => text.includes("USD"),
+      (text) => text.includes("ARS"),
       "o seletor deveria mostrar a moeda escolhida",
     );
-    await browser.waitUntil(() => sql("SELECT base_currency FROM workspace_settings") === "USD", {
+    await browser.waitUntil(() => sql("SELECT base_currency FROM workspace_settings") === "ARS", {
       timeout: 20_000,
       timeoutMsg: "a moeda base deveria ter sido gravada em workspace_settings",
     });
