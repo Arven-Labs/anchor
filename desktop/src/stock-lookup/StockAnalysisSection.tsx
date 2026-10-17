@@ -126,7 +126,9 @@ function StockAnalysisSection({
   const collectorMutation = useMutation<CollectorSummary, AppError, string>({
     mutationFn: (t) =>
       invoke<CollectorSummary>("run_stock_collector", { ticker: t, assetClass: null }),
-    onSuccess: () => {
+    // `onSettled`: o coletor grava a cotação antes dos fundamentos, que falham sem a chave
+    // da bolsai. Mesmo com erro há dado novo no banco, então a tela relê de qualquer jeito.
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["stock-lookup", ticker] });
       queryClient.invalidateQueries({ queryKey: ["stock-lookup-price-history", ticker] });
     },

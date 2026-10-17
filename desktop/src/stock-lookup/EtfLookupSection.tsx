@@ -53,7 +53,7 @@ function EtfLookupSection({ ticker }: { ticker: string }) {
   const collectorMutation = useMutation<CollectorSummary, AppError, string>({
     mutationFn: (t) =>
       invoke<CollectorSummary>("run_stock_collector", { ticker: t, assetClass: null }),
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["etf-lookup-quote", ticker] });
       queryClient.invalidateQueries({ queryKey: ["etf-lookup-technicals", ticker] });
       queryClient.invalidateQueries({ queryKey: ["etf-lookup-dividends", ticker] });

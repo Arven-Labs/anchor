@@ -54,7 +54,7 @@ function BdrLookupSection({ ticker }: { ticker: string }) {
   const collectorMutation = useMutation<CollectorSummary, AppError, string>({
     mutationFn: (t) =>
       invoke<CollectorSummary>("run_stock_collector", { ticker: t, assetClass: null }),
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["bdr-lookup-quote", ticker] });
       queryClient.invalidateQueries({ queryKey: ["bdr-lookup-technicals", ticker] });
       queryClient.invalidateQueries({ queryKey: ["bdr-lookup-dividends", ticker] });

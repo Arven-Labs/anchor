@@ -73,7 +73,7 @@ function ReitLookupSection({ ticker }: { ticker: string }) {
   const collectorMutation = useMutation<CollectorSummary, AppError, string>({
     mutationFn: (t) =>
       invoke<CollectorSummary>("run_stock_collector", { ticker: t, assetClass: "reit" }),
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["reit-lookup-quote", ticker] });
       queryClient.invalidateQueries({ queryKey: ["reit-lookup-technicals", ticker] });
       queryClient.invalidateQueries({ queryKey: ["reit-lookup-dividends", ticker] });

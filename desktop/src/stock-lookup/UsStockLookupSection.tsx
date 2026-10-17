@@ -95,7 +95,7 @@ function UsStockLookupSection({
         ticker: t,
         assetClass: "acao_internacional",
       }),
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["us-stock-lookup-quote", ticker] });
       queryClient.invalidateQueries({ queryKey: ["us-stock-lookup-technicals", ticker] });
       queryClient.invalidateQueries({ queryKey: ["us-stock-lookup-dividends", ticker] });
