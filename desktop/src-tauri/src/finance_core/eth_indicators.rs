@@ -173,6 +173,19 @@ pub fn active_addresses_trend_mom(active: Vec<f64>) -> Result<f64, AppError> {
     pct_change_back(active, "CoinMetrics active addresses")
 }
 
+/// Variação % do ETH guardado em exchanges (`SplyExNtv`) entre hoje e ~30 dias
+/// atrás: negativo = saída das exchanges (acumulação). O último ponto vem como
+/// dado provisório (`flash`) e pode ser revisado depois.
+pub fn exchange_supply_change_30d(exchange_supply: Vec<f64>) -> Result<f64, AppError> {
+    pct_change_back(exchange_supply, "CoinMetrics exchange supply")
+}
+
+/// Variação % do preço do ETH em BTC (`PriceBTC`) entre hoje e ~30 dias atrás:
+/// positivo = o ETH ganha do BTC.
+pub fn eth_btc_trend_30d(price_btc: Vec<f64>) -> Result<f64, AppError> {
+    pct_change_back(price_btc, "CoinMetrics ETH/BTC")
+}
+
 /// `Σ(entrada − saída) ÷ Σ(entrada + saída)` nos últimos 30 dias, em [−1, 1]:
 /// negativo = saída líquida (acumulação), positivo = entrada líquida (pressão
 /// vendedora). Uma razão suaviza o ruído dia a dia desses números "flash".
@@ -275,7 +288,15 @@ impl EthIndicatorProvider for CoinGeckoNvt {
 
 impl EthIndicatorProvider for CoinMetrics {
     fn supports(&self, code: &str) -> bool {
-        matches!(code, "mvrv-z-score" | "puell-multiple" | "exchange-netflow" | "active-addresses-trend")
+        matches!(
+            code,
+            "mvrv-z-score"
+                | "puell-multiple"
+                | "exchange-netflow"
+                | "active-addresses-trend"
+                | "exchange-supply-trend"
+                | "eth-btc-trend"
+        )
     }
     fn indicator<'a>(&'a self, code: &'a str) -> BoxFuture<'a, Result<f64, AppError>> {
         Box::pin(async move {
@@ -291,6 +312,14 @@ impl EthIndicatorProvider for CoinMetrics {
                 "active-addresses-trend" => {
                     let body = coinmetrics(&["AdrActCnt"], TREND_LOOKBACK_DAYS + 5).await?;
                     active_addresses_trend_mom(metric_column(&body, "AdrActCnt")?)
+                }
+                "exchange-supply-trend" => {
+                    let body = coinmetrics(&["SplyExNtv"], TREND_LOOKBACK_DAYS + 5).await?;
+                    exchange_supply_change_30d(metric_column(&body, "SplyExNtv")?)
+                }
+                "eth-btc-trend" => {
+                    let body = coinmetrics(&["PriceBTC"], TREND_LOOKBACK_DAYS + 5).await?;
+                    eth_btc_trend_30d(metric_column(&body, "PriceBTC")?)
                 }
                 _ => {
                     let body = coinmetrics(&["FlowInExUSD", "FlowOutExUSD"], NETFLOW_WINDOW_DAYS + 5).await?;
@@ -402,6 +431,24 @@ mod tests {
     }
 
     #[test]
+    fn exchange_supply_and_eth_btc_compare_with_thirty_positions_back() {
+        // 35 pontos: o de 30 atrás é o índice 4.
+        let mut supply = vec![100.0; 35];
+        supply[4] = 200.0;
+        assert!((exchange_supply_change_30d(supply).unwrap() - -50.0).abs() < 1e-12);
+
+        let mut ratio = vec![0.03; 35];
+        ratio[4] = 0.02;
+        assert!((eth_btc_trend_30d(ratio).unwrap() - 50.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn exchange_supply_and_eth_btc_need_thirty_one_points_and_a_nonzero_baseline() {
+        assert!(exchange_supply_change_30d(vec![1.0; 30]).is_err());
+        assert!(eth_btc_trend_30d(vec![0.0; 31]).is_err());
+    }
+
+    #[test]
     fn netflow_ratio_only_counts_the_last_thirty_days() {
         // 35 dias: os 5 primeiros (saída enorme) ficam fora da janela.
         let mut inflow = vec![0.0; 5];
@@ -428,6 +475,8 @@ mod tests {
             "puell-multiple",
             "exchange-netflow",
             "active-addresses-trend",
+            "exchange-supply-trend",
+            "eth-btc-trend",
         ];
         let providers = providers();
         for code in codes {
@@ -438,7 +487,7 @@ mod tests {
     // Ao vivo (rede): `cargo test --lib -- --ignored finance_core::eth_indicators`.
     #[tokio::test]
     #[ignore]
-    async fn live_all_eight_indicators() {
+    async fn live_all_ten_indicators() {
         for code in [
             "tvl-trend",
             "net-issuance",
@@ -448,6 +497,8 @@ mod tests {
             "puell-multiple",
             "exchange-netflow",
             "active-addresses-trend",
+            "exchange-supply-trend",
+            "eth-btc-trend",
         ] {
             let got = indicator(code).await.unwrap_or_else(|e| panic!("{code}: {e}"));
             println!("{code} = {} ({})", got.value, got.source);

@@ -62,7 +62,7 @@ pub fn classify(raw_value: f64, threshold: &Threshold) -> Result<Signal, AppErro
 // o histórico de migrations. Ao mudar um seed, mude os dois.
 // ---------------------------------------------------------------------------
 
-pub const DEFAULT_THRESHOLDS: [(&str, f64, f64); 15] = [
+pub const DEFAULT_THRESHOLDS: [(&str, f64, f64); 17] = [
     ("mvrv_z_score", 0.0, 7.0),
     ("puell_multiple", 0.5, 4.0),
     ("staking_yield", 2.0, 0.0),
@@ -78,6 +78,8 @@ pub const DEFAULT_THRESHOLDS: [(&str, f64, f64); 15] = [
     ("dvol", 55.0, 75.0),
     ("put_call_ratio", 0.7, 0.4),
     ("stablecoin_supply_change_30d", 2.0, 0.0),
+    ("exchange_supply_change_30d", -1.0, 1.5),
+    ("eth_btc_trend_30d", 3.0, -3.0),
 ];
 
 /// `(green, red)` de fábrica de um indicador.
@@ -145,6 +147,7 @@ impl IndicatorGroup {
                 "puell_multiple",
                 "active_addresses_trend",
                 "exchange_netflow",
+                "exchange_supply_change_30d",
             ],
             IndicatorGroup::Fundamentals => {
                 &["net_issuance", "fees_vs_emission", "staking_yield", "tvl_trend"]
@@ -156,7 +159,7 @@ impl IndicatorGroup {
                 "dvol",
                 "put_call_ratio",
             ],
-            IndicatorGroup::Liquidity => &["stablecoin_supply_change_30d"],
+            IndicatorGroup::Liquidity => &["stablecoin_supply_change_30d", "eth_btc_trend_30d"],
         }
     }
 }
@@ -278,20 +281,20 @@ mod tests {
     }
 
     #[test]
-    fn groups_cover_fifteen_distinct_indicators() {
+    fn groups_cover_seventeen_distinct_indicators() {
         let all: Vec<&str> =
             IndicatorGroup::ALL.iter().flat_map(|g| g.indicators().iter().copied()).collect();
-        assert_eq!(all.len(), 15);
+        assert_eq!(all.len(), 17);
         let mut unique = all.clone();
         unique.sort_unstable();
         unique.dedup();
-        assert_eq!(unique.len(), 15);
+        assert_eq!(unique.len(), 17);
     }
 
     #[test]
     fn empty_score_has_full_total_and_nothing_logged() {
         let score = compute_score(&[]);
-        assert_eq!((score.green, score.logged, score.total), (0, 0, 15));
+        assert_eq!((score.green, score.logged, score.total), (0, 0, 17));
         assert_eq!(score.verdict, ScoreVerdict::ReduceRisk);
         assert!(score.groups.iter().all(|g| g.indicators.iter().all(|i| i.reading.is_none())));
     }
@@ -305,13 +308,13 @@ mod tests {
             reading("long_short_ratio", "NEUTRAL"),
         ]);
         let on_chain = &score.groups[0];
-        assert_eq!((on_chain.green, on_chain.logged, on_chain.total), (1, 2, 5));
+        assert_eq!((on_chain.green, on_chain.logged, on_chain.total), (1, 2, 6));
         let fundamentals = &score.groups[1];
         assert_eq!((fundamentals.green, fundamentals.logged, fundamentals.total), (0, 0, 4));
         let derivatives = &score.groups[2];
         assert_eq!((derivatives.green, derivatives.logged, derivatives.total), (1, 2, 5));
         let liquidity = &score.groups[3];
-        assert_eq!((liquidity.green, liquidity.logged, liquidity.total), (0, 0, 1));
+        assert_eq!((liquidity.green, liquidity.logged, liquidity.total), (0, 0, 2));
         assert_eq!((score.green, score.logged), (2, 4));
     }
 

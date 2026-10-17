@@ -29,8 +29,8 @@ describe("Anchor — score cripto e editor de thresholds", () => {
     await byId("edit-thresholds").waitForDisplayed({ timeout: 30_000 });
     await waitForText(
       byId("crypto-score-header"),
-      (text) => text.includes("0/15 green") && text.includes("0 of 15 logged"),
-      "o score deveria começar zerado, com 15 indicadores",
+      (text) => text.includes("0/17 green") && text.includes("0 of 17 logged"),
+      "o score deveria começar zerado, com 17 indicadores",
     );
   });
 
@@ -46,7 +46,7 @@ describe("Anchor — score cripto e editor de thresholds", () => {
     );
     await waitForText(
       byId("crypto-score-header"),
-      (text) => text.includes("1 of 15 logged"),
+      (text) => text.includes("1 of 17 logged"),
       "a leitura deveria contar como registrada",
     );
   });

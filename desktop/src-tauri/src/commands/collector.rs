@@ -162,7 +162,7 @@ pub async fn run_stock_collector(
 
 // Fase 14.4 — trocou de `run_collector` (subprocess Python, `crypto`) pra
 // `finance_api::crypto::collect_eth_indicators` direto — os indicadores do
-// ciclo ETH, sempre `coin = "ETH"`. Desde a Fase 31 são 15 automáticos e uma
+// ciclo ETH, sempre `coin = "ETH"`. Desde a Fase 31 são 17 automáticos e uma
 // fonte fora do ar não derruba as outras: as falhas vão como linhas `ERROR`
 // no resumo.
 #[tauri::command]

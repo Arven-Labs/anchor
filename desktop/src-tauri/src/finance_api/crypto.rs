@@ -113,11 +113,12 @@ pub async fn collect_ticker(
 }
 
 // Os 4 primeiros são automatizados desde a Fase 1.6 do easybusiness (Sessão
-// 91 deste repo); os 4 últimos foram desbloqueados na Fase 1.12 dele
-// (CoinMetrics Community API, sem chave, achado ao vivo nesta sessão). Este
-// array só tem os que vêm do Lume; os coletados direto pelo Anchor estão em
-// `collect_eth_indicators`.
-const ETH_INDICATORS: [(&str, &str, &str); 8] = [
+// 91 deste repo); os 4 seguintes foram desbloqueados na Fase 1.12 dele
+// (CoinMetrics Community API, sem chave, achado ao vivo nesta sessão) e os 2
+// últimos entraram no lote 3 da Fase 31 (mesma fonte). Este array só tem os
+// que vêm de `finance_core::eth_indicators`; os coletados direto pelo Anchor
+// estão em `collect_eth_indicators`.
+const ETH_INDICATORS: [(&str, &str, &str); 10] = [
     // (nome interno / chave de indicator_thresholds, código na Finance API, source)
     ("tvl_trend", "tvl-trend", "defillama"),
     ("net_issuance", "net-issuance", "ultrasound.money"),
@@ -127,6 +128,8 @@ const ETH_INDICATORS: [(&str, &str, &str); 8] = [
     ("puell_multiple", "puell-multiple", "coinmetrics"),
     ("exchange_netflow", "exchange-netflow", "coinmetrics"),
     ("active_addresses_trend", "active-addresses-trend", "coinmetrics"),
+    ("exchange_supply_change_30d", "exchange-supply-trend", "coinmetrics"),
+    ("eth_btc_trend_30d", "eth-btc-trend", "coinmetrics"),
 ];
 
 async fn record_crypto_indicator(
@@ -181,7 +184,7 @@ pub struct EthCollection {
 pub async fn collect_eth_indicators(
     db: &DatabaseConnection,
 ) -> Result<EthCollection, AppError> {
-    let mut readings = Vec::with_capacity(ETH_INDICATORS.len() + 4);
+    let mut readings = Vec::with_capacity(ETH_INDICATORS.len() + 7);
     let mut errors = Vec::new();
 
     for (internal_name, api_code, source) in ETH_INDICATORS {
@@ -269,10 +272,10 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn live_collect_eth_indicators_writes_fifteen_readings() {
+    async fn live_collect_eth_indicators_writes_seventeen_readings() {
         let db = dev_db().await;
         let collection = collect_eth_indicators(&db).await.unwrap();
-        assert_eq!(collection.readings.len() + collection.errors.len(), 15);
+        assert_eq!(collection.readings.len() + collection.errors.len(), 17);
         for reading in &collection.readings {
             assert!(matches!(reading.signal.as_str(), "GREEN" | "NEUTRAL" | "RED"));
         }

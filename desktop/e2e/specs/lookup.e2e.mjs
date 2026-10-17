@@ -64,11 +64,11 @@ describe("Anchor — Research com dados de rede", function () {
   it("cripto (ETH) coleta a cotação pela CoinGecko e monta o score", async function () {
     await search("Crypto", "ETH");
     // O score só aparece com a cotação; "429" cobre o limite de chamadas da CoinGecko.
-    await expectQuoteScreen(this, "ETH", "of 15 logged");
+    await expectQuoteScreen(this, "ETH", "of 17 logged");
     await waitForText(
       byId("crypto-score-header"),
-      (text) => text.includes("of 15 logged"),
-      "o score cripto deveria montar com os 15 indicadores",
+      (text) => text.includes("of 17 logged"),
+      "o score cripto deveria montar com os 17 indicadores",
     );
     expect(Number(sql("SELECT count(*) FROM stock_quotes WHERE ticker = 'ETH'"))).toBeGreaterThan(0);
   });

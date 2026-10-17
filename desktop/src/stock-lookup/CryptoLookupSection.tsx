@@ -393,8 +393,8 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
               className="mb-1 text-sm font-semibold text-muted-foreground"
               data-testid="crypto-score-header"
             >
-              Cycle-top score ({score?.green ?? 0}/{score?.total ?? 15} green,{" "}
-              {score?.logged ?? 0} of {score?.total ?? 15} logged)
+              Cycle-top score ({score?.green ?? 0}/{score?.total ?? 17} green,{" "}
+              {score?.logged ?? 0} of {score?.total ?? 17} logged)
             </h3>
             {score && (
               <p className="mb-1 text-sm font-medium">{VERDICT_LABEL[score.verdict]}</p>
@@ -427,7 +427,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
                 >
                   {runCryptoCollectorMutation.isPending
                     ? "Running..."
-                    : "Run crypto collector (all 15 indicators)"}
+                    : "Run crypto collector (all 17 indicators)"}
                 </Button>
                 {collectorErrors.length > 0 && (
                   <p className="whitespace-pre-wrap text-red-600">
