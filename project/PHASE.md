@@ -1887,11 +1887,22 @@ empréstimo sem conta.
 
 **Mudança de comportamento**: o patrimônio deixou de somar posição em USD crua e passou a converter.
 
+**4ª entrega (Sessão 123) — custo na taxa da data de cada compra**: `positions_in_base` agora calcula o preço
+médio de compra na base convertendo cada compra pela taxa da própria data (`average_cost_in_base`, com
+`FxHistory`); preço e valor de mercado seguem na taxa mais recente, e o P/L é refeito entre os dois, então inclui
+a variação cambial. Sem cotação, o "preço atual" já era o próprio custo e continua valendo o custo na base (o
+câmbio não vira lucro de ativo sem preço). Compra sem rota na data cai para a taxa mais recente. Os proventos dos
+últimos 12 meses (`sum_in_base`) também usam a taxa da data do pagamento. Resumo e Home não mudaram: o custo total
+sai de `average_buy_price × quantity` das posições convertidas.
+
+**Mudança de comportamento**: o P/L de quem tem ativo em outra moeda (ou base ≠ moeda do ativo) passa a incluir o
+câmbio desde a compra; o valor muda em relação ao que a tela mostrava.
+
 **Pendente**: orçamento por categoria (`limite_mensal` soma `despesa` de contas em moedas diferentes sem converter);
 transferência entre contas (não existe hoje); trocar a moeda de uma conta pela edição (hoje só na criação; pela
-regra, só valeria para conta sem uso); custo convertido na data de cada fluxo no P/L das posições (hoje usa a taxa
-mais recente, então o P/L inclui variação cambial do custo); formatadores locais de Ledger, Dividendos e impostos;
-benchmarks convertidos (hoje só escondidos fora do BRL); impostos ficam sempre em BRL (regra fiscal).
+regra, só valeria para conta sem uso); separar "P/L por preço" de "P/L por câmbio"; formatadores locais de Ledger,
+Dividendos e impostos; benchmarks convertidos (hoje só escondidos fora do BRL); impostos ficam sempre em BRL (regra
+fiscal).
 
 
 ### Fase 20 — Remover a IA do Anchor (Warden vira a única interface de IA; decisão registrada na Sessão 100, **executada na Sessão 101**)

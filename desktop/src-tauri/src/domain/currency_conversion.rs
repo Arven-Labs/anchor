@@ -103,6 +103,27 @@ impl FxHistory {
     }
 }
 
+/// Preço médio de compra na moeda base, com cada compra convertida pela taxa da
+/// própria data: Σ(valor × taxa) ÷ Σ quantidade. `lots` são `(data, valor, qtd)`.
+/// `None` se não há quantidade ou se alguma data não tem rota; quem chama cai
+/// então pra taxa mais recente.
+pub fn average_cost_in_base(
+    lots: &[(NaiveDate, f64, f64)],
+    native: &str,
+    history: &FxHistory,
+    base: &str,
+) -> Option<f64> {
+    let quantity: f64 = lots.iter().map(|(_, _, qty)| qty).sum();
+    if quantity <= 0.0 {
+        return None;
+    }
+    let mut cost = 0.0;
+    for (date, value, _) in lots {
+        cost += value * history.rate_on(native, base, *date)?;
+    }
+    Some(cost / quantity)
+}
+
 // Preço da data mais próxima de `date` numa série ordenada (empate: a anterior).
 fn nearest(series: &[(NaiveDate, f64)], date: NaiveDate) -> Option<f64> {
     let after = series.partition_point(|(d, _)| *d < date);
@@ -150,6 +171,27 @@ mod tests {
         ]);
         assert!((h.rate_on("BRL", "USD", d(2026, 1, 1)).unwrap() - 0.2).abs() < 1e-9);
         assert!((h.rate_on("EUR", "BRL", d(2026, 1, 1)).unwrap() - 5.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn average_cost_converts_each_purchase_at_its_own_rate() {
+        let h = history(&[("USDBRL", &[(d(2026, 1, 1), 5.0), (d(2026, 6, 1), 6.0)])]);
+        // 2 un por US$ 100 a 5,0 e 2 un por US$ 120 a 6,0: (500 + 720) ÷ 4.
+        let lots = [(d(2026, 1, 1), 100.0, 2.0), (d(2026, 6, 1), 120.0, 2.0)];
+        assert!((average_cost_in_base(&lots, "USD", &h, "BRL").unwrap() - 305.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn average_cost_in_the_same_currency_needs_no_history() {
+        let lots = [(d(2026, 1, 1), 100.0, 4.0)];
+        assert_eq!(average_cost_in_base(&lots, "BRL", &history(&[]), "BRL"), Some(25.0));
+    }
+
+    #[test]
+    fn average_cost_is_none_without_a_route_or_without_quantity() {
+        let lots = [(d(2026, 1, 1), 100.0, 2.0)];
+        assert_eq!(average_cost_in_base(&lots, "USD", &history(&[]), "BRL"), None);
+        assert_eq!(average_cost_in_base(&[], "BRL", &history(&[]), "BRL"), None);
     }
 
     #[test]

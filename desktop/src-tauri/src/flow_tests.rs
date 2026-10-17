@@ -945,6 +945,8 @@ async fn usd_position_is_converted_to_the_brl_base() {
     assert!(!aapl.fx_missing);
     assert!(close(aapl.market_value.unwrap(), 500.0)); // 100 USD × 5
     assert!(close(aapl.average_buy_price.unwrap(), 250.0)); // 50 USD × 5
+    // Sem cotação o preço atual é o custo: o câmbio não vira lucro.
+    assert!(close(aapl.unrealized_pl.unwrap(), 0.0));
     let petr = positions.iter().find(|p| p.ticker == "PETR4").unwrap();
     assert!(close(petr.market_value.unwrap(), 500.0)); // BRL fica como está
 }
@@ -992,9 +994,56 @@ async fn dividends_are_summed_in_the_base_currency() {
     let b = trade(&db, pf.id, usd.id, "provento", 1.0, 4.0, "2026-05-01").await;
     let c = trade(&db, pf.id, eur.id, "provento", 1.0, 99.0, "2026-05-01").await;
     seed_fx_rate(&db, "USDBRL", 5.0).await;
+    seed_price(&db, "USDBRL", "2026-05-01", 4.0).await;
 
-    // 10 BRL + 4 USD × 5; o EUR sem cotação fica de fora da soma.
-    assert!(close(sum_in_base(&db, &[a, b, c], "BRL").await.unwrap(), 30.0));
+    // 10 BRL + 4 USD × 4 (a taxa do dia do provento, não a de hoje); o EUR sem
+    // cotação fica de fora da soma.
+    assert!(close(sum_in_base(&db, &[a, b, c], "BRL").await.unwrap(), 26.0));
+}
+
+#[tokio::test]
+async fn unrealized_pl_includes_the_exchange_move_since_each_purchase() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Base").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let usd = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    // Comprou 2 por US$ 100 com o dólar a 5; hoje a ação vale US$ 60 e o dólar está a 6.
+    trade(&db, pf.id, usd.id, "compra", 2.0, 100.0, "2026-01-10").await;
+    seed_price(&db, "USDBRL", "2026-01-10", 5.0).await;
+    seed_fx_rate(&db, "USDBRL", 6.0).await;
+    seed_price(&db, "AAPL", "2026-10-16", 60.0).await;
+
+    let (positions, _) = positions_in_base(&db, pf.id).await.unwrap();
+    let aapl = &positions[0];
+    assert!(close(aapl.average_buy_price.unwrap(), 250.0)); // 50 USD × 5 (não × 6)
+    assert!(close(aapl.current_price.unwrap(), 360.0)); // 60 USD × 6
+    assert!(close(aapl.market_value.unwrap(), 720.0));
+    assert!(close(aapl.unrealized_pl.unwrap(), 220.0)); // em USD seria 20 × 6 = 120
+    assert!(close(aapl.unrealized_pl_pct.unwrap(), 0.44)); // 220 ÷ 500
+
+    // Na base USD só o preço andou.
+    save_base_currency(&db, ws.id, "USD").await.unwrap();
+    let (in_usd, _) = positions_in_base(&db, pf.id).await.unwrap();
+    assert!(close(in_usd[0].unrealized_pl.unwrap(), 20.0));
+}
+
+#[tokio::test]
+async fn a_brl_position_with_a_usd_base_uses_the_rate_of_the_purchase_date() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Base").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    // Comprou 10 por R$ 500 com o dólar a 5 (US$ 100); hoje vale R$ 600 com o dólar a 6 (US$ 100).
+    trade(&db, pf.id, petr.id, "compra", 10.0, 500.0, "2026-01-10").await;
+    seed_price(&db, "USDBRL", "2026-01-10", 5.0).await;
+    seed_fx_rate(&db, "USDBRL", 6.0).await;
+    seed_price(&db, "PETR4", "2026-10-16", 60.0).await;
+    save_base_currency(&db, ws.id, "USD").await.unwrap();
+
+    let (positions, _) = positions_in_base(&db, pf.id).await.unwrap();
+    assert!(close(positions[0].average_buy_price.unwrap(), 10.0)); // R$ 50 ÷ 5
+    assert!(close(positions[0].market_value.unwrap(), 100.0)); // R$ 600 ÷ 6
+    assert!(close(positions[0].unrealized_pl.unwrap(), 0.0)); // a alta em reais foi só o câmbio
 }
 
 // Rentabilidade na moeda base. O TWR percorre os meses até hoje, então os

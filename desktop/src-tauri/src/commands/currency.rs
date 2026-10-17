@@ -10,13 +10,14 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, Qu
 use serde::Serialize;
 
 use crate::commands::transaction::{compute_positions, PositionView};
-use crate::domain::currency_conversion::{FxHistory, FxRates};
+use crate::domain::currency_conversion::{average_cost_in_base, FxHistory, FxRates};
 use crate::entity::{assets, portfolio, stock_price_history, transactions, workspace_settings};
 use crate::error::AppError;
 use crate::finance_api;
 use crate::finance_core::fx::CURRENCIES;
 
 pub const DEFAULT_BASE_CURRENCY: &str = "BRL";
+const BUY: &str = "compra";
 const PIVOT: &str = "USD";
 
 pub async fn base_currency(db: &DatabaseConnection, workspace_id: i32) -> Result<String, AppError> {
@@ -101,23 +102,47 @@ pub async fn load_fx_history(
     Ok(FxHistory::new(pairs))
 }
 
-/// Posição na moeda base. Sem taxa: valores zerados em `None`, moeda nativa
-/// preservada e `fx_missing` ligado, pra UI avisar e os totais pularem.
-pub fn convert_position(mut position: PositionView, rates: &FxRates) -> PositionView {
+/// Posição na moeda base. Preço e valor de mercado entram pela taxa mais
+/// recente; o custo, pela média das compras já convertidas na taxa de cada data
+/// (`average_cost_in_base`, ou a taxa mais recente se o histórico não cobre), e
+/// o P/L é refeito entre os dois — inclui a variação cambial. Sem taxa: valores
+/// em `None`, moeda nativa preservada e `fx_missing` ligado, pra UI avisar e os
+/// totais pularem.
+pub fn convert_position(
+    mut position: PositionView,
+    rates: &FxRates,
+    average_cost_in_base: Option<f64>,
+) -> PositionView {
     let native = position.native_currency.clone();
     let Some(rate) = rates.rate(&native) else {
         position.fx_missing = true;
         position.current_price = None;
         position.market_value = None;
         position.unrealized_pl = None;
+        position.unrealized_pl_pct = None;
         position.average_buy_price = None;
         return position;
     };
     position.currency = rates.base().to_string();
-    position.current_price = position.current_price.map(|v| v * rate);
-    position.market_value = position.market_value.map(|v| v * rate);
-    position.unrealized_pl = position.unrealized_pl.map(|v| v * rate);
-    position.average_buy_price = position.average_buy_price.map(|v| v * rate);
+    let average = average_cost_in_base.or(position.average_buy_price.map(|v| v * rate));
+    if position.price_source == "avg_buy_price" {
+        // Sem cotação, o "preço atual" é o próprio custo: vale o custo na base,
+        // senão o câmbio apareceria como lucro de um ativo que ninguém precificou.
+        position.current_price = average;
+        position.market_value = average.map(|avg| avg * position.quantity);
+    } else {
+        position.current_price = position.current_price.map(|v| v * rate);
+        position.market_value = position.market_value.map(|v| v * rate);
+    }
+    position.average_buy_price = average;
+    let cost_basis = average.map(|avg| avg * position.quantity);
+    (position.unrealized_pl, position.unrealized_pl_pct) = match (position.market_value, cost_basis) {
+        (Some(market), Some(cost)) => {
+            let pl = market - cost;
+            (Some(pl), (cost != 0.0).then_some(pl / cost.abs()))
+        }
+        _ => (None, None),
+    };
     position
 }
 
@@ -131,12 +156,52 @@ pub async fn positions_in_base(
     let positions = compute_positions(db, portfolio_id).await?;
     let currencies: HashSet<String> = positions.iter().map(|p| p.native_currency.clone()).collect();
     let rates = load_rates(db, &base, &currencies).await?;
-    Ok((positions.into_iter().map(|p| convert_position(p, &rates)).collect(), base))
+
+    // Custo na taxa da data de cada compra; só vale a pena quando há posição em
+    // moeda diferente da base (com a mesma moeda a taxa é 1 em qualquer data).
+    let mut average_costs: HashMap<i32, f64> = HashMap::new();
+    if currencies.iter().any(|c| *c != base) {
+        let history = load_fx_history(db, &base, &currencies).await?;
+        let mut lots: HashMap<i32, Vec<(NaiveDate, f64, f64)>> = HashMap::new();
+        for tx in transactions::Entity::find()
+            .filter(transactions::Column::PortfolioId.eq(portfolio_id))
+            .filter(transactions::Column::TransactionType.eq(BUY))
+            .all(db)
+            .await?
+        {
+            let (Some(asset_id), Ok(date)) =
+                (tx.asset_id, NaiveDate::parse_from_str(&tx.transaction_date, "%Y-%m-%d"))
+            else {
+                continue;
+            };
+            lots.entry(asset_id).or_default().push((date, tx.total_value, tx.quantity.unwrap_or(0.0)));
+        }
+        for position in &positions {
+            if let Some(asset_lots) = lots.get(&position.asset_id) {
+                if let Some(avg) =
+                    average_cost_in_base(asset_lots, &position.native_currency, &history, &base)
+                {
+                    average_costs.insert(position.asset_id, avg);
+                }
+            }
+        }
+    }
+
+    Ok((
+        positions
+            .into_iter()
+            .map(|p| {
+                let avg = average_costs.get(&p.asset_id).copied();
+                convert_position(p, &rates, avg)
+            })
+            .collect(),
+        base,
+    ))
 }
 
 /// Soma lançamentos de caixa de ativo (proventos) na moeda base, pela moeda do
-/// ativo da transação. Lançamento sem ativo é tratado como BRL; sem taxa, fica
-/// de fora da soma.
+/// ativo da transação e pela taxa da data de cada um. Lançamento sem ativo é
+/// tratado como BRL; sem rota de câmbio, fica de fora da soma.
 pub async fn sum_in_base(
     db: &DatabaseConnection,
     txs: &[transactions::Model],
@@ -160,8 +225,14 @@ pub async fn sum_in_base(
             .unwrap_or_else(|| DEFAULT_BASE_CURRENCY.to_string())
     };
     let currencies: HashSet<String> = txs.iter().map(currency_for).collect();
-    let rates = load_rates(db, base, &currencies).await?;
-    Ok(txs.iter().filter_map(|t| rates.convert(t.total_value, &currency_for(t))).sum())
+    let history = load_fx_history(db, base, &currencies).await?;
+    Ok(txs
+        .iter()
+        .filter_map(|t| {
+            let date = NaiveDate::parse_from_str(&t.transaction_date, "%Y-%m-%d").ok()?;
+            history.rate_on(&currency_for(t), base, date).map(|rate| t.total_value * rate)
+        })
+        .sum())
 }
 
 #[derive(Serialize)]

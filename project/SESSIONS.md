@@ -2811,4 +2811,19 @@ moeda por conta (coluna `currency`) e listas de Finanças também convertidas. D
   `State`) e o diálogo de empréstimo sem conta com moeda escolhida.
 - **Processo**: rodei outro heredoc de Python vazio via Bash, sem efeito mas contra a regra de usar Edit/Write.
 - **Pendente**: orçamento por categoria; transferência entre contas; trocar a moeda pela edição da conta; custo na
-  taxa da data no P/L das posições; formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.
+  taxa da data no P/L das posições; formatadores de Ledger, Dividendos e impostos; benchmarks convertidos. *(O custo
+  na taxa da data foi feito na Sessão 123, abaixo.)*
+
+
+### 2026-10-17 — Sessão 123
+
+**Custo na taxa da data de cada compra (Fase 19, 4ª entrega).** Plan mode, sem perguntas (continuação direta).
+Detalhe na Fase 19 do `PHASE.md`.
+- **Feito**: `average_cost_in_base` (domínio), `positions_in_base` convertendo o custo por compra, P/L refeito em
+  `convert_position` (inclui o câmbio), proventos 12m na taxa da data do pagamento.
+- **Decisão de desenho**: posição sem cotação (preço = custo) vale o custo na base, para o câmbio não virar lucro.
+- **Mudança de comportamento**: o P/L de ativo em outra moeda passa a incluir o câmbio desde a compra.
+- **Verificado**: `./dev.sh check` limpo; 3 testes de domínio e 2 de fluxo novos, 2 de fluxo ajustados. CI: ver abaixo.
+- **Não verificado**: a tela a olho e o cálculo com cotações reais.
+- **Pendente**: orçamento por categoria; transferência entre contas; trocar a moeda pela edição da conta; separar
+  P/L por preço e por câmbio; formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.
