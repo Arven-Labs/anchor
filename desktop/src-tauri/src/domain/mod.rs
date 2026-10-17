@@ -11,6 +11,7 @@ pub mod liability;
 pub mod loan;
 pub mod net_worth;
 pub mod option_payoff;
+pub mod option_position;
 pub mod position_pricing;
 pub mod projected_ceiling;
 pub mod proventos;

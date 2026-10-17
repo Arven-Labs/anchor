@@ -28,6 +28,7 @@ pub use super::liability_installment::Entity as LiabilityInstallment;
 pub use super::loan::Entity as Loan;
 pub use super::loan_repayment::Entity as LoanRepayment;
 pub use super::macro_index_monthly::Entity as MacroIndexMonthly;
+pub use super::option_position::Entity as OptionPosition;
 pub use super::portfolio::Entity as Portfolio;
 pub use super::projected_ceiling_inputs::Entity as ProjectedCeilingInputs;
 pub use super::reit_fundamentals::Entity as ReitFundamentals;

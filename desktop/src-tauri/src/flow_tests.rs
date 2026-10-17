@@ -15,6 +15,12 @@ use crate::commands::loan::{
     UpdateLoanRequest,
 };
 use crate::commands::net_worth::compute_net_worth;
+use crate::commands::option_position::{
+    close_option_position_in, create_option_position_in, delete_option_position_in,
+    list_option_positions_view, option_marks_in, CloseOptionPositionRequest,
+    CreateOptionPositionRequest,
+};
+use crate::finance_core::b3_options::{LastTrade, OptionsMarket};
 use crate::commands::tax::{assess_workspace, simulate_tax_sale_in, SimulateTaxSaleRequest};
 use crate::domain::crypto_score::{
     default_thresholds, ScoreVerdict, BTC_DEFAULT_THRESHOLDS, ETH_DEFAULT_THRESHOLDS,
@@ -361,6 +367,160 @@ async fn btc_score_has_its_own_indicators_groups_and_thresholds() {
     assert_eq!(derivatives.indicators[0].reading.as_ref().unwrap().signal, "NEUTRAL");
 }
 
+// ---------------------------------------------------------------------------
+// Posições em opções (Fase 18)
+// ---------------------------------------------------------------------------
+
+fn option_request(
+    portfolio_id: i32,
+    series: &str,
+    side: &str,
+    quantity: f64,
+    premium: f64,
+) -> CreateOptionPositionRequest {
+    CreateOptionPositionRequest {
+        portfolio_id,
+        series_ticker: series.to_string(),
+        underlying_ticker: "petr4".to_string(),
+        option_type: "call".to_string(),
+        strike: 60.0,
+        expiration: "2099-12-20".to_string(),
+        side: side.to_string(),
+        quantity,
+        premium,
+        open_date: "2026-10-01".to_string(),
+        open_fee: None,
+        notes: None,
+    }
+}
+
+fn close_request(id: i32, kind: &str, price: Option<f64>, date: &str) -> CloseOptionPositionRequest {
+    CloseOptionPositionRequest {
+        id,
+        close_kind: kind.to_string(),
+        close_price: price,
+        close_date: date.to_string(),
+        close_fee: None,
+    }
+}
+
+#[tokio::test]
+async fn option_positions_open_close_and_report_the_realized_result() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Options WS").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+
+    // Lançada a 1,50 (100 opções) e comprada a 2,00 (100 opções).
+    let short = create_option_position_in(&db, option_request(pf.id, " petrk600 ", "short", 100.0, 1.5)).await.unwrap();
+    let long = create_option_position_in(&db, option_request(pf.id, "PETRW550", "long", 100.0, 2.0)).await.unwrap();
+    assert_eq!((short.series_ticker.as_str(), short.underlying_ticker.as_str()), ("PETRK600", "PETR4"));
+
+    let listed = list_option_positions_view(&db, pf.id).await.unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(listed.iter().all(|p| p.is_open && !p.is_expired && p.realized_pnl.is_none()));
+
+    // Lançada que vira pó: ganha o prêmio todo. Comprada vendida a 3,50: +150.
+    let expired = close_option_position_in(&db, close_request(short.id, "expired", Some(99.0), "2026-10-17")).await.unwrap();
+    assert_eq!(expired.close_price, Some(0.0)); // `expired` ignora o preço informado
+    close_option_position_in(&db, close_request(long.id, "closed", Some(3.5), "2026-10-17")).await.unwrap();
+
+    let listed = list_option_positions_view(&db, pf.id).await.unwrap();
+    assert!(listed.iter().all(|p| !p.is_open));
+    let pnl = |series: &str| listed.iter().find(|p| p.series_ticker == series).unwrap().realized_pnl.unwrap();
+    assert!(close(pnl("PETRK600"), 150.0));
+    assert!(close(pnl("PETRW550"), 150.0));
+
+    // Não fecha duas vezes.
+    assert!(close_option_position_in(&db, close_request(long.id, "closed", Some(1.0), "2026-10-18")).await.is_err());
+}
+
+#[tokio::test]
+async fn option_position_validation_and_isolation_between_portfolios() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Options WS").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let other = portfolio(&db, ws.id, "Other").await;
+
+    let bad = |tweak: fn(&mut CreateOptionPositionRequest)| {
+        let mut request = option_request(pf.id, "PETRK600", "long", 100.0, 1.0);
+        tweak(&mut request);
+        request
+    };
+    assert!(create_option_position_in(&db, bad(|r| r.series_ticker = "  ".to_string())).await.is_err());
+    assert!(create_option_position_in(&db, bad(|r| r.option_type = "swap".to_string())).await.is_err());
+    assert!(create_option_position_in(&db, bad(|r| r.side = "both".to_string())).await.is_err());
+    assert!(create_option_position_in(&db, bad(|r| r.strike = 0.0)).await.is_err());
+    assert!(create_option_position_in(&db, bad(|r| r.quantity = 0.0)).await.is_err());
+    assert!(create_option_position_in(&db, bad(|r| r.premium = -1.0)).await.is_err());
+    assert!(create_option_position_in(&db, bad(|r| r.open_fee = Some(-1.0))).await.is_err());
+    assert!(create_option_position_in(&db, bad(|r| r.expiration = "2026-09-01".to_string())).await.is_err()); // antes da abertura
+    assert!(create_option_position_in(&db, bad(|r| r.open_date = "not-a-date".to_string())).await.is_err());
+    assert!(create_option_position_in(&db, bad(|r| r.portfolio_id = 9_999)).await.is_err());
+
+    let created = create_option_position_in(&db, option_request(pf.id, "PETRK600", "long", 100.0, 1.0)).await.unwrap();
+    assert!(list_option_positions_view(&db, other.id).await.unwrap().is_empty());
+
+    // Encerramento inválido: sem preço (fora `expired`), data antes da abertura, tipo desconhecido.
+    assert!(close_option_position_in(&db, close_request(created.id, "closed", None, "2026-10-17")).await.is_err());
+    assert!(close_option_position_in(&db, close_request(created.id, "closed", Some(1.0), "2026-09-01")).await.is_err());
+    assert!(close_option_position_in(&db, close_request(created.id, "sold", Some(1.0), "2026-10-17")).await.is_err());
+    assert!(close_option_position_in(&db, close_request(9_999, "expired", None, "2026-10-17")).await.is_err());
+    // Nada disso mudou a posição.
+    assert!(list_option_positions_view(&db, pf.id).await.unwrap()[0].is_open);
+
+    delete_option_position_in(&db, created.id).await.unwrap();
+    assert!(delete_option_position_in(&db, created.id).await.is_err());
+}
+
+#[tokio::test]
+async fn an_open_position_past_its_expiry_is_flagged_and_marks_use_the_last_trade() {
+    use std::collections::HashMap;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Options WS").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+
+    let mut stale_request = option_request(pf.id, "PETRK500", "long", 100.0, 1.0);
+    stale_request.expiration = "2026-10-10".to_string();
+    create_option_position_in(&db, stale_request).await.unwrap();
+    create_option_position_in(&db, option_request(pf.id, "PETRK600", "short", 100.0, 1.5)).await.unwrap();
+    create_option_position_in(&db, option_request(pf.id, "PETRK700", "long", 100.0, 0.5)).await.unwrap();
+
+    let listed = list_option_positions_view(&db, pf.id).await.unwrap();
+    assert_eq!(listed.iter().filter(|p| p.is_expired).count(), 1);
+    assert!(listed.iter().find(|p| p.series_ticker == "PETRK500").unwrap().days_to_expiry < 0);
+
+    // Mercado de mentira: PETRK600 negociou a 2,00; PETRK700 nunca negociou.
+    let mut last_trades = HashMap::new();
+    last_trades.insert(
+        "PETRK600".to_string(),
+        LastTrade { trade_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 16).unwrap(), close_price: 2.0 },
+    );
+    let market = OptionsMarket { series: vec![], last_trades };
+    let marks = option_marks_in(&db, pf.id, &market).await.unwrap();
+    assert_eq!(marks.len(), 3);
+
+    let mark = |series: &str| marks.iter().find(|m| m.series_ticker == series).unwrap();
+    // Lançada a 1,50 e hoje a 2,00: perde 0,50 × 100.
+    assert!(close(mark("PETRK600").unrealized_pnl.unwrap(), -50.0));
+    assert_eq!(mark("PETRK600").last_trade_date.as_deref(), Some("2026-10-16"));
+    assert_eq!(mark("PETRK700").unrealized_pnl, None);
+    assert_eq!(mark("PETRK700").last_price, None);
+}
+
+#[tokio::test]
+async fn deleting_a_portfolio_deletes_its_option_positions() {
+    use crate::entity::portfolio as portfolio_entity;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Options WS").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    create_option_position_in(&db, option_request(pf.id, "PETRK600", "long", 100.0, 1.0)).await.unwrap();
+
+    portfolio_entity::Entity::delete_by_id(pf.id).exec(&db).await.unwrap();
+    assert!(list_option_positions_view(&db, pf.id).await.unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn recording_an_indicator_without_a_threshold_is_an_error() {
     let db = memory_db().await;
@@ -411,6 +571,7 @@ async fn backup_round_trips_the_real_schema_with_data_and_attachments() {
     .await
     .unwrap();
     record_crypto_indicator_in(&source, reading("funding_rate_7d", 7.5)).await.unwrap();
+    create_option_position_in(&source, option_request(pf.id, "PETRK600", "short", 100.0, 1.5)).await.unwrap();
 
     let source_dir = temp_dir("source");
     let source_provider = LocalFSProvider::new(source_dir.clone());
@@ -444,6 +605,9 @@ async fn backup_round_trips_the_real_schema_with_data_and_attachments() {
     assert!(!views[0].include_in_net_worth);
     let score = crypto_score_for(&target, "ETH".to_string()).await.unwrap();
     assert_eq!(score.logged, 1);
+    let positions = list_option_positions_view(&target, pf.id).await.unwrap();
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].series_ticker, "PETRK600");
     assert_eq!(target_provider.export_all().unwrap().len(), 1);
 
     let _ = std::fs::remove_dir_all(source_dir);

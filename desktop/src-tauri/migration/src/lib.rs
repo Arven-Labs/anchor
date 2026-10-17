@@ -68,6 +68,7 @@ mod m20261016_150000_create_selic_daily;
 mod m20261016_160000_drop_finance_api_settings;
 mod m20261017_100000_seed_crypto_exchange_supply_ethbtc_thresholds;
 mod m20261017_110000_add_coin_to_indicator_thresholds;
+mod m20261017_120000_create_option_positions;
 
 pub struct Migrator;
 
@@ -143,6 +144,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261016_160000_drop_finance_api_settings::Migration),
             Box::new(m20261017_100000_seed_crypto_exchange_supply_ethbtc_thresholds::Migration),
             Box::new(m20261017_110000_add_coin_to_indicator_thresholds::Migration),
+            Box::new(m20261017_120000_create_option_positions::Migration),
         ]
     }
 }

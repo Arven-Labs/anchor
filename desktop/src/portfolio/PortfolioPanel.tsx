@@ -12,6 +12,7 @@ import AssetSection from "./AssetSection";
 import TransactionSection from "./TransactionSection";
 import ProfitabilitySection from "./ProfitabilitySection";
 import TaxesSection from "./TaxesSection";
+import OptionPositionsSection from "./OptionPositionsSection";
 import WatchlistSection from "./WatchlistSection";
 import ThesisSection from "./ThesisSection";
 import Field from "../components/Field";
@@ -34,6 +35,7 @@ type PortfolioSection =
   | "transactions"
   | "profitability"
   | "taxes"
+  | "options"
   | "assets"
   | "custodias"
   | "watchlists"
@@ -47,6 +49,7 @@ const PORTFOLIO_SECTIONS: Record<PortfolioSection, string> = {
   transactions: "Transactions & Positions",
   profitability: "Profitability",
   taxes: "Taxes",
+  options: "Options",
   assets: "Assets",
   custodias: "Custodies",
   watchlists: "Watchlists",
@@ -237,6 +240,9 @@ function PortfolioPanel({ workspaceId }: { workspaceId: number }) {
           </TabsContent>
           <TabsContent value="taxes">
             <TaxesSection workspaceId={workspaceId} />
+          </TabsContent>
+          <TabsContent value="options">
+            <OptionPositionsSection portfolioId={selectedPortfolioId} />
           </TabsContent>
           <TabsContent value="assets">
             <AssetSection workspaceId={workspaceId} />
