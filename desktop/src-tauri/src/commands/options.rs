@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::domain::option_payoff::{self, Leg, StrategyAnalysis};
 use crate::error::AppError;
 use crate::finance_api::client::{self, OptionSeriesPoint};
 use crate::finance_core::b3_options::OptionStyle;
@@ -160,6 +161,20 @@ pub async fn get_option_greeks(request: OptionGreeksRequest) -> Result<OptionGre
         theta: greeks.theta,
         vega: greeks.vega,
     })
+}
+
+#[derive(Deserialize)]
+pub struct SimulateStrategyRequest {
+    /// Preço atual da ação: só ajusta a faixa do gráfico.
+    pub spot: Option<f64>,
+    pub legs: Vec<Leg>,
+}
+
+/// Resultado no vencimento de uma estratégia de até 8 pernas (opções e ação):
+/// curva, equilíbrios, ganho e perda máximos e prêmio líquido. Sem rede.
+#[tauri::command]
+pub async fn simulate_option_strategy(request: SimulateStrategyRequest) -> Result<StrategyAnalysis, AppError> {
+    option_payoff::analyze(&request.legs, request.spot)
 }
 
 #[cfg(test)]

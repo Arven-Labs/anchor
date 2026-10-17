@@ -59,6 +59,19 @@ describe("Anchor — Research com dados de rede", function () {
     const section = await textOf(byId("options-section"));
     expect(section).toContain("Load options");
     expect(section).not.toContain("Downloading");
+
+    // O simulador de estratégia funciona sem a cadeia: uma call comprada (strike 40,
+    // prêmio 2, 100 opções) perde no máximo o prêmio, R$ 200, e empata em 42.
+    await byId("add-leg").click();
+    await byId("leg-strike-0").setValue("40");
+    await byId("leg-price-0").setValue("2");
+    await byId("leg-qty-0").setValue("100");
+    await waitForText(
+      byId("strategy-result"),
+      (text) => text.includes("R$ 200.00") && text.includes("R$ 42.00") && text.includes("Unlimited"),
+      "o simulador deveria mostrar perda máxima de R$ 200, equilíbrio em R$ 42 e ganho ilimitado",
+    );
+    expect(await textOf(byId("strategy-result"))).toContain("200.00 debit");
   });
 
   it("ação dos EUA (AAPL) coleta a cotação em dólar", async function () {

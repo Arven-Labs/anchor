@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useQuery } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import { formatCurrency } from "./shared";
+import type { OptionChain, OptionLeg, StrikeRow } from "./optionTypes";
+import OptionStrategySimulator, { legFromSeries, type LegDraft } from "./OptionStrategySimulator";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -32,24 +34,6 @@ import {
 // série. Só leitura. A fonte só tem o último preço negociado (sem bid/ask nem
 // open interest) e a primeira carga do dia baixa ~80 MB da B3, por isso nada
 // carrega sozinho.
-
-type OptionLeg = {
-  series_ticker: string;
-  last_price: number | null;
-  last_trade_date: string | null;
-  american: boolean;
-};
-
-type StrikeRow = { strike: number; call: OptionLeg | null; put: OptionLeg | null };
-
-type Expiration = { expiration: string; days_to_expiry: number; rows: StrikeRow[] };
-
-type OptionChain = {
-  root: string;
-  stale: boolean;
-  fetched_at: string | null;
-  expirations: Expiration[];
-};
 
 type OptionGreeks = {
   series_ticker: string;
@@ -163,6 +147,9 @@ function OptionsSection({ ticker, price }: { ticker: string; price: number | nul
   const [expiration, setExpiration] = useState<string | null>(null);
   const [onlyTraded, setOnlyTraded] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
+  // As pernas do simulador moram aqui porque a cadeia também alimenta o simulador
+  // ("Add buy/sell leg" na série escolhida e os atalhos prontos).
+  const [legs, setLegs] = useState<LegDraft[]>([]);
 
   const chainQuery = useQuery<OptionChain, AppError>({
     queryKey: ["option-chain", ticker],
@@ -181,7 +168,21 @@ function OptionsSection({ ticker, price }: { ticker: string; price: number | nul
   );
   const atm = atmStrike(visibleRows, price);
 
+  // A série escolhida na tabela, com o tipo e o strike que o simulador precisa.
+  const selectedSeries = (() => {
+    for (const row of current?.rows ?? []) {
+      if (row.call?.series_ticker === selected) {
+        return { kind: "call" as const, strike: row.strike, lastPrice: row.call.last_price };
+      }
+      if (row.put?.series_ticker === selected) {
+        return { kind: "put" as const, strike: row.strike, lastPrice: row.put.last_price };
+      }
+    }
+    return null;
+  })();
+
   return (
+    <div className="flex flex-col gap-6">
     <Card data-testid="options-section">
       <CardHeader>
         <CardTitle>Options</CardTitle>
@@ -301,10 +302,48 @@ function OptionsSection({ ticker, price }: { ticker: string; price: number | nul
             )}
 
             {selected && <GreeksPanel seriesTicker={selected} underlying={ticker} />}
+
+            {selectedSeries && (
+              <div className="flex flex-wrap items-center gap-2">
+                {(["long", "short"] as const).map((side) => (
+                  <Button
+                    key={side}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid={`add-series-${side}`}
+                    onClick={() =>
+                      setLegs((current) => [
+                        ...current,
+                        legFromSeries(
+                          selectedSeries.kind,
+                          side,
+                          selectedSeries.strike,
+                          selectedSeries.lastPrice,
+                        ),
+                      ])
+                    }
+                  >
+                    {side === "long" ? "Add as buy leg" : "Add as sell leg"}
+                  </Button>
+                ))}
+                <span className="text-xs text-muted-foreground">
+                  to the strategy simulator below, at the last traded price
+                </span>
+              </div>
+            )}
           </>
         )}
       </CardContent>
     </Card>
+
+    <OptionStrategySimulator
+      spot={price}
+      rows={current?.rows ?? []}
+      legs={legs}
+      setLegs={setLegs}
+    />
+    </div>
   );
 }
 

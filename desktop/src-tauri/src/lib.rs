@@ -164,6 +164,7 @@ pub fn run() {
             commands::cvm_notice::list_cvm_dividend_notices,
             commands::options::list_option_chain,
             commands::options::get_option_greeks,
+            commands::options::simulate_option_strategy,
             commands::proventos::get_proventos_summary,
             commands::profitability::get_portfolio_profitability,
             commands::profitability::get_profitability_comparison,
