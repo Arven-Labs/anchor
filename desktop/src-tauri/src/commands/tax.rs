@@ -439,13 +439,19 @@ pub async fn mark_tax_paid(
     db: tauri::State<'_, DatabaseConnection>,
     request: MarkTaxPaidRequest,
 ) -> Result<tax_payments::Model, AppError> {
+    mark_tax_paid_in(db.inner(), request).await
+}
+
+pub async fn mark_tax_paid_in(
+    db: &DatabaseConnection,
+    request: MarkTaxPaidRequest,
+) -> Result<tax_payments::Model, AppError> {
     if request.amount <= 0.0 || !request.amount.is_finite() {
         return Err(AppError::InvalidInput("amount must be positive".to_string()));
     }
     parse_date(&request.paid_date)?;
     parse_date(&format!("{}-01", request.period))?;
 
-    let db = db.inner();
     let account = bank_account::Entity::find_by_id(request.bank_account_id)
         .one(db)
         .await?

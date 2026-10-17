@@ -2942,5 +2942,17 @@ mode. Detalhe na Fase 19 do `PHASE.md`.
 - **Feito**: `workspace_fx_pairs` extraído da ingestão, `stale_pairs`/`fx_staleness_in`/`get_fx_staleness`
   (limite de 5 dias) e `FxStalenessNotice` na Home, invalidado por "Update now" e pela troca de moeda base.
 - **Verificado**: `./dev.sh check` limpo; teste unitário de `stale_pairs` e teste de fluxo de `fx_staleness_in`.
-- **Não verificado**: a tela a olho; sem caso de E2E para o aviso.
+- **Não verificado**: a tela a olho; sem caso de E2E para o aviso. *(O E2E foi feito na Sessão 132.)*
 - **Pendente**: segunda fonte de ações (BYO-key); benchmarks convertidos (adiado).
+
+
+### 2026-10-18 — Sessão 132
+
+**Lacunas de teste da Fase 19 e 33.** O dono do projeto preferiu código a roteiro de verificação manual.
+- **Feito**: `mark_tax_paid` virou wrapper de `mark_tax_paid_in`, com teste de fluxo (conta USD recusada sem deixar
+  pagamento nem despesa; conta BRL cria os dois); `is_due_now` extraído do laço da ingestão e testado (sem rodadas,
+  antes e depois das 24 h); teste ao vivo `#[ignore]` do Frankfurter (USDBRL, cotação e 10 anos de histórico);
+  caso de E2E do aviso de câmbio velho em `accounts.e2e.mjs` (conta ARS, par nunca coletado).
+- **Verificado**: `./dev.sh check` limpo.
+- **Não verificado**: a tela a olho; o laço de 30 minutos em si (só a decisão que ele toma); o teste ao vivo do
+  Frankfurter não roda no CI (é `#[ignore]`).

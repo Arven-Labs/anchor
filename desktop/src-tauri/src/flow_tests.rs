@@ -1742,4 +1742,49 @@ async fn the_next_ingestion_waits_only_on_finished_runs() {
 
     let last = crate::ingestion::last_finished_at(&db).await.unwrap().unwrap();
     assert_eq!(last.to_rfc3339(), "2026-10-15T10:00:00+00:00");
+
+    // A conferência do laço: devida a partir de 24 h depois do fim da última rodada boa.
+    let at = |s: &str| chrono::DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&chrono::Utc);
+    assert!(!crate::ingestion::is_due_now(&db, at("2026-10-16T09:59:00+00:00")).await.unwrap());
+    assert!(crate::ingestion::is_due_now(&db, at("2026-10-16T10:00:00+00:00")).await.unwrap());
+}
+
+#[tokio::test]
+async fn a_database_without_runs_is_due_for_the_first_ingestion() {
+    let db = memory_db().await;
+    assert!(crate::ingestion::is_due_now(&db, chrono::Utc::now()).await.unwrap());
+}
+
+#[tokio::test]
+async fn the_tax_is_only_paid_from_a_brl_account() {
+    use crate::commands::tax::{mark_tax_paid_in, MarkTaxPaidRequest};
+    use crate::entity::{general_transaction, tax_payments};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Tax payment").await;
+    let usd = bank_account_in(&db, ws.id, "Dollar account", "USD").await;
+    let brl = bank_account(&db, ws.id, "Real account").await;
+    let request = |account_id: i32| MarkTaxPaidRequest {
+        workspace_id: ws.id,
+        period: "2026-09".to_string(),
+        amount: 150.0,
+        paid_date: "2026-10-10".to_string(),
+        bank_account_id: account_id,
+    };
+
+    let err = mark_tax_paid_in(&db, request(usd.id)).await.unwrap_err();
+    assert!(matches!(err, crate::error::AppError::InvalidInput(_)));
+    // A recusa não deixa pagamento nem despesa pela metade.
+    assert!(tax_payments::Entity::find().all(&db).await.unwrap().is_empty());
+    assert!(general_transaction::Entity::find().all(&db).await.unwrap().is_empty());
+
+    let payment = mark_tax_paid_in(&db, request(brl.id)).await.unwrap();
+    assert!(close(payment.amount, 150.0));
+    let expense = general_transaction::Entity::find_by_id(payment.general_transaction_id.unwrap())
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(expense.transaction_type, "despesa");
+    assert_eq!(expense.bank_account_id, brl.id);
 }

@@ -148,6 +148,11 @@ pub(crate) async fn last_finished_at(db: &DatabaseConnection) -> Result<Option<D
         .map(|at| at.with_timezone(&Utc)))
 }
 
+/// A decisão de cada conferência do laço: já é hora de uma nova rodada?
+pub(crate) async fn is_due_now(db: &DatabaseConnection, now: DateTime<Utc>) -> Result<bool, AppError> {
+    Ok(is_due(last_finished_at(db).await?, now))
+}
+
 /// Uma rodada completa. Falha de um item não interrompe as outras; `CollectorBusy`
 /// (coleta manual em andamento) volta sem gravar nada, pra quem chamou tentar depois.
 pub async fn run_ingestion(
@@ -214,7 +219,7 @@ pub fn spawn_daily_ingestion(handle: tauri::AppHandle, db: DatabaseConnection) {
     tauri::async_runtime::spawn(async move {
         let mut trigger = "startup";
         loop {
-            if matches!(last_finished_at(&db).await.map(|at| is_due(at, Utc::now())), Ok(true)) {
+            if matches!(is_due_now(&db, Utc::now()).await, Ok(true)) {
                 let lock = handle.state::<AtomicBool>();
                 // Ocupado (coleta manual) ou falha de rede: volta na próxima conferência.
                 let _ = run_ingestion(&db, lock.inner(), trigger).await;

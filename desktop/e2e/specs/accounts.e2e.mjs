@@ -67,4 +67,15 @@ describe("Anchor — moeda por conta, de ponta a ponta", () => {
     // Uma linha só, não duas pernas.
     expect((await elementsOf('[data-testid="transfer-row"]')).length).toBe(1);
   });
+
+  // Fase 33. A conta em ARS usa um par que nunca foi coletado (a ingestão fica
+  // desligada no E2E), então a Home avisa em vez de converter em silêncio.
+  it("a Home avisa que o câmbio de uma moeda em uso nunca foi coletado", async () => {
+    await byId("nav-home").click();
+    await waitForText(
+      byId("fx-staleness-notice"),
+      (text) => text.includes("ARS/BRL") && text.includes("never fetched"),
+      "a Home deveria avisar que o par ARS/BRL nunca foi coletado",
+    );
+  });
 });

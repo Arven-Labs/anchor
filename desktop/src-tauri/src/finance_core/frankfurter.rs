@@ -172,6 +172,20 @@ mod tests {
         assert!(matches!(parse_range("<html>", "BRL"), Err(AppError::ProviderUnavailable(_))));
     }
 
+    /// Rede real: `cargo test -- --ignored`. Confere que o formato de hoje da API ainda parseia.
+    #[tokio::test]
+    #[ignore]
+    async fn live_quote_and_history_for_usdbrl() {
+        let instrument = Instrument::global("USDBRL=X");
+        let quote = Frankfurter.quote(&instrument).await.unwrap();
+        assert!(quote.price > 0.0);
+        assert_eq!(quote.currency.as_deref(), Some("BRL"));
+
+        let history = Frankfurter.price_history(&instrument).await.unwrap();
+        assert!(history.len() > 1000, "10 anos de dias úteis, veio {}", history.len());
+        assert!(history.windows(2).all(|w| w[0].0 < w[1].0));
+    }
+
     #[tokio::test]
     async fn non_pair_instrument_is_no_data_without_network() {
         let err = Frankfurter.quote(&Instrument::global("PETR4")).await.unwrap_err();
