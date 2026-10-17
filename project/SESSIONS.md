@@ -2907,3 +2907,12 @@ mode. Detalhe na Fase 19 do `PHASE.md`.
   workflows, de primeira.
 - **Não verificado**: a tela a olho.
 - **Pendente**: benchmarks convertidos (hoje só escondidos fora do BRL).
+
+
+### 2026-10-17 — Sessão 129
+
+**E2E do câmbio pula em "No data found".** Pendência antiga, resolvida direto.
+- **Feito**: `expectQuoteScreen` em `lookup.e2e.mjs` ganhou a opção `skipOnNoData`, ligada só no caso do câmbio; os
+  demais tickers continuam falhando em "No data found".
+- **Não verificado**: só roda no CI (rede real do Yahoo).
+- **Pendente**: ingestão agendada e `DataProvider` com mais de uma fonte por categoria; benchmarks convertidos.
