@@ -2531,8 +2531,9 @@ gosto de fazer"), então virou E2E.
   define as classes de ativo da carteira, e isso vazaria para criação de ativo e posições); seguiu o
   padrão dos juros, com `view` própria e dois selects de moeda.
 - **Verificado (câmbio)**: `./dev.sh check` limpo, 6 testes unitários e `live_fx_pairs` contra o Yahoo
-  real (EUR/USD 1,1244, 2.603 pontos, cross GBP/JPY). **Não verificado**: o E2E novo (USD→BRL, primeiro
-  caso do `lookup.e2e.mjs`, porque o atalho só existe no estado vazio do Research) e o clique na tela.
+  real (EUR/USD 1,1244, 2.603 pontos, cross GBP/JPY). CI do push `0249fc2` verde nos três workflows; o
+  E2E novo (USD→BRL, primeiro caso do `lookup.e2e.mjs`, porque o atalho só existe no estado vazio do
+  Research) passou sem skip, 5 specs passando. **Não verificado**: só o clique manual na tela.
 - **Achado**: a lista de moedas que eu tinha de cabeça estava errada (incluía SEK, NOK, DKK, que não
   estão no catálogo); a certa veio do `currency_catalog.py` do Lume, lido antes de codar.
 - **Pendente**: decisão do dono sobre o repo do Lume; opções com gregas e avisos de dividendos da CVM

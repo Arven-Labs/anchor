@@ -2662,8 +2662,9 @@ Valem para qualquer reescrita ou nova fonte; vários já aparecem nos comentári
   da carteira), igual aos juros. O `PriceHistoryChart` ganhou `decimals` opcional porque 1,1244 não cabe
   em 0 casas.
 - Verificado: `./dev.sh check` limpo; 6 testes unitários passando; `live_fx_pairs` contra o Yahoo real
-  (EUR/USD 1,1244, 2.603 pontos de histórico, cross GBP/JPY ok). **Não verificado**: o E2E novo
-  (`lookup.e2e.mjs`, USD→BRL; roda no CI) e o clique na tela.
+  (EUR/USD 1,1244, 2.603 pontos de histórico, cross GBP/JPY ok). CI do push `0249fc2` verde (Frontend,
+  Rust e E2E); o caso novo do `lookup.e2e.mjs` (USD→BRL, rede real) passou sem skip. **Não verificado**:
+  só o clique manual na tela.
 - Diferenças em relação ao Lume: o TTL de 5 min/1 h não foi portado (como nos metais, a tela lê a
   última linha gravada e só coleta se não houver nenhuma; "Refresh data" força); a resposta não carrega
   `cached`/`stale`.
