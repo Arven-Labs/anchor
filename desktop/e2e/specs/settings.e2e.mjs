@@ -3,6 +3,7 @@ import {
   byId,
   clickCentered,
   enterWorkspace,
+  pickOption,
   seedLossScenario,
   simulateIvvbSale,
   sql,
@@ -64,8 +65,7 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
     );
 
     // Nenhum ativo em USD neste workspace, então a troca não consulta a rede.
-    await byId("base-currency-select").click();
-    await byId("base-currency-USD").click();
+    await pickOption(byId("base-currency-select"), "USD — US Dollar");
     await waitForText(
       byId("base-currency-select"),
       (text) => text.includes("USD"),
@@ -77,8 +77,7 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
     });
 
     // Volta para BRL para não afetar os casos seguintes.
-    await byId("base-currency-select").click();
-    await byId("base-currency-BRL").click();
+    await pickOption(byId("base-currency-select"), "BRL — Brazilian Real");
     await browser.waitUntil(() => sql("SELECT base_currency FROM workspace_settings") === "BRL", {
       timeout: 20_000,
       timeoutMsg: "a moeda base deveria ter voltado para BRL",
