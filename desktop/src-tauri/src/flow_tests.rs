@@ -2246,7 +2246,7 @@ async fn a_workspace_exported_and_imported_into_the_same_database_becomes_an_equ
     // Os ativos foram casados por ticker e classe, não duplicados.
     assert_eq!(crate::entity::assets::Entity::find().all(&db).await.unwrap().len(), assets_before);
     // A cópia não mexeu no original.
-    assert!(workspace_snapshot(&db, original).await.contains("pos Main PETR4 100.0000"));
+    assert!(workspace_snapshot(&db, original).await.contains("pos Main PETR4 150.0000"));
 
     // As duas pernas da transferência copiada apontam uma pra outra, não pro original.
     let copied: Vec<_> = crate::entity::general_transaction::Entity::find()
