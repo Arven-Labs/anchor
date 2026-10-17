@@ -94,6 +94,10 @@ describe("Anchor — Research com dados de rede", function () {
     expect(
       sql("SELECT series_ticker || ':' || side || ':' || premium || ':' || underlying_ticker FROM option_positions"),
     ).toBe("PETRK400:long:2.0:PETR4");
+
+    // O diálogo é modal: fecha, senão a busca global fica inerte para os casos seguintes.
+    await clickCentered(byId("save-close"));
+    await byId("save-strategy-dialog").waitForExist({ reverse: true, timeout: 10_000 });
   });
 
   it("ação dos EUA (AAPL) coleta a cotação em dólar", async function () {

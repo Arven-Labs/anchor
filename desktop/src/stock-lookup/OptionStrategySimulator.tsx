@@ -670,7 +670,12 @@ function SaveStrategyDialog({
               Saved {savedCount} position{savedCount === 1 ? "" : "s"}. They are in Portfolio →
               Options, where you can close them and track the result.
             </p>
-            <Button type="button" className="w-fit" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              className="w-fit"
+              data-testid="save-close"
+              onClick={() => onOpenChange(false)}
+            >
               Done
             </Button>
           </div>
