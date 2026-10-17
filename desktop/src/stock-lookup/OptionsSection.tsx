@@ -142,7 +142,15 @@ function GreeksPanel({ seriesTicker, underlying }: { seriesTicker: string; under
   );
 }
 
-function OptionsSection({ ticker, price }: { ticker: string; price: number | null }) {
+function OptionsSection({
+  ticker,
+  price,
+  workspaceId,
+}: {
+  ticker: string;
+  price: number | null;
+  workspaceId: number;
+}) {
   const [requested, setRequested] = useState(false);
   const [expiration, setExpiration] = useState<string | null>(null);
   const [onlyTraded, setOnlyTraded] = useState(true);
@@ -313,13 +321,15 @@ function OptionsSection({ ticker, price }: { ticker: string; price: number | nul
                     size="sm"
                     data-testid={`add-series-${side}`}
                     onClick={() =>
-                      setLegs((current) => [
-                        ...current,
+                      setLegs((existing) => [
+                        ...existing,
                         legFromSeries(
                           selectedSeries.kind,
                           side,
                           selectedSeries.strike,
                           selectedSeries.lastPrice,
+                          selected ?? "",
+                          current?.expiration ?? null,
                         ),
                       ])
                     }
@@ -340,6 +350,9 @@ function OptionsSection({ ticker, price }: { ticker: string; price: number | nul
     <OptionStrategySimulator
       spot={price}
       rows={current?.rows ?? []}
+      expiration={current?.expiration ?? null}
+      workspaceId={workspaceId}
+      underlying={ticker}
       legs={legs}
       setLegs={setLegs}
     />

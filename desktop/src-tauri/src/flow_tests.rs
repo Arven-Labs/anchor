@@ -16,10 +16,10 @@ use crate::commands::loan::{
 };
 use crate::commands::net_worth::compute_net_worth;
 use crate::commands::option_position::{
-    close_option_position_in, create_option_position_in, delete_option_position_in,
-    list_option_positions_view, option_marks_in, save_option_marks_in,
+    close_option_position_in, create_option_position_in, create_option_positions_in,
+    delete_option_position_in, list_option_positions_view, option_marks_in, save_option_marks_in,
     set_option_position_net_worth_in, CloseOptionPositionRequest, CreateOptionPositionRequest,
-    OptionMark, SetOptionNetWorthRequest,
+    CreateOptionPositionsRequest, OptionMark, SetOptionNetWorthRequest, StrategyLegRequest,
 };
 use crate::finance_core::b3_options::{LastTrade, OptionsMarket};
 use crate::commands::tax::{assess_workspace, simulate_tax_sale_in, SimulateTaxSaleRequest};
@@ -662,6 +662,97 @@ async fn an_open_but_expired_option_is_worth_nothing_in_net_worth() {
     let nw = compute_net_worth(&db, ws.id).await.unwrap();
     assert!(close(nw.total_options_value, 0.0));
     assert_eq!(nw.options_at_cost_count, 0);
+}
+
+fn strategy_leg(series: &str, option_type: &str, strike: f64, side: &str, premium: f64) -> StrategyLegRequest {
+    StrategyLegRequest {
+        series_ticker: series.to_string(),
+        option_type: option_type.to_string(),
+        strike,
+        expiration: "2099-12-20".to_string(),
+        side: side.to_string(),
+        quantity: 100.0,
+        premium,
+    }
+}
+
+fn strategy_request(portfolio_id: i32, legs: Vec<StrategyLegRequest>) -> CreateOptionPositionsRequest {
+    CreateOptionPositionsRequest {
+        portfolio_id,
+        underlying_ticker: " petr4 ".to_string(),
+        open_date: "2026-10-17".to_string(),
+        legs,
+    }
+}
+
+#[tokio::test]
+async fn a_strategy_is_saved_as_independent_positions_in_one_go() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Strategy WS").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+
+    // Trava de alta: compra a call 40 a R$ 3,00 e vende a call 45 a R$ 1,00.
+    let created = create_option_positions_in(
+        &db,
+        strategy_request(
+            pf.id,
+            vec![
+                strategy_leg("petrk400", "call", 40.0, "long", 3.0),
+                strategy_leg("PETRK450", "call", 45.0, "short", 1.0),
+            ],
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(created.len(), 2);
+
+    let listed = list_option_positions_view(&db, pf.id).await.unwrap();
+    assert_eq!(listed.len(), 2);
+    let long = listed.iter().find(|p| p.series_ticker == "PETRK400").unwrap();
+    let short = listed.iter().find(|p| p.series_ticker == "PETRK450").unwrap();
+    assert_eq!((long.side.as_str(), short.side.as_str()), ("long", "short"));
+    assert!(listed.iter().all(|p| p.underlying_ticker == "PETR4" && p.open_date == "2026-10-17" && p.is_open));
+    assert!(close(long.premium, 3.0) && close(short.premium, 1.0));
+}
+
+#[tokio::test]
+async fn a_strategy_with_an_invalid_leg_saves_nothing() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Strategy WS").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+
+    // A segunda perna tem strike 0: a primeira, válida, também não pode ficar.
+    let result = create_option_positions_in(
+        &db,
+        strategy_request(
+            pf.id,
+            vec![
+                strategy_leg("PETRK400", "call", 40.0, "long", 3.0),
+                strategy_leg("PETRK450", "call", 0.0, "short", 1.0),
+            ],
+        ),
+    )
+    .await;
+    assert!(result.is_err());
+    assert!(list_option_positions_view(&db, pf.id).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_strategy_needs_between_one_and_eight_legs_and_an_existing_portfolio() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Strategy WS").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+
+    assert!(create_option_positions_in(&db, strategy_request(pf.id, vec![])).await.is_err());
+    let nine: Vec<StrategyLegRequest> =
+        (0..9).map(|i| strategy_leg(&format!("PETRK{i}00"), "call", 40.0 + f64::from(i), "long", 1.0)).collect();
+    assert!(create_option_positions_in(&db, strategy_request(pf.id, nine)).await.is_err());
+    assert!(
+        create_option_positions_in(&db, strategy_request(9_999, vec![strategy_leg("PETRK400", "call", 40.0, "long", 1.0)]))
+            .await
+            .is_err()
+    );
+    assert!(list_option_positions_view(&db, pf.id).await.unwrap().is_empty());
 }
 
 #[tokio::test]

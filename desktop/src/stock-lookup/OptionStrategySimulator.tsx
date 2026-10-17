@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Area,
   CartesianGrid,
@@ -17,6 +17,9 @@ import type { AppError } from "../types";
 import { StatTile } from "./shared";
 import { formatCurrency } from "./shared";
 import type { StrikeRow } from "./optionTypes";
+import type { Portfolio } from "../portfolio/types";
+import Field from "../components/Field";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -74,6 +77,9 @@ export type LegDraft = {
   strike: string;
   price: string;
   quantity: string;
+  /** Série da B3 e vencimento, quando a perna veio da cadeia (pra salvar como posição). */
+  seriesTicker?: string;
+  expiration?: string;
 };
 
 type PayoffPoint = { price: number; pnl: number };
@@ -137,11 +143,19 @@ function optionLeg(
   kind: "call" | "put",
   side: LegSide,
   row: StrikeRow,
+  expiration: string | null,
 ): { draft: LegDraft; unpriced: boolean } {
   const series = kind === "call" ? row.call : row.put;
   const price = series?.last_price ?? null;
   return {
-    draft: newLeg({ kind, side, strike: row.strike.toFixed(2), price: priceText(price) }),
+    draft: newLeg({
+      kind,
+      side,
+      strike: row.strike.toFixed(2),
+      price: priceText(price),
+      seriesTicker: series?.series_ticker,
+      expiration: expiration ?? undefined,
+    }),
     unpriced: price == null,
   };
 }
@@ -151,7 +165,12 @@ function optionLeg(
  * preço atual da ação. Escolhe os strikes vizinhos ao preço; devolve `unpriced`
  * quando alguma perna não tem preço de negócio (o prêmio fica vazio).
  */
-export function buildPreset(key: PresetKey, spot: number | null, rows: StrikeRow[]): PresetResult {
+export function buildPreset(
+  key: PresetKey,
+  spot: number | null,
+  rows: StrikeRow[],
+  expiration: string | null,
+): PresetResult {
   if (spot == null) return { error: "The stock price is not available yet." };
   const withCall = rows.filter((r) => r.call);
   const withPut = rows.filter((r) => r.put);
@@ -168,39 +187,48 @@ export function buildPreset(key: PresetKey, spot: number | null, rows: StrikeRow
     case "covered_call": {
       const row = sorted(withCall).find((r) => r.strike >= spot);
       if (!row) return missing;
-      const short = optionLeg("call", "short", row);
+      const short = optionLeg("call", "short", row, expiration);
       return { legs: [stock(), short.draft], unpriced: short.unpriced };
     }
     case "protective_put": {
       const row = sorted(withPut).reverse().find((r) => r.strike <= spot);
       if (!row) return missing;
-      const long = optionLeg("put", "long", row);
+      const long = optionLeg("put", "long", row, expiration);
       return { legs: [stock(), long.draft], unpriced: long.unpriced };
     }
     case "bull_call_spread": {
       const atm = nearest(withCall);
       const upper = atm && sorted(withCall).find((r) => r.strike > atm.strike);
       if (!atm || !upper) return missing;
-      const [buy, sell] = [optionLeg("call", "long", atm), optionLeg("call", "short", upper)];
+      const [buy, sell] = [
+        optionLeg("call", "long", atm, expiration),
+        optionLeg("call", "short", upper, expiration),
+      ];
       return { legs: [buy.draft, sell.draft], unpriced: buy.unpriced || sell.unpriced };
     }
     case "bear_put_spread": {
       const atm = nearest(withPut);
       const lower = atm && sorted(withPut).reverse().find((r) => r.strike < atm.strike);
       if (!atm || !lower) return missing;
-      const [buy, sell] = [optionLeg("put", "long", atm), optionLeg("put", "short", lower)];
+      const [buy, sell] = [
+        optionLeg("put", "long", atm, expiration),
+        optionLeg("put", "short", lower, expiration),
+      ];
       return { legs: [buy.draft, sell.draft], unpriced: buy.unpriced || sell.unpriced };
     }
     case "long_straddle": {
       const row = nearest(rows.filter((r) => r.call && r.put));
       if (!row) return missing;
-      const [call, put] = [optionLeg("call", "long", row), optionLeg("put", "long", row)];
+      const [call, put] = [
+        optionLeg("call", "long", row, expiration),
+        optionLeg("put", "long", row, expiration),
+      ];
       return { legs: [call.draft, put.draft], unpriced: call.unpriced || put.unpriced };
     }
     case "cash_secured_put": {
       const row = sorted(withPut).reverse().find((r) => r.strike <= spot);
       if (!row) return missing;
-      const short = optionLeg("put", "short", row);
+      const short = optionLeg("put", "short", row, expiration);
       return { legs: [short.draft], unpriced: short.unpriced };
     }
   }
@@ -212,8 +240,17 @@ export function legFromSeries(
   side: LegSide,
   strike: number,
   lastPrice: number | null,
+  seriesTicker: string,
+  expiration: string | null,
 ): LegDraft {
-  return newLeg({ kind, side, strike: strike.toFixed(2), price: priceText(lastPrice) });
+  return newLeg({
+    kind,
+    side,
+    strike: strike.toFixed(2),
+    price: priceText(lastPrice),
+    seriesTicker,
+    expiration: expiration ?? undefined,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -503,9 +540,243 @@ function useDebounced<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
+// ---------------------------------------------------------------------------
+// Salvar a estratégia como posições (Sessão 119)
+// ---------------------------------------------------------------------------
+
+const DEFAULT_DAYS_TO_EXPIRY = 30;
+
+function dateIso(offsetDays = 0): string {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Uma perna de opção no diálogo: série e vencimento editáveis, o resto vem do simulador. */
+type SaveRow = {
+  legId: number;
+  label: string;
+  strike: number;
+  kind: "call" | "put";
+  side: LegSide;
+  series: string;
+  expiration: string;
+  premium: string;
+  quantity: string;
+};
+
+function saveRowsFrom(legs: LegDraft[], defaultExpiration: string | null): SaveRow[] {
+  return legs.flatMap((leg) => {
+    if (leg.kind === "stock") return [];
+    return [
+      {
+        legId: leg.id,
+        label: `${SIDE_LABEL[leg.side]} ${KIND_LABEL[leg.kind].toLowerCase()}, strike ${Number(leg.strike).toFixed(2)}`,
+        strike: Number(leg.strike),
+        kind: leg.kind,
+        side: leg.side,
+        series: leg.seriesTicker ?? "",
+        expiration: leg.expiration ?? defaultExpiration ?? dateIso(DEFAULT_DAYS_TO_EXPIRY),
+        premium: leg.price,
+        quantity: leg.quantity,
+      },
+    ];
+  });
+}
+
+function SaveStrategyDialog({
+  open,
+  onOpenChange,
+  workspaceId,
+  underlying,
+  legs,
+  defaultExpiration,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  workspaceId: number;
+  underlying: string;
+  legs: LegDraft[];
+  defaultExpiration: string | null;
+}) {
+  const queryClient = useQueryClient();
+  const [rows, setRows] = useState<SaveRow[]>([]);
+  const [portfolioId, setPortfolioId] = useState("");
+  const [savedCount, setSavedCount] = useState<number | null>(null);
+
+  const portfoliosQuery = useQuery<Portfolio[], AppError>({
+    queryKey: ["portfolios", workspaceId],
+    queryFn: () => invoke("list_portfolios", { workspaceId }),
+    enabled: open,
+  });
+  const portfolios = portfoliosQuery.data ?? [];
+
+  // Cada abertura parte das pernas atuais do simulador.
+  useEffect(() => {
+    if (open) {
+      setRows(saveRowsFrom(legs, defaultExpiration));
+      setSavedCount(null);
+    }
+    // As pernas só são lidas ao abrir; editar o simulador com o diálogo aberto não o reescreve.
+  }, [open]);
+
+  // Uma carteira só: já vem escolhida.
+  useEffect(() => {
+    if (portfolioId === "" && portfolios.length === 1) setPortfolioId(String(portfolios[0].id));
+  }, [portfolios, portfolioId]);
+
+  const stockLegs = legs.filter((leg) => leg.kind === "stock").length;
+
+  const saveMutation = useMutation<unknown[], AppError, void>({
+    mutationFn: () =>
+      invoke("create_option_positions", {
+        request: {
+          portfolio_id: Number(portfolioId),
+          underlying_ticker: underlying,
+          open_date: dateIso(),
+          legs: rows.map((row) => ({
+            series_ticker: row.series,
+            option_type: row.kind,
+            strike: row.strike,
+            expiration: row.expiration,
+            side: row.side,
+            quantity: Number(row.quantity),
+            premium: Number(row.premium),
+          })),
+        },
+      }),
+    onSuccess: (created) => {
+      setSavedCount(created.length);
+      queryClient.invalidateQueries({ queryKey: ["option-positions"] });
+      queryClient.invalidateQueries({ queryKey: ["net-worth"] });
+    },
+  });
+
+  function patchRow(legId: number, patch: Partial<SaveRow>) {
+    setRows((current) => current.map((row) => (row.legId === legId ? { ...row, ...patch } : row)));
+  }
+
+  const ready = portfolioId !== "" && rows.length > 0 && rows.every((r) => r.series.trim() !== "");
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl" data-testid="save-strategy-dialog">
+        <DialogHeader>
+          <DialogTitle>Save as option positions</DialogTitle>
+        </DialogHeader>
+        {savedCount != null ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm" data-testid="save-done">
+              Saved {savedCount} position{savedCount === 1 ? "" : "s"}. They are in Portfolio →
+              Options, where you can close them and track the result.
+            </p>
+            <Button type="button" className="w-fit" onClick={() => onOpenChange(false)}>
+              Done
+            </Button>
+          </div>
+        ) : (
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveMutation.mutate();
+            }}
+          >
+            <p className="text-sm text-muted-foreground">
+              Each option leg becomes its own position on {underlying}, opened today. Check the
+              series ticker and expiry of every leg.
+              {stockLegs > 0 &&
+                ` The ${stockLegs} stock leg${stockLegs === 1 ? " is" : "s are"} not saved: positions only track options.`}
+            </p>
+
+            {portfoliosQuery.isSuccess && portfolios.length === 0 ? (
+              <p className="text-sm text-red-600" data-testid="save-no-portfolio">
+                This workspace has no portfolio yet. Create one in Portfolio first.
+              </p>
+            ) : (
+              <Field label="Portfolio" className="max-w-xs">
+                <Select value={portfolioId} onValueChange={setPortfolioId}>
+                  <SelectTrigger data-testid="save-portfolio">
+                    <SelectValue placeholder="Choose a portfolio">
+                      {portfolios.find((p) => String(p.id) === portfolioId)?.name}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {portfolios.map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+
+            <div className="flex flex-col gap-3">
+              {rows.map((row, index) => (
+                <div key={row.legId} className="rounded-lg border border-border p-3">
+                  <p className="mb-2 text-sm font-medium">{row.label}</p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <Field label="Series ticker">
+                      <Input
+                        required
+                        placeholder="PETRK600"
+                        value={row.series}
+                        data-testid={`save-series-${index}`}
+                        onChange={(e) => patchRow(row.legId, { series: e.currentTarget.value })}
+                      />
+                    </Field>
+                    <Field label="Expiration">
+                      <Input
+                        required
+                        type="date"
+                        value={row.expiration}
+                        data-testid={`save-expiration-${index}`}
+                        onChange={(e) => patchRow(row.legId, { expiration: e.currentTarget.value })}
+                      />
+                    </Field>
+                    <Field label="Premium per option">
+                      <Input
+                        required
+                        type="number"
+                        step="any"
+                        value={row.premium}
+                        data-testid={`save-premium-${index}`}
+                        onChange={(e) => patchRow(row.legId, { premium: e.currentTarget.value })}
+                      />
+                    </Field>
+                    <Field label="Quantity">
+                      <Input
+                        required
+                        type="number"
+                        step="any"
+                        value={row.quantity}
+                        data-testid={`save-quantity-${index}`}
+                        onChange={(e) => patchRow(row.legId, { quantity: e.currentTarget.value })}
+                      />
+                    </Field>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {saveMutation.isError && <p className="text-sm text-red-600">{saveMutation.error.message}</p>}
+            <Button type="submit" className="w-fit" data-testid="save-submit" disabled={!ready || saveMutation.isPending}>
+              {saveMutation.isPending ? "Saving..." : `Save ${rows.length} position${rows.length === 1 ? "" : "s"}`}
+            </Button>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function OptionStrategySimulator({
   spot,
   rows,
+  expiration,
+  workspaceId,
+  underlying,
   legs,
   setLegs,
 }: {
@@ -513,11 +784,17 @@ function OptionStrategySimulator({
   spot: number | null;
   /** Strikes do vencimento selecionado; vazio enquanto a cadeia não foi carregada. */
   rows: StrikeRow[];
+  /** Vencimento selecionado na cadeia (`YYYY-MM-DD`); nulo sem cadeia. */
+  expiration: string | null;
+  workspaceId: number;
+  /** Ticker da ação analisada: o ativo-objeto das posições salvas. */
+  underlying: string;
   legs: LegDraft[];
   setLegs: (update: (current: LegDraft[]) => LegDraft[]) => void;
 }) {
   const [presetNote, setPresetNote] = useState<string | null>(null);
   const [showTable, setShowTable] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
 
   const requestLegs = useMemo(() => toRequestLegs(legs), [legs]);
   const debouncedLegs = useDebounced(requestLegs, 350);
@@ -537,7 +814,7 @@ function OptionStrategySimulator({
   }
 
   function applyPreset(key: PresetKey) {
-    const preset = buildPreset(key, spot, rows);
+    const preset = buildPreset(key, spot, rows, expiration);
     if ("error" in preset) {
       setPresetNote(preset.error);
       return;
@@ -551,8 +828,14 @@ function OptionStrategySimulator({
   }
 
   function patchLeg(id: number, patch: Partial<LegDraft>) {
-    setLegs((current) => current.map((leg) => (leg.id === id ? { ...leg, ...patch } : leg)));
+    // Mudar o tipo ou o strike deixa de ser a série que veio da cadeia.
+    const detach = "kind" in patch || "strike" in patch ? { seriesTicker: undefined } : {};
+    setLegs((current) =>
+      current.map((leg) => (leg.id === id ? { ...leg, ...patch, ...detach } : leg)),
+    );
   }
+
+  const hasOptionLeg = legs.some((leg) => leg.kind !== "stock");
 
   const result = resultQuery.data;
   const incomplete = legs.length > 0 && requestLegs == null;
@@ -608,8 +891,28 @@ function OptionStrategySimulator({
                 Clear
               </Button>
             )}
+            {hasOptionLeg && !incomplete && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="save-strategy"
+                onClick={() => setSaveOpen(true)}
+              >
+                Save as positions
+              </Button>
+            )}
           </div>
         </div>
+
+        <SaveStrategyDialog
+          open={saveOpen}
+          onOpenChange={setSaveOpen}
+          workspaceId={workspaceId}
+          underlying={underlying}
+          legs={legs}
+          defaultExpiration={expiration}
+        />
 
         {legs.length === 0 && (
           <p className="text-sm text-muted-foreground">Add a leg to see the result at expiry.</p>

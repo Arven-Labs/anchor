@@ -1,5 +1,13 @@
 import { $, expect } from "@wdio/globals";
-import { byId, enterWorkspace, pickOption, sql, textOf, waitForText } from "./helpers.mjs";
+import {
+  byId,
+  clickCentered,
+  enterWorkspace,
+  pickOption,
+  sql,
+  textOf,
+  waitForText,
+} from "./helpers.mjs";
 
 // Research com dado de rede real (Fase 26: Yahoo, CoinGecko e SEC/CVM agora são
 // nativos em Rust). A primeira busca de um ticker dispara a coleta sozinha, então
@@ -72,6 +80,20 @@ describe("Anchor — Research com dados de rede", function () {
       "o simulador deveria mostrar perda máxima de R$ 200, equilíbrio em R$ 42 e ganho ilimitado",
     );
     expect(await textOf(byId("strategy-result"))).toContain("200.00 debit");
+
+    // Salva a perna como posição de uma carteira. A perna é manual (sem série da cadeia),
+    // então o diálogo pede o ticker; vencimento (hoje + 30 dias) e carteira (a única) já vêm.
+    const workspace = sql("SELECT id FROM workspace WHERE name = 'Lookup E2E'");
+    sql(
+      `INSERT INTO portfolio (workspace_id, name, created_at) VALUES (${workspace}, 'Main', '2026-01-01T00:00:00Z')`,
+    );
+    await clickCentered(byId("save-strategy"));
+    await byId("save-series-0").setValue("petrk400");
+    await clickCentered(byId("save-submit"));
+    await byId("save-done").waitForDisplayed({ timeout: 20_000 });
+    expect(
+      sql("SELECT series_ticker || ':' || side || ':' || premium || ':' || underlying_ticker FROM option_positions"),
+    ).toBe("PETRK400:long:2.0:PETR4");
   });
 
   it("ação dos EUA (AAPL) coleta a cotação em dólar", async function () {

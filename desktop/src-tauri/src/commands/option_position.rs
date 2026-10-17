@@ -9,7 +9,8 @@
 
 use chrono::NaiveDate;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, Set, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 
@@ -69,8 +70,8 @@ pub async fn create_option_position(
     create_option_position_in(db.inner(), request).await
 }
 
-pub async fn create_option_position_in(
-    db: &DatabaseConnection,
+pub async fn create_option_position_in<C: ConnectionTrait>(
+    db: &C,
     request: CreateOptionPositionRequest,
 ) -> Result<option_position::Model, AppError> {
     let series_ticker = ticker("series ticker", &request.series_ticker)?;
@@ -120,6 +121,79 @@ pub async fn create_option_position_in(
     }
     .insert(db)
     .await?)
+}
+
+/// Uma perna de opção de uma estratégia a salvar (vinda do simulador).
+#[derive(Deserialize)]
+pub struct StrategyLegRequest {
+    pub series_ticker: String,
+    pub option_type: String,
+    pub strike: f64,
+    pub expiration: String,
+    pub side: String,
+    pub quantity: f64,
+    pub premium: f64,
+}
+
+#[derive(Deserialize)]
+pub struct CreateOptionPositionsRequest {
+    pub portfolio_id: i32,
+    pub underlying_ticker: String,
+    pub open_date: String,
+    pub legs: Vec<StrategyLegRequest>,
+}
+
+/// Salva as pernas de opção de uma estratégia como posições da carteira, **tudo ou
+/// nada**: uma perna inválida desfaz as outras. Cada perna é uma posição
+/// independente (a estratégia não vira um grupo).
+#[tauri::command]
+pub async fn create_option_positions(
+    db: tauri::State<'_, DatabaseConnection>,
+    request: CreateOptionPositionsRequest,
+) -> Result<Vec<option_position::Model>, AppError> {
+    create_option_positions_in(db.inner(), request).await
+}
+
+pub async fn create_option_positions_in(
+    db: &DatabaseConnection,
+    request: CreateOptionPositionsRequest,
+) -> Result<Vec<option_position::Model>, AppError> {
+    if request.legs.is_empty() {
+        return Err(invalid("add at least one option leg"));
+    }
+    if request.legs.len() > crate::domain::option_payoff::MAX_LEGS {
+        return Err(invalid(format!(
+            "at most {} legs can be saved at once",
+            crate::domain::option_payoff::MAX_LEGS
+        )));
+    }
+
+    let txn = db.begin().await?;
+    let mut created = Vec::with_capacity(request.legs.len());
+    for leg in request.legs {
+        created.push(
+            create_option_position_in(
+                &txn,
+                CreateOptionPositionRequest {
+                    portfolio_id: request.portfolio_id,
+                    series_ticker: leg.series_ticker,
+                    underlying_ticker: request.underlying_ticker.clone(),
+                    option_type: leg.option_type,
+                    strike: leg.strike,
+                    expiration: leg.expiration,
+                    side: leg.side,
+                    quantity: leg.quantity,
+                    premium: leg.premium,
+                    open_date: request.open_date.clone(),
+                    open_fee: None,
+                    notes: None,
+                },
+            )
+            .await?,
+        );
+    }
+    txn.commit().await?;
+    Ok(created)
 }
 
 #[derive(Serialize, Debug)]

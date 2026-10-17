@@ -366,7 +366,7 @@ function StockAnalysisSection({
             )}
           </div>
 
-          <OptionsSection key={ticker} ticker={ticker} price={price} />
+          <OptionsSection key={ticker} ticker={ticker} price={price} workspaceId={workspaceId} />
 
           <AssetThesesSidebar
             workspaceId={workspaceId}
