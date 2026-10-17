@@ -2784,7 +2784,8 @@ escondidos com aviso fora do BRL; câmbio sem cotação na data usa a mais próx
   dívida em reais.
 - **Mudança de comportamento**: base BRL com ativo em USD e sem o `USDBRL` coletado passa a dar erro (antes dava
   um TWR com USD somado cru).
-- **Verificado**: `./dev.sh check` limpo; 4 testes de domínio e 5 de fluxo novos. CI: ver abaixo.
+- **Verificado**: `./dev.sh check` limpo; 4 testes de domínio e 5 de fluxo novos; CI do push `1c9114e` verde
+  nos três workflows, de primeira.
 - **Não verificado**: a tela a olho e o cálculo contra dados reais de câmbio.
 - **Pendente**: patrimônio, caixa, dívidas e empréstimos em outra moeda; custo na taxa da data no P/L das
   posições; formatadores de Ledger, Dividendos e impostos; benchmarks convertidos.
