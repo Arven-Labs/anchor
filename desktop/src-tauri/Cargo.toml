@@ -42,6 +42,8 @@ base64 = "0.22"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 # Fase 26 — CSVs `;` da CVM (DFP, FII).
 csv = "1"
+# Fase 34 — planilha "Negociação" da Área do Investidor da B3 (xlsx).
+calamine = { version = "0.31", default-features = false, features = ["chrono"] }
 # Fase 32 — `erf` pro Black-Scholes das opções (a std não tem).
 libm = "0.2"
 futures = "0.3"

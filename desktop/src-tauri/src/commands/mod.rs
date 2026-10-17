@@ -24,6 +24,7 @@ pub mod liability;
 pub mod loan;
 pub mod net_worth;
 pub mod portfolio;
+pub mod portfolio_io;
 pub mod portfolio_summary;
 pub mod profitability;
 pub mod projected_ceiling;

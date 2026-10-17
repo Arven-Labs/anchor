@@ -24,6 +24,7 @@ import {
 } from "./types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import ImportExportPanel from "./ImportExportPanel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -243,6 +244,7 @@ function LedgerSection({ portfolioId }: { portfolioId: number }) {
 
   return (
     <div className="flex flex-col gap-6">
+      <ImportExportPanel portfolioId={portfolioId} />
       <Card>
         <CardHeader>
           <CardTitle>Monthly contributions</CardTitle>

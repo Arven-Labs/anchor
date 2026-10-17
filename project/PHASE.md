@@ -3233,8 +3233,25 @@ eventos corporativos como novos tipos de lançamento; taxa entra no custo fiscal
   desdobramento, recompra, zerar, recomprar), consistência posição × IR (mesmo lucro realizado), bonificação,
   grupamento, validações, venda retroativa e ganho realizado em dólar na taxa de cada venda.
 
-**Pendente da Fase 34**: Entrega 3 (exportar CSV e importar CSV do Anchor e Excel da B3, em duas etapas com prévia),
-Entrega 4 (exportar/importar um Workspace como arquivo portátil), IRRF de FII em swing, E2E do fluxo de compra/venda.
+**Entrega 3 (Sessão 135) — exportar e importar lançamentos**
+- `commands/portfolio_io.rs`. O núcleo é independente da origem: `ProposedTransaction` → `preview_rows` → `commit_rows`.
+  Leitores: CSV do Anchor (`date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,
+  payment_type,notes`; aceita data `AAAA-MM-DD` ou `DD/MM/AAAA` e número com ponto ou vírgula) e planilha
+  "Negociação" da B3 (xlsx via `calamine`, colunas achadas pelo nome do cabeçalho; só mercado à vista e fracionário,
+  o resto vira erro explicado; `PETR4F` vira `PETR4`; instituição vira custódia).
+- **Prévia sem gravar**: cada linha sai como `new`, `duplicate`, `error` ou `needs_class` (ativo novo cuja classe não se
+  infere: final 11 é ambíguo entre FII, ETF e unit, então o usuário escolhe). Duplicata = mesma carteira, ticker, data,
+  tipo, quantidade e total, contada: dois negócios iguais no mesmo dia continuam sendo dois.
+- **Gravação tudo ou nada**: uma transação de banco, `create_transaction_in` por linha (mesma validação da tela, inclusive
+  saldo), compras antes de vendas no mesmo dia; qualquer erro desfaz tudo (inclusive ativos e custódias criados) e devolve as
+  linhas com problema. Custódia achada pelo nome ou criada com titular "Importado".
+- Exportar CSV gera o mesmo formato que o importador lê (teste de ida e volta entre duas carteiras). UI: painel
+  "Import / export" no topo do Ledger.
+- **Não verificado**: a planilha da B3 foi implementada pelas colunas que conheço, sem um arquivo real (o leitor de xlsx em
+  si nunca abriu um arquivo; os testes cobrem o parser sobre linhas de texto). Os diálogos nativos de arquivo não têm E2E.
+
+**Pendente da Fase 34**: Entrega 4 (exportar/importar um Workspace como arquivo portátil), IRRF de FII em swing, E2E do
+fluxo de compra/venda, proventos da B3 e eventos corporativos na importação.
 **Ideia registrada do dono do projeto (futura, não iniciada)**: IA por chave própria, sem chat, que lê planilha/
 extrato e propõe lançamentos e categorias para aprovação, e gera resumos na análise de ativos. Conflita com a
 decisão da Fase 20 (tirar a IA do Anchor), então precisa ser confirmada antes; o importador da Entrega 3 será

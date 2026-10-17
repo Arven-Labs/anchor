@@ -1982,3 +1982,176 @@ async fn the_position_in_another_currency_realizes_at_the_rate_of_each_sale() {
     assert!(close(positions[0].average_buy_price.unwrap(), 50.0), "custo na taxa da compra: R$ 50 por ação");
     assert!(close(positions[0].realized_pl, 350.0));
 }
+
+// ---------------------------------------------------------------------------
+// Importação e exportação de lançamentos (Fase 34)
+// ---------------------------------------------------------------------------
+
+const IMPORT_CSV: &str = "date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes\n\
+2026-01-05,compra,PETR4,,,100,30.5,3050,4.9,XP,,\n\
+2026-02-10,venda,PETR4,,,40,35,1400,,XP,,\n\
+2026-03-01,compra,HGLG11,fii,,10,160,1600,,XP,,\n";
+
+async fn preview_csv(
+    db: &sea_orm::DatabaseConnection,
+    portfolio_id: i32,
+    text: &str,
+) -> Vec<crate::commands::portfolio_io::ImportRow> {
+    use crate::commands::portfolio_io::{parse_anchor_csv, preview_rows};
+    preview_rows(db, portfolio_id, parse_anchor_csv(text)).await.unwrap()
+}
+
+fn commit_items(
+    rows: &[crate::commands::portfolio_io::ImportRow],
+) -> Vec<crate::commands::portfolio_io::CommitItem> {
+    rows.iter()
+        .filter_map(|r| r.proposed.clone())
+        .map(|proposed| crate::commands::portfolio_io::CommitItem { proposed, asset_class: None })
+        .collect()
+}
+
+#[tokio::test]
+async fn importing_a_csv_creates_assets_custody_and_the_right_position() {
+    use crate::commands::portfolio_io::{commit_rows, ImportStatus};
+    use crate::commands::transaction::compute_positions;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Import").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+
+    let rows = preview_csv(&db, pf.id, IMPORT_CSV).await;
+    assert_eq!(rows.len(), 3);
+    assert!(rows.iter().all(|r| r.status == ImportStatus::New), "{:?}", rows.iter().map(|r| &r.message).collect::<Vec<_>>());
+    assert_eq!(rows[0].suggested_class.as_deref(), Some("acao_br"), "classe inferida do ticker");
+
+    let result = commit_rows(&db, pf.id, commit_items(&rows)).await.unwrap();
+    assert_eq!(result.created, 3);
+    assert!(result.errors.is_empty());
+
+    // Uma custódia criada pelo nome, os dois ativos novos e a posição da PETR4:
+    // 100 @ 30,50 + taxa 4,90 → médio 30,549; vende 40 @ 35.
+    let custodias = crate::entity::custodia::Entity::find().all(&db).await.unwrap();
+    assert_eq!(custodias.len(), 1);
+    assert_eq!(custodias[0].instituicao, "XP");
+    let positions = compute_positions(&db, pf.id).await.unwrap();
+    let petr = positions.iter().find(|p| p.ticker == "PETR4").unwrap();
+    assert!(close(petr.quantity, 60.0));
+    assert!(close(petr.average_buy_price.unwrap(), 30.549));
+    assert!(close(petr.realized_pl, 1400.0 - 40.0 * 30.549));
+    assert_eq!(positions.iter().find(|p| p.ticker == "HGLG11").unwrap().asset_class, "fii");
+}
+
+#[tokio::test]
+async fn importing_the_same_file_twice_adds_nothing() {
+    use crate::commands::portfolio_io::{commit_rows, ImportStatus};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Import twice").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let rows = preview_csv(&db, pf.id, IMPORT_CSV).await;
+    commit_rows(&db, pf.id, commit_items(&rows)).await.unwrap();
+
+    let again = preview_csv(&db, pf.id, IMPORT_CSV).await;
+    assert!(again.iter().all(|r| r.status == ImportStatus::Duplicate));
+    let result = commit_rows(&db, pf.id, commit_items(&again)).await.unwrap();
+    assert_eq!(result.created, 0);
+    assert_eq!(result.skipped_duplicates, 3);
+    assert_eq!(crate::entity::transactions::Entity::find().all(&db).await.unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn two_identical_trades_on_the_same_day_are_not_collapsed() {
+    use crate::commands::portfolio_io::{commit_rows, ImportStatus};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Same day").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let csv = "date,type,ticker,quantity,unit_price,total_value\n\
+2026-01-05,compra,PETR4,10,30,300\n\
+2026-01-05,compra,PETR4,10,30,300\n";
+
+    let rows = preview_csv(&db, pf.id, csv).await;
+    assert!(rows.iter().all(|r| r.status == ImportStatus::New));
+    assert_eq!(commit_rows(&db, pf.id, commit_items(&rows)).await.unwrap().created, 2);
+
+    // Reimportar o arquivo: os dois já existem, nenhum é novo.
+    let again = preview_csv(&db, pf.id, csv).await;
+    assert!(again.iter().all(|r| r.status == ImportStatus::Duplicate));
+}
+
+#[tokio::test]
+async fn an_unknown_ambiguous_ticker_asks_for_the_class_and_a_bad_row_cancels_everything() {
+    use crate::commands::portfolio_io::{commit_rows, CommitItem, ImportStatus};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Import errors").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let csv = "date,type,ticker,quantity,unit_price,total_value\n\
+2026-01-05,compra,BOVA11,10,100,1000\n\
+data-ruim,compra,PETR4,10,30,300\n";
+
+    let rows = preview_csv(&db, pf.id, csv).await;
+    assert_eq!(rows[0].status, ImportStatus::NeedsClass);
+    assert_eq!(rows[1].status, ImportStatus::Error);
+    assert_eq!(rows[1].line, 2);
+
+    // Sem classe escolhida, a gravação recusa e não deixa nada pela metade.
+    let result = commit_rows(&db, pf.id, commit_items(&rows)).await.unwrap();
+    assert_eq!(result.created, 0);
+    assert_eq!(result.errors.len(), 1);
+    assert!(crate::entity::assets::Entity::find().all(&db).await.unwrap().is_empty());
+    assert!(crate::entity::transactions::Entity::find().all(&db).await.unwrap().is_empty());
+
+    // Com a classe escolhida na prévia, grava.
+    let item = CommitItem { proposed: rows[0].proposed.clone().unwrap(), asset_class: Some("etf_br".to_string()) };
+    let ok = commit_rows(&db, pf.id, vec![item]).await.unwrap();
+    assert_eq!(ok.created, 1);
+    assert_eq!(crate::entity::assets::Entity::find().all(&db).await.unwrap()[0].asset_class, "etf_br");
+}
+
+#[tokio::test]
+async fn a_sale_beyond_the_balance_in_the_file_rolls_the_whole_import_back() {
+    use crate::commands::portfolio_io::commit_rows;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Import oversell").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let csv = "date,type,ticker,quantity,unit_price,total_value\n\
+2026-01-05,compra,PETR4,10,30,300\n\
+2026-02-05,venda,PETR4,20,35,700\n";
+    let rows = preview_csv(&db, pf.id, csv).await;
+    let result = commit_rows(&db, pf.id, commit_items(&rows)).await.unwrap();
+    assert_eq!(result.created, 0);
+    assert_eq!(result.errors[0].line, 2);
+    assert!(crate::entity::transactions::Entity::find().all(&db).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn exporting_and_importing_into_another_portfolio_reproduces_the_position() {
+    use crate::commands::portfolio_io::{
+        commit_rows, export_transactions_csv_text, parse_anchor_csv, preview_rows, proposed_from_portfolio,
+    };
+    use crate::commands::transaction::compute_positions;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Round trip").await;
+    let source = portfolio(&db, ws.id, "Source").await;
+    let target = portfolio(&db, ws.id, "Target").await;
+    let rows = preview_csv(&db, source.id, IMPORT_CSV).await;
+    commit_rows(&db, source.id, commit_items(&rows)).await.unwrap();
+
+    let exported = export_transactions_csv_text(&proposed_from_portfolio(&db, source.id).await.unwrap()).unwrap();
+    let preview = preview_rows(&db, target.id, parse_anchor_csv(&exported)).await.unwrap();
+    commit_rows(&db, target.id, commit_items(&preview)).await.unwrap();
+
+    let key = |p: &crate::commands::transaction::PositionView| (p.ticker.clone(), p.quantity, p.realized_pl);
+    let mut a: Vec<_> = compute_positions(&db, source.id).await.unwrap().iter().map(key).collect();
+    let mut b: Vec<_> = compute_positions(&db, target.id).await.unwrap().iter().map(key).collect();
+    a.sort_by(|x, y| x.0.cmp(&y.0));
+    b.sort_by(|x, y| x.0.cmp(&y.0));
+    assert_eq!(a.len(), 2);
+    for (x, y) in a.iter().zip(&b) {
+        assert_eq!(x.0, y.0);
+        assert!(close(x.1, y.1) && close(x.2, y.2), "{x:?} × {y:?}");
+    }
+}

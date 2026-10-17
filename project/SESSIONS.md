@@ -2982,9 +2982,25 @@ do `PHASE.md`.
   taxas; a recompra depois de zerar divergia do motor de IR.
 - **Feito**: `domain/cost_basis.rs`, tipos `desdobramento`/`grupamento`/`bonificacao`, `realized_pl`, validação na
   entrada com `create_transaction_in`, ligação em posições, moeda base, TWR e IR, correções do resumo e dos proventos.
-- **Verificado**: `./dev.sh check` limpo (tsc e `cargo check --all-targets`).
-- **Não verificado**: os testes não rodaram localmente (só no CI); a tela a olho; a premissa de o Yahoo ajustar o
-  histórico a desdobramentos; nenhum E2E do formulário de lançamento.
+- **Verificado**: `./dev.sh check` limpo; CI do push verde nos três workflows, de primeira (os números calculados à mão
+  do cenário dourado bateram com o motor, e o lucro realizado da posição bateu com o do IR).
+- **Não verificado**: a tela a olho; a premissa de o Yahoo ajustar o histórico a desdobramentos; nenhum E2E do
+  formulário de lançamento.
 - **Processo**: voltei a anexar o teste de fluxo com `cat >>` via Bash em vez de Edit, contra a regra salva.
 - **Ideia do dono do projeto**: IA sem chat para propor lançamentos a partir de planilha/extrato; registrada na Fase 34.
-- **Pendente**: importação (entrega 3), exportação de Workspace (entrega 4), IRRF de FII em swing.
+- **Pendente**: importação (entrega 3), exportação de Workspace (entrega 4), IRRF de FII em swing. *(A entrega 3 foi feita
+  na Sessão 135, abaixo.)*
+
+
+### 2026-10-18 — Sessão 135
+
+**Fase 34, entrega 3: exportar e importar lançamentos.** Detalhe na Fase 34 do `PHASE.md`.
+- **Feito**: `commands/portfolio_io.rs` (CSV do Anchor, planilha "Negociação" da B3, prévia sem gravar, gravação tudo ou
+  nada, detecção de duplicata contada, exportação), `ImportExportPanel` no Ledger. `calamine` 0.31 (a 0.26 não compila
+  com o `zip` 2.6 que o projeto já usa).
+- **Verificado**: `./dev.sh check` limpo; 6 testes de fluxo (criação de ativo e custódia pela importação, reimportar não
+  duplica, dois negócios iguais no mesmo dia, classe ambígua e linha ruim cancelam tudo, venda acima do saldo desfaz o
+  lote, ida e volta exportar→importar) e 7 unitários de parser.
+- **Não verificado**: um arquivo real da B3 (o leitor de xlsx nunca abriu um); os diálogos nativos de arquivo; a tela
+  a olho.
+- **Pendente**: exportar/importar Workspace (entrega 4), IRRF de FII em swing, proventos e eventos corporativos da B3.
