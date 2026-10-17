@@ -7,7 +7,8 @@
 // já em % no mês. A Meta Selic (432) é diária e o BCB recusa (HTTP 406) uma
 // busca diária sem janela: por isso pagina em janelas de 9 anos. O BCB oscila
 // (mesma janela leva 0,4 s ou 30 s, ou devolve 502, ou uma página HTML com
-// status 200), então cada janela tem timeout maior e até 3 tentativas.
+// status 200), então toda busca (mensal ou janela diária) tem timeout maior e
+// até 3 tentativas.
 
 use std::time::Duration;
 
@@ -22,8 +23,9 @@ pub const SOURCE: &str = "bcb_sgs";
 const URL_TEMPLATE: &str = "https://api.bcb.gov.br/dados/serie/bcdata.sgs";
 
 const DAILY_TIMEOUT: Duration = Duration::from_secs(45);
-const DAILY_WINDOW_ATTEMPTS: u32 = 3;
-const DAILY_RETRY_BACKOFF: Duration = Duration::from_secs(2);
+const MONTHLY_TIMEOUT: Duration = Duration::from_secs(30);
+const RETRY_ATTEMPTS: u32 = 3;
+const RETRY_BACKOFF: Duration = Duration::from_secs(2);
 /// Teto real do BCB é 10 anos; 9 deixa margem.
 const DAILY_WINDOW_YEARS: i32 = 9;
 /// Nenhuma série diária do BCB começa antes disso.
@@ -112,9 +114,31 @@ fn earliest() -> NaiveDate {
 // Fetch
 // ---------------------------------------------------------------------------
 
+/// GET + parse com até `RETRY_ATTEMPTS` tentativas: o BCB oscila em qualquer série.
+async fn fetch_with_retry(
+    url: &str,
+    timeout: Duration,
+    parse: fn(&str) -> Result<Vec<(NaiveDate, f64)>, AppError>,
+) -> Result<Vec<(NaiveDate, f64)>, AppError> {
+    let mut last = None;
+    for attempt in 0..RETRY_ATTEMPTS {
+        if attempt > 0 {
+            tokio::time::sleep(RETRY_BACKOFF).await;
+        }
+        // Corpo HTML com status 200 cai no parse e também é tentado de novo.
+        match http::get_text("BCB SGS", url, timeout).await.and_then(|b| parse(&b)) {
+            Ok(points) => return Ok(points),
+            // 404 não melhora com nova tentativa.
+            Err(err @ AppError::NoData(_)) => return Err(err),
+            Err(err) => last = Some(err),
+        }
+    }
+    Err(last.expect("at least one attempt"))
+}
+
 async fn fetch_monthly(code: u32) -> Result<Vec<(NaiveDate, f64)>, AppError> {
     let url = format!("{URL_TEMPLATE}.{code}/dados?formato=json");
-    parse_monthly(&http::get_text("BCB SGS", &url, http::DEFAULT_TIMEOUT).await?)
+    fetch_with_retry(&url, MONTHLY_TIMEOUT, parse_monthly).await
 }
 
 async fn fetch_daily_window(
@@ -127,20 +151,7 @@ async fn fetch_daily_window(
         start.format("%d/%m/%Y"),
         end.format("%d/%m/%Y")
     );
-    let mut last = None;
-    for attempt in 0..DAILY_WINDOW_ATTEMPTS {
-        if attempt > 0 {
-            tokio::time::sleep(DAILY_RETRY_BACKOFF).await;
-        }
-        // Corpo HTML com status 200 cai no parse e também é tentado de novo.
-        match http::get_text("BCB SGS", &url, DAILY_TIMEOUT).await.and_then(|b| parse_daily(&b)) {
-            Ok(points) => return Ok(points),
-            // 404 não melhora com nova tentativa.
-            Err(err @ AppError::NoData(_)) => return Err(err),
-            Err(err) => last = Some(err),
-        }
-    }
-    Err(last.expect("at least one attempt"))
+    fetch_with_retry(&url, DAILY_TIMEOUT, parse_daily).await
 }
 
 /// Série diária a partir de `since` (inclusive); `None` busca desde 1994.

@@ -2509,3 +2509,16 @@ gosto de fazer"), então virou E2E.
      credenciais em Data sources (precisa de secret service, que o CI não tem).
   3. Itens menores: migrar `crypto_sources.rs` para `finance_core::http`; ingestão agendada e
      `DataProvider` com mais de uma fonte por categoria.
+
+
+### 2026-10-16 — Sessão 109
+
+**Retry na série mensal do BCB.** Pedido: seguir o item pequeno que sobrou da Sessão 108.
+- **Feito**: `bcb_sgs.rs` ganhou `fetch_with_retry` (3 tentativas, 2 s de espera, corpo HTML com status
+  200 também é tentado de novo, 404 não); CDI e IPCA mensais usam timeout de 30 s e a janela diária da
+  Selic segue com 45 s. Constantes `DAILY_WINDOW_ATTEMPTS`/`DAILY_RETRY_BACKOFF` viraram
+  `RETRY_ATTEMPTS`/`RETRY_BACKOFF`.
+- **Verificado**: `./dev.sh check` limpo. Os testes rodam no CI (o `dev.sh` não tem `test`); não há teste
+  novo, a lógica de retry depende de rede.
+- **Pendente**: decisão do dono sobre o repo do Lume; migrar `crypto_sources.rs` para
+  `finance_core::http`; plano de câmbio e opções (seção F da Fase 32).

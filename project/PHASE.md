@@ -2547,7 +2547,8 @@ desatualizado e foi avançado com `git pull --ff-only` até `7767069`).
 - **Fragilidade que veio junto**: no Lume, CDI e IPCA mensais (`fetch_monthly_series`) ficaram com 15 s
   e sem nova tentativa, e um 502 passageiro do BCB já derrubou o CDI. No Anchor, `bcb_sgs::fetch_monthly`
   usa o timeout padrão e também não tenta de novo (só a Selic diária tem janela de 9 anos, 45 s e 3
-  tentativas). Vale dar o mesmo tratamento à série mensal.
+  tentativas). **Resolvido na Sessão 109**: `fetch_with_retry` em `bcb_sgs.rs` serve a janela diária
+  (45 s) e a série mensal (30 s), com 3 tentativas e 2 s de espera; 404 não é tentado de novo.
 - **O que o mobile faz**: o app Flutter **nunca usou o Lume**; busca Yahoo e CoinGecko direto
   (`yahoo_quote_service.dart`, `coingecko_quote_service.dart`). Se o Anchor virar núcleo único de dados,
   o mobile é um consumidor a decidir.
