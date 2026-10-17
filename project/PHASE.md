@@ -1931,7 +1931,10 @@ gráfico mensal e donut agregam na base; a linha traz `native_currency`/`native_
 base e a tabela mostra o valor original com o equivalente. **Impostos**: o formatador de `TaxesSection` já era BRL
 fixo e a regra fiscal é brasileira, então ficaram como estão (o DARF só aceita conta BRL desde a Sessão 122).
 
-**Pendente**: benchmarks convertidos (hoje só escondidos fora do BRL).
+**Pendente**: benchmarks convertidos (hoje só escondidos fora do BRL). **Adiado por decisão do dono do projeto
+(Sessão 128)**: só os índices de preço (IBOV, IVVB11, IFIX, SMLL, IDIV) poderiam passar pelo câmbio mensal, e o
+resultado mistura o retorno do índice com o do câmbio; CDI, IPCA e Selic são taxas em reais e não têm conversão
+honesta. Com isso a Fase 19 está funcionalmente completa, com esse único item em aberto.
 
 
 ### Fase 20 — Remover a IA do Anchor (Warden vira a única interface de IA; decisão registrada na Sessão 100, **executada na Sessão 101**)
