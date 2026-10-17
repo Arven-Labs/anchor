@@ -3003,4 +3003,22 @@ do `PHASE.md`.
   lote, ida e volta exportar→importar) e 7 unitários de parser.
 - **Não verificado**: um arquivo real da B3 (o leitor de xlsx nunca abriu um); os diálogos nativos de arquivo; a tela
   a olho.
+- **Falha do CI e conserto**: o primeiro push da entrega 3 falhou num teste unitário meu. O `chrono` aceita ano com
+  menos de 4 dígitos (`05-01-26` virava o ano 5), então importação e lançamento manual aceitavam essa data; agora exigem
+  10 caracteres e ano ≥ 1900 (CI verde no push seguinte).
 - **Pendente**: exportar/importar Workspace (entrega 4), IRRF de FII em swing, proventos e eventos corporativos da B3.
+  *(A entrega 4 foi feita na Sessão 136, abaixo.)*
+
+
+### 2026-10-18 — Sessão 136
+
+**Fase 34, entrega 4: arquivo portátil de um Workspace.** Detalhe na Fase 34 do `PHASE.md`.
+- **Feito**: `workspace_file.rs` (exportar seguindo as FKs, importar como Workspace novo com ids renumerados e ativos casados
+  por ticker e classe), comandos Tauri, bloco "Workspace file" em Settings → Backup, helpers de `backup.rs` tornados
+  `pub(crate)`.
+- **Verificado**: `./dev.sh check` limpo; testes de fluxo da cópia no mesmo banco, em banco vazio, sem vazar outro
+  Workspace e arquivo inválido; teste guarda-corpo das colunas `*_id` sem FK.
+- **Não verificado**: a tela a olho; os diálogos nativos de arquivo; o desempenho com um Workspace grande (insere linha
+  a linha numa transação).
+- **Pendente**: IRRF de FII em swing, E2E do fluxo de compra/venda, proventos da B3 e eventos corporativos na importação,
+  anexos no arquivo de Workspace.

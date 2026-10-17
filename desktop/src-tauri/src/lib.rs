@@ -7,6 +7,7 @@ mod arweave;
 mod backup;
 mod commands;
 mod ingestion;
+mod workspace_file;
 mod crypto_sources;
 mod db;
 mod dead_drop;
@@ -146,6 +147,8 @@ pub fn run() {
             commands::storage_settings::get_storage_settings,
             commands::storage_settings::set_storage_settings,
             commands::backup::export_workspace_backup,
+            commands::workspace_file::export_workspace_file,
+            commands::workspace_file::import_workspace_file,
             commands::backup::import_workspace_backup,
             commands::tax::list_tax_rules,
             commands::tax::update_tax_rule,

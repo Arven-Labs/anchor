@@ -2156,3 +2156,162 @@ async fn exporting_and_importing_into_another_portfolio_reproduces_the_position(
         assert!(close(x.1, y.1) && close(x.2, y.2), "{x:?} × {y:?}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Arquivo portátil de um Workspace (Fase 34)
+// ---------------------------------------------------------------------------
+
+/// Um Workspace com carteira (split, venda, ativo em dólar), contas, transferência
+/// entre moedas, empréstimo e moeda base própria.
+async fn rich_workspace(db: &sea_orm::DatabaseConnection, name: &str) -> i32 {
+    use crate::commands::transaction::SPLIT;
+
+    let ws = workspace(db, name).await;
+    save_base_currency(db, ws.id, "USD").await.unwrap();
+    let pf = portfolio(db, ws.id, "Main").await;
+    let petr = asset(db, "PETR4", "acao_br").await;
+    let aapl = asset_in(db, "AAPL", "acao_internacional", "USD").await;
+    add(db, tx_request(pf.id, petr.id, "compra", 100.0, 10.0, "2026-01-05", 5.0)).await;
+    add(db, corporate_request(pf.id, petr.id, SPLIT, 2.0, "2026-02-05")).await;
+    add(db, tx_request(pf.id, petr.id, "venda", 50.0, 6.0, "2026-03-05", 0.0)).await;
+    add(db, tx_request(pf.id, aapl.id, "compra", 10.0, 100.0, "2026-01-06", 0.0)).await;
+
+    let brl = bank_account(db, ws.id, "Nubank").await;
+    let usd = bank_account_in(db, ws.id, "Chase", "USD").await;
+    cash_in(db, ws.id, brl.id, 1000.0, "2026-01-01").await;
+    create_transfer_in(db, transfer_request(ws.id, brl.id, usd.id, 500.0, 95.0)).await.unwrap();
+
+    let borrower = create_borrower_in(
+        db,
+        CreateBorrowerRequest { workspace_id: ws.id, nome: "Maria".to_string(), notes: None },
+    )
+    .await
+    .unwrap()
+    .id;
+    create_loan_in(db, loan_request(ws.id, borrower, Some(brl.id), 200.0)).await.unwrap();
+    ws.id
+}
+
+/// Fotografia comparável de um Workspace: tudo que o usuário enxerga, sem ids.
+async fn workspace_snapshot(db: &sea_orm::DatabaseConnection, workspace_id: i32) -> String {
+    use crate::commands::transaction::compute_positions;
+
+    let portfolios = crate::entity::portfolio::Entity::find()
+        .filter(crate::entity::portfolio::Column::WorkspaceId.eq(workspace_id))
+        .all(db)
+        .await
+        .unwrap();
+    let mut lines: Vec<String> = Vec::new();
+    for pf in &portfolios {
+        for p in compute_positions(db, pf.id).await.unwrap() {
+            lines.push(format!(
+                "pos {} {} {:.4} {:.4} {:.4}",
+                pf.name,
+                p.ticker,
+                p.quantity,
+                p.average_buy_price.unwrap_or(0.0),
+                p.realized_pl
+            ));
+        }
+    }
+    for a in list_bank_accounts_view(db, workspace_id).await.unwrap() {
+        lines.push(format!("account {} {} {:.2}", a.nome, a.currency, a.balance));
+    }
+    for l in list_loans_view(db, workspace_id).await.unwrap() {
+        lines.push(format!("loan {} {:.2}", l.currency, l.saldo_a_receber));
+    }
+    lines.push(format!("base {}", base_currency(db, workspace_id).await.unwrap()));
+    lines.sort();
+    lines.join("\n")
+}
+
+#[tokio::test]
+async fn a_workspace_exported_and_imported_into_the_same_database_becomes_an_equal_copy() {
+    use crate::workspace_file::{export_workspace, import_workspace};
+
+    let db = memory_db().await;
+    let original = rich_workspace(&db, "Family").await;
+    let assets_before = crate::entity::assets::Entity::find().all(&db).await.unwrap().len();
+
+    let file = export_workspace(&db, original).await.unwrap();
+    let json = serde_json::to_string(&file).unwrap();
+    let summary = import_workspace(&db, serde_json::from_str(&json).unwrap()).await.unwrap();
+
+    assert_eq!(summary.workspace_name, "Family (imported)");
+    assert_ne!(summary.workspace_id as i32, original);
+    assert_eq!(
+        workspace_snapshot(&db, summary.workspace_id as i32).await,
+        workspace_snapshot(&db, original).await
+    );
+    // Os ativos foram casados por ticker e classe, não duplicados.
+    assert_eq!(crate::entity::assets::Entity::find().all(&db).await.unwrap().len(), assets_before);
+    // A cópia não mexeu no original.
+    assert!(workspace_snapshot(&db, original).await.contains("pos Main PETR4 100.0000"));
+
+    // As duas pernas da transferência copiada apontam uma pra outra, não pro original.
+    let copied: Vec<_> = crate::entity::general_transaction::Entity::find()
+        .filter(crate::entity::general_transaction::Column::WorkspaceId.eq(summary.workspace_id as i32))
+        .filter(crate::entity::general_transaction::Column::TransferId.is_not_null())
+        .all(&db)
+        .await
+        .unwrap();
+    assert_eq!(copied.len(), 2);
+    let ids: std::collections::BTreeSet<i32> = copied.iter().map(|r| r.id).collect();
+    assert!(copied.iter().all(|r| ids.contains(&r.transfer_id.unwrap())));
+}
+
+#[tokio::test]
+async fn a_workspace_file_loads_into_a_fresh_database_with_its_assets() {
+    use crate::workspace_file::{export_workspace, import_workspace};
+
+    let source = memory_db().await;
+    let original = rich_workspace(&source, "Family").await;
+    let file = export_workspace(&source, original).await.unwrap();
+    let json = serde_json::to_string(&file).unwrap();
+
+    let destination = memory_db().await;
+    workspace(&destination, "Family").await; // já existe um com esse nome
+    let summary = import_workspace(&destination, serde_json::from_str(&json).unwrap()).await.unwrap();
+
+    assert_eq!(summary.workspace_name, "Family (imported)");
+    assert_eq!(
+        workspace_snapshot(&destination, summary.workspace_id as i32).await,
+        workspace_snapshot(&source, original).await
+    );
+    let tickers: std::collections::BTreeSet<String> = crate::entity::assets::Entity::find()
+        .all(&destination)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|a| a.ticker)
+        .collect();
+    assert_eq!(tickers, ["AAPL".to_string(), "PETR4".to_string()].into_iter().collect());
+}
+
+#[tokio::test]
+async fn a_workspace_file_never_leaks_another_workspace() {
+    use crate::workspace_file::export_workspace;
+
+    let db = memory_db().await;
+    let mine = rich_workspace(&db, "Mine").await;
+    let other = workspace(&db, "Other").await;
+    bank_account(&db, other.id, "Secret bank").await;
+
+    let file = export_workspace(&db, mine).await.unwrap();
+    let json = serde_json::to_string(&file).unwrap();
+    assert!(!json.contains("Secret bank"));
+    assert!(!json.contains("Other"));
+}
+
+#[tokio::test]
+async fn a_file_that_is_not_a_workspace_file_is_rejected() {
+    use crate::workspace_file::{import_workspace, WorkspaceFile};
+
+    let db = memory_db().await;
+    let bogus: WorkspaceFile = serde_json::from_str(
+        r#"{"format":"outra-coisa","version":1,"exported_at":"","schema_version":"","workspace":{},"tables":{},"assets":[],"asset_tables":{}}"#,
+    )
+    .unwrap();
+    assert!(import_workspace(&db, bogus).await.is_err());
+    assert!(crate::entity::workspace::Entity::find().all(&db).await.unwrap().is_empty());
+}

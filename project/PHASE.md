@@ -3250,8 +3250,28 @@ eventos corporativos como novos tipos de lançamento; taxa entra no custo fiscal
 - **Não verificado**: a planilha da B3 foi implementada pelas colunas que conheço, sem um arquivo real (o leitor de xlsx em
   si nunca abriu um arquivo; os testes cobrem o parser sobre linhas de texto). Os diálogos nativos de arquivo não têm E2E.
 
-**Pendente da Fase 34**: Entrega 4 (exportar/importar um Workspace como arquivo portátil), IRRF de FII em swing, E2E do
-fluxo de compra/venda, proventos da B3 e eventos corporativos na importação.
+**Entrega 4 (Sessão 136) — arquivo portátil de um Workspace**
+- `workspace_file.rs` (motor) e `commands/workspace_file.rs` (Tauri). O backup (`backup.rs`) segue como estava: banco
+  inteiro, mesmos ids, restauração total, preso ao `schema_version`. O arquivo portátil é outra coisa: JSON
+  `anchor-workspace` v1 de **um** Workspace.
+- **Exportar** segue as FKs a partir do Workspace (`PRAGMA foreign_key_list`, sem uma lista de joins escrita à mão): 20
+  tabelas (carteiras, custódias, lançamentos, opções, favoritos, watchlists, contas, lançamentos gerais, categorias,
+  empréstimos, dívidas, impostos pagos, layout da Home, moeda base…). Leva junto as linhas de `assets` que elas
+  referenciam e as `asset_valuations` desses ativos.
+- **Importar cria um Workspace novo** (nome com sufixo "(imported)" se colidir), numa transação: ordena as tabelas por FK,
+  renumera cada id, casa ativos por (ticker, classe) com os do destino (só cria os que faltam, e só copia valorações dos
+  criados) e reescreve `general_transactions.transfer_id` (a outra perna da transferência, único vínculo sem FK).
+  Insere só as colunas presentes nos dois lados, então um arquivo de uma versão anterior entra com os defaults.
+- Teste guarda-corpo: toda coluna `*_id` de tabela do Workspace precisa ter FK declarada ou constar em `UNDECLARED_REFS`;
+  uma migration futura que quebre isso falha no CI em vez de importar com referência errada em silêncio.
+- **Fora do v1**: anexos de tese e de ativo, notas por ticker, entradas de valuation, segredos do keyring.
+- UI: Settings → Backup ganhou o bloco "Workspace file" (exportar este Workspace / importar como novo).
+- Testes: cópia no mesmo banco igual ao original (posições, saldos, empréstimo, moeda base, transferência apontando pra
+  cópia), carga em banco vazio com nome já usado, não vazar outro Workspace, arquivo de outro formato recusado.
+- **Não verificado**: a tela a olho e os diálogos nativos de arquivo.
+
+**Pendente da Fase 34**: IRRF de FII em swing, E2E do fluxo de compra/venda, proventos da B3 e eventos corporativos na
+importação, anexos no arquivo de Workspace, conferência real do dono do projeto contra o Investidor10.
 **Ideia registrada do dono do projeto (futura, não iniciada)**: IA por chave própria, sem chat, que lê planilha/
 extrato e propõe lançamentos e categorias para aprovação, e gera resumos na análise de ativos. Conflita com a
 decisão da Fase 20 (tirar a IA do Anchor), então precisa ser confirmada antes; o importador da Entrega 3 será

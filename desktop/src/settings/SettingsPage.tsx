@@ -3,6 +3,7 @@ import TruthIdSettingsSection from "../truthid/TruthIdSettingsSection";
 import DataSourcesSection from "./DataSourcesSection";
 import StorageSettingsSection from "./StorageSettingsSection";
 import BackupSettingsSection from "./BackupSettingsSection";
+import WorkspaceFileSection from "./WorkspaceFileSection";
 import TaxSettingsSection from "./TaxSettingsSection";
 import CurrencySettingsSection from "./CurrencySettingsSection";
 import IngestionSettingsSection from "./IngestionSettingsSection";
@@ -54,7 +55,12 @@ function SettingsPage({ onBack, workspaceId }: { onBack: () => void; workspaceId
           {section === "TruthID" && <TruthIdSettingsSection />}
           {section === "Data sources" && <DataSourcesSection />}
           {section === "Storage" && <StorageSettingsSection />}
-          {section === "Backup" && <BackupSettingsSection />}
+          {section === "Backup" && (
+            <div className="flex flex-col gap-8">
+              <WorkspaceFileSection workspaceId={workspaceId} />
+              <BackupSettingsSection />
+            </div>
+          )}
           {section === "Taxes" && <TaxSettingsSection />}
           {section === "Currency" && <CurrencySettingsSection workspaceId={workspaceId} />}
           {section === "Updates" && <IngestionSettingsSection />}

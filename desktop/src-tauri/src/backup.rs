@@ -47,7 +47,7 @@ pub fn summarize(snapshot: &BackupSnapshot) -> BackupSummary {
 // reconhecida (afinidade NUMERIC do SQLite), mas como todo valor booleano gravado é sempre 0/1,
 // tratar o fallback NUMERIC como Integer funciona pra tudo que existe hoje.
 #[derive(Clone, Copy)]
-enum Affinity {
+pub(crate) enum Affinity {
     Integer,
     Real,
     Text,
@@ -67,9 +67,9 @@ fn affinity_of(decl_type: &str) -> Affinity {
     }
 }
 
-struct ColumnDef {
-    name: String,
-    affinity: Affinity,
+pub(crate) struct ColumnDef {
+    pub(crate) name: String,
+    pub(crate) affinity: Affinity,
 }
 
 async fn list_tables(conn: &impl ConnectionTrait) -> Result<Vec<String>, AppError> {
@@ -85,7 +85,10 @@ async fn list_tables(conn: &impl ConnectionTrait) -> Result<Vec<String>, AppErro
         .collect()
 }
 
-async fn table_columns(conn: &impl ConnectionTrait, table: &str) -> Result<Vec<ColumnDef>, AppError> {
+pub(crate) async fn table_columns(
+    conn: &impl ConnectionTrait,
+    table: &str,
+) -> Result<Vec<ColumnDef>, AppError> {
     let rows = conn
         .query_all(Statement::from_string(
             DbBackend::Sqlite,
@@ -102,7 +105,10 @@ async fn table_columns(conn: &impl ConnectionTrait, table: &str) -> Result<Vec<C
         .map_err(AppError::from)
 }
 
-fn row_to_json(row: &sea_orm::QueryResult, columns: &[ColumnDef]) -> Result<Map<String, Json>, AppError> {
+pub(crate) fn row_to_json(
+    row: &sea_orm::QueryResult,
+    columns: &[ColumnDef],
+) -> Result<Map<String, Json>, AppError> {
     let mut out = Map::with_capacity(columns.len());
     for col in columns {
         let value = match col.affinity {
@@ -128,7 +134,7 @@ fn row_to_json(row: &sea_orm::QueryResult, columns: &[ColumnDef]) -> Result<Map<
     Ok(out)
 }
 
-fn json_to_sea_value(value: &Json, affinity: Affinity) -> Result<sea_orm::Value, AppError> {
+pub(crate) fn json_to_sea_value(value: &Json, affinity: Affinity) -> Result<sea_orm::Value, AppError> {
     if value.is_null() {
         return Ok(match affinity {
             Affinity::Integer => sea_orm::Value::BigInt(None),
