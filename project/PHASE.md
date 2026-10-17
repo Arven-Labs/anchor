@@ -2407,6 +2407,34 @@ liquidity 2). Fonte: CoinMetrics Community, sem chave.
   por grupo em `crypto_score.rs`) além do código; meu grep inicial pegou só parte e o CI pegou o resto.
   Ao mudar o número de indicadores, buscar `15` em `e2e/` e `flow_tests.rs`.
 
+**Score próprio do BTC (Sessão 112)**, decisões do dono do projeto: limites **por moeda** e só os
+**análogos diretos** do ETH. **12 indicadores em 3 grupos** (On-chain 6, Derivatives & options 5, Market
+liquidity 1; sem Network fundamentals). Ficam fora, por serem do ETH: `staking_yield`, `tvl_trend`,
+`net_issuance`, `fees_vs_emission`, `eth_btc_trend_30d`.
+- **Schema**: `indicator_thresholds` ganhou `coin` (`UNIQUE(coin, indicator)`), migration
+  `m20261017_110000` recria a tabela (SQLite não troca constraint), copia as linhas como `ETH` e semeia as
+  12 do BTC. Só ETH e BTC têm conjunto próprio; **qualquer outra moeda usa o do ETH**
+  (`domain::crypto_score::threshold_coin`), preservando o registro manual de, por exemplo, SOL.
+- **Seeds do BTC** (verde/vermelho), calibrados com dados reais de 2026-10-17: MVRV Z 0/7, NVT 0,9/1,3,
+  Puell 0,5/4, endereços ativos 0/−10, netflow −0,02/0,03 (faixa estreita, só 100 dias de dado), oferta nas
+  exchanges −1/2, funding 5/15, OI 0/25, long/short 1,3/2,0, DVOL 40/55, put/call 0,7/0,4, stablecoins 2/0.
+  Duplicados em `BTC_DEFAULT_THRESHOLDS` (convenção: mudar um exige mudar o outro; o teste de fluxo confere).
+- **Domínio**: `IndicatorGroup::indicators(coin)`, `for_coin`, `compute_score(coin, ..)`,
+  `default_threshold(coin, indicator)`; o ETH segue com os mesmos 17.
+- **Comandos**: limite buscado por `(threshold_coin(coin), indicador)`, incluindo a validação do alerta
+  (`alert_rule.rs`, que não filtrava moeda). `apply_threshold(coin, ..)` reclassifica só as leituras que usam
+  aquele limite: editar o BTC mexe só no BTC, editar o ETH mexe nele e nas demais moedas.
+  `list_indicator_thresholds`, `reset_indicator_threshold` e `run_crypto_collector` recebem `coin`.
+- **Coleta**: `collect_eth_indicators` virou `collect_indicators(db, coin)`; derivativos usam `{coin}USDT`
+  (Binance, fallback Bybit) e `currency={coin}` na Deribit; `eth_indicators::indicator(coin, code)` consulta o
+  CoinMetrics com `assets={coin}` e o NVT com o id CoinGecko (`bitcoin`/`ethereum`). Código só do ETH pedido
+  para outra moeda é `NoData`, sem rede.
+- **Tela**: ETH e BTC têm botão do coletor, formulário manual e totais próprios; o editor de limites recebe a
+  moeda.
+- **Verificação ao vivo antes de codar**: CoinMetrics (`assets=btc`), Binance, Bybit e Deribit respondem
+  para BTC; o formato dos nomes das opções da Deribit é o mesmo do ETH.
+- **Erro de contagem no plano**: o plano dizia 13 indicadores, mas 6+5+1 são 12; o código e os testes usam 12.
+
 **Editor de thresholds (Sessão 106, fatia 2)**: botão "Edit thresholds" na seção do score cripto
 abre `ThresholdEditorDialog` com uma linha por indicador (verde, vermelho, direção inferida ao
 vivo, Save e Reset). Comandos `list_indicator_thresholds`, `update_indicator_threshold` e

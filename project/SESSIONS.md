@@ -2595,4 +2595,26 @@ BTC), ETH/BTC em Market liquidity e oferta nas exchanges em On-chain.
 - **Processo**: um `cat >> /dev/null` inútil sobrou num comando; sem efeito.
 - **Pendente**: score próprio de BTC (exige limites por moeda e coletores parametrizados); fluxo de ETFs
   (sem fonte grátis); opções (Fase 18) e moeda base (Fase 19); ingestão agendada e `DataProvider` com mais
-  de uma fonte por categoria.
+  de uma fonte por categoria. *(O score do BTC foi feito na Sessão 112, abaixo.)*
+
+
+### 2026-10-17 — Sessão 112
+
+**Score cripto próprio do BTC.** Plan mode; escolhas do dono do projeto: limites por moeda (coluna `coin`) e
+só os análogos diretos do ETH. Duas fatias com CI entre elas. Detalhe na Fase 31 do `PHASE.md`.
+- **Feito**: (1) schema `indicator_thresholds` com `coin`, seeds do BTC, domínio, comandos e editor com
+  moeda, ETH idêntico; (2) coletor por moeda (`collect_indicators`), 12 indicadores do BTC e tela de ETH e BTC.
+- **Verificado**: `./dev.sh check` limpo nas duas fatias. CI da fatia 1 (`db35d27`) verde nos três
+  workflows. CI da fatia 2 (`4ac8c81`): Rust e Frontend verdes; o E2E falhou uma vez no teste do câmbio
+  (USD→BRL, "No data found", instabilidade do Yahoo) e passou inteiro ao refazer a rodada, com o caso novo do
+  BTC (12 indicadores, sem Network fundamentals) passando com rede real.
+- **Achado**: o teste E2E do câmbio só pula em 429; um "No data found" do Yahoo o deixa vermelho, e não é bug do
+  app. Não corrigi nesta sessão.
+- **Achado**: a validação do alerta de indicador cripto (`alert_rule.rs`) não filtrava a moeda; com limites por
+  moeda precisou passar a filtrar.
+- **Erro meu**: o plano dizia 13 indicadores do BTC, mas são 12 (6+5+1); percebi ao escrever o código.
+- **Não verificado**: os testes ao vivo `live_collect_btc_indicators_writes_twelve_readings`,
+  `live_btc_indicators` e `live_sources_return_plausible_values` (`#[ignore]`, precisam de rede e do banco de
+  dev), e o clique na tela do BTC (o E2E cobre a montagem do score, não a coleta nem o editor de limites).
+- **Pendente**: fluxo de ETFs (sem fonte grátis); opções (Fase 18) e moeda base (Fase 19); ingestão agendada e
+  `DataProvider` com mais de uma fonte por categoria; E2E do câmbio pular em "No data found".
