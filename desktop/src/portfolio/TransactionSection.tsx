@@ -210,7 +210,7 @@ function TransactionSection({
                   value={transactionType}
                   onValueChange={(value) => setTransactionType(value as TransactionType)}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full" data-testid="tx-type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -235,7 +235,7 @@ function TransactionSection({
               {needsAsset(transactionType) && (
                 <Field label="Asset">
                   <Select value={assetId} onValueChange={setAssetId}>
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="w-full" data-testid="tx-asset">
                       <SelectValue placeholder="Select an asset" />
                     </SelectTrigger>
                     <SelectContent>
@@ -257,6 +257,7 @@ function TransactionSection({
                     required
                     type="number"
                     step="any"
+                    data-testid="tx-quantity"
                     value={quantity}
                     onChange={(e) => {
                       setQuantity(e.currentTarget.value);
@@ -271,6 +272,7 @@ function TransactionSection({
                     required
                     type="number"
                     step="any"
+                    data-testid="tx-unit-price"
                     value={unitPrice}
                     onChange={(e) => {
                       setUnitPrice(e.currentTarget.value);
@@ -294,6 +296,7 @@ function TransactionSection({
                 <Input
                   type="number"
                   step="any"
+                  data-testid="tx-fee"
                   value={fee}
                   onChange={(e) => setFee(e.currentTarget.value)}
                 />
@@ -406,10 +409,17 @@ function TransactionSection({
             </Field>
 
             {createMutation.isError && (
-              <p className="text-red-600">{createMutation.error.message}</p>
+              <p className="text-red-600" data-testid="tx-error">
+                {createMutation.error.message}
+              </p>
             )}
 
-            <Button type="submit" disabled={!canSubmit || createMutation.isPending} className="w-fit">
+            <Button
+              type="submit"
+              data-testid="tx-submit"
+              disabled={!canSubmit || createMutation.isPending}
+              className="w-fit"
+            >
               {createMutation.isPending ? "Logging..." : "Log transaction"}
             </Button>
           </form>

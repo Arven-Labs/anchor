@@ -3021,4 +3021,16 @@ do `PHASE.md`.
 - **Não verificado**: a tela a olho; os diálogos nativos de arquivo; o desempenho com um Workspace grande (insere linha
   a linha numa transação).
 - **Pendente**: IRRF de FII em swing, E2E do fluxo de compra/venda, proventos da B3 e eventos corporativos na importação,
-  anexos no arquivo de Workspace.
+  anexos no arquivo de Workspace. *(IRRF e E2E tratados na Sessão 137, abaixo.)*
+
+
+### 2026-10-18 — Sessão 137
+
+**Fase 34: IRRF de FII e E2E da carteira.** O dono do projeto mandou seguir ("manda bala").
+- **IRRF de FII em swing**: mantido como está. O 0,005% sobre FII é intencional no código e eu não confirmei a regra fiscal;
+  não mudo tributação por suspeita da auditoria. Fica registrado como dúvida a tirar com a Receita ou a corretora.
+- **Feito**: `data-testid` no formulário de lançamento e na tabela de posições; `portfolio.e2e.mjs` (compra, venda e
+  recompra pelo formulário com preço médio 20,00, venda acima do saldo recusada, desdobramento 2:1).
+- **Verificado**: `./dev.sh check` limpo.
+- **Não verificado**: o E2E novo só roda no CI; o campo de data do formulário não é exercitado (os lançamentos usam hoje).
+- **Pendente**: importar proventos da B3 (próximo, com plano), desdobramentos e bonificações na importação.

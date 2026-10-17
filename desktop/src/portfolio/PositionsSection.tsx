@@ -182,8 +182,8 @@ function PositionsSection({ portfolioId }: { portfolioId: number }) {
                                 </p>
                               )}
                             </TableCell>
-                            <TableCell>{position.quantity}</TableCell>
-                            <TableCell>
+                            <TableCell data-testid={`position-qty-${position.ticker}`}>{position.quantity}</TableCell>
+                            <TableCell data-testid={`position-avg-${position.ticker}`}>
                               {position.average_buy_price != null
                                 ? `${position.currency} ${position.average_buy_price.toFixed(2)}`
                                 : "—"}

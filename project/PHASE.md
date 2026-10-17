@@ -3272,8 +3272,16 @@ eventos corporativos como novos tipos de lançamento; taxa entra no custo fiscal
   cópia), carga em banco vazio com nome já usado, não vazar outro Workspace, arquivo de outro formato recusado.
 - **Não verificado**: a tela a olho e os diálogos nativos de arquivo.
 
-**Pendente da Fase 34**: IRRF de FII em swing, E2E do fluxo de compra/venda, proventos da B3 e eventos corporativos na
-importação, anexos no arquivo de Workspace, conferência real do dono do projeto contra o Investidor10.
+**IRRF de FII em swing (Sessão 137)**: revisado e **mantido**. A auditoria suspeitava que o 0,005% sobre a venda não vale
+para FII, mas o código o aplica de propósito (comentário em `assessment.rs`: "0,005% do valor de venda das operações
+comuns/FII") e eu não confirmei a regra fiscal em fonte primária, então não mudei um comportamento tributário por
+suspeita. Em aberto: confirmar com a Receita/corretora se a retenção de swing vale para cotas de FII.
+
+**E2E da carteira (Sessão 137)**: `portfolio.e2e.mjs` lança pelo formulário compra 100 @ 10, venda 50 @ 20 e compra 50 @ 30
+(preço médio 20,00, não os 16,67 da média histórica), recusa uma venda acima do saldo e confere o desdobramento 2:1.
+
+**Pendente da Fase 34**: importar proventos da B3, desdobramentos e bonificações na importação, anexos no arquivo de
+Workspace, conferência real do dono do projeto contra o Investidor10.
 **Ideia registrada do dono do projeto (futura, não iniciada)**: IA por chave própria, sem chat, que lê planilha/
 extrato e propõe lançamentos e categorias para aprovação, e gera resumos na análise de ativos. Conflita com a
 decisão da Fase 20 (tirar a IA do Anchor), então precisa ser confirmada antes; o importador da Entrega 3 será
