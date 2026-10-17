@@ -3178,6 +3178,13 @@ mercado/câmbio.
   `yahoo_finance`), separadamente para a cotação e para o histórico.
 - **429**: `http::check_status` marca "rate limited"; `get_text_with_headers` tenta uma segunda vez após esperar o
   `Retry-After` (teto de 10 s, padrão 2 s).
+- **Alpha Vantage, segunda fonte de ações (Sessão 133)**: `finance_core/alpha_vantage.rs`, BYO-key (chave gratuita,
+  cadastrada em Settings → Data sources ou em `ALPHA_VANTAGE_API_KEY`). Cotação (`GLOBAL_QUOTE`) e fechamento
+  diário (`TIME_SERIES_DAILY`, completo e, se a chave grátis não puder, compacto de ~100 dias); B3 pelo sufixo
+  `.SAO`. Técnicos e dividendos ficam `NoData` (só o Yahoo os atende). Só entra na cascata de
+  `yahoo::providers()` quando há chave, para ticker inexistente continuar saindo como "sem dado". A API responde 200
+  nas falhas: `Error Message` vira `NoData`, `Note`/`Information` (limite diário de ~25 chamadas) vira
+  `ProviderUnavailable`. Câmbio, futuros e índices (`=`, `^`) ela não atende.
 - **Desligável** por `ANCHOR_DISABLE_INGESTION` (o E2E liga, pra a coleta de fundo não disputar o trinco).
 - **Aviso de câmbio velho (Sessão 131)**: `get_fx_staleness(workspace_id)` devolve os pares em uso
   (`workspace_fx_pairs`, a mesma lista que a ingestão coleta) nunca coletados ou com último fechamento de mais de 5
@@ -3188,6 +3195,6 @@ mercado/câmbio.
 vez do CSV, então não serve para um cliente HTTP. Para ações, ETFs e dividendos não há fonte grátis e sem chave que
 funcione: continuam só com o Yahoo.
 
-**Fora do escopo / pendente**: intraday; execução com o app fechado; segunda fonte de ações (exige BYO-key, como
-Twelve Data ou Alpha Vantage); prioridade "premium não é
+**Fora do escopo / pendente**: intraday; execução com o app fechado; segunda fonte de técnicos e dividendos
+(a Alpha Vantage cobre só cotação e histórico); prioridade "premium não é
 sobrescrito por grátis" (só faz sentido com fonte paga).

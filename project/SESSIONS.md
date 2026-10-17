@@ -2956,3 +2956,19 @@ mode. Detalhe na Fase 19 do `PHASE.md`.
 - **Verificado**: `./dev.sh check` limpo.
 - **Não verificado**: a tela a olho; o laço de 30 minutos em si (só a decisão que ele toma); o teste ao vivo do
   Frankfurter não roda no CI (é `#[ignore]`).
+
+
+### 2026-10-18 — Sessão 133
+
+**Segunda fonte de ações: Alpha Vantage (Fase 33).** O dono do projeto mandou seguir ("manda bala"); entendi como a
+segunda fonte de ações, o item que eu tinha deixado esperando a decisão dele, e não como os benchmarks, que ele adiou.
+- **Escolha**: Alpha Vantage em vez de Twelve Data porque tem B3 (`.SAO`) no plano grátis e o `curl` com a chave
+  `demo` confirmou o formato de cotação e de série diária completa.
+- **Feito**: `alpha_vantage.rs` (cotação, histórico com queda para o compacto, parse das falhas dentro do HTTP 200),
+  `ALPHA_VANTAGE` em `api_keys` (aparece em Settings → Data sources), entrada condicional na cascata de
+  `yahoo::providers()`.
+- **Verificado**: `./dev.sh check` limpo; testes de parse e de mapeamento de símbolo.
+- **Não verificado**: tudo contra uma chave real: o `demo` só serve para IBM, então nunca vi uma resposta de B3
+  (`PETR4.SAO`) nem o que a chave grátis faz com `outputsize=full`; a tela a olho. A queda para o histórico compacto
+  depende de a mensagem de recurso premium conter "premium", que não pude confirmar.
+- **Pendente**: técnicos e dividendos sem segunda fonte; benchmarks convertidos (adiado).

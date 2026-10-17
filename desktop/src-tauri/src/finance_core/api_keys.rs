@@ -35,6 +35,16 @@ pub const BOLSAI: ApiKeySpec = ApiKeySpec {
     env_var: "BOLSAI_API_KEY",
 };
 
+pub const ALPHA_VANTAGE: ApiKeySpec = ApiKeySpec {
+    id: "alpha_vantage",
+    provider: "Alpha Vantage",
+    label: "Alpha Vantage API key",
+    help: "Free key from alphavantage.co. Optional: a second source for stock quotes and price history when Yahoo Finance is down (the free plan allows about 25 calls a day).",
+    secret: true,
+    keyring_user: "alpha_vantage_api_key",
+    env_var: "ALPHA_VANTAGE_API_KEY",
+};
+
 /// A SEC não pede chave, mas exige um e-mail de contato no `User-Agent`. Tem que
 /// ser de quem opera o app, então não há valor embutido no código.
 pub const SEC_EDGAR_EMAIL: ApiKeySpec = ApiKeySpec {
@@ -48,7 +58,7 @@ pub const SEC_EDGAR_EMAIL: ApiKeySpec = ApiKeySpec {
 };
 
 /// Todas as credenciais configuráveis, na ordem em que a tela as mostra.
-pub const ALL: [&ApiKeySpec; 2] = [&BOLSAI, &SEC_EDGAR_EMAIL];
+pub const ALL: [&ApiKeySpec; 3] = [&BOLSAI, &SEC_EDGAR_EMAIL, &ALPHA_VANTAGE];
 
 pub fn find(id: &str) -> Option<&'static ApiKeySpec> {
     ALL.iter().copied().find(|spec| spec.id == id)
@@ -176,8 +186,12 @@ mod tests {
         for spec in ALL {
             assert_eq!(find(spec.id).map(|s| s.id), Some(spec.id));
         }
-        assert_ne!(ALL[0].id, ALL[1].id);
-        assert_ne!(ALL[0].keyring_user, ALL[1].keyring_user);
+        let ids: std::collections::HashSet<_> = ALL.iter().map(|s| s.id).collect();
+        let users: std::collections::HashSet<_> = ALL.iter().map(|s| s.keyring_user).collect();
+        let vars: std::collections::HashSet<_> = ALL.iter().map(|s| s.env_var).collect();
+        assert_eq!(ids.len(), ALL.len());
+        assert_eq!(users.len(), ALL.len());
+        assert_eq!(vars.len(), ALL.len());
         assert!(find("nope").is_none());
     }
 
