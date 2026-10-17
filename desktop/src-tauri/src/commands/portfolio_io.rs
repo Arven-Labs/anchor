@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
     TransactionTrait,
@@ -127,9 +127,15 @@ pub struct CommitResult {
 /// `AAAA-MM-DD` ou `DD/MM/AAAA`.
 pub fn parse_date(raw: &str) -> Option<String> {
     let raw = raw.trim();
+    // O chrono aceita ano com menos de 4 dígitos ("05-01-26" vira o ano 5), então
+    // a forma é conferida antes e o ano precisa ser plausível.
+    if raw.len() != 10 {
+        return None;
+    }
     NaiveDate::parse_from_str(raw, "%Y-%m-%d")
         .or_else(|_| NaiveDate::parse_from_str(raw, "%d/%m/%Y"))
         .ok()
+        .filter(|d| d.year() >= 1900)
         .map(|d| d.format("%Y-%m-%d").to_string())
 }
 
@@ -785,6 +791,8 @@ mod tests {
         assert_eq!(parse_date("05/01/2026"), Some("2026-01-05".to_string()));
         assert_eq!(parse_date("2026-01-05"), Some("2026-01-05".to_string()));
         assert_eq!(parse_date("31/02/2026"), None);
+        assert_eq!(parse_date("05-01-26"), None, "ano de 2 dígitos não vale");
+        assert_eq!(parse_date("0005-01-26"), None);
     }
 
     #[test]

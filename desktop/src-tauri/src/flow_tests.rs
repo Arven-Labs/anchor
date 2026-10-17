@@ -1931,6 +1931,7 @@ async fn invalid_transactions_are_rejected_before_they_reach_the_ledger() {
 
     // Data fora do formato, quantidade zero e total que não bate com quantidade × preço.
     assert!(rejected(tx_request(pf.id, petr.id, "compra", 1.0, 10.0, "05/01/2026", 0.0)).await);
+    assert!(rejected(tx_request(pf.id, petr.id, "compra", 1.0, 10.0, "05-01-26", 0.0)).await, "ano de 2 dígitos");
     assert!(rejected(tx_request(pf.id, petr.id, "compra", 0.0, 10.0, "2026-01-06", 0.0)).await);
     let mut off = tx_request(pf.id, petr.id, "compra", 10.0, 10.0, "2026-01-06", 0.0);
     off.total_value = 150.0;

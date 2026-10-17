@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
 };
@@ -105,12 +105,16 @@ fn validate(request: &CreateTransactionRequest) -> Result<(), AppError> {
         )));
     }
 
-    NaiveDate::parse_from_str(&request.transaction_date, "%Y-%m-%d").map_err(|_| {
-        AppError::InvalidGuard(format!(
+    // O chrono aceita ano com menos de 4 dígitos ("05-01-26" vira o ano 5), então
+    // o tamanho e um ano plausível são conferidos à parte.
+    let valid_date = request.transaction_date.len() == 10
+        && NaiveDate::parse_from_str(&request.transaction_date, "%Y-%m-%d").is_ok_and(|d| d.year() >= 1900);
+    if !valid_date {
+        return Err(AppError::InvalidGuard(format!(
             "transaction_date '{}' inválida (esperado AAAA-MM-DD)",
             request.transaction_date
-        ))
-    })?;
+        )));
+    }
     if !request.total_value.is_finite() || request.total_value < 0.0 {
         return Err(AppError::InvalidGuard("total_value não pode ser negativo".to_string()));
     }
