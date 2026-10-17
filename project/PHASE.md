@@ -1683,6 +1683,33 @@ gregas, somente leitura, sem schema) e a tela como **seção na análise da Aç�
   **Não verificado**: a carga real (`live_option_chain`, `#[ignore]`, ~2 min e B3 instável), o painel de
   gregas contra dado real e o clique na tela.
 
+**2ª fatia implementada (Sessão 115, 2026-10-17)**: **simulador de payoff**, escolhas do dono do projeto:
+motor de **pernas livres + atalhos prontos** e **só resultado no vencimento** (sem curva teórica de hoje).
+- `domain/option_payoff.rs` (função pura, sem rede): `Leg { kind: stock|call|put, side: long|short, strike,
+  price, quantity }`, 1 a 8 pernas. O resultado é linear por partes em `S` com quebras nos strikes, então
+  ganho máximo, perda máxima, "ilimitado" e equilíbrios saem **exatos** de `{0} ∪ strikes` e da inclinação
+  para `S → ∞` (ação e call comprada +1, vendidas −1, put 0), sem amostrar. Trecho identicamente zero não
+  gera equilíbrio; `S = 0` nunca é equilíbrio. Prêmio líquido só das opções (positivo = débito). A curva tem
+  121 pontos mais as quebras e os equilíbrios dentro da faixa (60% da menor a 140% da maior referência).
+- Comando `simulate_option_strategy(request { spot, legs })` em `commands/options.rs`.
+- `stock-lookup/OptionStrategySimulator.tsx`, dentro de `OptionsSection.tsx`: card **sempre visível** (pernas
+  manuais funcionam sem carregar a cadeia), editor de pernas (comprar/vender, tipo, strike, preço,
+  quantidade; padrão 100 = 1 lote), atalhos (covered call, protective put, bull call spread, bear put spread,
+  long straddle, cash-secured put; usam o vencimento selecionado e o último preço, e avisam quando uma perna
+  não tem negócio) e "Add as buy/sell leg" na série escolhida. As pernas moram em `OptionsSection`.
+  Tiles (Net premium, Max gain, Max loss, Breakeven), gráfico de ganho (azul) e perda (vermelho) com a linha
+  do resultado neutra, linha do preço atual, pontos de equilíbrio, legenda, tooltip e tabela "Show values".
+- **Cores** (skill `dataviz`): par divergente azul `#3987e5` / vermelho `#e66767`, passos escuros da paleta de
+  referência, validado contra a superfície do card `#111820` (ΔE normal 29,0, CVD 19,2, contraste >= 3:1).
+- **Verificado**: `./dev.sh check` limpo; 11 testes unitários do motor com valores à mão (call comprada,
+  covered call, put protetora, bull call spread, straddle, put vendida, call vendida a seco, só ação,
+  resultado zero, curva, validação); CI do push `98f5de4` verde nos três workflows, com o E2E digitando uma
+  call (strike 40, prêmio 2, 100 opções) e conferindo perda de R$ 200, equilíbrio em R$ 42, ganho ilimitado e
+  débito de R$ 200. **Não verificado**: o gráfico a olho (o passo de renderizar e olhar da skill não foi
+  feito), os atalhos e "Add as buy/sell leg" contra a cadeia real (dependem dos 80 MB da B3) e o clique manual.
+- **Fora de escopo, decidido**: curva teórica de hoje, posições de opções na carteira, custos e IR,
+  dividendos e exercício antecipado, seção em ETF/BDR.
+
 ### Fase 19 — Moeda base seletiva da carteira (ideia trazida em conversa pelo dono do projeto na Sessão 96, puro registro, não iniciada)
 
 **Objetivo**: permitir escolher, nas Configurações, a moeda base em que a carteira é exibida (ex.:

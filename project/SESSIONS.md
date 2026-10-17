@@ -2647,3 +2647,21 @@ gregas) e seção na tela da Ação BR. Detalhe na Fase 18 do `PHASE.md`.
   real pela tela e o clique manual. O E2E não baixa os 80 MB de propósito.
 - **Pendente**: simulador de payoff e posições de opções (sem desenho); moeda base (Fase 19); ingestão
   agendada e `DataProvider` com mais de uma fonte por categoria; E2E do câmbio pular em "No data found".
+  *(O simulador de payoff foi feito na Sessão 115, abaixo.)*
+
+
+### 2026-10-17 — Sessão 115
+
+**Simulador de payoff de opções (Fase 18, 2ª fatia).** Plan mode; escolhas do dono do projeto: pernas livres com
+atalhos prontos e só resultado no vencimento. Detalhe na Fase 18 do `PHASE.md`.
+- **Feito**: motor exato em `domain/option_payoff.rs`, comando `simulate_option_strategy`, e
+  `OptionStrategySimulator.tsx` com editor de pernas, 6 atalhos, tiles, gráfico de ganho e perda, tooltip e
+  tabela de valores. Cores validadas com o script da skill `dataviz`.
+- **Decisão de desenho**: o simulador fica sempre visível e aceita pernas manuais sem a cadeia, para o E2E
+  cobrir o fluxo sem baixar 80 MB. Os extremos e equilíbrios saem dos pontos de quebra, não de amostragem.
+- **Verificado**: `./dev.sh check` limpo; 11 testes unitários com valores à mão; CI do push `98f5de4` verde
+  (Rust, E2E e Frontend), com o E2E conferindo uma call comprada ponta a ponta.
+- **Não verificado**: o gráfico renderizado (não abri o app nem tirei captura; o passo "renderizar e olhar" da
+  skill ficou por fazer), os atalhos e "Add as buy/sell leg" com a cadeia real, e o clique manual.
+- **Pendente**: posições de opções na carteira (sem desenho); moeda base (Fase 19); ingestão agendada e
+  `DataProvider` com mais de uma fonte por categoria; E2E do câmbio pular em "No data found".
