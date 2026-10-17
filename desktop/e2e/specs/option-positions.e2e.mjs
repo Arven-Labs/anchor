@@ -56,14 +56,15 @@ describe("Anchor — posições em opções na Carteira", () => {
 
   it("leva o resultado realizado da opção para a apuração de imposto do mês", async () => {
     // A call lançada foi aberta e encerrada hoje: day trade, +R$ 150,00 na gaveta de day
-    // trade a 20 % = R$ 30,00, sem a isenção dos R$ 20 mil (que é só de ações).
+    // trade a 20 % = R$ 30,00, menos o IRRF de 1 % do ganho (R$ 1,50) = R$ 28,50 a pagar,
+    // sem a isenção dos R$ 20 mil (que é só de ações).
     const period = new Date().toISOString().slice(0, 7);
-    await byId("portfolio-tab-taxes").click();
+    await clickCentered(byId("portfolio-tab-taxes"));
 
     await waitForText(
       byId(`tax-due-${period}`),
-      (text) => text.includes("30,00"),
-      "aberta e encerrada no mesmo dia, deveria pagar 20 % de R$ 150,00 = R$ 30,00",
+      (text) => text.includes("28,50"),
+      "aberta e encerrada no mesmo dia, deveria pagar 20 % de R$ 150,00 menos 1 % de IRRF = R$ 28,50",
     );
     await clickCentered(byId(`tax-details-${period}`));
     const note = await byId("options-tax-note");
@@ -72,15 +73,15 @@ describe("Anchor — posições em opções na Carteira", () => {
 
     // Antedatando a abertura, vira swing trade: gaveta comum a 15 % = R$ 22,50.
     sql("UPDATE option_positions SET open_date = '2026-01-02'");
-    await byId("portfolio-tab-options").click();
-    await byId("portfolio-tab-taxes").click();
+    await clickCentered(byId("portfolio-tab-options"));
+    await clickCentered(byId("portfolio-tab-taxes"));
     await waitForText(
       byId(`tax-due-${period}`),
       (text) => text.includes("22,50"),
       "aberta antes do encerramento, deveria pagar 15 % de R$ 150,00 = R$ 22,50",
     );
 
-    await byId("portfolio-tab-options").click(); // o caso seguinte usa o formulário
+    await clickCentered(byId("portfolio-tab-options")); // o caso seguinte usa o formulário
   });
 
   it("mostra o erro do backend quando o formulário é inválido", async () => {

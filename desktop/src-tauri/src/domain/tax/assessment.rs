@@ -196,8 +196,10 @@ fn take_from_position(pos: &mut Position, quantity: f64) -> (f64, f64) {
 /// escopo (viram avisos ou são ignoradas).
 ///
 /// Soma o resultado das opções encerradas: swing na gaveta comum e day trade
-/// na sua, **sem** isenção dos R$ 20 mil (só vale pra venda de ações) e
-/// **sem** IRRF estimado (o imposto pode sair um pouco acima do real).
+/// na sua, **sem** isenção dos R$ 20 mil (só vale pra venda de ações).
+/// IRRF: o day trade retém 1% do ganho, como nas ações; o do swing (0,005%
+/// sobre a venda) **não** é estimado, porque `sale_value` fica 0, então o
+/// imposto de swing pode sair um pouco acima do real.
 /// Prejuízo de opção compensa na mesma gaveta, inclusive contra ações.
 pub fn assess_with_options(
     trades: &[Trade],
@@ -1024,9 +1026,9 @@ mod tests {
     }
 
     #[test]
-    fn option_gain_is_taxed_at_15_percent_with_no_exemption_and_no_irrf() {
+    fn option_gain_is_taxed_at_15_percent_with_no_exemption_and_no_swing_irrf() {
         // Ganho de 1.000 (receita 1.500, custo 500): mesmo sem nenhuma venda de ação
-        // (que deixaria o mês "isento"), a opção paga 15 % e não gera IRRF.
+        // (que deixaria o mês "isento"), a opção swing paga 15 % e não gera IRRF estimado.
         let a = assess_options(Builder::new(), &[option(1, "2026-03-10", false, 1500.0, 500.0)]);
 
         let m = &a.months[0];
@@ -1082,7 +1084,8 @@ mod tests {
         assert_eq!(m.buckets.len(), 1);
         assert_eq!(m.buckets[0].bucket, Bucket::DayTrade);
         assert!(close(m.gross_tax, 100.0)); // 20 % × 500
-        assert!(close(m.irrf_withheld, 0.0)); // IRRF de opção não é estimado
+        assert!(close(m.irrf_withheld, 5.0)); // 1 % do ganho, como em qualquer day trade
+        assert!(close(m.due, 95.0));
     }
 
     #[test]

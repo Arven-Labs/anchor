@@ -546,8 +546,9 @@ async fn closed_option_positions_feed_the_tax_assessment() {
     assert!(close(day_trade.result, 100.0));
     assert!(close(day_trade.tax, 20.0)); // 20 %
     assert!(close(month.gross_tax, 42.5));
-    assert!(close(month.irrf_withheld, 0.0));
-    assert!(close(month.due, 42.5));
+    // IRRF: só o day trade retém (1 % do ganho de 100); o do swing não é estimado.
+    assert!(close(month.irrf_withheld, 1.0));
+    assert!(close(month.due, 41.5));
 
     assert_eq!(month.sales.len(), 2); // a exercida e a aberta ficam de fora
     assert!(assessment.warnings.iter().any(

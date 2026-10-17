@@ -549,8 +549,9 @@ function MonthDetails({ month }: { month: MonthAssessment }) {
       {hasOptions && (
         <p className="text-xs text-muted-foreground" data-testid="options-tax-note">
           This month includes closed option positions (they appear with their series ticker). Options
-          have no R$ 20k exemption, and the withheld tax (IRRF) is not estimated for them, so the
-          estimate can be slightly above the real amount.
+          have no R$ 20k exemption. Day trade options use the usual 1% withholding on the gain, but
+          the withholding on swing options is not estimated, so that part can be slightly above the
+          real amount.
         </p>
       )}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
