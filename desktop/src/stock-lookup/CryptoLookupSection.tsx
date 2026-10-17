@@ -414,7 +414,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
             >
               Edit thresholds
             </Button>
-            <ThresholdEditorDialog open={thresholdsOpen} onOpenChange={setThresholdsOpen} />
+            <ThresholdEditorDialog coin={ticker} open={thresholdsOpen} onOpenChange={setThresholdsOpen} />
 
             {ticker === "ETH" && (
               <div className="mb-4 flex flex-col gap-2">

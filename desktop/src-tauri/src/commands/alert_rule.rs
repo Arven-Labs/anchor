@@ -82,8 +82,13 @@ pub async fn create_alert_rule(
                 )
             })?;
             // Same guard as `record_crypto_indicator`: an indicator key only
-            // means something if it has a configured threshold row.
+            // means something if it has a configured threshold row for that
+            // coin (BTC has its own; every other coin uses ETH's).
             indicator_thresholds::Entity::find()
+                .filter(
+                    indicator_thresholds::Column::Coin
+                        .eq(crate::domain::crypto_score::threshold_coin(&coin)),
+                )
                 .filter(indicator_thresholds::Column::Indicator.eq(&indicator))
                 .one(db.inner())
                 .await?

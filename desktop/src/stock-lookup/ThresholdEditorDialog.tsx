@@ -21,6 +21,7 @@ import {
 // bruto fica, só o sinal muda) — ver `apply_threshold` no backend.
 
 type IndicatorThreshold = {
+  coin: string;
   indicator: string;
   green_boundary: number;
   red_boundary: number;
@@ -66,6 +67,7 @@ function ThresholdRow({
     mutationFn: () =>
       invoke("update_indicator_threshold", {
         request: {
+          coin: threshold.coin,
           indicator: threshold.indicator,
           green_boundary: greenValue,
           red_boundary: redValue,
@@ -78,7 +80,8 @@ function ThresholdRow({
   });
 
   const resetMutation = useMutation<IndicatorThreshold, AppError, void>({
-    mutationFn: () => invoke("reset_indicator_threshold", { indicator: threshold.indicator }),
+    mutationFn: () =>
+      invoke("reset_indicator_threshold", { coin: threshold.coin, indicator: threshold.indicator }),
     onSuccess: () => {
       setDraft(null);
       onSaved();
@@ -152,16 +155,19 @@ function ThresholdRow({
 }
 
 export default function ThresholdEditorDialog({
+  coin,
   open,
   onOpenChange,
 }: {
+  /** Moeda cujos limites se editam; só ETH e BTC têm conjunto próprio, as demais mostram o do ETH. */
+  coin: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const thresholdsQuery = useQuery<IndicatorThreshold[], AppError>({
-    queryKey: ["indicator-thresholds"],
-    queryFn: () => invoke("list_indicator_thresholds"),
+    queryKey: ["indicator-thresholds", coin],
+    queryFn: () => invoke("list_indicator_thresholds", { coin }),
     enabled: open,
   });
 

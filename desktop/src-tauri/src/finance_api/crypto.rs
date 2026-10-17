@@ -134,11 +134,13 @@ const ETH_INDICATORS: [(&str, &str, &str); 10] = [
 
 async fn record_crypto_indicator(
     db: &DatabaseConnection,
+    coin: &str,
     indicator: &str,
     raw_value: f64,
     source: &str,
 ) -> Result<crypto_indicators::Model, AppError> {
     let threshold = indicator_thresholds::Entity::find()
+        .filter(indicator_thresholds::Column::Coin.eq(crypto_score::threshold_coin(coin)))
         .filter(indicator_thresholds::Column::Indicator.eq(indicator))
         .one(db)
         .await?
@@ -154,7 +156,7 @@ async fn record_crypto_indicator(
 
     let model = crypto_indicators::ActiveModel {
         id: ActiveValue::NotSet,
-        coin: Set("ETH".to_string()),
+        coin: Set(coin.to_string()),
         indicator: Set(indicator.to_string()),
         reading_date: Set(Utc::now().date_naive().to_string()),
         raw_value: Set(raw_value),
@@ -191,7 +193,8 @@ pub async fn collect_eth_indicators(
         let fetched = client::fetch_eth_indicator(api_code)
             .await
             .map(|response| response.raw_value);
-        record_or_collect_error(db, internal_name, source, fetched, &mut readings, &mut errors).await;
+        record_or_collect_error(db, crypto_score::COIN_ETH, internal_name, source, fetched, &mut readings, &mut errors)
+            .await;
     }
 
     // Cada fonte devolve o valor e quem respondeu (os de derivativos tentam
@@ -214,8 +217,16 @@ pub async fn collect_eth_indicators(
     for (internal_name, fetched) in direct {
         match fetched {
             Ok((raw_value, source)) => {
-                record_or_collect_error(db, internal_name, source, Ok(raw_value), &mut readings, &mut errors)
-                    .await;
+                record_or_collect_error(
+                    db,
+                    crypto_score::COIN_ETH,
+                    internal_name,
+                    source,
+                    Ok(raw_value),
+                    &mut readings,
+                    &mut errors,
+                )
+                .await;
             }
             Err(e) => errors.push(format!("{internal_name}: {e}")),
         }
@@ -229,6 +240,7 @@ pub async fn collect_eth_indicators(
 
 async fn record_or_collect_error(
     db: &DatabaseConnection,
+    coin: &str,
     indicator: &str,
     source: &str,
     fetched: Result<f64, AppError>,
@@ -236,7 +248,7 @@ async fn record_or_collect_error(
     errors: &mut Vec<String>,
 ) {
     let outcome = match fetched {
-        Ok(raw_value) => record_crypto_indicator(db, indicator, raw_value, source).await,
+        Ok(raw_value) => record_crypto_indicator(db, coin, indicator, raw_value, source).await,
         Err(e) => Err(e),
     };
     match outcome {

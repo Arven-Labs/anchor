@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    #[sea_orm(unique)]
+    /// Único junto com `indicator` (`UNIQUE(coin, indicator)`), não sozinho.
+    pub coin: String,
     pub indicator: String,
     #[sea_orm(column_type = "Double")]
     pub green_boundary: f64,

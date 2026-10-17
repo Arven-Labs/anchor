@@ -16,7 +16,9 @@ use crate::commands::loan::{
 };
 use crate::commands::net_worth::compute_net_worth;
 use crate::commands::tax::{assess_workspace, simulate_tax_sale_in, SimulateTaxSaleRequest};
-use crate::domain::crypto_score::{ScoreVerdict, DEFAULT_THRESHOLDS};
+use crate::domain::crypto_score::{
+    default_thresholds, ScoreVerdict, BTC_DEFAULT_THRESHOLDS, ETH_DEFAULT_THRESHOLDS,
+};
 use crate::entity::{indicator_thresholds, tax_rules};
 use crate::test_support::{asset, bank_account, cash_in, memory_db, portfolio, trade, workspace};
 
@@ -35,23 +37,27 @@ async fn migrations_apply_from_scratch_and_are_idempotent() {
     crate::db::migrate(&db).await.expect("second migrate run");
 
     let thresholds = indicator_thresholds::Entity::find().all(&db).await.unwrap();
-    assert_eq!(thresholds.len(), DEFAULT_THRESHOLDS.len());
+    assert_eq!(thresholds.len(), ETH_DEFAULT_THRESHOLDS.len() + BTC_DEFAULT_THRESHOLDS.len());
 }
 
 #[tokio::test]
 async fn seeded_thresholds_match_the_reset_defaults() {
-    // `DEFAULT_THRESHOLDS` (o Reset do editor) duplica os seeds das migrations;
-    // este teste falha se um mudar sem o outro.
+    // Os defaults por moeda (o Reset do editor) duplicam os seeds das migrations;
+    // este teste falha se um mudar sem o outro. As linhas do ETH que existiam
+    // antes da coluna `coin` viraram `coin = 'ETH'` na migration.
     let db = memory_db().await;
     let rows = indicator_thresholds::Entity::find().all(&db).await.unwrap();
 
-    for (indicator, green, red) in DEFAULT_THRESHOLDS {
-        let row = rows
-            .iter()
-            .find(|r| r.indicator == indicator)
-            .unwrap_or_else(|| panic!("no seeded threshold for {indicator}"));
-        assert!(close(row.green_boundary, green), "{indicator} green");
-        assert!(close(row.red_boundary, red), "{indicator} red");
+    for coin in ["ETH", "BTC"] {
+        for (indicator, green, red) in default_thresholds(coin) {
+            let row = rows
+                .iter()
+                .find(|r| r.coin == coin && r.indicator == *indicator)
+                .unwrap_or_else(|| panic!("no seeded threshold for {coin} {indicator}"));
+            assert!(close(row.green_boundary, *green), "{coin} {indicator} green");
+            assert!(close(row.red_boundary, *red), "{coin} {indicator} red");
+        }
+        assert_eq!(rows.iter().filter(|r| r.coin == coin).count(), default_thresholds(coin).len());
     }
 }
 
@@ -324,9 +330,35 @@ async fn crypto_score_groups_readings_and_reacts_to_threshold_edits() {
 
     // O usuário afrouxa o limite: 12% passa a ser verde, e o score acompanha
     // sem nova coleta (o editor reclassifica as leituras guardadas).
-    apply_threshold(&db, "funding_rate_7d", 15.0, 30.0).await.unwrap();
+    apply_threshold(&db, "ETH", "funding_rate_7d", 15.0, 30.0).await.unwrap();
     let score = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
     assert_eq!(score.green, 2);
+}
+
+#[tokio::test]
+async fn btc_score_has_its_own_indicators_groups_and_thresholds() {
+    let db = memory_db().await;
+
+    let btc_reading = |indicator: &str, raw_value: f64| RecordCryptoIndicatorRequest {
+        coin: "BTC".to_string(),
+        ..reading(indicator, raw_value)
+    };
+
+    // 17% de funding: o vermelho do ETH começa em 20 (→ neutro), o do BTC em 15 (→ vermelho).
+    record_crypto_indicator_in(&db, btc_reading("funding_rate_7d", 17.0)).await.unwrap();
+    record_crypto_indicator_in(&db, reading("funding_rate_7d", 17.0)).await.unwrap();
+    record_crypto_indicator_in(&db, btc_reading("mvrv_z_score", 1.0)).await.unwrap();
+
+    let btc = crypto_score_for(&db, "BTC".to_string()).await.unwrap();
+    assert_eq!((btc.total, btc.logged), (12, 2));
+    assert_eq!(btc.groups.len(), 3); // sem Network fundamentals
+    let derivatives = btc.groups.iter().find(|g| g.label == "Derivatives & options").unwrap();
+    assert_eq!(derivatives.indicators[0].reading.as_ref().unwrap().signal, "RED");
+
+    let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!((eth.total, eth.logged), (17, 1));
+    let derivatives = eth.groups.iter().find(|g| g.label == "Derivatives & options").unwrap();
+    assert_eq!(derivatives.indicators[0].reading.as_ref().unwrap().signal, "NEUTRAL");
 }
 
 #[tokio::test]

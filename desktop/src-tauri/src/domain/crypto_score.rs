@@ -58,11 +58,28 @@ pub fn classify(raw_value: f64, threshold: &Threshold) -> Result<Signal, AppErro
 // ---------------------------------------------------------------------------
 // Thresholds editáveis (Fase 31). Os valores de fábrica espelham o que as
 // migrations semeiam em `indicator_thresholds` (`m20260709_212958`,
-// `m20261016_130000` e `m20261016_140000`) — duplicados aqui só pra "Reset" funcionar sem consultar
+// `m20261016_130000`, `m20261016_140000` e `m20261017_100000`; os do BTC em
+// `m20261017_110000`) — duplicados aqui só pra "Reset" funcionar sem consultar
 // o histórico de migrations. Ao mudar um seed, mude os dois.
+//
+// Limites são por moeda (`indicator_thresholds.coin`). Só ETH e BTC têm
+// conjunto próprio; qualquer outra moeda (registro manual, ex. SOL) usa o do
+// ETH, como era antes de existir o do BTC.
 // ---------------------------------------------------------------------------
 
-pub const DEFAULT_THRESHOLDS: [(&str, f64, f64); 17] = [
+pub const COIN_ETH: &str = "ETH";
+pub const COIN_BTC: &str = "BTC";
+
+/// Moeda cujo conjunto de indicadores e limites vale para `coin`.
+pub fn threshold_coin(coin: &str) -> &'static str {
+    if coin.eq_ignore_ascii_case(COIN_BTC) {
+        COIN_BTC
+    } else {
+        COIN_ETH
+    }
+}
+
+pub const ETH_DEFAULT_THRESHOLDS: [(&str, f64, f64); 17] = [
     ("mvrv_z_score", 0.0, 7.0),
     ("puell_multiple", 0.5, 4.0),
     ("staking_yield", 2.0, 0.0),
@@ -82,9 +99,36 @@ pub const DEFAULT_THRESHOLDS: [(&str, f64, f64); 17] = [
     ("eth_btc_trend_30d", 3.0, -3.0),
 ];
 
-/// `(green, red)` de fábrica de um indicador.
-pub fn default_threshold(indicator: &str) -> Option<(f64, f64)> {
-    DEFAULT_THRESHOLDS
+/// Calibrados com dados reais do BTC em 2026-10-17 (ver a migration
+/// `m20261017_110000`). Sem staking, TVL, net issuance, fees vs emission nem
+/// ETH/BTC: não têm análogo no BTC.
+pub const BTC_DEFAULT_THRESHOLDS: [(&str, f64, f64); 12] = [
+    ("mvrv_z_score", 0.0, 7.0),
+    ("nvt_ratio", 0.9, 1.3),
+    ("puell_multiple", 0.5, 4.0),
+    ("active_addresses_trend", 0.0, -10.0),
+    ("exchange_netflow", -0.02, 0.03),
+    ("exchange_supply_change_30d", -1.0, 2.0),
+    ("funding_rate_7d", 5.0, 15.0),
+    ("open_interest_change_30d", 0.0, 25.0),
+    ("long_short_ratio", 1.3, 2.0),
+    ("dvol", 40.0, 55.0),
+    ("put_call_ratio", 0.7, 0.4),
+    ("stablecoin_supply_change_30d", 2.0, 0.0),
+];
+
+/// Limites de fábrica de uma moeda: `(indicador, verde, vermelho)`.
+pub fn default_thresholds(coin: &str) -> &'static [(&'static str, f64, f64)] {
+    if threshold_coin(coin) == COIN_BTC {
+        &BTC_DEFAULT_THRESHOLDS
+    } else {
+        &ETH_DEFAULT_THRESHOLDS
+    }
+}
+
+/// `(green, red)` de fábrica de um indicador numa moeda.
+pub fn default_threshold(coin: &str, indicator: &str) -> Option<(f64, f64)> {
+    default_thresholds(coin)
         .iter()
         .find(|(name, _, _)| *name == indicator)
         .map(|(_, green, red)| (*green, *red))
@@ -138,8 +182,34 @@ impl IndicatorGroup {
         }
     }
 
+    /// Grupos que a moeda tem (o BTC não tem fundamentos de rede), na ordem da tela.
+    pub fn for_coin(coin: &str) -> Vec<IndicatorGroup> {
+        IndicatorGroup::ALL.into_iter().filter(|g| !g.indicators(coin).is_empty()).collect()
+    }
+
     /// Chaves de `indicator_thresholds`/`crypto_indicators` de cada grupo.
-    pub fn indicators(&self) -> &'static [&'static str] {
+    pub fn indicators(&self, coin: &str) -> &'static [&'static str] {
+        if threshold_coin(coin) == COIN_BTC {
+            return match self {
+                IndicatorGroup::OnChain => &[
+                    "mvrv_z_score",
+                    "nvt_ratio",
+                    "puell_multiple",
+                    "active_addresses_trend",
+                    "exchange_netflow",
+                    "exchange_supply_change_30d",
+                ],
+                IndicatorGroup::Fundamentals => &[],
+                IndicatorGroup::Derivatives => &[
+                    "funding_rate_7d",
+                    "open_interest_change_30d",
+                    "long_short_ratio",
+                    "dvol",
+                    "put_call_ratio",
+                ],
+                IndicatorGroup::Liquidity => &["stablecoin_supply_change_30d"],
+            };
+        }
         match self {
             IndicatorGroup::OnChain => &[
                 "mvrv_z_score",
@@ -231,13 +301,13 @@ fn verdict_for(green: usize, total: usize) -> ScoreVerdict {
 /// Monta o score a partir da última leitura de cada indicador. Indicador
 /// sem leitura conta no `total` mas não como verde, e leitura de indicador
 /// fora dos grupos é ignorada.
-pub fn compute_score(latest: &[LatestReading]) -> CryptoScore {
+pub fn compute_score(coin: &str, latest: &[LatestReading]) -> CryptoScore {
     let mut groups = Vec::with_capacity(IndicatorGroup::ALL.len());
     let (mut green, mut logged, mut total) = (0, 0, 0);
 
-    for group in IndicatorGroup::ALL {
+    for group in IndicatorGroup::for_coin(coin) {
         let indicators: Vec<GroupIndicator> = group
-            .indicators()
+            .indicators(coin)
             .iter()
             .map(|name| GroupIndicator {
                 indicator: name,
@@ -280,28 +350,60 @@ mod tests {
         }
     }
 
+    fn grouped(coin: &str) -> Vec<&'static str> {
+        IndicatorGroup::ALL.iter().flat_map(|g| g.indicators(coin).iter().copied()).collect()
+    }
+
     #[test]
-    fn groups_cover_seventeen_distinct_indicators() {
-        let all: Vec<&str> =
-            IndicatorGroup::ALL.iter().flat_map(|g| g.indicators().iter().copied()).collect();
-        assert_eq!(all.len(), 17);
-        let mut unique = all.clone();
-        unique.sort_unstable();
-        unique.dedup();
-        assert_eq!(unique.len(), 17);
+    fn groups_cover_distinct_indicators_per_coin() {
+        for (coin, expected) in [("ETH", 17), ("BTC", 12)] {
+            let all = grouped(coin);
+            assert_eq!(all.len(), expected, "{coin}");
+            let mut unique = all.clone();
+            unique.sort_unstable();
+            unique.dedup();
+            assert_eq!(unique.len(), expected, "{coin}");
+        }
+    }
+
+    #[test]
+    fn btc_drops_the_fundamentals_group_and_the_eth_only_indicators() {
+        let groups = IndicatorGroup::for_coin("BTC");
+        assert_eq!(
+            groups,
+            [IndicatorGroup::OnChain, IndicatorGroup::Derivatives, IndicatorGroup::Liquidity]
+        );
+        let btc = grouped("BTC");
+        for eth_only in ["staking_yield", "tvl_trend", "net_issuance", "fees_vs_emission", "eth_btc_trend_30d"] {
+            assert!(!btc.contains(&eth_only), "{eth_only}");
+        }
+        assert_eq!(IndicatorGroup::for_coin("ETH").len(), 4);
+    }
+
+    #[test]
+    fn other_coins_use_the_eth_set_and_thresholds() {
+        assert_eq!(threshold_coin("SOL"), "ETH");
+        assert_eq!(threshold_coin("btc"), "BTC");
+        assert_eq!(grouped("SOL"), grouped("ETH"));
+        assert_eq!(default_threshold("SOL", "dvol"), default_threshold("ETH", "dvol"));
+        assert_ne!(default_threshold("BTC", "dvol"), default_threshold("ETH", "dvol"));
     }
 
     #[test]
     fn empty_score_has_full_total_and_nothing_logged() {
-        let score = compute_score(&[]);
+        let score = compute_score("ETH", &[]);
         assert_eq!((score.green, score.logged, score.total), (0, 0, 17));
         assert_eq!(score.verdict, ScoreVerdict::ReduceRisk);
         assert!(score.groups.iter().all(|g| g.indicators.iter().all(|i| i.reading.is_none())));
+
+        let btc = compute_score("BTC", &[]);
+        assert_eq!((btc.green, btc.logged, btc.total), (0, 0, 12));
+        assert_eq!(btc.groups.len(), 3);
     }
 
     #[test]
     fn subscores_count_greens_per_group() {
-        let score = compute_score(&[
+        let score = compute_score("ETH", &[
             reading("mvrv_z_score", "GREEN"),
             reading("nvt_ratio", "RED"),
             reading("funding_rate_7d", "GREEN"),
@@ -320,7 +422,7 @@ mod tests {
 
     #[test]
     fn unknown_indicators_are_ignored() {
-        let score = compute_score(&[reading("made_up", "GREEN")]);
+        let score = compute_score("ETH", &[reading("made_up", "GREEN")]);
         assert_eq!((score.green, score.logged), (0, 0));
     }
 
@@ -337,21 +439,23 @@ mod tests {
 
     #[test]
     fn every_grouped_indicator_has_a_valid_default() {
-        for group in IndicatorGroup::ALL {
-            for name in group.indicators() {
-                let (green, red) = default_threshold(name)
-                    .unwrap_or_else(|| panic!("no default threshold for {name}"));
-                assert!(validate_boundaries(green, red).is_ok(), "{name}");
+        for coin in ["ETH", "BTC"] {
+            for name in grouped(coin) {
+                let (green, red) = default_threshold(coin, name)
+                    .unwrap_or_else(|| panic!("no default threshold for {coin} {name}"));
+                assert!(validate_boundaries(green, red).is_ok(), "{coin} {name}");
             }
+            assert!(default_threshold(coin, "made_up").is_none());
         }
-        assert!(default_threshold("made_up").is_none());
     }
 
     #[test]
     fn defaults_have_no_unknown_indicator() {
-        let grouped: Vec<&str> =
-            IndicatorGroup::ALL.iter().flat_map(|g| g.indicators().iter().copied()).collect();
-        assert!(DEFAULT_THRESHOLDS.iter().all(|(name, _, _)| grouped.contains(name)));
+        for coin in ["ETH", "BTC"] {
+            let grouped = grouped(coin);
+            assert!(default_thresholds(coin).iter().all(|(name, _, _)| grouped.contains(name)), "{coin}");
+            assert_eq!(default_thresholds(coin).len(), grouped.len(), "{coin}");
+        }
     }
 
     #[test]
