@@ -2558,3 +2558,21 @@ gosto de fazer"), então virou E2E.
   consumidores: avisos da CVM (alerta ou leitura do PDF para o provento esperado, com `resolve_cvm_code`),
   opções (Fase 18) e moeda base (Fase 19); ingestão agendada e `DataProvider` com mais de uma fonte por
   categoria.
+
+
+### 2026-10-17 — Sessão 110
+
+**Consumidor dos avisos da CVM.** Plan mode; escolhas do dono do projeto: só alerta com link do PDF (sem
+sugestão, sem migration, sem ler o PDF) e código CVM pelo bolsai.
+- **Feito**: comando `list_cvm_dividend_notices` (`commands/cvm_notice.rs`) para `acao_br`/`bdr` com
+  posição aberta, avisos dos últimos 90 dias, erro por ativo sem derrubar os outros; card
+  `CvmNoticesCard.tsx` no topo de "Manage suggestions" da aba Dividends. Detalhe na Fase 32 do `PHASE.md`.
+- **Achado de planejamento**: a IA saiu na Fase 20, então o aviso traz só data e link, sem valor; por
+  isso o escopo virou alerta e não sugestão.
+- **Verificado**: `./dev.sh check` limpo (levou mais de 10 min) e CI do push `924cfcf` verde (Rust com os 2
+  testes unitários novos, E2E e Frontend). **Não verificado**: o teste ao vivo `live_notices_for_bbas3`
+  (`#[ignore]`, precisa da chave do bolsai) e o clique na tela.
+- **Processo**: um trecho de `types.ts` foi acrescentado por heredoc no Bash, contra a regra de usar
+  Edit/Write; o conteúdo está certo.
+- **Pendente**: decisão do dono sobre o repo do Lume; consumidores de opções (Fase 18) e moeda base
+  (Fase 19); ingestão agendada e `DataProvider` com mais de uma fonte por categoria.

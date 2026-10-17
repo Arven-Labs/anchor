@@ -2567,6 +2567,12 @@ desatualizado e foi avançado com `git pull --ff-only` até `7767069`).
     de checagem do `%PDF-` (a CVM às vezes devolve uma página HTML de erro para versões antigas). O
     `resolve_cvm_code` da Sessão 94 saiu junto com a Fase 20; hoje o código CVM vem de
     `fetch_stock_bolsai_fundamentals(ticker).cvm_code` (exige a chave da bolsai).
+  - **Consumidor (Sessão 110)**: alerta, sem criar sugestão, sem migration e sem ler o PDF (escolhas do
+    dono do projeto). Comando `list_cvm_dividend_notices(portfolio_id)` em `commands/cvm_notice.rs`: ativos
+    `acao_br`/`bdr` com posição aberta (`quantity_held_by`), código CVM pelo bolsai, avisos dos últimos 90
+    dias do mais novo ao mais antigo. Falha por ativo (ex.: sem chave) vai no campo `error` e não derruba
+    os outros. Tela: card `CvmNoticesCard.tsx` no topo de "Manage suggestions" (aba Dividends), com
+    "Open PDF" via `openUrl`. Fora de escopo: valor/datas do aviso, FII (outro fluxo), widget na Home.
 - **Fragilidade que veio junto**: no Lume, CDI e IPCA mensais (`fetch_monthly_series`) ficaram com 15 s
   e sem nova tentativa, e um 502 passageiro do BCB já derrubou o CDI. No Anchor, `bcb_sgs::fetch_monthly`
   usa o timeout padrão e também não tenta de novo (só a Selic diária tem janela de 9 anos, 45 s e 3
