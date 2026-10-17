@@ -11,6 +11,7 @@ pub mod data_source_credentials;
 pub mod dcf;
 pub mod cvm_notice;
 pub mod dividend_suggestion;
+pub mod options;
 pub mod fii;
 pub mod general_transaction;
 pub mod general_transaction_category;

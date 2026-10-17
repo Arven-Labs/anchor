@@ -18,6 +18,7 @@ import PriceHistoryChart from "./PriceHistoryChart";
 import NewValuationDialog from "../models/NewValuationDialog";
 import SavedValuationsPanel from "../valuations/SavedValuationsPanel";
 import AssetThesesSidebar from "./AssetThesesSidebar";
+import OptionsSection from "./OptionsSection";
 import {
   AddToAssetsButton,
   CompanyLogo,
@@ -364,6 +365,8 @@ function StockAnalysisSection({
               <p className="text-muted-foreground">No saved valuation for {ticker} yet.</p>
             )}
           </div>
+
+          <OptionsSection key={ticker} ticker={ticker} price={price} />
 
           <AssetThesesSidebar
             workspaceId={workspaceId}

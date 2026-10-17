@@ -53,6 +53,12 @@ describe("Anchor — Research com dados de rede", function () {
 
     // A coleta gravou a cotação no banco, com o nome vindo do Yahoo.
     expect(Number(sql("SELECT count(*) FROM stock_quotes WHERE ticker = 'PETR4'"))).toBeGreaterThan(0);
+
+    // A seção de opções aparece, mas não baixa os ~80 MB da B3 sozinha: só com o clique.
+    await byId("load-options").waitForDisplayed({ timeout: 30_000 });
+    const section = await textOf(byId("options-section"));
+    expect(section).toContain("Load options");
+    expect(section).not.toContain("Downloading");
   });
 
   it("ação dos EUA (AAPL) coleta a cotação em dólar", async function () {
