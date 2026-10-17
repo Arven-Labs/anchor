@@ -1,6 +1,11 @@
 import { $$, browser, expect } from "@wdio/globals";
 import { byId, enterWorkspace, pickOption, textOf, waitForText } from "./helpers.mjs";
 
+// `$$` devolve um objeto que não é iterável; `Array.from` dá a lista de verdade.
+async function elementsOf(selector) {
+  return Array.from(await $$(selector));
+}
+
 describe("Anchor — moeda por conta, de ponta a ponta", () => {
   it("cria um Workspace e entra nele", async () => {
     await enterWorkspace("E2E Currency");
@@ -30,11 +35,11 @@ describe("Anchor — moeda por conta, de ponta a ponta", () => {
     await pickOption(byId("account-currency-select"), "ARS — Argentine Peso");
     await byId("account-create").click();
 
-    await browser.waitUntil(async () => (await $$('[data-testid="account-currency"]')).length === 2, {
+    await browser.waitUntil(async () => (await elementsOf('[data-testid="account-currency"]')).length === 2, {
       timeout: 20_000,
       timeoutMsg: "as duas contas deveriam aparecer na lista",
     });
-    const cells = await $$('[data-testid="account-currency"]');
+    const cells = await elementsOf('[data-testid="account-currency"]');
     const currencies = await Promise.all(cells.map((cell) => textOf(cell)));
     expect(currencies.sort()).toEqual(["ARS", "BRL"]);
   });
