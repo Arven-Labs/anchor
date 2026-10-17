@@ -2903,6 +2903,7 @@ mode. Detalhe na Fase 19 do `PHASE.md`.
   `base_currency`, KPIs rotulados com a base, gráfico do Ledger na base, valor original ao lado do convertido nas duas
   tabelas.
 - **Decisão**: impostos ficam como estão (o formatador já era BRL fixo e a regra é fiscal brasileira).
-- **Verificado**: `./dev.sh check` limpo; 2 testes de fluxo novos. CI: ver abaixo.
+- **Verificado**: `./dev.sh check` limpo; 2 testes de fluxo novos; CI do push `c5f77b4` verde nos três
+  workflows, de primeira.
 - **Não verificado**: a tela a olho.
 - **Pendente**: benchmarks convertidos (hoje só escondidos fora do BRL).
