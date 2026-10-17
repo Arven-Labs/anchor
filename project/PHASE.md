@@ -3179,11 +3179,15 @@ mercado/câmbio.
 - **429**: `http::check_status` marca "rate limited"; `get_text_with_headers` tenta uma segunda vez após esperar o
   `Retry-After` (teto de 10 s, padrão 2 s).
 - **Desligável** por `ANCHOR_DISABLE_INGESTION` (o E2E liga, pra a coleta de fundo não disputar o trinco).
+- **Aviso de câmbio velho (Sessão 131)**: `get_fx_staleness(workspace_id)` devolve os pares em uso
+  (`workspace_fx_pairs`, a mesma lista que a ingestão coleta) nunca coletados ou com último fechamento de mais de 5
+  dias (cobre fim de semana e feriado prolongado). A Home mostra um aviso âmbar com os pares e as datas; some sozinho
+  quando a ingestão ou o "Update now" atualiza. Só a Home por ora (Resumo e Finanças não têm o aviso).
 
 **Achado**: o Stooq, primeira candidata a segunda fonte, devolve uma página de prova de trabalho em JavaScript em
 vez do CSV, então não serve para um cliente HTTP. Para ações, ETFs e dividendos não há fonte grátis e sem chave que
 funcione: continuam só com o Yahoo.
 
 **Fora do escopo / pendente**: intraday; execução com o app fechado; segunda fonte de ações (exige BYO-key, como
-Twelve Data ou Alpha Vantage); aviso na tela quando o câmbio usado está velho; prioridade "premium não é
+Twelve Data ou Alpha Vantage); prioridade "premium não é
 sobrescrito por grátis" (só faz sentido com fonte paga).

@@ -2933,4 +2933,14 @@ mode. Detalhe na Fase 19 do `PHASE.md`.
 - **Não verificado**: a tela a olho; o Frankfurter contra a API real dentro do app (só testei o JSON dele por
   `curl`; não escrevi o teste `#[ignore]` ao vivo previsto no plano); o agendador em si não é exercitado em nenhum
   teste, só a decisão de quando rodar.
-- **Pendente**: aviso de câmbio velho na tela; segunda fonte de ações (BYO-key).
+- **Pendente**: aviso de câmbio velho na tela; segunda fonte de ações (BYO-key). *(O aviso foi feito na Sessão 131.)*
+
+
+### 2026-10-18 — Sessão 131
+
+**Aviso de câmbio velho (Fase 33).** O dono do projeto mandou seguir ("segue"), então sem plan mode.
+- **Feito**: `workspace_fx_pairs` extraído da ingestão, `stale_pairs`/`fx_staleness_in`/`get_fx_staleness`
+  (limite de 5 dias) e `FxStalenessNotice` na Home, invalidado por "Update now" e pela troca de moeda base.
+- **Verificado**: `./dev.sh check` limpo; teste unitário de `stale_pairs` e teste de fluxo de `fx_staleness_in`.
+- **Não verificado**: a tela a olho; sem caso de E2E para o aviso.
+- **Pendente**: segunda fonte de ações (BYO-key); benchmarks convertidos (adiado).

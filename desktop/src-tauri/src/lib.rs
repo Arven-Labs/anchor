@@ -99,6 +99,7 @@ pub fn run() {
             commands::collector::list_stock_dividend_payments,
             commands::collector::run_price_history_backfill,
             commands::collector::run_benchmark_backfill,
+            ingestion::get_fx_staleness,
             ingestion::list_ingestion_runs,
             ingestion::run_ingestion_now,
             commands::collector::list_stock_price_history,

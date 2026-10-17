@@ -29,6 +29,7 @@ function CurrencySettingsSection({ workspaceId }: { workspaceId: number }) {
     mutationFn: (currency) => invoke("set_base_currency", { workspaceId, currency }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["workspace-settings", workspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["fx-staleness"] });
       queryClient.invalidateQueries({ queryKey: ["workspace-summary"] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-summary"] });
       queryClient.invalidateQueries({ queryKey: ["positions"] });

@@ -19,6 +19,7 @@ import { ASSET_CLASS_LABELS, type AssetClass } from "../portfolio/types";
 import type { StockQuote } from "../collector/types";
 import { latestForTicker } from "../collector/latestForTicker";
 import type { WorkspaceSummary, MonthlyReturn, HomeWidgetLayout, WidgetKey } from "./types";
+import FxStalenessNotice from "../finances/FxStalenessNotice";
 import KeyRatesTable from "../rates/KeyRatesTable";
 import { formatDate as formatRateDate, formatRate, useInterestRates } from "../rates/useInterestRates";
 import { Button } from "@/components/ui/button";
@@ -624,6 +625,7 @@ function HomeSection({
 
   return (
     <div className="flex flex-col gap-4">
+      <FxStalenessNotice workspaceId={workspaceId} />
       <div className="flex items-center justify-between gap-2">
         <div />
         {editing ? (

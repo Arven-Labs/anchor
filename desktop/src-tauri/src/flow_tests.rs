@@ -1670,6 +1670,29 @@ async fn ingestion_targets_are_only_what_the_user_has() {
 }
 
 #[tokio::test]
+async fn fx_staleness_flags_only_the_pairs_the_workspace_uses() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Stale").await;
+    bank_account_in(&db, ws.id, "Dollar account", "USD").await;
+    bank_account_in(&db, ws.id, "Euro account", "EUR").await;
+    seed_price(&db, "USDBRL", "2026-10-10", 5.0).await;
+    seed_price(&db, "USDBRL", "2026-10-16", 5.1).await;
+    // Par que ninguém usa não entra, mesmo velho.
+    seed_price(&db, "GBPBRL", "2020-01-01", 6.0).await;
+
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 18).unwrap();
+    let stale = crate::ingestion::fx_staleness_in(&db, ws.id, today).await.unwrap();
+    // USD/BRL tem fechamento de 2 dias atrás (vale); EUR/BRL nunca foi coletado.
+    assert_eq!(stale.len(), 1);
+    assert_eq!(stale[0].pair, "EUR/BRL");
+    assert!(stale[0].last_date.is_none());
+
+    let much_later = chrono::NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
+    let stale = crate::ingestion::fx_staleness_in(&db, ws.id, much_later).await.unwrap();
+    assert_eq!(stale.iter().map(|s| s.pair.as_str()).collect::<Vec<_>>(), vec!["EUR/BRL", "USD/BRL"]);
+}
+
+#[tokio::test]
 async fn ingestion_with_nothing_owned_still_lists_no_targets() {
     let db = memory_db().await;
     workspace(&db, "Empty").await;

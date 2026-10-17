@@ -50,6 +50,7 @@ function IngestionSettingsSection() {
       queryClient.invalidateQueries({ queryKey: ["ingestion-runs"] });
       // Cotações e câmbio novos mudam tudo que é exibido convertido.
       for (const key of [
+        "fx-staleness",
         "workspace-summary",
         "portfolio-summary",
         "positions",

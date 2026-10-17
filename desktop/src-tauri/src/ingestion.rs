@@ -4,11 +4,12 @@
 // benchmarks. Cada rodada vira uma linha em `ingestion_runs`. A coleta manual
 // continua igual; as duas dividem o mesmo trinco (`CollectorGuard`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
+use serde::Serialize;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
 };
@@ -18,7 +19,8 @@ use crate::commands::collector::{collect_asset, CollectorGuard};
 use crate::commands::currency::{base_currency, workspace_asset_currencies};
 use crate::commands::profitability::ASSET_CLASSES_WITH_AUTO_QUOTE;
 use crate::entity::{
-    asset_favorites, assets, bank_account, ingestion_runs, loan, transactions, watchlist_items, workspace,
+    asset_favorites, assets, bank_account, ingestion_runs, loan, stock_price_history, transactions,
+    watchlist_items, workspace,
 };
 use crate::error::AppError;
 use crate::finance_api::{benchmark, fx as finance_api_fx};
@@ -98,31 +100,40 @@ pub async fn collection_targets(db: &DatabaseConnection) -> Result<Targets, AppE
 
     // Câmbio: moedas de ativos, contas e empréstimos de cada Workspace contra a base dele.
     for ws in workspace::Entity::find().all(db).await? {
-        let base = base_currency(db, ws.id).await?;
-        let mut currencies = workspace_asset_currencies(db, ws.id).await?;
-        currencies.extend(
-            bank_account::Entity::find()
-                .filter(bank_account::Column::WorkspaceId.eq(ws.id))
-                .all(db)
-                .await?
-                .into_iter()
-                .map(|a| a.currency),
-        );
-        currencies.extend(
-            loan::Entity::find()
-                .filter(loan::Column::WorkspaceId.eq(ws.id))
-                .all(db)
-                .await?
-                .into_iter()
-                .map(|l| l.currency),
-        );
-        for currency in currencies {
-            if currency != base && is_supported_currency(&currency) && is_supported_currency(&base) {
-                targets.fx_pairs.insert((currency, base.clone()));
-            }
-        }
+        targets.fx_pairs.extend(workspace_fx_pairs(db, ws.id).await?);
     }
     Ok(targets)
+}
+
+/// `(moeda, base)` de cada moeda em uso no Workspace (ativos com lançamento,
+/// contas, empréstimos) diferente da base e presente no catálogo de câmbio.
+pub async fn workspace_fx_pairs(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+) -> Result<BTreeSet<(String, String)>, AppError> {
+    let base = base_currency(db, workspace_id).await?;
+    let mut currencies = workspace_asset_currencies(db, workspace_id).await?;
+    currencies.extend(
+        bank_account::Entity::find()
+            .filter(bank_account::Column::WorkspaceId.eq(workspace_id))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|a| a.currency),
+    );
+    currencies.extend(
+        loan::Entity::find()
+            .filter(loan::Column::WorkspaceId.eq(workspace_id))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|l| l.currency),
+    );
+    Ok(currencies
+        .into_iter()
+        .filter(|currency| *currency != base && is_supported_currency(currency) && is_supported_currency(&base))
+        .map(|currency| (currency, base.clone()))
+        .collect())
 }
 
 /// Fim da última rodada que terminou (`ok` ou `partial`), pra decidir a próxima.
@@ -214,6 +225,79 @@ pub fn spawn_daily_ingestion(handle: tauri::AppHandle, db: DatabaseConnection) {
     });
 }
 
+/// Dias sem fechamento novo a partir dos quais o câmbio é considerado velho
+/// (cobre fim de semana e feriado prolongado).
+pub const STALE_AFTER_DAYS: i64 = 5;
+
+#[derive(Debug, PartialEq, Serialize)]
+pub struct FxFreshness {
+    pub pair: String,
+    /// `None` quando o par nunca foi coletado.
+    pub last_date: Option<String>,
+    pub days_old: Option<i64>,
+}
+
+/// Dos pares, os que nunca foram coletados ou cujo último fechamento tem mais de
+/// `STALE_AFTER_DAYS` dias. `latest` mapeia código do par (`USDBRL`) à data mais recente.
+pub fn stale_pairs(
+    pairs: &BTreeSet<(String, String)>,
+    latest: &HashMap<String, NaiveDate>,
+    today: NaiveDate,
+) -> Vec<FxFreshness> {
+    pairs
+        .iter()
+        .filter_map(|(currency, base)| {
+            let code = format!("{currency}{base}");
+            let pair = format!("{currency}/{base}");
+            match latest.get(&code) {
+                None => Some(FxFreshness { pair, last_date: None, days_old: None }),
+                Some(date) => {
+                    let days_old = (today - *date).num_days();
+                    (days_old > STALE_AFTER_DAYS).then(|| FxFreshness {
+                        pair,
+                        last_date: Some(date.to_string()),
+                        days_old: Some(days_old),
+                    })
+                }
+            }
+        })
+        .collect()
+}
+
+/// Pares de câmbio do Workspace com dado velho ou ausente, pra UI avisar.
+pub async fn fx_staleness_in(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+    today: NaiveDate,
+) -> Result<Vec<FxFreshness>, AppError> {
+    let pairs = workspace_fx_pairs(db, workspace_id).await?;
+    let codes: Vec<String> = pairs.iter().map(|(currency, base)| format!("{currency}{base}")).collect();
+    let mut latest: HashMap<String, NaiveDate> = HashMap::new();
+    if !codes.is_empty() {
+        for row in stock_price_history::Entity::find()
+            .filter(stock_price_history::Column::Ticker.is_in(codes))
+            .all(db)
+            .await?
+        {
+            if let Ok(date) = NaiveDate::parse_from_str(&row.price_date, "%Y-%m-%d") {
+                let entry = latest.entry(row.ticker).or_insert(date);
+                if date > *entry {
+                    *entry = date;
+                }
+            }
+        }
+    }
+    Ok(stale_pairs(&pairs, &latest, today))
+}
+
+#[tauri::command]
+pub async fn get_fx_staleness(
+    db: tauri::State<'_, DatabaseConnection>,
+    workspace_id: i32,
+) -> Result<Vec<FxFreshness>, AppError> {
+    fx_staleness_in(db.inner(), workspace_id, Utc::now().date_naive()).await
+}
+
 #[tauri::command]
 pub async fn list_ingestion_runs(
     db: tauri::State<'_, DatabaseConnection>,
@@ -250,6 +334,30 @@ mod tests {
         assert!(is_due(Some(at("2026-10-10T00:00:00Z")), now));
         assert!(!is_due(Some(at("2026-10-17T12:00:01Z")), now));
         assert!(!is_due(Some(at("2026-10-18T11:59:00Z")), now));
+    }
+
+    #[test]
+    fn pairs_are_stale_when_missing_or_older_than_the_limit() {
+        let day = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        let pairs: BTreeSet<(String, String)> = [("EUR", "BRL"), ("GBP", "BRL"), ("USD", "BRL")]
+            .into_iter()
+            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .collect();
+        let latest: HashMap<String, NaiveDate> = [
+            ("USDBRL".to_string(), day("2026-10-13")), // 5 dias: ainda vale
+            ("EURBRL".to_string(), day("2026-10-12")), // 6 dias: velho
+        ]
+        .into_iter()
+        .collect();
+
+        let stale = stale_pairs(&pairs, &latest, day("2026-10-18"));
+        assert_eq!(
+            stale,
+            vec![
+                FxFreshness { pair: "EUR/BRL".into(), last_date: Some("2026-10-12".into()), days_old: Some(6) },
+                FxFreshness { pair: "GBP/BRL".into(), last_date: None, days_old: None },
+            ]
+        );
     }
 
     #[test]
