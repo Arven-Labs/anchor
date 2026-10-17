@@ -59,11 +59,15 @@ pub async fn bank_account(db: &DatabaseConnection, workspace_id: i32, nome: &str
 }
 
 pub async fn asset(db: &DatabaseConnection, ticker: &str, asset_class: &str) -> assets::Model {
+    asset_in(db, ticker, asset_class, "BRL").await
+}
+
+pub async fn asset_in(db: &DatabaseConnection, ticker: &str, asset_class: &str, currency: &str) -> assets::Model {
     assets::ActiveModel {
         ticker: Set(ticker.to_string()),
         name: Set(ticker.to_string()),
         asset_class: Set(asset_class.to_string()),
-        currency: Set("BRL".to_string()),
+        currency: Set(currency.to_string()),
         exchange: Set(None),
         exposure_type: Set("pais".to_string()),
         exposure_value: Set("BR".to_string()),

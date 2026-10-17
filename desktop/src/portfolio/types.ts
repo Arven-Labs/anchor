@@ -335,7 +335,11 @@ export type PositionView = {
   ticker: string;
   name: string;
   asset_class: string;
+  // Moeda dos valores abaixo (a base do Workspace) e a do ativo; `fx_missing`
+  // = sem cotação do par, valores vêm null e ficam fora dos totais.
   currency: string;
+  native_currency: string;
+  fx_missing: boolean;
   quantity: number;
   average_buy_price: number | null;
   by_custodia: CustodiaBreakdown[];
@@ -361,6 +365,9 @@ export type PortfolioSummary = {
   dividends_received_12m: number;
   allocation_by_class: ClassAllocation[];
   positions_missing_price: number;
+  // Fase 19 — moeda dos totais e posições sem cotação do par pra ela.
+  base_currency: string;
+  positions_missing_fx: number;
 };
 
 // Fase 13.6 — sugestão de lançamento de provento gerada a partir de fonte

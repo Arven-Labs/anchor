@@ -57,3 +57,4 @@ pub mod valuation;
 pub mod watchlist_items;
 pub mod watchlists;
 pub mod workspace;
+pub mod workspace_settings;

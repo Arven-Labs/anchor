@@ -2744,4 +2744,25 @@ definia o que fazer). Detalhe na Fase 18 do `PHASE.md`.
   funcionava, o teste é que não fechava o diálogo.
 - **Não verificado**: pernas vindas da cadeia real, a tela a olho e o clique manual.
 - **Pendente**: moeda base (Fase 19); ingestão agendada e `DataProvider` com mais de uma fonte por categoria;
-  E2E do câmbio pular em "No data found".
+  E2E do câmbio pular em "No data found". *(A moeda base foi feita na Sessão 120, abaixo.)*
+
+
+### 2026-10-17 — Sessão 120
+
+**Moeda base por Workspace (Fase 19, 1ª entrega).** Plan mode; escolhas do dono do projeto: escopo só Resumo,
+posições e Home; taxa do último fechamento; par ausente coletado sozinho com aviso se falhar. Detalhe na Fase 19
+do `PHASE.md`.
+- **Feito**: tabela `workspace_settings`, `FxRates` (direto, inverso, cruzado via USD), comandos
+  `get_workspace_settings`/`set_base_currency`, conversão em posições, resumo da carteira e do Workspace
+  (inclusive proventos 12m), seção Settings → Currency, `formatMoney`, aviso de câmbio ausente.
+- **Decisão de desenho**: `compute_positions` segue nativo para não mexer em patrimônio, rentabilidade e
+  impostos; a conversão é uma camada em cima (`positions_in_base`).
+- **Mudança de comportamento**: ativo em USD deixa de ser somado cru como BRL.
+- **Verificado**: `./dev.sh check` limpo (tsc e `cargo check --all-targets`). Testes de domínio e de fluxo e o
+  E2E novo ainda não rodaram; dependem do CI.
+- **Não verificado**: a tela a olho, a coleta real do par ao trocar a moeda e os resumos de ponta a ponta (os
+  testes cobrem `positions_in_base` e `sum_in_base`, não os comandos Tauri).
+- **Processo**: rodei um heredoc de shell vazio contra o `flow_tests.rs`, sem efeito mas contra a regra de usar
+  Edit/Write; deixei também uma linha perdida no arquivo, removida antes de compilar.
+- **Pendente**: rentabilidade/TWR, patrimônio, caixa e dívidas em outra moeda; custo na taxa da data do fluxo;
+  ingestão agendada e `DataProvider` com mais de uma fonte por categoria; E2E do câmbio pular em "No data found".

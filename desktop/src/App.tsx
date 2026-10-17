@@ -91,7 +91,7 @@ function App() {
   if (view === "settings") {
     return (
       <main className="mx-auto max-w-6xl p-8">
-        <SettingsPage onBack={() => setView("main")} />
+        <SettingsPage onBack={() => setView("main")} workspaceId={workspaceId} />
       </main>
     );
   }

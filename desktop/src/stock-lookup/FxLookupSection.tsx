@@ -20,7 +20,7 @@ type CollectorSummary = { success: boolean; output: string };
 // Espelho de `CURRENCIES` em `src-tauri/src/finance_core/fx.rs` (17 moedas
 // ISO 4217, curadas pro público brasileiro). O Rust valida o par de novo, então
 // uma moeda que fique só aqui vira "No data found", não um dado errado.
-const CURRENCIES: [string, string][] = [
+export const CURRENCIES: [string, string][] = [
   ["USD", "US Dollar"],
   ["EUR", "Euro"],
   ["GBP", "British Pound"],

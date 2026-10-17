@@ -1840,10 +1840,33 @@ questão de exibição vs. armazenamento — provavelmente cada ativo continua g
 na sua moeda de origem e a conversão acontece só na camada de exibição/agregação, não decidido
 com certeza ainda.
 
-**Estado**: puro registro de intenção — nenhuma decisão de escopo tomada (câmbio ao vivo vs.
-diário, per-asset vs. per-workspace, quais telas precisam converter). Não bloqueada por nenhuma
-outra fase, mas toca bastante superfície (Resumo, Posições, gráficos de alocação, Rentabilidade)
-se um dia for implementada.
+**Estado**: 1ª entrega implementada na Sessão 120 (Resumo, Posições e Home). Rentabilidade, patrimônio
+e as demais telas seguem sem conversão — ver "Pendente" abaixo.
+
+**Decisões (Sessão 120, plan mode)**: moeda base **por Workspace** (tabela `workspace_settings`, sem
+linha = BRL); taxa = **último fechamento** do par em `stock_price_history` (sem rede na leitura);
+par ausente → o `set_base_currency` coleta sozinho via `finance_api::fx::collect_pair` e, se falhar,
+devolve `missing_pairs` e a posição fica fora dos totais com aviso. Cada ativo continua guardado na
+moeda de origem: a conversão é só de exibição.
+
+**Implementado**:
+- `domain/currency_conversion.rs` (`FxRates`): rota direta, inversa ou cruzada via USD; cotação ≤ 0 é
+  ignorada.
+- `commands/currency.rs`: `get_workspace_settings`, `set_base_currency`, `positions_in_base`,
+  `convert_position`, `sum_in_base` (proventos 12m pela moeda do ativo).
+- `compute_positions` continua nativo (patrimônio, rentabilidade e impostos dependem disso);
+  `get_portfolio_positions`, `get_portfolio_summary` e `get_workspace_summary` convertem. `PositionView`
+  ganhou `native_currency` e `fx_missing`; os resumos ganharam `base_currency` e `positions_missing_fx`.
+- Settings → Currency, `formatMoney` em `lib/utils.ts`, selo "from USD" nas posições e aviso de câmbio
+  ausente no Resumo e na Home.
+
+**Efeito colateral deliberado**: antes, ativo em USD era somado cru como se fosse BRL; agora é convertido
+(com BRL como base e o `USDBRL` coletado). Sem o par coletado, a posição sai dos totais com aviso.
+
+**Pendente**: rentabilidade/TWR e benchmarks (muda a conta, não só a exibição); patrimônio líquido,
+caixa, dívidas e empréstimos (sem coluna de moeda, seguem BRL implícito); custo convertido na data de cada
+fluxo (hoje usa a taxa mais recente, então o P/L inclui variação cambial do custo); formatadores
+locais de Ledger, Dividendos, Rentabilidade e impostos; impostos ficam sempre em BRL (regra fiscal).
 
 
 ### Fase 20 — Remover a IA do Anchor (Warden vira a única interface de IA; decisão registrada na Sessão 100, **executada na Sessão 101**)

@@ -7,6 +7,7 @@ import type { AppError } from "../types";
 import type { MonthlyReturn, PortfolioSummary, PositionView } from "./types";
 import { ASSET_CLASS_LABELS, type AssetClass } from "./types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatMoney } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Table,
@@ -197,12 +198,12 @@ function SummarySection({ portfolioId }: { portfolioId: number }) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           title="Total portfolio value"
-          value={formatCurrency(summary.total_market_value)}
-          subtext={`Invested: ${formatCurrency(summary.total_cost_basis)}`}
+          value={formatMoney(summary.total_market_value, summary.base_currency)}
+          subtext={`Invested: ${formatMoney(summary.total_cost_basis, summary.base_currency)}`}
         />
         <KpiCard
           title="Profit"
-          value={formatCurrency(summary.unrealized_pl)}
+          value={formatMoney(summary.unrealized_pl, summary.base_currency)}
           valueClassName={plColorClass(summary.unrealized_pl)}
           subtext={
             summary.unrealized_pl_pct != null
@@ -212,7 +213,7 @@ function SummarySection({ portfolioId }: { portfolioId: number }) {
         />
         <KpiCard
           title="Dividends received (12M)"
-          value={formatCurrency(summary.dividends_received_12m)}
+          value={formatMoney(summary.dividends_received_12m, summary.base_currency)}
         />
         <KpiCard
           title="Return"
@@ -225,6 +226,14 @@ function SummarySection({ portfolioId }: { portfolioId: number }) {
           }
         />
       </div>
+
+      {summary.positions_missing_fx > 0 && (
+        <p className="text-sm text-muted-foreground" data-testid="summary-missing-fx">
+          {summary.positions_missing_fx} position{summary.positions_missing_fx === 1 ? "" : "s"} without an
+          exchange rate to {summary.base_currency} — the totals above don't include {summary.positions_missing_fx === 1 ? "it" : "them"}.
+          Fetch the pair in Research → FX.
+        </p>
+      )}
 
       {summary.positions_missing_price > 0 && (
         <p className="text-sm text-muted-foreground">
@@ -332,6 +341,11 @@ function SummarySection({ portfolioId }: { portfolioId: number }) {
                             <TableCell>
                               <p className="font-medium">{position.ticker}</p>
                               <p className="text-xs text-muted-foreground">{position.name}</p>
+                              {(position.fx_missing || position.native_currency !== position.currency) && (
+                                <p className="text-xs text-muted-foreground">
+                                  {position.fx_missing ? `No ${position.native_currency} rate` : `from ${position.native_currency}`}
+                                </p>
+                              )}
                             </TableCell>
                             <TableCell>{position.quantity}</TableCell>
                             <TableCell>

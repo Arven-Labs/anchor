@@ -176,6 +176,11 @@ function PositionsSection({ portfolioId }: { portfolioId: number }) {
                             <TableCell>
                               <p className="font-medium">{position.ticker}</p>
                               <p className="text-xs text-muted-foreground">{position.name}</p>
+                              {(position.fx_missing || position.native_currency !== position.currency) && (
+                                <p className="text-xs text-muted-foreground">
+                                  {position.fx_missing ? `No ${position.native_currency} rate` : `from ${position.native_currency}`}
+                                </p>
+                              )}
                             </TableCell>
                             <TableCell>{position.quantity}</TableCell>
                             <TableCell>

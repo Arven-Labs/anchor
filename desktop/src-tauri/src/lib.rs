@@ -202,6 +202,8 @@ pub fn run() {
             commands::net_worth::get_net_worth_summary,
             commands::workspace_summary::get_workspace_summary,
             commands::workspace_summary::get_workspace_profitability,
+            commands::currency::get_workspace_settings,
+            commands::currency::set_base_currency,
             commands::home_layout::get_home_layout,
             commands::home_layout::save_home_layout,
             commands::watchlist::list_watchlists,

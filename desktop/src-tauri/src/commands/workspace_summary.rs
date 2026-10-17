@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::commands::portfolio_summary::ClassAllocation;
 use crate::commands::profitability::{compute_profitability, MonthlyReturn};
-use crate::commands::transaction::compute_positions;
+use crate::commands::currency::{base_currency, positions_in_base, sum_in_base};
 use crate::entity::{portfolio, transactions};
 use crate::error::AppError;
 
@@ -33,6 +33,9 @@ pub struct WorkspaceSummary {
     pub dividends_received_12m: f64,
     pub allocation_by_class: Vec<ClassAllocation>,
     pub positions_missing_price: i32,
+    // Fase 19 — mesma semântica de `PortfolioSummary`.
+    pub base_currency: String,
+    pub positions_missing_fx: i32,
     pub portfolios: Vec<PortfolioBreakdown>,
 }
 
@@ -51,15 +54,21 @@ pub async fn get_workspace_summary(
     let mut total_market_value = 0.0;
     let mut total_cost_basis = 0.0;
     let mut positions_missing_price = 0;
+    let mut positions_missing_fx = 0;
     let mut by_class: HashMap<String, f64> = HashMap::new();
     let mut breakdown = Vec::with_capacity(portfolios.len());
+    let base_currency = base_currency(db, workspace_id).await?;
 
     for p in &portfolios {
-        let positions = compute_positions(db, p.id).await?;
+        let (positions, _) = positions_in_base(db, p.id).await?;
         let mut portfolio_market_value = 0.0;
 
         for position in &positions {
-            if let Some(market_value) = position.market_value {
+            if position.fx_missing {
+                if position.quantity > 0.0 {
+                    positions_missing_fx += 1;
+                }
+            } else if let Some(market_value) = position.market_value {
                 total_market_value += market_value;
                 portfolio_market_value += market_value;
                 *by_class.entry(position.asset_class.clone()).or_insert(0.0) += market_value;
@@ -103,9 +112,11 @@ pub async fn get_workspace_summary(
         .filter(transactions::Column::TransactionDate.gte(since))
         .all(db)
         .await?;
-    let dividends_received_12m: f64 = dividend_txs.iter().map(|tx| tx.total_value).sum();
+    let dividends_received_12m = sum_in_base(db, &dividend_txs, &base_currency).await?;
 
     Ok(WorkspaceSummary {
+        base_currency,
+        positions_missing_fx,
         total_market_value,
         total_cost_basis,
         unrealized_pl,

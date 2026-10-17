@@ -9,6 +9,7 @@ use sea_orm::EntityTrait;
 use crate::commands::crypto_indicator::{
     apply_threshold, crypto_score_for, record_crypto_indicator_in, RecordCryptoIndicatorRequest,
 };
+use crate::commands::currency::{base_currency, positions_in_base, save_base_currency, sum_in_base};
 use crate::commands::loan::{
     create_borrower_in, create_loan_in, delete_loan_in, list_loans_view, register_loan_repayment_in,
     update_loan_in, CreateBorrowerRequest, CreateLoanRequest, RegisterLoanRepaymentRequest,
@@ -27,7 +28,7 @@ use crate::domain::crypto_score::{
     default_thresholds, ScoreVerdict, BTC_DEFAULT_THRESHOLDS, ETH_DEFAULT_THRESHOLDS,
 };
 use crate::entity::{indicator_thresholds, tax_rules};
-use crate::test_support::{asset, bank_account, cash_in, memory_db, portfolio, trade, workspace};
+use crate::test_support::{asset, asset_in, bank_account, cash_in, memory_db, portfolio, trade, workspace};
 
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-6
@@ -867,4 +868,115 @@ async fn backup_round_trips_the_real_schema_with_data_and_attachments() {
 
     let _ = std::fs::remove_dir_all(source_dir);
     let _ = std::fs::remove_dir_all(target_dir);
+}
+
+// ---------------------------------------------------------------------------
+// Moeda base (Fase 19)
+// ---------------------------------------------------------------------------
+
+async fn seed_fx_rate(db: &sea_orm::DatabaseConnection, pair: &str, rate: f64) {
+    use sea_orm::{ActiveModelTrait, Set};
+    crate::entity::stock_price_history::ActiveModel {
+        ticker: Set(pair.to_string()),
+        price_date: Set("2026-10-16".to_string()),
+        close_price: Set(rate),
+        source: Set("test".to_string()),
+        fetched_at: Set("2026-10-16T00:00:00Z".to_string()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .expect("insert fx rate");
+}
+
+#[tokio::test]
+async fn a_workspace_without_settings_uses_brl_as_base() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Base").await;
+    assert_eq!(base_currency(&db, ws.id).await.unwrap(), "BRL");
+}
+
+#[tokio::test]
+async fn saving_the_base_currency_validates_and_keeps_one_row_per_workspace() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Base").await;
+
+    assert!(save_base_currency(&db, ws.id, "VND").await.is_err());
+    assert_eq!(save_base_currency(&db, ws.id, " usd ").await.unwrap(), "USD");
+    assert_eq!(save_base_currency(&db, ws.id, "EUR").await.unwrap(), "EUR");
+
+    assert_eq!(base_currency(&db, ws.id).await.unwrap(), "EUR");
+    let rows = crate::entity::workspace_settings::Entity::find().all(&db).await.unwrap();
+    assert_eq!(rows.len(), 1);
+}
+
+#[tokio::test]
+async fn usd_position_is_converted_to_the_brl_base() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Base").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let brl = asset(&db, "PETR4", "acao").await;
+    let usd = asset_in(&db, "AAPL", "acao", "USD").await;
+    trade(&db, pf.id, brl.id, "compra", 10.0, 500.0, "2026-01-10").await;
+    trade(&db, pf.id, usd.id, "compra", 2.0, 100.0, "2026-01-10").await;
+    seed_fx_rate(&db, "USDBRL", 5.0).await;
+
+    let (positions, base) = positions_in_base(&db, pf.id).await.unwrap();
+    assert_eq!(base, "BRL");
+    let aapl = positions.iter().find(|p| p.ticker == "AAPL").unwrap();
+    assert_eq!(aapl.currency, "BRL");
+    assert_eq!(aapl.native_currency, "USD");
+    assert!(!aapl.fx_missing);
+    assert!(close(aapl.market_value.unwrap(), 500.0)); // 100 USD × 5
+    assert!(close(aapl.average_buy_price.unwrap(), 250.0)); // 50 USD × 5
+    let petr = positions.iter().find(|p| p.ticker == "PETR4").unwrap();
+    assert!(close(petr.market_value.unwrap(), 500.0)); // BRL fica como está
+}
+
+#[tokio::test]
+async fn usd_base_inverts_the_brl_pair() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Base").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let brl = asset(&db, "PETR4", "acao").await;
+    trade(&db, pf.id, brl.id, "compra", 10.0, 500.0, "2026-01-10").await;
+    seed_fx_rate(&db, "USDBRL", 5.0).await;
+    save_base_currency(&db, ws.id, "USD").await.unwrap();
+
+    let (positions, base) = positions_in_base(&db, pf.id).await.unwrap();
+    assert_eq!(base, "USD");
+    assert!(close(positions[0].market_value.unwrap(), 100.0)); // 500 BRL ÷ 5
+    assert_eq!(positions[0].currency, "USD");
+}
+
+#[tokio::test]
+async fn position_without_a_rate_is_flagged_and_loses_its_values() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Base").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let usd = asset_in(&db, "AAPL", "acao", "USD").await;
+    trade(&db, pf.id, usd.id, "compra", 2.0, 100.0, "2026-01-10").await;
+
+    let (positions, _) = positions_in_base(&db, pf.id).await.unwrap();
+    assert!(positions[0].fx_missing);
+    assert_eq!(positions[0].currency, "USD"); // sem conversão, segue na nativa
+    assert!(positions[0].market_value.is_none());
+    assert!(positions[0].average_buy_price.is_none());
+}
+
+#[tokio::test]
+async fn dividends_are_summed_in_the_base_currency() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Base").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let brl = asset(&db, "PETR4", "acao").await;
+    let usd = asset_in(&db, "AAPL", "acao", "USD").await;
+    let eur = asset_in(&db, "SAP", "acao", "EUR").await;
+    let a = trade(&db, pf.id, brl.id, "provento", 1.0, 10.0, "2026-05-01").await;
+    let b = trade(&db, pf.id, usd.id, "provento", 1.0, 4.0, "2026-05-01").await;
+    let c = trade(&db, pf.id, eur.id, "provento", 1.0, 99.0, "2026-05-01").await;
+    seed_fx_rate(&db, "USDBRL", 5.0).await;
+
+    // 10 BRL + 4 USD × 5; o EUR sem cotação fica de fora da soma.
+    assert!(close(sum_in_base(&db, &[a, b, c], "BRL").await.unwrap(), 30.0));
 }

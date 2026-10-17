@@ -18,6 +18,8 @@ export type WorkspaceSummary = {
   dividends_received_12m: number;
   allocation_by_class: ClassAllocation[];
   positions_missing_price: number;
+  base_currency: string;
+  positions_missing_fx: number;
   portfolios: PortfolioBreakdown[];
 };
 

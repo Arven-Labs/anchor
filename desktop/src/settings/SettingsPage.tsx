@@ -4,6 +4,7 @@ import DataSourcesSection from "./DataSourcesSection";
 import StorageSettingsSection from "./StorageSettingsSection";
 import BackupSettingsSection from "./BackupSettingsSection";
 import TaxSettingsSection from "./TaxSettingsSection";
+import CurrencySettingsSection from "./CurrencySettingsSection";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -15,9 +16,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // layout de sidebar + conteúdo já pensado pra caber mais de uma seção
 // (comentário original, quando só "IA" existia) funcionou sem redesenho;
 // ainda sem abstração de registro de seções — só 2 itens, não vale a pena.
-const SECTIONS = ["TruthID", "Data sources", "Storage", "Backup", "Taxes"] as const;
+const SECTIONS = ["TruthID", "Data sources", "Storage", "Backup", "Taxes", "Currency"] as const;
 
-function SettingsPage({ onBack }: { onBack: () => void }) {
+function SettingsPage({ onBack, workspaceId }: { onBack: () => void; workspaceId: number }) {
   const [section, setSection] = useState<(typeof SECTIONS)[number]>("TruthID");
 
   return (
@@ -54,6 +55,7 @@ function SettingsPage({ onBack }: { onBack: () => void }) {
           {section === "Storage" && <StorageSettingsSection />}
           {section === "Backup" && <BackupSettingsSection />}
           {section === "Taxes" && <TaxSettingsSection />}
+          {section === "Currency" && <CurrencySettingsSection workspaceId={workspaceId} />}
         </div>
       </CardContent>
     </Card>

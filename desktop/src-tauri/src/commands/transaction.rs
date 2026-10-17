@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::{Deserialize, Serialize};
 
+use crate::commands::currency::positions_in_base;
 use crate::domain::position_pricing::{self, PricingResult};
 use crate::domain::proventos::{PAYMENT_TYPE_DIVIDENDO, PAYMENT_TYPE_JSCP};
 use crate::domain::transaction_ledger::{self, LedgerEntry};
@@ -307,7 +308,14 @@ pub struct PositionView {
     pub ticker: String,
     pub name: String,
     pub asset_class: String,
+    // Moeda em que os valores abaixo estão. `compute_positions` devolve a do
+    // ativo; `commands::currency::positions_in_base` converte pra moeda base
+    // do Workspace (Fase 19) e passa a ser ela.
     pub currency: String,
+    pub native_currency: String,
+    // Fase 19 — sem cotação do par pra moeda base: valores vêm `None` e a
+    // posição fica fora dos totais.
+    pub fx_missing: bool,
     pub quantity: f64,
     pub average_buy_price: Option<f64>,
     pub by_custodia: Vec<CustodiaBreakdown>,
@@ -327,7 +335,7 @@ pub async fn get_portfolio_positions(
     db: tauri::State<'_, DatabaseConnection>,
     portfolio_id: i32,
 ) -> Result<Vec<PositionView>, AppError> {
-    compute_positions(db.inner(), portfolio_id).await
+    Ok(positions_in_base(db.inner(), portfolio_id).await?.0)
 }
 
 // Extraída de `get_portfolio_positions` (comando Tauri) pra ser reaproveitada
@@ -485,6 +493,8 @@ pub async fn compute_positions(
             name: asset.name.clone(),
             asset_class: asset.asset_class.clone(),
             currency: asset.currency.clone(),
+            native_currency: asset.currency.clone(),
+            fx_missing: false,
             quantity: net_qty,
             average_buy_price,
             by_custodia,

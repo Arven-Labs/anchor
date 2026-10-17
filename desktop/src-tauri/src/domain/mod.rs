@@ -3,6 +3,7 @@ pub mod banks;
 pub mod bazin;
 pub mod benchmark;
 pub mod crypto_score;
+pub mod currency_conversion;
 pub mod dcf;
 pub mod dividend_suggestion;
 pub mod gordon;

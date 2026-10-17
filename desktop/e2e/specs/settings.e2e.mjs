@@ -52,7 +52,37 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
 
     const sections = await elementsOf('[data-testid^="settings-section-"]');
     const names = await Promise.all(sections.map((el) => textOf(el)));
-    expect(names).toEqual(["TruthID", "Data sources", "Storage", "Backup", "Taxes"]);
+    expect(names).toEqual(["TruthID", "Data sources", "Storage", "Backup", "Taxes", "Currency"]);
+  });
+
+  it("Currency: a moeda base começa em BRL e a troca fica gravada", async () => {
+    await byId("settings-section-Currency").click();
+    await waitForText(
+      byId("base-currency-select"),
+      (text) => text.includes("BRL"),
+      "sem configuração gravada, a moeda base deveria ser BRL",
+    );
+
+    // Nenhum ativo em USD neste workspace, então a troca não consulta a rede.
+    await byId("base-currency-select").click();
+    await byId("base-currency-USD").click();
+    await waitForText(
+      byId("base-currency-select"),
+      (text) => text.includes("USD"),
+      "o seletor deveria mostrar a moeda escolhida",
+    );
+    await browser.waitUntil(() => sql("SELECT base_currency FROM workspace_settings") === "USD", {
+      timeout: 20_000,
+      timeoutMsg: "a moeda base deveria ter sido gravada em workspace_settings",
+    });
+
+    // Volta para BRL para não afetar os casos seguintes.
+    await byId("base-currency-select").click();
+    await byId("base-currency-BRL").click();
+    await browser.waitUntil(() => sql("SELECT base_currency FROM workspace_settings") === "BRL", {
+      timeout: 20_000,
+      timeoutMsg: "a moeda base deveria ter voltado para BRL",
+    });
   });
 
   it("Data sources: lista a chave da bolsai e o e-mail da SEC sem expor valores", async () => {

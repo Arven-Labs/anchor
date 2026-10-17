@@ -1,0 +1,101 @@
+// Fase 19 — conversão de valores entre moedas pra camada de exibição. Pura:
+// recebe o último fechamento de cada par já coletado (`USDBRL` → 5,10) e
+// resolve a taxa pela rota direta, pela inversa ou cruzando por USD. Quem lê
+// o banco é `commands::currency::load_rates`.
+
+use std::collections::HashMap;
+
+const PIVOT: &str = "USD";
+
+pub struct FxRates {
+    base: String,
+    /// Código do par (`USDBRL`) → último fechamento (unidades da segunda
+    /// moeda por uma da primeira).
+    pairs: HashMap<String, f64>,
+}
+
+impl FxRates {
+    pub fn new(base: &str, pairs: HashMap<String, f64>) -> Self {
+        Self { base: base.to_uppercase(), pairs }
+    }
+
+    pub fn base(&self) -> &str {
+        &self.base
+    }
+
+    /// Quanto vale 1 unidade de `from` na moeda base; `None` se nenhuma rota
+    /// (direta, inversa ou via USD) tem cotação.
+    pub fn rate(&self, from: &str) -> Option<f64> {
+        let from = from.to_uppercase();
+        self.rate_between(&from, &self.base)
+    }
+
+    pub fn convert(&self, value: f64, from: &str) -> Option<f64> {
+        self.rate(from).map(|rate| value * rate)
+    }
+
+    fn rate_between(&self, from: &str, to: &str) -> Option<f64> {
+        if from == to {
+            return Some(1.0);
+        }
+        self.leg(from, to).or_else(|| {
+            if from == PIVOT || to == PIVOT {
+                return None;
+            }
+            Some(self.leg(from, PIVOT)? * self.leg(PIVOT, to)?)
+        })
+    }
+
+    // Uma perna: o par direto ou o inverso. Cotação zero ou negativa é dado
+    // ruim, não taxa — ignorada.
+    fn leg(&self, from: &str, to: &str) -> Option<f64> {
+        let usable = |price: &f64| *price > 0.0;
+        if let Some(price) = self.pairs.get(&format!("{from}{to}")).filter(|p| usable(p)) {
+            return Some(*price);
+        }
+        self.pairs.get(&format!("{to}{from}")).filter(|p| usable(p)).map(|price| 1.0 / price)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rates(base: &str, pairs: &[(&str, f64)]) -> FxRates {
+        FxRates::new(base, pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect())
+    }
+
+    #[test]
+    fn same_currency_is_identity_without_any_pair() {
+        assert_eq!(rates("BRL", &[]).convert(10.0, "brl"), Some(10.0));
+    }
+
+    #[test]
+    fn direct_pair_multiplies() {
+        assert_eq!(rates("BRL", &[("USDBRL", 5.0)]).convert(10.0, "USD"), Some(50.0));
+    }
+
+    #[test]
+    fn inverse_pair_divides() {
+        let r = rates("USD", &[("USDBRL", 5.0)]);
+        assert!((r.convert(50.0, "BRL").unwrap() - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn cross_goes_through_usd() {
+        // EUR→USD 1,1 e USD→BRL 5 = EUR→BRL 5,5.
+        let r = rates("BRL", &[("EURUSD", 1.1), ("USDBRL", 5.0)]);
+        assert!((r.convert(2.0, "EUR").unwrap() - 11.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn missing_route_is_none() {
+        assert_eq!(rates("BRL", &[("EURUSD", 1.1)]).convert(1.0, "EUR"), None);
+        assert_eq!(rates("BRL", &[]).convert(1.0, "USD"), None);
+    }
+
+    #[test]
+    fn non_positive_quote_is_not_a_rate() {
+        assert_eq!(rates("BRL", &[("USDBRL", 0.0)]).convert(1.0, "USD"), None);
+    }
+}

@@ -18,6 +18,7 @@ pub mod general_transaction;
 pub mod general_transaction_category;
 pub mod gordon;
 pub mod graham;
+pub mod currency;
 pub mod home_layout;
 pub mod liability;
 pub mod loan;

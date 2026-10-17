@@ -22,6 +22,7 @@ import type { WorkspaceSummary, MonthlyReturn, HomeWidgetLayout, WidgetKey } fro
 import KeyRatesTable from "../rates/KeyRatesTable";
 import { formatDate as formatRateDate, formatRate, useInterestRates } from "../rates/useInterestRates";
 import { Button } from "@/components/ui/button";
+import { formatMoney } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -386,13 +387,15 @@ function HomeSection({
   const WIDGET_RENDERERS: Record<WidgetKey, () => ReactNode> = {
     kpi_total_value: () => (
       <KpiBody
-        value={summary ? formatCurrency(summary.total_market_value) : "—"}
-        subtext={summary ? `Invested: ${formatCurrency(summary.total_cost_basis)}` : undefined}
+        value={summary ? formatMoney(summary.total_market_value, summary.base_currency) : "—"}
+        subtext={
+          summary ? `Invested: ${formatMoney(summary.total_cost_basis, summary.base_currency)}` : undefined
+        }
       />
     ),
     kpi_profit: () => (
       <KpiBody
-        value={summary ? formatCurrency(summary.unrealized_pl) : "—"}
+        value={summary ? formatMoney(summary.unrealized_pl, summary.base_currency) : "—"}
         valueClassName={summary ? plColorClass(summary.unrealized_pl) : undefined}
         subtext={
           summary?.unrealized_pl_pct != null ? formatPct(summary.unrealized_pl_pct * 100) : undefined
@@ -400,7 +403,7 @@ function HomeSection({
       />
     ),
     kpi_dividends_12m: () => (
-      <KpiBody value={summary ? formatCurrency(summary.dividends_received_12m) : "—"} />
+      <KpiBody value={summary ? formatMoney(summary.dividends_received_12m, summary.base_currency) : "—"} />
     ),
     kpi_return: () => (
       <KpiBody
@@ -663,6 +666,13 @@ function HomeSection({
             </Button>
           ))}
         </div>
+      )}
+
+      {summary.positions_missing_fx > 0 && (
+        <p className="text-sm text-muted-foreground" data-testid="home-missing-fx">
+          {summary.positions_missing_fx} position{summary.positions_missing_fx === 1 ? "" : "s"} without an
+          exchange rate to {summary.base_currency} — the totals above don't include {summary.positions_missing_fx === 1 ? "it" : "them"}.
+        </p>
       )}
 
       {summary.positions_missing_price > 0 && (
