@@ -503,3 +503,17 @@ export type AssetAttachment = {
   document_type: string | null;
   created_at: string;
 };
+
+// Sessão 110 — aviso de provento da CVM (`list_cvm_dividend_notices`). `error`
+// é a falha só daquele ativo (ex.: sem chave do bolsai).
+export type CvmNotice = {
+  delivered_on: string;
+  pdf_url: string;
+};
+
+export type CvmAssetNotices = {
+  asset_id: number;
+  ticker: string;
+  notices: CvmNotice[];
+  error: string | null;
+};

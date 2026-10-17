@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import Field from "../components/Field";
+import CvmNoticesCard from "./CvmNoticesCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -211,6 +212,7 @@ export default function DividendSuggestionsSection({
 
   return (
     <div className="flex flex-col gap-6">
+      <CvmNoticesCard portfolioId={portfolioId} />
       <Card>
         <CardHeader>
           <CardTitle>Dividend suggestions</CardTitle>
