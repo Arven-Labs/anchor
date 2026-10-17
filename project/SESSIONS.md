@@ -2576,3 +2576,23 @@ sugestão, sem migration, sem ler o PDF) e código CVM pelo bolsai.
   Edit/Write; o conteúdo está certo.
 - **Pendente**: decisão do dono sobre o repo do Lume; consumidores de opções (Fase 18) e moeda base
   (Fase 19); ingestão agendada e `DataProvider` com mais de uma fonte por categoria.
+
+
+### 2026-10-17 — Sessão 111
+
+**Indicadores cripto, lote 3.** Decisão do dono do projeto: **o repo do Lume fica como está por enquanto**
+(nada será arquivado nem apagado). Plan mode; escolhas do dono: só indicadores novos do ETH (sem score de
+BTC), ETH/BTC em Market liquidity e oferta nas exchanges em On-chain.
+- **Feito**: `exchange_supply_change_30d` e `eth_btc_trend_30d` (CoinMetrics Community), seeds calibrados
+  com 70 janelas reais, migration `m20261017_100000`, rótulos na tela. Score vai a 17 indicadores. Detalhe
+  na Fase 31 do `PHASE.md`.
+- **Achado**: a contagem "15" estava em `flow_tests.rs`, em 2 specs E2E e nos totais por grupo de
+  `crypto_score.rs`. Meu grep inicial pegou só parte; o primeiro push falhou em Rust e E2E por isso.
+- **Verificado**: `./dev.sh check` limpo; CI do primeiro push (`4f74d32`) falhou em Rust e E2E pela
+  contagem; CI do conserto verde nos três workflows (Rust, E2E, Frontend). **Não verificado**: o teste ao
+  vivo `live_all_ten_indicators` e o de coleta com 17 leituras (`#[ignore]`, precisam de rede e do banco de
+  dev) e o clique na tela.
+- **Processo**: um `cat >> /dev/null` inútil sobrou num comando; sem efeito.
+- **Pendente**: score próprio de BTC (exige limites por moeda e coletores parametrizados); fluxo de ETFs
+  (sem fonte grátis); opções (Fase 18) e moeda base (Fase 19); ingestão agendada e `DataProvider` com mais
+  de uma fonte por categoria.

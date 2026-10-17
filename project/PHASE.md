@@ -2391,6 +2391,22 @@ primeiro lote = `staking_yield` automático + derivativos de ETH, coleta **em Ru
 - Fixtures dos testes: Bybit, DVOL e stablecoins no formato real de 2026-10-16; a lista de opções
   e os pontos de stablecoin do teste de janela têm valores de exemplo na forma real.
 
+**Lote 3 (Sessão 111)**: só indicadores novos do ETH, escolha do dono do projeto (sem score de BTC, que
+exigiria `indicator_thresholds` por moeda, hoje único por indicador, e coletores parametrizados). Total
+**17 indicadores em 4 grupos** (On-chain 6, Network fundamentals 4, Derivatives & options 5, Market
+liquidity 2). Fonte: CoinMetrics Community, sem chave.
+- `exchange_supply_change_30d` (On-chain): variação % em 30 dias de `SplyExNtv` (ETH em exchanges). Menor é
+  melhor, seed −1,0/1,5 (faixa real −3,4% a +1,7%, mediana −1,8%). O último ponto vem como dado
+  provisório (`flash`) e pode ser revisado.
+- `eth_btc_trend_30d` (Market liquidity): variação % em 30 dias de `PriceBTC`. Maior é melhor, seed
+  3,0/−3,0 (faixa real −8,4% a +11,4%, mediana +4,1%, hoje −6,4%).
+- Os dois reusam `pct_change_back` de `eth_indicators.rs`; códigos `exchange-supply-trend` e
+  `eth-btc-trend`; migration `m20261017_100000`; seeds duplicados em `DEFAULT_THRESHOLDS` (convenção).
+- Calibragem com 70 janelas reais de 30 dias (o plano Community devolve só ~100 dias por consulta).
+- **Achado de processo**: a contagem "15" estava espalhada em testes (`flow_tests.rs`, 2 specs E2E, totais
+  por grupo em `crypto_score.rs`) além do código; meu grep inicial pegou só parte e o CI pegou o resto.
+  Ao mudar o número de indicadores, buscar `15` em `e2e/` e `flow_tests.rs`.
+
 **Editor de thresholds (Sessão 106, fatia 2)**: botão "Edit thresholds" na seção do score cripto
 abre `ThresholdEditorDialog` com uma linha por indicador (verde, vermelho, direção inferida ao
 vivo, Save e Reset). Comandos `list_indicator_thresholds`, `update_indicator_threshold` e
