@@ -54,8 +54,9 @@ describe("Anchor — revisão da importação e fila de pendentes", () => {
     seedPending(portfolio, proposed(4, "2026-03-01", "compra", "VALE3", 2, 60, "acao_br"));
 
     await byId("nav-portfolio").click();
-    await byId("portfolio-tab-transactions").waitForDisplayed({ timeout: 30_000 });
-    await byId("portfolio-tab-transactions").click();
+    // A fila mora na aba Ledger, junto do painel de importar/exportar.
+    await byId("portfolio-tab-ledger").waitForDisplayed({ timeout: 30_000 });
+    await byId("portfolio-tab-ledger").click();
     await byId("pending-review").waitForDisplayed({ timeout: 30_000 });
     expect(await textOf(byId("pending-items"))).toContain("Pending review (4)");
     expect((await $$('[data-testid="pending-row"]')).length).toBe(4);
