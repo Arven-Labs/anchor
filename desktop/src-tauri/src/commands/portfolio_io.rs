@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::currency::workspace_of_portfolio;
 use crate::commands::transaction::{create_transaction_in, CreateTransactionRequest};
-use crate::entity::{assets, custodia, transactions};
+use crate::entity::{assets, custodia, import_pending, transactions};
 use crate::error::AppError;
 
 const CSV_HEADER: [&str; 12] = [
@@ -321,8 +321,13 @@ pub fn parse_b3_rows(rows: &[Vec<String>]) -> Parsed {
         let get = |i: usize| row.get(i).map(String::as_str).unwrap_or("");
         let issue = |message: String| ParseIssue { line, message };
         let market = normalize_header(get(c_market));
-        if !(market.contains("vista") || market.contains("fracion")) {
-            out.push(Err(issue(format!("mercado '{}' não suportado (só à vista e fracionário)", get(c_market)))));
+        // "Renda Fixa" é como a B3 lista ETFs de renda fixa (ex.: AUPO11); a classe
+        // não dá pra deduzir do mercado, então segue sem classe e é escolhida na revisão.
+        if !(market.contains("vista") || market.contains("fracion") || market.contains("renda fixa")) {
+            out.push(Err(issue(format!(
+                "mercado '{}' não suportado (só à vista, fracionário e renda fixa)",
+                get(c_market)
+            ))));
             continue;
         }
         let kind = match normalize_header(get(c_kind)).as_str() {
@@ -462,12 +467,35 @@ async fn known_tickers<C: ConnectionTrait>(db: &C) -> Result<HashMap<String, ass
     Ok(assets::Entity::find().all(db).await?.into_iter().map(|a| (a.ticker.to_uppercase(), a)).collect())
 }
 
+/// Itens da fila de pendentes (aguardando ou descartados), contados por chave de
+/// duplicata: reimportar o mesmo arquivo não recria o que já está na fila.
+async fn pending_keys<C: ConnectionTrait>(
+    db: &C,
+    portfolio_id: i32,
+) -> Result<HashMap<DedupKey, usize>, AppError> {
+    let rows = import_pending::Entity::find()
+        .filter(import_pending::Column::PortfolioId.eq(portfolio_id))
+        .filter(import_pending::Column::Kind.eq(KIND_TRANSACTION))
+        .all(db)
+        .await?;
+    let mut keys: HashMap<DedupKey, usize> = HashMap::new();
+    for row in rows {
+        let Ok(payload) = serde_json::from_str::<PendingPayload>(&row.payload) else { continue };
+        let p = payload.proposed;
+        *keys.entry(dedup_key(&p.ticker, &p.transaction_date, &p.transaction_type, p.quantity, p.total_value)).or_insert(0) += 1;
+    }
+    Ok(keys)
+}
+
 pub async fn preview_rows<C: ConnectionTrait>(
     db: &C,
     portfolio_id: i32,
     parsed: Parsed,
 ) -> Result<Vec<ImportRow>, AppError> {
     let mut remaining = existing_keys(db, portfolio_id).await?;
+    for (key, count) in pending_keys(db, portfolio_id).await? {
+        *remaining.entry(key).or_insert(0) += count;
+    }
     let assets_by_ticker = known_tickers(db).await?;
     let mut rows = Vec::with_capacity(parsed.len());
     for item in parsed {
@@ -724,13 +752,8 @@ pub async fn export_transactions_csv(
     Ok(rows.len())
 }
 
-pub async fn preview_import_in(
-    db: &DatabaseConnection,
-    portfolio_id: i32,
-    path: &str,
-    format: &str,
-) -> Result<ImportPreview, AppError> {
-    let parsed = match format {
+fn parse_file(path: &str, format: &str) -> Result<Parsed, AppError> {
+    Ok(match format {
         "anchor_csv" => {
             let text = std::fs::read_to_string(path)
                 .map_err(|e| AppError::InvalidInput(format!("não consegui ler {path}: {e}")))?;
@@ -738,8 +761,185 @@ pub async fn preview_import_in(
         }
         "b3_negociacao" => parse_b3_rows(&read_xlsx_rows(path)?),
         other => return Err(AppError::InvalidInput(format!("formato '{other}' desconhecido"))),
-    };
+    })
+}
+
+pub async fn preview_import_in(
+    db: &DatabaseConnection,
+    portfolio_id: i32,
+    path: &str,
+    format: &str,
+) -> Result<ImportPreview, AppError> {
+    let parsed = parse_file(path, format)?;
     Ok(ImportPreview { rows: preview_rows(db, portfolio_id, parsed).await? })
+}
+
+// ---------------------------------------------------------------------------
+// Fila de pendentes (Fase 35)
+// ---------------------------------------------------------------------------
+
+const KIND_TRANSACTION: &str = "transaction";
+const STATUS_PENDING: &str = "pending";
+const STATUS_DISCARDED: &str = "discarded";
+
+/// O que a fila guarda de cada item: a linha proposta e a classe sugerida ou
+/// já escolhida (só importa para ativo novo).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PendingPayload {
+    pub proposed: ProposedTransaction,
+    pub asset_class: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PendingItemView {
+    pub id: i32,
+    pub kind: String,
+    pub source: String,
+    pub created_at: String,
+    pub proposed: ProposedTransaction,
+    pub asset_class: Option<String>,
+    /// O ticker ainda não existe no catálogo, então a revisão precisa de uma classe.
+    pub needs_class: bool,
+}
+
+#[derive(Serialize)]
+pub struct StageResult {
+    pub staged: usize,
+    pub duplicates: usize,
+    /// Linhas que o leitor não conseguiu interpretar; ficam fora da fila.
+    pub errors: Vec<ParseIssue>,
+}
+
+/// Lê o arquivo e guarda na fila o que é novo (inclusive o que precisa de
+/// classe). Duplicatas só são contadas e erros de leitura só são devolvidos.
+pub async fn stage_import_in(
+    db: &DatabaseConnection,
+    portfolio_id: i32,
+    path: &str,
+    format: &str,
+) -> Result<StageResult, AppError> {
+    stage_parsed(db, portfolio_id, format, parse_file(path, format)?).await
+}
+
+/// O mesmo que `stage_import_in` para linhas já lidas, de qualquer origem.
+pub async fn stage_parsed(
+    db: &DatabaseConnection,
+    portfolio_id: i32,
+    source: &str,
+    parsed: Parsed,
+) -> Result<StageResult, AppError> {
+    let rows = preview_rows(db, portfolio_id, parsed).await?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let txn = db.begin().await?;
+    let mut result = StageResult { staged: 0, duplicates: 0, errors: Vec::new() };
+    for row in rows {
+        match (row.status, row.proposed) {
+            (ImportStatus::Error, _) | (_, None) => result.errors.push(ParseIssue {
+                line: row.line,
+                message: row.message.unwrap_or_else(|| "linha ilegível".to_string()),
+            }),
+            (ImportStatus::Duplicate, _) => result.duplicates += 1,
+            (_, Some(proposed)) => {
+                let payload = PendingPayload { proposed, asset_class: row.suggested_class };
+                import_pending::ActiveModel {
+                    portfolio_id: Set(portfolio_id),
+                    kind: Set(KIND_TRANSACTION.to_string()),
+                    source: Set(source.to_string()),
+                    payload: Set(serde_json::to_string(&payload).map_err(|e| AppError::InvalidInput(e.to_string()))?),
+                    status: Set(STATUS_PENDING.to_string()),
+                    created_at: Set(now.clone()),
+                    ..Default::default()
+                }
+                .insert(&txn)
+                .await?;
+                result.staged += 1;
+            }
+        }
+    }
+    txn.commit().await?;
+    Ok(result)
+}
+
+/// Pendentes em ordem de revisão: por data, compras antes de vendas do dia, depois pelo id.
+pub async fn list_import_pending_in(
+    db: &DatabaseConnection,
+    portfolio_id: i32,
+) -> Result<Vec<PendingItemView>, AppError> {
+    let rows = import_pending::Entity::find()
+        .filter(import_pending::Column::PortfolioId.eq(portfolio_id))
+        .filter(import_pending::Column::Status.eq(STATUS_PENDING))
+        .all(db)
+        .await?;
+    let known = known_tickers(db).await?;
+    let mut items: Vec<PendingItemView> = rows
+        .into_iter()
+        .filter_map(|row| {
+            let payload: PendingPayload = serde_json::from_str(&row.payload).ok()?;
+            let needs_class = !payload.proposed.ticker.is_empty() && !known.contains_key(&payload.proposed.ticker);
+            Some(PendingItemView {
+                id: row.id,
+                kind: row.kind,
+                source: row.source,
+                created_at: row.created_at,
+                proposed: payload.proposed,
+                asset_class: payload.asset_class,
+                needs_class,
+            })
+        })
+        .collect();
+    items.sort_by_key(|i| (i.proposed.transaction_date.clone(), i.proposed.transaction_type == "venda", i.id));
+    Ok(items)
+}
+
+async fn pending_row(db: &DatabaseConnection, portfolio_id: i32, id: i32) -> Result<import_pending::Model, AppError> {
+    let row = import_pending::Entity::find_by_id(id)
+        .one(db)
+        .await?
+        .filter(|r| r.portfolio_id == portfolio_id)
+        .ok_or_else(|| AppError::InvalidInput(format!("pendente {id} não existe nesta carteira")))?;
+    if row.status != STATUS_PENDING {
+        return Err(AppError::InvalidInput(format!("pendente {id} não está aguardando revisão (status '{}')", row.status)));
+    }
+    Ok(row)
+}
+
+/// Aprova um pendente já com as edições do usuário. Grava só esse item; se a
+/// validação recusar (ex.: venda acima do saldo), nada muda e o item continua
+/// pendente. Um lançamento igual já gravado conta como aprovado sem duplicar.
+pub async fn confirm_import_pending_in(
+    db: &DatabaseConnection,
+    portfolio_id: i32,
+    id: i32,
+    proposed: ProposedTransaction,
+    asset_class: Option<String>,
+) -> Result<CommitResult, AppError> {
+    let row = pending_row(db, portfolio_id, id).await?;
+    let result = commit_rows(db, portfolio_id, vec![CommitItem { proposed, asset_class }]).await?;
+    if result.errors.is_empty() {
+        import_pending::Entity::delete_by_id(row.id).exec(db).await?;
+    }
+    Ok(result)
+}
+
+pub async fn discard_import_pending_in(db: &DatabaseConnection, portfolio_id: i32, id: i32) -> Result<(), AppError> {
+    let row = pending_row(db, portfolio_id, id).await?;
+    let mut active: import_pending::ActiveModel = row.into();
+    active.status = Set(STATUS_DISCARDED.to_string());
+    active.update(db).await?;
+    Ok(())
+}
+
+/// Tratamento fiscal que a classe implica, em texto curto para a revisão.
+pub fn class_tax_hint_text(asset_class: &str, ticker: &str) -> &'static str {
+    use crate::domain::tax::classify::{treatment, TaxTreatment};
+    match treatment(asset_class, ticker) {
+        TaxTreatment::StockExemptEligible => "Common stock: sales up to the monthly limit may be exempt",
+        TaxTreatment::CommonNoExemption => "Taxed as common variable income, never exempt (unit, stock ETF or BDR)",
+        TaxTreatment::Fii => "FII/Fiagro: its own tax bucket, no exemption",
+        TaxTreatment::CryptoWarning => "Crypto: only warned about above the exemption limit, not calculated",
+        TaxTreatment::ForeignWarning => "Foreign asset: annual assessment, only warned about",
+        TaxTreatment::Ignored => "Not included in the tax assessment",
+    }
 }
 
 #[tauri::command]
@@ -759,6 +959,49 @@ pub async fn commit_import(
     items: Vec<CommitItem>,
 ) -> Result<CommitResult, AppError> {
     commit_rows(db.inner(), portfolio_id, items).await
+}
+
+#[tauri::command]
+pub async fn stage_import(
+    db: tauri::State<'_, DatabaseConnection>,
+    portfolio_id: i32,
+    path: String,
+    format: String,
+) -> Result<StageResult, AppError> {
+    stage_import_in(db.inner(), portfolio_id, &path, &format).await
+}
+
+#[tauri::command]
+pub async fn list_import_pending(
+    db: tauri::State<'_, DatabaseConnection>,
+    portfolio_id: i32,
+) -> Result<Vec<PendingItemView>, AppError> {
+    list_import_pending_in(db.inner(), portfolio_id).await
+}
+
+#[tauri::command]
+pub async fn confirm_import_pending(
+    db: tauri::State<'_, DatabaseConnection>,
+    portfolio_id: i32,
+    id: i32,
+    proposed: ProposedTransaction,
+    asset_class: Option<String>,
+) -> Result<CommitResult, AppError> {
+    confirm_import_pending_in(db.inner(), portfolio_id, id, proposed, asset_class).await
+}
+
+#[tauri::command]
+pub async fn discard_import_pending(
+    db: tauri::State<'_, DatabaseConnection>,
+    portfolio_id: i32,
+    id: i32,
+) -> Result<(), AppError> {
+    discard_import_pending_in(db.inner(), portfolio_id, id).await
+}
+
+#[tauri::command]
+pub fn class_tax_hint(asset_class: String, ticker: String) -> String {
+    class_tax_hint_text(&asset_class, &ticker).to_string()
 }
 
 #[cfg(test)]
@@ -840,6 +1083,19 @@ mod tests {
     }
 
     #[test]
+    fn a_renda_fixa_market_is_read_without_a_class() {
+        let owned = rows(&[
+            &B3_HEADER,
+            &["16/10/2026", "Compra", "Renda Fixa", "-", "XP", "AUPO11", "70", "112.11", "7847.7"],
+        ]);
+        let parsed = parse_b3_rows(&owned);
+        let row = parsed[0].as_ref().unwrap();
+        assert_eq!(row.ticker, "AUPO11");
+        assert_eq!(row.asset_class, None, "a classe é escolhida na revisão");
+        assert_eq!(infer_class(&row.ticker), None);
+    }
+
+    #[test]
     fn a_sheet_without_the_expected_columns_is_rejected_whole() {
         let parsed = parse_b3_rows(&rows(&[&["Nome", "Idade"], &["a", "1"]]));
         assert_eq!(parsed.len(), 1);
@@ -877,5 +1133,23 @@ mod tests {
         let parsed = parse_anchor_csv("date,type,ticker,total_value\n2026-01-05,compra,PETR4,100\n05-01-26,compra,PETR4,100\n");
         assert!(parsed[0].is_ok());
         assert_eq!(parsed[1].as_ref().unwrap_err().line, 2);
+    }
+
+    /// Roda o leitor contra uma planilha real da B3 cujo caminho vem de
+    /// `ANCHOR_B3_SAMPLE`. Só imprime contagens e motivos, nunca valores, e fica
+    /// `#[ignore]` porque a amostra é privada e não vai para o repositório.
+    #[test]
+    #[ignore]
+    fn real_b3_sample_parses() {
+        let path = std::env::var("ANCHOR_B3_SAMPLE").expect("defina ANCHOR_B3_SAMPLE");
+        let parsed = parse_b3_rows(&read_xlsx_rows(&path).expect("planilha abre"));
+        let ok = parsed.iter().filter(|r| r.is_ok()).count();
+        println!("linhas lidas: {} ok, {} com erro", ok, parsed.len() - ok);
+        for issue in parsed.iter().filter_map(|r| r.as_ref().err()) {
+            println!("linha {}: {}", issue.line, issue.message);
+        }
+        for row in parsed.iter().filter_map(|r| r.as_ref().ok()) {
+            println!("ticker {} classe inferida {:?}", row.ticker, infer_class(&row.ticker));
+        }
     }
 }

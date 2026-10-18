@@ -3038,3 +3038,28 @@ do `PHASE.md`.
   da planilha "Movimentação" da Área do Investidor para saber se o JCP vem bruto ou líquido e como a B3 nomeia cada
   movimentação. Sem ela, o plano seguinte é anexos no arquivo de Workspace.
 - **Encerramento**: o dono do projeto parou aqui por ora.
+
+
+### 2026-10-19 — Sessão 138
+
+**Fase 35, entrega 1: revisão item a item da importação e fila de pendentes.** Plan mode, plano aprovado. Detalhe na Fase 35
+do `PHASE.md`.
+- **Amostras reais do dono do projeto** (planilhas "Negociação" e "Movimentação" na raiz, privadas): excluídas do git em
+  `.git/info/exclude`, lidas por script e por um teste `#[ignore]` (`real_b3_sample_parses`, `ANCHOR_B3_SAMPLE`) que só
+  imprime contagens e motivos. Primeira vez que o leitor de xlsx abriu um arquivo real: 13 de 15 linhas, as outras 2 eram o
+  AUPO11 ("Renda Fixa"), que cancelaria o arquivo inteiro. Depois da mudança, 15 de 15.
+- **Registrado no PHASE.md** (sem mudar código): o AUPO11 é ETF de renda fixa "Smart Selic" com IR na fonte; e o risco de
+  ETF/FII/unit (unit é `acao_br` com final 11, a classe decide o imposto, a importação não sugere nem avisa).
+- **Feito**: tabela `import_pending`, `stage_import` e os comandos de listar/aprovar/descartar, aviso fiscal por classe,
+  "Renda Fixa" aceito, `ImportReviewDialog`, `PendingItemsSection`, `ImportExportPanel` enxuto.
+- **Verificado**: `./dev.sh check` limpo; suíte `cargo test --lib` inteira no Docker (619 passaram, 0 falharam), com 6
+  testes de fluxo novos (guardar só o novo, aprovar com edição, venda acima do saldo continua pendente, descartar e
+  reimportar, aprovado vira duplicata, aviso fiscal) e 1 unitário; os guarda-corpos do arquivo de Workspace passam com a
+  tabela nova; a planilha real lê as 15 linhas.
+- **CI** (PR #1, branch `sessao-138-fila-pendentes`): `build` e `test` verdes de primeira. O `e2e` falhou na primeira
+  tentativa só no caso "Update now" de `settings.e2e.mjs` (timeout de 120 s; ele usa rede real e não toca no código desta
+  sessão) e passou ao reexecutar o job; a `main` já teve a mesma falha intermitente (`09fa8bb`). Não investiguei a causa.
+- **Não verificado**: a tela a olho (popup e fila nunca foram vistos); nenhum E2E novo, porque o diálogo nativo de arquivo
+  não é dirigível pelo WebDriver, então o caminho importar → popup → fila só está coberto no backend.
+- **Pendente**: ver "Fora do escopo" da Fase 35 (proventos da Movimentação, conciliação, CDB e extrato do Inter, CDB como
+  conta corrente, IR do AUPO11).

@@ -58,4 +58,5 @@ pub mod watchlist_items;
 pub mod watchlists;
 pub mod workspace;
 pub mod workspace_settings;
+pub mod import_pending;
 pub mod ingestion_runs;

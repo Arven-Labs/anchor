@@ -26,7 +26,7 @@ pub const VERSION: u32 = 1;
 /// filhos): (tabela, coluna que a prende ao dono, tabela dona). A ligação é
 /// explícita de propósito: seguir as FKs declaradas não basta, porque nem toda
 /// referência tem FK e uma tabela com várias FKs ficaria ambígua.
-const SPEC: [(&str, &str, &str); 20] = [
+const SPEC: [(&str, &str, &str); 21] = [
     ("workspace_settings", "workspace_id", "workspace"),
     ("home_widget_layout", "workspace_id", "workspace"),
     ("portfolio", "workspace_id", "workspace"),
@@ -41,6 +41,7 @@ const SPEC: [(&str, &str, &str); 20] = [
     ("transactions", "portfolio_id", "portfolio"),
     ("option_positions", "portfolio_id", "portfolio"),
     ("suggested_dividends", "portfolio_id", "portfolio"),
+    ("import_pending", "portfolio_id", "portfolio"),
     ("borrowers", "workspace_id", "workspace"),
     ("loans", "workspace_id", "workspace"),
     ("loan_repayments", "loan_id", "loans"),

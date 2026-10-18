@@ -2318,3 +2318,130 @@ async fn a_file_that_is_not_a_workspace_file_is_rejected() {
     assert!(import_workspace(&db, bogus).await.is_err());
     assert_eq!(crate::entity::workspace::Entity::find().all(&db).await.unwrap().len(), before);
 }
+
+// ---------------------------------------------------------------------------
+// Fila de pendentes da importação (Fase 35)
+// ---------------------------------------------------------------------------
+
+async fn stage_csv(
+    db: &sea_orm::DatabaseConnection,
+    portfolio_id: i32,
+    text: &str,
+) -> crate::commands::portfolio_io::StageResult {
+    use crate::commands::portfolio_io::{parse_anchor_csv, stage_parsed};
+    stage_parsed(db, portfolio_id, "anchor_csv", parse_anchor_csv(text)).await.unwrap()
+}
+
+#[tokio::test]
+async fn staging_keeps_new_rows_and_reports_unreadable_ones_apart() {
+    use crate::commands::portfolio_io::list_import_pending_in;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Stage").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let csv = format!("{IMPORT_CSV}05-01-26,compra,VALE3,,,1,1,1,,,,\n");
+
+    let staged = stage_csv(&db, pf.id, &csv).await;
+    assert_eq!((staged.staged, staged.duplicates, staged.errors.len()), (3, 0, 1));
+    assert_eq!(staged.errors[0].line, 4);
+
+    let pending = list_import_pending_in(&db, pf.id).await.unwrap();
+    assert_eq!(pending.len(), 3);
+    assert_eq!(pending[0].proposed.ticker, "PETR4", "em ordem de data");
+    assert!(pending.iter().all(|p| p.needs_class), "nenhum ativo existe ainda");
+    assert!(crate::entity::transactions::Entity::find().all(&db).await.unwrap().is_empty(), "fila não grava no ledger");
+}
+
+#[tokio::test]
+async fn confirming_a_pending_item_writes_it_and_leaves_the_queue() {
+    use crate::commands::portfolio_io::{confirm_import_pending_in, list_import_pending_in};
+    use crate::commands::transaction::compute_positions;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Confirm").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    stage_csv(&db, pf.id, IMPORT_CSV).await;
+
+    let pending = list_import_pending_in(&db, pf.id).await.unwrap();
+    let first = &pending[0];
+    // Edita a quantidade antes de aprovar: o que vale é o editado.
+    let mut edited = first.proposed.clone();
+    edited.quantity = Some(50.0);
+    edited.total_value = 1525.0;
+    let result = confirm_import_pending_in(&db, pf.id, first.id, edited, first.asset_class.clone()).await.unwrap();
+    assert_eq!((result.created, result.errors.len()), (1, 0));
+
+    assert_eq!(list_import_pending_in(&db, pf.id).await.unwrap().len(), 2);
+    let positions = compute_positions(&db, pf.id).await.unwrap();
+    assert!(close(positions.iter().find(|p| p.ticker == "PETR4").unwrap().quantity, 50.0));
+}
+
+#[tokio::test]
+async fn a_pending_sale_beyond_the_balance_stays_pending() {
+    use crate::commands::portfolio_io::{confirm_import_pending_in, list_import_pending_in};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Oversell pending").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    stage_csv(
+        &db,
+        pf.id,
+        "date,type,ticker,quantity,unit_price,total_value\n2026-01-05,compra,PETR4,10,30,300\n2026-02-05,venda,PETR4,5,35,175\n",
+    )
+    .await;
+
+    // Aprovar a venda antes da compra: recusada, o item continua na fila.
+    let pending = list_import_pending_in(&db, pf.id).await.unwrap();
+    let sale = pending.iter().find(|p| p.proposed.transaction_type == "venda").unwrap();
+    let result =
+        confirm_import_pending_in(&db, pf.id, sale.id, sale.proposed.clone(), Some("acao_br".to_string())).await.unwrap();
+    assert_eq!(result.created, 0);
+    assert!(!result.errors.is_empty());
+    assert_eq!(list_import_pending_in(&db, pf.id).await.unwrap().len(), 2);
+    assert!(crate::entity::transactions::Entity::find().all(&db).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_discarded_item_is_gone_from_the_queue_and_never_comes_back() {
+    use crate::commands::portfolio_io::{discard_import_pending_in, list_import_pending_in};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Discard").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    stage_csv(&db, pf.id, IMPORT_CSV).await;
+    let pending = list_import_pending_in(&db, pf.id).await.unwrap();
+    discard_import_pending_in(&db, pf.id, pending[0].id).await.unwrap();
+    assert_eq!(list_import_pending_in(&db, pf.id).await.unwrap().len(), 2);
+
+    // Reimportar o mesmo arquivo: os 2 que ainda esperam e o descartado contam como duplicatas.
+    let again = stage_csv(&db, pf.id, IMPORT_CSV).await;
+    assert_eq!((again.staged, again.duplicates), (0, 3));
+    assert_eq!(list_import_pending_in(&db, pf.id).await.unwrap().len(), 2);
+    // Descartar duas vezes é recusado.
+    assert!(discard_import_pending_in(&db, pf.id, pending[0].id).await.is_err());
+}
+
+#[tokio::test]
+async fn an_approved_item_is_a_duplicate_on_reimport_through_the_ledger() {
+    use crate::commands::portfolio_io::{confirm_import_pending_in, list_import_pending_in};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Approved reimport").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    stage_csv(&db, pf.id, IMPORT_CSV).await;
+    for item in list_import_pending_in(&db, pf.id).await.unwrap() {
+        confirm_import_pending_in(&db, pf.id, item.id, item.proposed.clone(), item.asset_class.clone()).await.unwrap();
+    }
+    assert!(list_import_pending_in(&db, pf.id).await.unwrap().is_empty());
+
+    let again = stage_csv(&db, pf.id, IMPORT_CSV).await;
+    assert_eq!((again.staged, again.duplicates), (0, 3));
+}
+
+#[test]
+fn the_tax_hint_follows_the_class_chosen_for_an_eleven_ticker() {
+    use crate::commands::portfolio_io::class_tax_hint_text;
+    assert_ne!(class_tax_hint_text("fii", "TAEE11"), class_tax_hint_text("acao_br", "TAEE11"));
+    assert!(class_tax_hint_text("acao_br", "TAEE11").contains("never exempt"));
+    assert!(class_tax_hint_text("etf_br", "AUPO11").contains("never exempt"));
+}
