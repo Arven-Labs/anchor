@@ -3429,6 +3429,14 @@ de duplicata é ticker + data + tipo + quantidade + total.
 - **Valor como veio**: a B3 não diz se aluguel e reembolso são brutos ou líquidos de IR, então entram como pagos, e a nota do lançamento diz isso.
 - **Resultado na amostra**: 5 aluguéis e 1 reembolso importados, 5 linhas de custódia puladas; os proventos foram de 43 para 49.
 - **Pendente**: confirmar se aluguel e reembolso são líquidos de IR; aluguel e reembolso somam na tela de proventos e no DY.
+- **Conferência das regras (Sessão 148)**: o JCP a 17,5% está **confirmado em fonte primária**: LC 224/2025, art. 8º, dá ao § 2º do art. 9º da
+  Lei 9.249/1995 a alíquota de 17,5%, e o art. 14, III, a faz valer desde 1º/1/2026 (texto na Câmara; o Planalto não abriu). A nota de fonte
+  da regra em `finance_core/tax_rules.rs` ainda diz "secondary sources"; trocá-la exige mudar o seed da migration junto (há teste que cobra).
+  Sobre o aluguel, a IN RFB 1.585/2015 (arts. 73 a 75, lidos em trecho citado por busca; o texto oficial não abriu): a remuneração do
+  emprestador é tributada **como renda fixa** (tabela regressiva, 22,5% até 180 dias; contratos de dias ou semanas caem aqui) e o valor
+  **reembolsado** ao emprestador por proventos é **isento de IRRF** para ele. O tomador é quem arca com o imposto sobre o provento.
+  Fontes secundárias dizem que a B3 retém o IR do aluguel e que o crédito já é líquido. **Não confirmado**: se a coluna "Valor da Operação"
+  da Movimentação é líquida ou bruta (nenhum texto oficial lido diz), e o que o reembolso de JCP traz de fato.
 
 **Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do

@@ -3267,3 +3267,17 @@ os popups e os avisos no Ledger e em Finances.
 - **Deslize**: um ajuste de teste foi feito por script Python no Bash, contra a regra de editar com Edit/Write; o diff foi conferido no `git diff`.
 - **Pendente**: os de antes (rendimento do porquinho que a B3 não cobre; posição de carteira da renda fixa; alíquota de JCP de 17,5% em
   fonte primária) e ver a tela a olho.
+
+
+### 2026-10-18 — Sessão 148
+
+**Conferência das regras de imposto das duas últimas sessões.** Só pesquisa, nenhum código mudou. O dono do projeto escolheu confirmar em
+fonte primária a alíquota do JCP e o IR do aluguel.
+- **JCP a 17,5%**: confirmado. LC 224/2025, art. 8º (altera o § 2º do art. 9º da Lei 9.249/1995), vigência do art. 14, III, em 1º/1/2026,
+  lido no texto publicado pela Câmara. O Planalto não abriu (conexão reiniciada).
+- **Aluguel**: pela IN RFB 1.585/2015, art. 73, a remuneração do emprestador é renda fixa (tabela regressiva); pelo art. 74, o reembolso de
+  proventos ao emprestador é isento de IRRF; o art. 75 põe o imposto sobre o provento no tomador. Lidos só em trecho citado por busca, porque
+  a Receita renderiza por JavaScript e o Diário Oficial caiu duas vezes. O Q&A do IRPF 2026 (340 páginas, lido localmente) não trata do tema.
+- **Aberto**: se o valor da Movimentação é líquido ou bruto. Hipótese das fontes secundárias: a B3 retém e o crédito é líquido (22,5% nos
+  contratos curtos da amostra); não deu para provar. Decidir se reconstitui o bruto como no JCP, e com qual regra de prazo, fica para o dono.
+- **Pendente**: trocar a nota de fonte do JCP em `tax_rules.rs` e no seed da migration; ver o texto oficial dos arts. 73 a 75; os demais de antes.
