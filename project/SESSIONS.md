@@ -3339,6 +3339,7 @@ decisão do dono por pergunta); direto na `main`.
   `mergeWithDefaults` também para quem já personalizou a Home. Os tipos de prejuízo (`Bucket`, `LossBalance`, `BUCKET_LABELS`) saíram de
   `TaxesSection.tsx` para `portfolio/taxLosses.ts`, que as duas telas usam. O backend não valida as chaves de widget, então nada mudou nele.
 - **Verificado**: `./dev.sh check` limpo (tsc). Caso novo em `taxes.e2e.mjs` (a Home mostra o saldo semeado e a economia de 15%); só roda no CI.
+- **CI** (direto na `main`, `d345cb9`): `Private Files`, `Frontend` e `E2E` verdes de primeira, incluindo o caso novo de `taxes.e2e.mjs`; `Rust` não rodou (nenhum arquivo Rust mudou).
 - **Não verificado**: a tela a olho; sem botão para a aba Taxes (a navegação para essa aba é estado interno do painel de carteira, e o widget só
   aponta o caminho no texto).
 - **Pendente**: os de antes (descartar em lote nas Pendentes; IR do aluguel líquido ou bruto; estimar o rendimento por resgate) e ver a tela a olho.
