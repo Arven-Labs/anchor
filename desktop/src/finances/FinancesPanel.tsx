@@ -3,6 +3,8 @@ import BankAccountSection from "./BankAccountSection";
 import GeneralTransactionSection from "./GeneralTransactionSection";
 import LiabilitySection from "./LiabilitySection";
 import LoanSection from "./LoanSection";
+import StatementImportPanel from "./StatementImportPanel";
+import StatementPendingSection from "./StatementPendingSection";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type FinancesSection = "accounts" | "liabilities" | "loans" | "transactions";
@@ -26,6 +28,7 @@ const FINANCES_SECTIONS: Record<FinancesSection, string> = {
 // cruzando com o Portfolio nesta fatia.
 function FinancesPanel({ workspaceId }: { workspaceId: number }) {
   const [section, setSection] = useState<FinancesSection>("accounts");
+  const [statementReviewOpen, setStatementReviewOpen] = useState(false);
 
   return (
     <Tabs value={section} onValueChange={(value) => setSection(value as FinancesSection)}>
@@ -47,7 +50,15 @@ function FinancesPanel({ workspaceId }: { workspaceId: number }) {
         <LoanSection workspaceId={workspaceId} />
       </TabsContent>
       <TabsContent value="transactions">
-        <GeneralTransactionSection workspaceId={workspaceId} />
+        <div className="flex flex-col gap-6">
+          <StatementImportPanel workspaceId={workspaceId} onStaged={() => setStatementReviewOpen(true)} />
+          <StatementPendingSection
+            workspaceId={workspaceId}
+            reviewOpen={statementReviewOpen}
+            onReviewOpenChange={setStatementReviewOpen}
+          />
+          <GeneralTransactionSection workspaceId={workspaceId} />
+        </div>
       </TabsContent>
     </Tabs>
   );

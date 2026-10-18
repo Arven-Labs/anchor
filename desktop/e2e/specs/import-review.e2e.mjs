@@ -30,8 +30,9 @@ function proposed(line, date, type, ticker, quantity, price, assetClass) {
 
 function seedPending(portfolio, payload) {
   sql(
-    "INSERT INTO import_pending (portfolio_id, kind, source, payload, status, created_at) " +
-      `VALUES (${portfolio}, 'transaction', 'anchor_csv', '${JSON.stringify(payload)}', 'pending', '2026-10-19T00:00:00Z')`,
+    "INSERT INTO import_pending (workspace_id, portfolio_id, kind, source, payload, status, created_at) " +
+      `VALUES ((SELECT workspace_id FROM portfolio WHERE id = ${portfolio}), ${portfolio}, 'transaction', 'anchor_csv', ` +
+      `'${JSON.stringify(payload)}', 'pending', '2026-10-19T00:00:00Z')`,
   );
 }
 

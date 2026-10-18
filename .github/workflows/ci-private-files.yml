@@ -1,0 +1,28 @@
+name: CI Private Files
+
+# O repositório é público. Planilhas da B3 e extratos bancários do dono do projeto
+# ficam só na máquina dele (o `.gitignore` os barra), mas `git add -f` ou um nome
+# fora do padrão passariam em silêncio. Este guarda falha se algum arquivo
+# rastreado parecer um deles. Roda em todo push e PR, sem filtro de caminho.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: No private samples are tracked
+        run: |
+          bad=$(git ls-files | grep -i -E '(^|/)(negociacao|movimentacao|extrato)[-_ ]|\.(ofx|qfx)$|\.xlsx?$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Arquivos que parecem planilha ou extrato privado estão rastreados:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "ok: nenhum arquivo privado rastreado"

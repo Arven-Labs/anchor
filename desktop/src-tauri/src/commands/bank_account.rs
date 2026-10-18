@@ -187,6 +187,14 @@ pub struct BankAccountView {
 /// datas futuras, na hora em que a dívida é cadastrada. Sem esse filtro, o
 /// saldo da conta já apareceria descontado de parcelas que ainda nem
 /// venceram.
+/// Efeito do lançamento no saldo da conta: saída negativa, o resto positivo.
+pub fn signed_valor(transaction_type: &str, valor: f64) -> f64 {
+    match transaction_type {
+        "despesa" | "parcela_divida" | "emprestimo_concedido" | "transferencia_saida" => -valor,
+        _ => valor,
+    }
+}
+
 fn compute_balances(
     transactions: &[general_transaction::Model],
     hoje: &str,
@@ -196,11 +204,7 @@ fn compute_balances(
         if tx.transaction_date.as_str() > hoje {
             continue;
         }
-        let signed_value = match tx.transaction_type.as_str() {
-            "despesa" | "parcela_divida" | "emprestimo_concedido" | "transferencia_saida" => -tx.valor,
-            _ => tx.valor,
-        };
-        *balances.entry(tx.bank_account_id).or_insert(0.0) += signed_value;
+        *balances.entry(tx.bank_account_id).or_insert(0.0) += signed_valor(&tx.transaction_type, tx.valor);
     }
     balances
 }
