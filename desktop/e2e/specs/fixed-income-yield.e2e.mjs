@@ -73,6 +73,7 @@ describe("Anchor — rendimento do porquinho pela Movimentação da B3", () => {
     seedYield(workspace, pocket, {
       instrument: "lci",
       code: "LCIAAA",
+      iof_basis: "not_applicable",
       ir_rate: 0,
       ir_amount: 0,
       net_yield: 0.4,
