@@ -3165,7 +3165,10 @@ por enquanto. Pediu também para **não usar branches** enquanto o app não esti
 - **Verificado**: `./dev.sh check` limpo; `cargo test --lib` inteiro no Docker (654 passaram, 0 falharam), com testes unitários do IOF
   (96% no 1º dia, 0% no 30º, tabela nunca sobe), do consumo PEPS dos lotes e das origens `full`/`partial`/`unknown`/`not_applicable`,
   e um fluxo com aplicação recente (três linhas, saldo do porquinho = extrato + líquido).
-- **Não verificado**: o CI desta mudança (resultado abaixo); a tela a olho; o clique no botão de importar.
+- **CI** (direto na `main`, `3385d02` e o commit da semente): `Rust`, `Frontend` e `Private Files` verdes de primeira; o `E2E` falhou uma vez por erro
+  meu no spec (semeei a LCI sem `iof_basis`, então o backend usou `unknown` em vez de `not_applicable`; as outras duas falhas foram
+  consequência) e passou no commit seguinte, que só ajustou a semente.
+- **Não verificado**: a tela a olho; o clique no botão de importar.
 - **Limites**: 4 de 23 resgates ainda erram mais de 1 centavo (arredondamento, lotes de mais de uma aplicação ou o par errado no
   cruzamento); resgates cujo CDB não tem a aplicação no arquivo ficam sem IOF e são marcados; o rendimento do porquinho que a B3 não
   cobre continua sem fonte. Os 16 JCP do arquivo seguem sem uso (precisam de uma fonte do valor líquido para decidir bruto ou líquido).
