@@ -3456,4 +3456,6 @@ registrar tudo no `project/` dos dois. Só documentação e um recado entre sess
   navegação) e passou no commit seguinte. Capturas do CI conferidas por código (painel, popup da transferência, contas): nada quebrado. A conta Corretora mostra os botões "Estimate yield" e
   "Already in Portfolio", que valem para qualquer conta (já era assim).
 - **Não verificado**: rodar com a conta real (o dono não quer testar na mão).
-- **Pendente**: proventos no caixa da Corretora; saldo de abertura; investigar as liquidações sem negócio de abril.
+- **Proventos no caixa (Sessão 160)**: `parse_b3_settlements` passou a ler também dividendo, rendimento, JCP, aluguel com valor e reembolso (sempre `Credito`, entra dinheiro, rótulo "Provento").
+  Teste unitário novo dos cinco tipos e do sentido errado; o de fluxo agora fecha a Corretora em 410 (inclui o dividendo). `./dev.sh check` limpo; testes no CI.
+- **Pendente**: saldo de abertura; investigar as liquidações sem negócio de abril.

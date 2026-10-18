@@ -3699,18 +3699,18 @@ async fn broker_transfers_and_b3_settlements_move_the_brokerage_cash_without_dou
     // A liquidação vira lançamento da Corretora: compra sai, venda entra, e a do aluguel (sem valor) fica de fora.
     let rows = settlement_sheet();
     let settlements = stage_statement_parsed(&db, ws.id, broker.id, None, false, "b3_settlement", parse_b3_settlements(&rows)).await.unwrap();
-    assert_eq!((settlements.staged, settlements.skipped.len()), (2, 1));
+    assert_eq!((settlements.staged, settlements.skipped.len()), (3, 1), "compra, venda e o dividendo; o aluguel sem valor fica de fora");
     assert!(settlements.skipped[0].message.contains("sem valor"));
     // Importar de novo não duplica.
     let again = stage_statement_parsed(&db, ws.id, broker.id, None, false, "b3_settlement", parse_b3_settlements(&rows)).await.unwrap();
-    assert_eq!((again.staged, again.duplicates), (0, 2));
+    assert_eq!((again.staged, again.duplicates), (0, 3));
 
     confirm_all_statement_items(&db, ws.id).await;
-    // Banco: +2.000 − 1.000 (aporte) + 100 (saque) = 1.100. Corretora: +1.000 − 100 − 900 (compra) + 400 (venda) = 400.
+    // Banco: +2.000 − 1.000 (aporte) + 100 (saque) = 1.100. Corretora: +1.000 − 100 − 900 (compra) + 400 (venda) + 10 (dividendo) = 410.
     assert!(close(account_balance(&db, ws.id, checking.id).await, 1100.0));
-    assert!(close(account_balance(&db, ws.id, broker.id).await, 400.0));
+    assert!(close(account_balance(&db, ws.id, broker.id).await, 410.0));
     let total: f64 = list_bank_accounts_view(&db, ws.id).await.unwrap().iter().map(|a| a.balance).sum();
-    assert!(close(total, 1500.0), "o aporte só muda o dinheiro de conta; compra e venda é que mexem no total");
+    assert!(close(total, 1510.0), "o aporte só muda o dinheiro de conta; compra, venda e provento é que mexem no total");
 }
 
 #[tokio::test]

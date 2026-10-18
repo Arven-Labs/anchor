@@ -222,8 +222,8 @@ function StatementImportPanel({ workspaceId, onStaged }: { workspaceId: number; 
             <h3 className="text-base font-medium">Brokerage cash (B3 settlements)</h3>
             <p className="text-sm text-muted-foreground">
               Reads the “Transferência - Liquidação” lines of the B3 “Movimentação” spreadsheet: each purchase takes cash out
-              of the brokerage account and each sale puts cash in, on the settlement date. The trades themselves still come
-              from the “Negociação” spreadsheet. Import the bank statement with this brokerage account chosen above so the
+              of the brokerage account and each sale puts cash in, on the settlement date. Dividends, JCP, fund income and
+              rental payments also credit it. The trades themselves still come from the “Negociação” spreadsheet. Import the bank statement with this brokerage account chosen above so the
               transfers you sent to the broker are not counted as expenses.
             </p>
           </div>

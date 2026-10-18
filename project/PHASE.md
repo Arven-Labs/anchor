@@ -3524,7 +3524,9 @@ de duplicata é ticker + data + tipo + quantidade + total.
   quando o import recebe uma conta Corretora; sem ela, segue receita e despesa). Cada liquidação vira um lançamento da Corretora, na data da liquidação (`broker_settlement_io.rs`, mesma fila
   de revisão do extrato, `source = b3_settlement`): compra sai, venda entra. A posição vem da Negociação, então o patrimônio fica certo **sem a marca `mirrored_in_portfolio`**.
 - **UI**: em Finances → Import bank statement, o seletor "Brokerage account" e o bloco "Brokerage cash (B3 settlements)".
-- **Limites**: proventos (dividendo, JCP) não entram no caixa da Corretora; o saldo de abertura da Corretora (o que já estava lá antes do primeiro arquivo) não vem de nenhum arquivo;
+- **Proventos (Sessão 160)**: a mesma importação lê também dividendo, rendimento de fundo, JCP, pagamento do aluguel e reembolso da Movimentação e credita a Corretora pelo valor creditado
+  (JCP e aluguel já líquidos de IR), na data do pagamento; na amostra de 2025 são 49 linhas com valor, todas `Credito`. O movimento do aluguel sem valor é pulado com o motivo.
+- **Limites**: o saldo de abertura da Corretora (o que já estava lá antes do primeiro arquivo) não vem de nenhum arquivo;
   toda `Transferência enviada/recebida` do extrato vira candidata a aporte (descarte a que for para outra pessoa); as 11 liquidações sem negócio na Negociação (quase todas de abril) não foram investigadas.
 
 **Fora do escopo / pendente**: ~~conciliação de "Transferência - Liquidação" com os

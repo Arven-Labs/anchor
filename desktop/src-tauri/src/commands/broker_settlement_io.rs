@@ -7,8 +7,11 @@
 // (`statement_io`, `Transferência enviada/recebida`), e cada liquidação vira um lançamento dessa conta.
 //
 // `Credito` é a compra (o ativo entra na custódia, o dinheiro sai da corretora) e `Debito` é a venda.
+// Os proventos em dinheiro da mesma planilha (dividendo, rendimento, JCP, pagamento do aluguel e reembolso)
+// também creditam a Corretora, pelo valor creditado (o JCP e o aluguel já vêm líquidos de IR). A posição e o
+// provento da carteira não mexem no caixa, então sem isto o saldo da Corretora ficaria abaixo do real.
 // Os negócios continuam vindo da "Negociação"; aqui só o dinheiro. Cada linha vai para a mesma fila de
-// revisão do extrato (`bank_transaction`), com a data da liquidação, que é quando o caixa se move.
+// revisão do extrato (`bank_transaction`), com a data da liquidação ou do pagamento, que é quando o caixa se move.
 use sea_orm::DatabaseConnection;
 
 use crate::commands::portfolio_io::{
@@ -30,16 +33,25 @@ pub fn parse_b3_settlements(rows: &[Vec<String>]) -> ParsedStatement {
     let mut out = Vec::new();
     for (line, row) in rows.iter().enumerate().skip(1) {
         let get = |i: usize| row.get(i).map(String::as_str).unwrap_or("");
-        if !normalize_header(get(columns.movement)).contains("liquidacao") {
+        let movement = normalize_header(get(columns.movement));
+        let is_settlement = movement.contains("liquidacao");
+        let is_proceed = movement == "dividendo"
+            || movement == "rendimento"
+            || movement.contains("juros sobre capital")
+            || movement.contains("emprestimo")
+            || movement.contains("reembolso");
+        if !is_settlement && !is_proceed {
             continue;
         }
         let issue = |message: String| ParseIssue { line, message };
         let flow = normalize_header(get(columns.flow));
-        let is_buy = match flow.as_str() {
-            "credito" => true,
-            "debito" => false,
-            other => {
-                out.push(Err(issue(format!("liquidação com sentido '{other}' (esperado crédito ou débito)"))));
+        // Liquidação: `Credito` é a compra (sai dinheiro) e `Debito` a venda. Provento: sempre `Credito`, entra dinheiro.
+        let is_buy = match (is_settlement, flow.as_str()) {
+            (true, "credito") => true,
+            (true, "debito") => false,
+            (false, "credito") => false,
+            (_, other) => {
+                out.push(Err(issue(format!("movimentação com sentido '{other}' (esperado crédito{})", if is_settlement { " ou débito" } else { "" }))));
                 continue;
             }
         };
@@ -47,11 +59,11 @@ pub fn parse_b3_settlements(rows: &[Vec<String>]) -> ParsedStatement {
             out.push(Err(issue(format!("data inválida: '{}'", get(columns.date).trim()))));
             continue;
         };
-        // Sem valor é a liquidação do aluguel (só move a custódia): não há dinheiro a lançar.
+        // Sem valor é o movimento do aluguel (só move a custódia): não há dinheiro a lançar.
         let value = match parse_number(get(columns.value)) {
             Ok(Some(v)) if v.is_finite() && v > 0.0 => v,
             Ok(_) => {
-                out.push(Err(issue("liquidação sem valor (movimento de custódia, como o aluguel) pulada".to_string())));
+                out.push(Err(issue("movimento sem valor (custódia, como o aluguel) pulado".to_string())));
                 continue;
             }
             Err(message) => {
@@ -65,7 +77,12 @@ pub fn parse_b3_settlements(rows: &[Vec<String>]) -> ParsedStatement {
             line,
             transaction_date: date,
             valor: if is_buy { -value } else { value },
-            label: if is_buy { "Compra" } else { "Venda" }.to_string(),
+            label: match (is_settlement, is_buy) {
+                (true, true) => "Compra",
+                (true, false) => "Venda",
+                (false, _) => "Provento",
+            }
+            .to_string(),
             description: format!("{ticker} · {quantity}"),
             reference: None,
             porquinho: false,
@@ -73,7 +90,7 @@ pub fn parse_b3_settlements(rows: &[Vec<String>]) -> ParsedStatement {
         }));
     }
     if out.is_empty() {
-        out.push(Err(ParseIssue { line: 0, message: "não achei nenhuma liquidação (Transferência - Liquidação) na planilha".to_string() }));
+        out.push(Err(ParseIssue { line: 0, message: "não achei nenhuma liquidação nem provento na planilha".to_string() }));
     }
     statement(out)
 }
@@ -122,7 +139,9 @@ mod tests {
             ["Credito", "19/12/2025", "Dividendo", "ABCD3 - EMPRESA S.A.", "CORRETORA", "100", "0.1", "10"],
         ]);
         let parsed = parse_b3_settlements(&rows).rows;
-        assert_eq!(parsed.len(), 2, "só liquidação vira lançamento");
+        assert_eq!(parsed.len(), 3, "liquidação e provento viram lançamento");
+        let proceed = parsed[2].as_ref().unwrap();
+        assert_eq!((proceed.transaction_date.as_str(), proceed.valor, proceed.label.as_str()), ("2025-12-19", 10.0, "Provento"));
         let buy = parsed[0].as_ref().unwrap();
         assert_eq!((buy.transaction_date.as_str(), buy.valor, buy.label.as_str()), ("2025-12-17", -900.0, "Compra"));
         assert_eq!(buy.description, "ABCD3 · 100");
@@ -139,9 +158,27 @@ mod tests {
     }
 
     #[test]
+    fn every_kind_of_cash_proceed_credits_the_broker_and_a_rental_custody_line_does_not() {
+        let rows = sheet(&[
+            ["Credito", "02/12/2025", "Dividendo", "ABCD3 - EMPRESA S.A.", "CORRETORA", "10", "1", "10"],
+            ["Credito", "02/12/2025", "Rendimento", "FIIX11 - FUNDO", "CORRETORA", "10", "1", "10"],
+            ["Credito", "02/12/2025", "Juros Sobre Capital Próprio", "ABCD3 - EMPRESA S.A.", "CORRETORA", "10", "1", "8.5"],
+            ["Credito", "02/12/2025", "Empréstimo", "ABCD3 - EMPRESA S.A.", "CORRETORA", "10", "-", "0.5"],
+            ["Credito", "02/12/2025", "Reembolso", "ABCD3 - EMPRESA S.A.", "CORRETORA", "10", "1", "3"],
+            ["Credito", "02/12/2025", "Empréstimo", "ABCD3 - EMPRESA S.A.", "CORRETORA", "10", "-", "-"],
+            ["Debito", "02/12/2025", "Dividendo", "ABCD3 - EMPRESA S.A.", "CORRETORA", "10", "1", "10"],
+        ]);
+        let parsed = parse_b3_settlements(&rows).rows;
+        let good: Vec<f64> = parsed.iter().filter_map(|r| r.as_ref().ok()).map(|p| p.valor).collect();
+        assert_eq!(good, vec![10.0, 10.0, 8.5, 0.5, 3.0], "o valor creditado, positivo, no mesmo dia");
+        let errors: Vec<&str> = parsed.iter().filter_map(|r| r.as_ref().err()).map(|e| e.message.as_str()).collect();
+        assert!(errors[0].contains("sem valor") && errors[1].contains("esperado crédito"), "{errors:?}");
+    }
+
+    #[test]
     fn a_sheet_without_settlements_or_with_other_columns_says_so() {
-        let none = parse_b3_settlements(&sheet(&[["Credito", "19/12/2025", "Dividendo", "ABCD3 - X", "C", "1", "1", "1"]]));
-        assert!(none.rows[0].as_ref().unwrap_err().message.contains("nenhuma liquidação"));
+        let none = parse_b3_settlements(&sheet(&[["Credito", "19/12/2025", "Compra", "ABCD3 - X", "C", "1", "1", "1"]]));
+        assert!(none.rows[0].as_ref().unwrap_err().message.contains("nenhuma liquidação nem provento"));
         let wrong = parse_b3_settlements(&[vec!["a".to_string(), "b".to_string()]]);
         assert!(wrong.rows[0].as_ref().unwrap_err().message.contains("Movimentação"));
     }
