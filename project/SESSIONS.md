@@ -3323,6 +3323,9 @@ decisão do dono por pergunta); direto na `main`.
   saldo negativo; conciliar de novo na mesma data não duplica.
 - **Verificado**: `./dev.sh check` limpo; `cargo test --lib` no Docker (673 passaram, 0 falharam; 4 novos de fluxo: grava uma vez, não recontando o rendimento
   aprovado da B3, saldo na data escolhida, recusas). Caso novo no `fixed-income-yield.e2e.mjs` (só roda no CI).
+- **CI** (direto na `main`): a primeira rodada (`da2971e`) passou em `Private Files`, `Rust` e `Frontend` e falhou em `E2E` só no caso novo, por erro meu
+  no spec: o caso anterior deixa o popup de revisão aberto (fila vazia) e ele cobria a aba Finances ("element not interactable"). Corrigido em `c752ad9`
+  com `Escape` antes de navegar, como os outros specs fazem: `E2E` verde.
 - **Não verificado**: a tela a olho; se o saldo do app do banco é bruto ou líquido de IR.
 - **Deslize**: um `head` no extrato para ver o cabeçalho imprimiu o número da conta e um nome na tela; nada foi copiado para arquivo, doc ou commit.
 - **Pendente**: estimar o rendimento por resgate (se fizer falta); IR do aluguel líquido ou bruto; ver a tela a olho.
