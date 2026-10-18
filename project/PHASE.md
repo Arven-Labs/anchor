@@ -3528,6 +3528,9 @@ de duplicata é ticker + data + tipo + quantidade + total.
   (JCP e aluguel já líquidos de IR), na data do pagamento; na amostra de 2025 são 49 linhas com valor, todas `Credito`. O movimento do aluguel sem valor é pulado com o motivo.
 - **Limites**: o saldo de abertura da Corretora (o que já estava lá antes do primeiro arquivo) não vem de nenhum arquivo;
   toda `Transferência enviada/recebida` do extrato vira candidata a aporte (descarte a que for para outra pessoa).
+- **Ajuste de saldo (Sessão 162)**: a conciliação pelo saldo (entrega 9) ganhou o modo `adjustment` para a Corretora: o dono digita o saldo que a corretora mostra numa data e a diferença
+  vira **receita ou despesa** (pode ir para baixo, o que o modo rendimento recusa), sem categoria e com a nota "Balance adjustment by reconciliation…". Cobre o saldo de abertura e o caixa que a
+  Movimentação não traz (as vendas de ações emprestadas). A estimativa do porquinho não trata o dia de um ajuste como coberto. No diálogo "Reconcile balance", a caixa "Balance adjustment".
 - **As liquidações sem par (Sessão 161)**: com os feriados no D+2 (Sexta-feira Santa e Tiradentes deslocavam abril), **60 das 64** liquidações com valor casam por ativo, dia e lado com a soma
   dos negócios, sem nenhuma diferença de quantidade. Sobram 4 só na liquidação: **3 são devolução de ações emprestadas** (aluguel): a B3 as registra como `Credito` de liquidação com o valor de
   mercado, 1 a 3 dias depois do pagamento do aluguel, mesmo ativo e mesma quantidade, e **não sai dinheiro**. Eu as estava lançando como compra: o parser agora as pula (par com um pagamento

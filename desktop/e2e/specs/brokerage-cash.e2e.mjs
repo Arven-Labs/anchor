@@ -1,5 +1,5 @@
 import { browser, expect } from "@wdio/globals";
-import { byId, clickCentered, enterWorkspace, snap, sql, textOf } from "./helpers.mjs";
+import { byId, clickCentered, enterWorkspace, snap, sql, textOf, waitForText } from "./helpers.mjs";
 
 // Fase 35, entrega 12 — o caixa da conta Corretora. O diálogo nativo de arquivo não é dirigível
 // pelo WebDriver, então a fila é semeada no banco (o mesmo JSON que `stage_statement` e
@@ -117,5 +117,23 @@ describe("Anchor — caixa da conta Corretora", () => {
     await byId("finances-tab-accounts").click();
     await browser.pause(500);
     await snap("brokerage-accounts");
+  });
+
+  it("o ajuste de saldo da Corretora aceita uma diferença para baixo e grava uma despesa", async () => {
+    // A segunda linha é a Corretora (saldo 500). O broker mostra 450: o ajuste vai para baixo, o que o rendimento recusaria.
+    const reconcileButtons = await $$('[data-testid="account-reconcile"]');
+    await reconcileButtons[1].click();
+    await byId("reconcile-balance").waitForDisplayed({ timeout: 10_000 });
+    await byId("reconcile-balance").setValue("450");
+    await waitForText(byId("reconcile-negative"), (t) => t.includes("lower"), "no modo rendimento, para baixo é recusado");
+    expect(await byId("reconcile-confirm").isEnabled()).toBe(false);
+
+    await byId("reconcile-adjustment").click();
+    await waitForText(byId("reconcile-difference"), (t) => t === "-50.00", "o ajuste a gravar é -50");
+    expect(await byId("reconcile-confirm").isEnabled()).toBe(true);
+    await snap("brokerage-adjustment-dialog");
+    await byId("reconcile-confirm").click();
+    await browser.waitUntil(() => balance(broker) === 450, { timeout: 20_000, timeoutMsg: "o saldo da Corretora deveria fechar em 450" });
+    expect(sql("SELECT transaction_type || ':' || valor FROM general_transactions WHERE notes LIKE 'Balance adjustment%'")).toBe("despesa:50.0");
   });
 });

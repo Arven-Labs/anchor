@@ -18,6 +18,9 @@ use crate::error::AppError;
 /// Começo da nota da receita da conciliação: a estimativa por resgate a reconhece para não tratar o dia dela como "já tem rendimento".
 pub const RECONCILIATION_NOTE_PREFIX: &str = "Yield by balance reconciliation";
 
+/// Nota do ajuste de saldo: diferente da do rendimento de propósito, para a estimativa do porquinho não tratar o dia como coberto.
+pub const ADJUSTMENT_NOTE_PREFIX: &str = "Balance adjustment by reconciliation";
+
 #[derive(Deserialize)]
 pub struct ReconcileRequest {
     pub bank_account_id: i32,
@@ -25,6 +28,10 @@ pub struct ReconcileRequest {
     pub bank_balance: f64,
     /// `YYYY-MM-DD`: o dia a que o saldo do banco se refere.
     pub date: String,
+    /// Ajuste de saldo em vez de rendimento (conta Corretora): a diferença pode ser para cima ou para baixo e
+    /// vira receita ou despesa. Cobre o saldo de abertura e o caixa que a planilha da B3 não traz.
+    #[serde(default)]
+    pub adjustment: bool,
 }
 
 #[derive(Serialize)]
@@ -79,6 +86,28 @@ pub async fn confirm_balance_reconciliation_in(
     request: ReconcileRequest,
 ) -> Result<general_transaction::Model, AppError> {
     let (account, preview) = preview_in(db, &request).await?;
+    if request.adjustment {
+        if preview.difference == 0.0 {
+            return Err(AppError::InvalidInput("the ledger already matches the bank balance: nothing to reconcile".to_string()));
+        }
+        let (transaction_type, valor) = if preview.difference > 0.0 { ("receita", preview.difference) } else { ("despesa", -preview.difference) };
+        return create_general_transaction_in(
+            db,
+            CreateGeneralTransactionRequest {
+                workspace_id: account.workspace_id,
+                bank_account_id: account.id,
+                transaction_type: transaction_type.to_string(),
+                category_id: None,
+                valor,
+                transaction_date: preview.date.clone(),
+                notes: Some(format!(
+                    "{ADJUSTMENT_NOTE_PREFIX}: bank balance {:.2} on {}, ledger {:.2}",
+                    preview.bank_balance, preview.date, preview.ledger_balance
+                )),
+            },
+        )
+        .await;
+    }
     if preview.difference <= 0.0 {
         return Err(AppError::InvalidInput(if preview.difference == 0.0 {
             "the ledger already matches the bank balance: nothing to reconcile".to_string()

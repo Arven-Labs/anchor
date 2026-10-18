@@ -29,16 +29,18 @@ function ReconcileBalanceDialog({
 }) {
   const [balance, setBalance] = useState("");
   const [date, setDate] = useState(today());
+  // Ajuste de saldo (conta Corretora): a diferença pode ir para cima ou para baixo e não é rendimento.
+  const [adjustment, setAdjustment] = useState(false);
   const queryClient = useQueryClient();
 
   const parsedBalance = balance.trim() === "" ? null : Number(balance);
   const ready = parsedBalance !== null && Number.isFinite(parsedBalance) && date !== "";
 
   const previewQuery = useQuery<ReconcilePreview, AppError>({
-    queryKey: ["reconcile-preview", account.id, parsedBalance, date],
+    queryKey: ["reconcile-preview", account.id, parsedBalance, date, adjustment],
     queryFn: () =>
       invoke("preview_balance_reconciliation", {
-        request: { bank_account_id: account.id, bank_balance: parsedBalance, date },
+        request: { bank_account_id: account.id, bank_balance: parsedBalance, date, adjustment },
       }),
     enabled: ready,
     retry: false,
@@ -48,7 +50,7 @@ function ReconcileBalanceDialog({
   const confirmMutation = useMutation<unknown, AppError, void>({
     mutationFn: () =>
       invoke("confirm_balance_reconciliation", {
-        request: { bank_account_id: account.id, bank_balance: parsedBalance, date },
+        request: { bank_account_id: account.id, bank_balance: parsedBalance, date, adjustment },
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bank-accounts", workspaceId] });
@@ -58,7 +60,7 @@ function ReconcileBalanceDialog({
     },
   });
 
-  const canBook = preview !== undefined && preview.difference > 0;
+  const canBook = preview !== undefined && (adjustment ? preview.difference !== 0 : preview.difference > 0);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -69,9 +71,19 @@ function ReconcileBalanceDialog({
 
         <div className="flex flex-col gap-4">
           <p className="text-sm text-muted-foreground">
-            Enter the balance your bank shows for this account on a date. The difference against the balance
-            built from the transactions is booked as yield, including yield not redeemed yet.
+            {adjustment
+              ? "Enter the balance your broker or bank shows on a date. The difference against the balance built from the transactions is booked as income or an expense: use it for an opening balance or cash the spreadsheets do not carry."
+              : "Enter the balance your bank shows for this account on a date. The difference against the balance built from the transactions is booked as yield, including yield not redeemed yet."}
           </p>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              data-testid="reconcile-adjustment"
+              checked={adjustment}
+              onChange={(e) => setAdjustment(e.currentTarget.checked)}
+            />
+            Balance adjustment (not yield, can go down)
+          </label>
           <Field label={`Bank balance (${account.currency})`}>
             <Input
               type="number"
@@ -101,11 +113,11 @@ function ReconcileBalanceDialog({
             <dl className="grid grid-cols-2 gap-1 text-sm">
               <dt className="text-muted-foreground">Ledger balance on that date</dt>
               <dd data-testid="reconcile-ledger">{preview.ledger_balance.toFixed(2)}</dd>
-              <dt className="text-muted-foreground">Yield to book</dt>
+              <dt className="text-muted-foreground">{adjustment ? "Adjustment to book" : "Yield to book"}</dt>
               <dd data-testid="reconcile-difference">{preview.difference.toFixed(2)}</dd>
             </dl>
           )}
-          {preview && preview.difference < 0 && (
+          {preview && preview.difference < 0 && !adjustment && (
             <p className="text-sm text-red-600" data-testid="reconcile-negative">
               The bank balance is lower than the ledger balance. A withdrawal may be missing from the statement,
               or a yield was approved for too much.
@@ -123,7 +135,7 @@ function ReconcileBalanceDialog({
               disabled={!canBook || confirmMutation.isPending}
               onClick={() => confirmMutation.mutate()}
             >
-              {confirmMutation.isPending ? "Booking..." : "Book yield"}
+              {confirmMutation.isPending ? "Booking..." : adjustment ? "Book adjustment" : "Book yield"}
             </Button>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel

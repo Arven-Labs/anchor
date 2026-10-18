@@ -10,7 +10,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::commands::balance_reconciliation::RECONCILIATION_NOTE_PREFIX;
+use crate::commands::balance_reconciliation::{ADJUSTMENT_NOTE_PREFIX, RECONCILIATION_NOTE_PREFIX};
 use crate::commands::fixed_income_io::{stage_yield_parsed, ProposedYield, YieldPayload, ESTIMATE_SOURCE, KIND_YIELD};
 use crate::commands::portfolio_io::STATUS_PENDING;
 use crate::commands::statement_io::KIND_BANK;
@@ -62,7 +62,7 @@ async fn days_with_yield(db: &DatabaseConnection, account_id: i32) -> Result<Has
         .all(db)
         .await?;
     for tx in ledger {
-        if !tx.notes.as_deref().is_some_and(|n| n.starts_with(RECONCILIATION_NOTE_PREFIX)) {
+        if !tx.notes.as_deref().is_some_and(|n| n.starts_with(RECONCILIATION_NOTE_PREFIX) || n.starts_with(ADJUSTMENT_NOTE_PREFIX)) {
             days.insert(tx.transaction_date);
         }
     }

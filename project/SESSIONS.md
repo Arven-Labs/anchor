@@ -3462,5 +3462,6 @@ registrar tudo no `project/` dos dois. Só documentação e um recado entre sess
   de liquidação com valor, e eu a lançava como compra (3 casos, cerca de R$ 6,3 mil de saída falsa). Corrigido em `parse_b3_settlements` (pula a que tem pagamento de aluguel do mesmo ativo e
   quantidade até 5 dias antes) com teste unitário novo. Detalhes na Entrega 12 do `PHASE.md`. Não rodei a amostra real pelo parser de produção (o teste `#[ignore]` pede Docker); a medição foi em Python
   sobre os arquivos, só agregados.
-- **Pendente**: o caixa das 2 vendas de ações emprestadas, que a Movimentação não traz (só a conciliação pelo saldo cobre);
-  saldo de abertura; investigar as liquidações sem negócio de abril.
+- **Ajuste de saldo (Sessão 162)**: `ReconcileRequest.adjustment` (padrão falso) em `balance_reconciliation.rs`; caixa "Balance adjustment" no diálogo; teste de fluxo (para cima, para baixo, o modo
+  rendimento continua recusando, repetir não duplica) e caso novo em `brokerage-cash.e2e.mjs` (saldo 500 → 450 grava despesa de 50). `./dev.sh check` e `tsc` limpos; testes e E2E no CI.
+- **Pendente**: o saldo de abertura e o caixa das 2 vendas de ações emprestadas só fecham quando o dono digitar o saldo da corretora (conciliação, modo ajuste); investigar as liquidações sem negócio de abril.

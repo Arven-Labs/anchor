@@ -3194,7 +3194,37 @@ fn reconcile(account_id: i32, bank_balance: f64, date: &str) -> crate::commands:
         bank_account_id: account_id,
         bank_balance,
         date: date.to_string(),
+        adjustment: false,
     }
+}
+
+#[tokio::test]
+async fn a_balance_adjustment_books_the_difference_up_or_down_and_never_counts_as_yield() {
+    use crate::commands::balance_reconciliation::{confirm_balance_reconciliation_in, ADJUSTMENT_NOTE_PREFIX};
+    use crate::commands::bank_account::balance_on;
+    let db = memory_db().await;
+    let (_, account) = porquinho_with_flows(&db).await; // saldo do ledger em 31/03: 600
+    let adjust = |balance: f64, date: &str| {
+        let mut request = reconcile(account.id, balance, date);
+        request.adjustment = true;
+        request
+    };
+
+    // Para cima (saldo de abertura): receita sem categoria de rendimento.
+    let up = confirm_balance_reconciliation_in(&db, adjust(1000.0, "2026-03-31")).await.unwrap();
+    assert_eq!((up.transaction_type.as_str(), up.category_id), ("receita", None));
+    assert!(close(up.valor, 400.0) && up.notes.as_deref().unwrap().starts_with(ADJUSTMENT_NOTE_PREFIX));
+    assert!(close(balance_on(&db, account.id, "2026-03-31").await.unwrap(), 1000.0));
+
+    // Para baixo (caixa que sobrou): despesa, que o modo de rendimento recusaria.
+    let down = confirm_balance_reconciliation_in(&db, adjust(950.0, "2026-03-31")).await.unwrap();
+    assert!(down.transaction_type == "despesa" && close(down.valor, 50.0));
+    assert!(close(balance_on(&db, account.id, "2026-03-31").await.unwrap(), 950.0));
+    assert!(confirm_balance_reconciliation_in(&db, reconcile(account.id, 900.0, "2026-03-31")).await.is_err(), "rendimento não vai para baixo");
+
+    // Conciliar de novo no mesmo dia não duplica.
+    let again = confirm_balance_reconciliation_in(&db, adjust(950.0, "2026-03-31")).await;
+    assert!(matches!(again, Err(e) if e.to_string().contains("nothing to reconcile")));
 }
 
 /// Conta com 1.000 aplicados em 01/03 e 400 resgatados em 10/03 (saldo do ledger: 600, sem rendimento).
@@ -3416,7 +3446,7 @@ async fn a_reconciliation_yield_does_not_mark_its_day_as_covered() {
     // Ledger em 03/06/2025: 1000 − 250 = 750. O banco mostra 760: a conciliação grava 10 nesse mesmo dia.
     confirm_balance_reconciliation_in(
         &db,
-        ReconcileRequest { bank_account_id: account.id, bank_balance: 760.0, date: "2025-06-03".to_string() },
+        ReconcileRequest { bank_account_id: account.id, bank_balance: 760.0, date: "2025-06-03".to_string(), adjustment: false },
     )
     .await
     .unwrap();
