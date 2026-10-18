@@ -8,7 +8,13 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub portfolio_id: i32,
+    pub workspace_id: i32,
+    /// Itens de carteira (`kind = transaction`); vazio nos de extrato.
+    pub portfolio_id: Option<i32>,
+    /// Conta do extrato (`kind = bank_transaction`).
+    pub bank_account_id: Option<i32>,
+    /// Outra ponta de uma transferência com o porquinho.
+    pub counterpart_account_id: Option<i32>,
     pub kind: String,
     pub source: String,
     #[sea_orm(column_type = "Text")]

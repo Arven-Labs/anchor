@@ -2374,6 +2374,10 @@ async fn confirming_a_pending_item_writes_it_and_leaves_the_queue() {
     assert_eq!(list_import_pending_in(&db, pf.id).await.unwrap().len(), 2);
     let positions = compute_positions(&db, pf.id).await.unwrap();
     assert!(close(positions.iter().find(|p| p.ticker == "PETR4").unwrap().quantity, 50.0));
+
+    // A edição mudou quantidade e total: reimportar o arquivo original não o traz de volta.
+    let again = stage_csv(&db, pf.id, IMPORT_CSV).await;
+    assert_eq!((again.staged, again.duplicates), (0, 3));
 }
 
 #[tokio::test]
@@ -2495,4 +2499,216 @@ fn the_tax_hint_follows_the_class_chosen_for_an_eleven_ticker() {
     assert_ne!(class_tax_hint_text("fii", "TAEE11"), class_tax_hint_text("acao_br", "TAEE11"));
     assert!(class_tax_hint_text("acao_br", "TAEE11").contains("never exempt"));
     assert!(class_tax_hint_text("etf_br", "WXYZ11").contains("never exempt"));
+}
+
+// ---------------------------------------------------------------------------
+// Extrato bancário pela fila (Fase 35, entrega 3). Dados inventados.
+// ---------------------------------------------------------------------------
+
+const STATEMENT_CSV: &str = "Extrato Conta Corrente\nConta ;111\n\nData Lançamento;Histórico;Descrição;Valor;Saldo\n\
+15/01/2025;Pix recebido;Pessoa A;1.000,00;0,00\n\
+16/01/2025;Pix enviado;Loja B;-150,25;0,00\n\
+16/01/2025;Aplicação;Cdb Porquinho Banco X;-300,00;0,00\n\
+20/01/2025;Resgate;Cdb Porquinho Banco X;50,00;0,00\n";
+
+const STATEMENT_OFX: &str = "<OFX><BANKTRANLIST>\n\
+<STMTTRN>\n<DTPOSTED>20250115\n<TRNAMT>1000.00\n<FITID>1\n<NAME>Pessoa A\n<MEMO>Pix recebido: \"x\"\n</STMTTRN>\n\
+<STMTTRN>\n<DTPOSTED>20250116\n<TRNAMT>-150.25\n<FITID>2\n<NAME>Loja B\n<MEMO>Pix enviado: \"x\"\n</STMTTRN>\n\
+<STMTTRN>\n<DTPOSTED>20250116\n<TRNAMT>-300.00\n<FITID>3\n<NAME>Cdb Porquinho Banco X\n<MEMO>Aplicacao: \"x\"\n</STMTTRN>\n\
+<STMTTRN>\n<DTPOSTED>20250120\n<TRNAMT>50.00\n<FITID>4\n<NAME>Cdb Porquinho Banco X\n<MEMO>Resgate: \"x\"\n</STMTTRN>\n\
+</BANKTRANLIST></OFX>\n";
+
+fn edited_from(item: &crate::commands::statement_io::StatementPendingView) -> crate::commands::statement_io::EditedBankItem {
+    crate::commands::statement_io::EditedBankItem {
+        transaction_date: item.proposed.transaction_date.clone(),
+        transaction_type: item.suggested_type.clone(),
+        valor: item.proposed.valor.abs(),
+        notes: Some(item.proposed.description.clone()),
+        category_id: None,
+    }
+}
+
+async fn confirm_all_statement_items(db: &sea_orm::DatabaseConnection, workspace_id: i32) {
+    use crate::commands::statement_io::{confirm_statement_pending_in, list_statement_pending_in};
+    for item in list_statement_pending_in(db, workspace_id).await.unwrap() {
+        confirm_statement_pending_in(db, workspace_id, item.id, edited_from(&item)).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn a_statement_moves_balances_and_the_porquinho_legs_keep_the_total_cash() {
+    use crate::commands::statement_io::{list_statement_pending_in, parse_inter_csv, stage_statement_parsed};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Statement").await;
+    let checking = crate::test_support::bank_account(&db, ws.id, "Checking").await;
+
+    let staged = stage_statement_parsed(&db, ws.id, checking.id, None, true, "inter_csv", parse_inter_csv(STATEMENT_CSV))
+        .await
+        .unwrap();
+    assert_eq!((staged.staged, staged.duplicates, staged.skipped.len()), (4, 0, 0));
+    assert_eq!(staged.account_ref.as_deref(), Some("111"));
+    let accounts = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    assert_eq!(accounts.len(), 2, "a conta Porquinho foi criada");
+    assert!(accounts.iter().any(|a| a.nome == "Cdb Porquinho"));
+
+    let pending = list_statement_pending_in(&db, ws.id).await.unwrap();
+    assert_eq!(
+        pending.iter().map(|p| p.suggested_type.as_str()).collect::<Vec<_>>(),
+        vec!["receita", "despesa", "transferencia", "transferencia"]
+    );
+    assert!(list_bank_accounts_view(&db, ws.id).await.unwrap().iter().all(|a| close(a.balance, 0.0)), "fila não move saldo");
+
+    confirm_all_statement_items(&db, ws.id).await;
+    assert!(list_statement_pending_in(&db, ws.id).await.unwrap().is_empty());
+    let accounts = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    let balance = |name: &str| accounts.iter().find(|a| a.nome == name).unwrap().balance;
+    // Conta: +1000 −150,25 −300 (aplicação) +50 (resgate). Porquinho: +300 −50.
+    assert!(close(balance("Checking"), 599.75));
+    assert!(close(balance("Cdb Porquinho"), 250.0));
+    assert!(close(accounts.iter().map(|a| a.balance).sum::<f64>(), 849.75), "transferir não muda o caixa total");
+}
+
+#[tokio::test]
+async fn the_ofx_and_the_csv_of_the_same_statement_do_not_duplicate_each_other() {
+    use crate::commands::statement_io::{parse_inter_csv, parse_ofx, stage_statement_parsed};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Both formats").await;
+    let checking = crate::test_support::bank_account(&db, ws.id, "Checking").await;
+
+    let first = stage_statement_parsed(&db, ws.id, checking.id, None, true, "inter_ofx", parse_ofx(STATEMENT_OFX)).await.unwrap();
+    assert_eq!(first.staged, 4);
+    confirm_all_statement_items(&db, ws.id).await;
+    let pocket = list_bank_accounts_view(&db, ws.id).await.unwrap().into_iter().find(|a| a.nome == "Cdb Porquinho").unwrap();
+
+    let second =
+        stage_statement_parsed(&db, ws.id, checking.id, Some(pocket.id), false, "inter_csv", parse_inter_csv(STATEMENT_CSV))
+            .await
+            .unwrap();
+    assert_eq!((second.staged, second.duplicates), (0, 4), "o CSV do mesmo período não traz nada novo");
+    assert_eq!(crate::entity::general_transaction::Entity::find().all(&db).await.unwrap().len(), 6, "2 comuns + 2 pares");
+}
+
+#[tokio::test]
+async fn identical_entries_on_the_same_day_count_as_many_as_there_are() {
+    use crate::commands::statement_io::{
+        confirm_statement_pending_in, list_statement_pending_in, parse_inter_csv, stage_statement_parsed,
+    };
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Twins").await;
+    let checking = crate::test_support::bank_account(&db, ws.id, "Checking").await;
+    let csv = "Data Lançamento;Histórico;Descrição;Valor;Saldo\n\
+10/02/2025;Pix enviado;Loja B;-10,00;0,00\n10/02/2025;Pix enviado;Loja C;-10,00;0,00\n";
+
+    assert_eq!(stage_statement_parsed(&db, ws.id, checking.id, None, false, "inter_csv", parse_inter_csv(csv)).await.unwrap().staged, 2);
+    let pending = list_statement_pending_in(&db, ws.id).await.unwrap();
+    confirm_statement_pending_in(&db, ws.id, pending[0].id, edited_from(&pending[0])).await.unwrap();
+
+    // Um já está no ledger e o outro continua na fila: reimportar não cria nenhum.
+    let again = stage_statement_parsed(&db, ws.id, checking.id, None, false, "inter_csv", parse_inter_csv(csv)).await.unwrap();
+    assert_eq!((again.staged, again.duplicates), (0, 2));
+}
+
+#[tokio::test]
+async fn editing_discarding_and_refusing_work_on_the_statement_queue() {
+    use crate::commands::statement_io::{
+        confirm_statement_pending_in, discard_statement_pending_in, list_statement_pending_in, parse_inter_csv,
+        stage_statement_parsed,
+    };
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Edit statement").await;
+    let checking = crate::test_support::bank_account(&db, ws.id, "Checking").await;
+    let category = {
+        use sea_orm::{ActiveModelTrait, Set};
+        crate::entity::general_transaction_category::ActiveModel {
+            workspace_id: Set(ws.id),
+            nome: Set("Mercado".to_string()),
+            limite_mensal: Set(None),
+            created_at: Set("2026-01-01T00:00:00Z".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap()
+    };
+
+    // Sem conta Porquinho, aplicação e resgate ficam de fora com o motivo.
+    let staged = stage_statement_parsed(&db, ws.id, checking.id, None, false, "inter_csv", parse_inter_csv(STATEMENT_CSV)).await.unwrap();
+    assert_eq!((staged.staged, staged.skipped.len()), (2, 2));
+    assert!(staged.skipped[0].message.contains("porquinho"));
+
+    let pending = list_statement_pending_in(&db, ws.id).await.unwrap();
+    // Valor inválido é recusado e o item continua pendente.
+    let mut bad = edited_from(&pending[0]);
+    bad.valor = 0.0;
+    assert!(confirm_statement_pending_in(&db, ws.id, pending[0].id, bad).await.is_err());
+    assert_eq!(list_statement_pending_in(&db, ws.id).await.unwrap().len(), 2);
+
+    // A despesa é editada: outro valor, categoria e nota.
+    let mut edited = edited_from(&pending[1]);
+    edited.valor = 99.0;
+    edited.category_id = Some(category.id);
+    edited.notes = Some("compra do mês".to_string());
+    confirm_statement_pending_in(&db, ws.id, pending[1].id, edited).await.unwrap();
+    let saved = crate::entity::general_transaction::Entity::find().all(&db).await.unwrap();
+    assert_eq!((saved.len(), saved[0].transaction_type.as_str()), (1, "despesa"));
+    assert!(close(saved[0].valor, 99.0) && saved[0].category_id == Some(category.id));
+    assert_eq!(saved[0].notes.as_deref(), Some("compra do mês"));
+
+    // Editar o valor não faz o original voltar numa reimportação (a marca `confirmed` fica na fila).
+    let still_pending = stage_statement_parsed(&db, ws.id, checking.id, None, false, "inter_csv", parse_inter_csv(STATEMENT_CSV))
+        .await
+        .unwrap();
+    assert_eq!((still_pending.staged, still_pending.duplicates), (0, 2));
+
+    // Descartar tira da fila, e reimportar não traz de volta.
+    discard_statement_pending_in(&db, ws.id, pending[0].id).await.unwrap();
+    assert!(list_statement_pending_in(&db, ws.id).await.unwrap().is_empty());
+    assert!(discard_statement_pending_in(&db, ws.id, pending[0].id).await.is_err(), "já descartado");
+    let again = stage_statement_parsed(&db, ws.id, checking.id, None, false, "inter_csv", parse_inter_csv(STATEMENT_CSV)).await.unwrap();
+    assert_eq!(again.staged, 0);
+}
+
+#[tokio::test]
+async fn deleting_the_account_clears_its_pending_items() {
+    use crate::commands::statement_io::{list_statement_pending_in, parse_inter_csv, stage_statement_parsed};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Cascade").await;
+    let checking = crate::test_support::bank_account(&db, ws.id, "Checking").await;
+    stage_statement_parsed(&db, ws.id, checking.id, None, true, "inter_csv", parse_inter_csv(STATEMENT_CSV)).await.unwrap();
+    assert_eq!(list_statement_pending_in(&db, ws.id).await.unwrap().len(), 4);
+    delete_bank_account_in(&db, checking.id).await.unwrap();
+    assert!(list_statement_pending_in(&db, ws.id).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn the_migration_keeps_an_old_pending_item_and_gives_it_a_workspace() {
+    use migration::{Migrator, MigratorTrait};
+    use sea_orm::{ConnectOptions, ConnectionTrait, Database};
+
+    let mut options = ConnectOptions::new("sqlite::memory:");
+    options.max_connections(1).min_connections(1).sqlx_logging(false);
+    let db = Database::connect(options).await.unwrap();
+    let all = Migrator::migrations().len() as u32;
+    Migrator::up(&db, Some(all - 1)).await.unwrap();
+
+    let ws = workspace(&db, "Legacy").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    db.execute_unprepared(&format!(
+        "INSERT INTO import_pending (portfolio_id, kind, source, payload, status, created_at) \
+         VALUES ({}, 'transaction', 'anchor_csv', '{{}}', 'pending', '2026-01-01T00:00:00Z')",
+        pf.id
+    ))
+    .await
+    .unwrap();
+
+    Migrator::up(&db, None).await.unwrap();
+    let rows = crate::entity::import_pending::Entity::find().all(&db).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!((rows[0].workspace_id, rows[0].portfolio_id), (ws.id, Some(pf.id)));
+    assert_eq!(rows[0].bank_account_id, None);
 }

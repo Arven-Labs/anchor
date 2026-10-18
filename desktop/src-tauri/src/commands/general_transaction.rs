@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
     TransactionTrait, Unchanged,
 };
 use serde::{Deserialize, Serialize};
@@ -38,6 +38,13 @@ pub async fn create_general_transaction(
     db: tauri::State<'_, DatabaseConnection>,
     request: CreateGeneralTransactionRequest,
 ) -> Result<general_transaction::Model, AppError> {
+    create_general_transaction_in(db.inner(), request).await
+}
+
+pub async fn create_general_transaction_in<C: ConnectionTrait>(
+    db: &C,
+    request: CreateGeneralTransactionRequest,
+) -> Result<general_transaction::Model, AppError> {
     validate_type(&request.transaction_type)?;
 
     let tx = general_transaction::ActiveModel {
@@ -51,7 +58,7 @@ pub async fn create_general_transaction(
         created_at: Set(chrono::Utc::now().to_rfc3339()),
         ..Default::default()
     }
-    .insert(db.inner())
+    .insert(db)
     .await?;
 
     Ok(tx)

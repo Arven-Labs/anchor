@@ -3340,6 +3340,29 @@ Na amostra real: 2 proventos e 19 puladas (12 CDB, 3 aluguel, 3 liquidação, 1 
 confirmado pela tela de sugestões (Yahoo) com quantidade ou valor diferentes não é reconhecido como duplicata, porque a chave
 de duplicata é ticker + data + tipo + quantidade + total.
 
+**Entrega 3 (feita, Sessão 140)**: extrato bancário da conta corrente do Inter, em **OFX e CSV**, pela mesma fila de revisão.
+- **Leitores** (`commands/statement_io.rs`): `parse_ofx` (SGML sem tags de fechamento, cp1252 ou UTF-8; `FITID`, `NAME`, `MEMO`)
+  e `parse_inter_csv` (ignora o bloco de cabeçalho e a coluna `Saldo`, que não é confiável). Os dois dão o mesmo resultado na
+  amostra real: mesmas linhas, mesmo conjunto (data, valor) e a mesma conta declarada.
+- **Classificação**: o sinal do valor decide receita/despesa. Aplicação/Resgate do "Cdb Porquinho" viram o par de transferência
+  entre a conta e uma conta Porquinho (escolhida ou criada na importação), então não entram como receita nem despesa e o caixa
+  total não muda. Pix/transferência entre contas próprias entram como receita/despesa e se corrigem (ou descartam) no popup.
+- **Duplicata independente do formato**: (conta, data, valor com sinal) contada com multiplicidade, contra o ledger e contra a
+  fila. Não usa o `FITID` porque o CSV não tem. OFX e CSV do mesmo período não se duplicam.
+- **Fila única por Workspace**: migration `m20261020` reconstrói `import_pending` (`workspace_id` obrigatório, `portfolio_id`
+  opcional, `bank_account_id` e `counterpart_account_id`); linhas antigas ganham o Workspace pela carteira. A fila **saiu do
+  arquivo de Workspace** (`SPEC` volta a 20 tabelas): é estado transitório de revisão.
+- **Achado**: aprovar com edição de valor/data fazia o item original voltar numa reimportação. Agora a linha fica na fila como
+  `confirmed` só quando a edição mudou a chave de duplicata (vale também para os lançamentos de carteira da entrega 1).
+- **UI**: aba Transactions de Finances ganhou "Import bank statement", o cartão "Statement pending review" e o popup
+  (data, valor, tipo, categoria, nota; a transferência mostra origem → destino). Os pendentes de carteira seguem no Ledger;
+  uma tela global única de pendentes é o próximo passo natural.
+- **Limite conhecido**: o saldo da conta Porquinho sai só dos fluxos (aplicação − resgate) e **não inclui o rendimento**, que
+  aparece como resgate maior que o aplicado. Falta uma linha de rendimento (manual ou vinda dos CDBs da Movimentação da B3).
+- **Dados privados (repositório público)**: `.gitignore` versionado cobre as amostras, um workflow `ci-private-files.yml` falha
+  se algum arquivo parecido com planilha ou extrato for rastreado, e os testes usam só dados e tickers inventados. Os tickers
+  reais que tinham escapado para testes e comentários foram trocados (continuam no histórico público).
+
 **Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
 Inter; CDB/porquinho visto também como conta corrente sem contar o patrimônio duas vezes; IR do AUPO11; unificar a fila com

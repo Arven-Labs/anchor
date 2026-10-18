@@ -250,7 +250,7 @@ fn csv_error(err: csv::Error) -> AppError {
 // Planilha "Negociação" da B3
 // ---------------------------------------------------------------------------
 
-fn normalize_header(raw: &str) -> String {
+pub(crate) fn normalize_header(raw: &str) -> String {
     raw.trim()
         .to_lowercase()
         .chars()
@@ -902,8 +902,11 @@ pub async fn preview_import_in(
 // ---------------------------------------------------------------------------
 
 const KIND_TRANSACTION: &str = "transaction";
-const STATUS_PENDING: &str = "pending";
-const STATUS_DISCARDED: &str = "discarded";
+pub(crate) const STATUS_PENDING: &str = "pending";
+pub(crate) const STATUS_DISCARDED: &str = "discarded";
+/// Aprovado com edição que mudou a chave de duplicata: a linha fica só pra reimportar
+/// o mesmo arquivo não trazer o item original de volta.
+pub(crate) const STATUS_CONFIRMED: &str = "confirmed";
 
 /// O que a fila guarda de cada item: a linha proposta e a classe sugerida ou
 /// já escolhida (só importa para ativo novo).
@@ -951,6 +954,7 @@ pub async fn stage_parsed(
     source: &str,
     parsed: Parsed,
 ) -> Result<StageResult, AppError> {
+    let workspace_id = workspace_of_portfolio(db, portfolio_id).await?;
     let rows = preview_rows(db, portfolio_id, parsed).await?;
     let now = chrono::Utc::now().to_rfc3339();
     let txn = db.begin().await?;
@@ -965,7 +969,8 @@ pub async fn stage_parsed(
             (_, Some(proposed)) => {
                 let payload = PendingPayload { proposed, asset_class: row.suggested_class };
                 import_pending::ActiveModel {
-                    portfolio_id: Set(portfolio_id),
+                    workspace_id: Set(workspace_id),
+                    portfolio_id: Set(Some(portfolio_id)),
                     kind: Set(KIND_TRANSACTION.to_string()),
                     source: Set(source.to_string()),
                     payload: Set(serde_json::to_string(&payload).map_err(|e| AppError::InvalidInput(e.to_string()))?),
@@ -1018,7 +1023,7 @@ async fn pending_row(db: &DatabaseConnection, portfolio_id: i32, id: i32) -> Res
     let row = import_pending::Entity::find_by_id(id)
         .one(db)
         .await?
-        .filter(|r| r.portfolio_id == portfolio_id)
+        .filter(|r| r.kind == KIND_TRANSACTION && r.portfolio_id == Some(portfolio_id))
         .ok_or_else(|| AppError::InvalidInput(format!("pendente {id} não existe nesta carteira")))?;
     if row.status != STATUS_PENDING {
         return Err(AppError::InvalidInput(format!("pendente {id} não está aguardando revisão (status '{}')", row.status)));
@@ -1037,9 +1042,23 @@ pub async fn confirm_import_pending_in(
     asset_class: Option<String>,
 ) -> Result<CommitResult, AppError> {
     let row = pending_row(db, portfolio_id, id).await?;
+    // Se a edição mudou a chave de duplicata, o item original do arquivo deixa de casar
+    // com o lançamento gravado; a linha fica como `confirmed` pra reimportar não trazê-lo de volta.
+    let key_of = |p: &ProposedTransaction| {
+        dedup_key(&p.ticker, &p.transaction_date, &p.transaction_type, p.quantity, p.total_value)
+    };
+    let key_changed = serde_json::from_str::<PendingPayload>(&row.payload)
+        .map(|original| key_of(&original.proposed) != key_of(&proposed))
+        .unwrap_or(false);
     let result = commit_rows(db, portfolio_id, vec![CommitItem { proposed, asset_class }]).await?;
     if result.errors.is_empty() {
-        import_pending::Entity::delete_by_id(row.id).exec(db).await?;
+        if key_changed {
+            let mut active: import_pending::ActiveModel = row.into();
+            active.status = Set(STATUS_CONFIRMED.to_string());
+            active.update(db).await?;
+        } else {
+            import_pending::Entity::delete_by_id(row.id).exec(db).await?;
+        }
     }
     Ok(result)
 }

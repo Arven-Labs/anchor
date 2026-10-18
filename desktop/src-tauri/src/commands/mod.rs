@@ -25,6 +25,7 @@ pub mod loan;
 pub mod net_worth;
 pub mod portfolio;
 pub mod portfolio_io;
+pub mod statement_io;
 pub mod workspace_file;
 pub mod portfolio_summary;
 pub mod profitability;

@@ -3086,4 +3086,28 @@ pequena que reaproveita o parser, a fila e o popup, então sem plan mode. Detalh
 - **Não verificado**: o CI desta entrega; a tela a olho; o botão "Import" da Movimentação em si (diálogo nativo de arquivo);
   nenhum E2E novo (o do popup já cobre a revisão, e o formato novo só muda o leitor).
 - **Pendente**: JCP (precisa de uma amostra com JCP para saber bruto ou líquido), aluguel e reembolso, CDB e conciliação, extrato
-  do Inter, CDB como conta corrente.
+  do Inter, CDB como conta corrente. *(Extrato do Inter feito na Sessão 140, abaixo; o PR #2 foi mergeado pelo dono do projeto.)*
+
+
+### 2026-10-19 — Sessão 140
+
+**Fase 35, entrega 3: extrato bancário (OFX e CSV) pela fila de revisão.** Plan mode, plano aprovado. O dono do projeto trouxe
+o extrato real nos dois formatos, pediu os dois, e alertou: "cuidado com os arquivos indo pro GitHub". Detalhe na Fase 35 do
+`PHASE.md`.
+- **Auditoria de privacidade primeiro** (o repositório é PÚBLICO): nenhuma amostra jamais entrou em commit, e a conta e os
+  nomes de terceiros do extrato estavam em 0 arquivos rastreados. A proteção era só `.git/info/exclude` (local). Primeiro commit
+  da branch: `.gitignore` versionado, workflow `ci-private-files.yml` e troca dos tickers reais de testes e comentários por
+  fictícios. Antes do push, nova varredura dos arquivos a subir contra a conta e os nomes do extrato (só uma palavra genérica,
+  "Aplicação", casou).
+- **Feito**: migration que reconstrói `import_pending` por Workspace, `statement_io.rs` (OFX, CSV, fila, confirmar, descartar),
+  `create_general_transaction_in` extraída, `signed_valor` pública, `Import bank statement` + `StatementPendingSection` +
+  `StatementReviewDialog` em Finances, e a marca `confirmed` para edições que mudam a chave de duplicata.
+- **Verificado**: `./dev.sh check` limpo; `cargo test --lib` inteiro no Docker (634 passaram, 0 falharam) com testes de fluxo
+  para saldos e caixa total com o porquinho, OFX e CSV do mesmo período sem duplicar, lançamentos iguais no mesmo dia,
+  edição/descarte/recusa, cascade ao apagar a conta e a migration com uma linha antiga; as amostras reais (testes `#[ignore]`,
+  `ANCHOR_INTER_OFX`/`ANCHOR_INTER_CSV`) leem as 529 linhas nos dois formatos, 200 do porquinho, mesmo conjunto (data, valor).
+- **Não verificado**: a tela a olho; o clique em "Import OFX/CSV" (diálogo nativo de arquivo); o CI desta entrega até o
+  resultado abaixo; com o rendimento do porquinho fora, o saldo dessa conta não bate com o do app do banco.
+- **Pendente**: rendimento do porquinho; conciliar com os CDBs da Movimentação da B3 e evitar contar o CDB duas vezes no
+  patrimônio (conta + carteira); tela global única de pendentes; categorias automáticas e IA; transferência entre contas próprias
+  escolhida no popup.
