@@ -61,6 +61,7 @@ export type AssetClass =
   | "acao_br"
   | "fii"
   | "etf_br"
+  | "etf_renda_fixa"
   | "cripto"
   | "bdr"
   | "metal"
@@ -76,6 +77,7 @@ export const ASSET_CLASSES: AssetClass[] = [
   "acao_br",
   "fii",
   "etf_br",
+  "etf_renda_fixa",
   "cripto",
   "bdr",
   "metal",
@@ -92,6 +94,7 @@ export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   acao_br: "Stock (B3)",
   fii: "FII (B3)",
   etf_br: "ETF (B3)",
+  etf_renda_fixa: "ETF (B3, fixed income)",
   cripto: "Crypto",
   bdr: "BDR (B3)",
   metal: "Metal",
@@ -117,6 +120,7 @@ export const ASSET_CLASSES_WITH_AUTO_QUOTE: AssetClass[] = [
   "acao_br",
   "fii",
   "etf_br",
+  "etf_renda_fixa",
   "cripto",
   "bdr",
   "metal",

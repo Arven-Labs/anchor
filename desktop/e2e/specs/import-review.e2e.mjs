@@ -1,5 +1,5 @@
 import { $$, browser, expect } from "@wdio/globals";
-import { byId, clickCentered, enterWorkspace, pickOption, sql, textOf, waitForText } from "./helpers.mjs";
+import { byId, clickCentered, enterWorkspace, pickOption, snap, sql, textOf, waitForText } from "./helpers.mjs";
 
 // Fase 35 — o popup de revisão item a item e a fila de pendentes. O diálogo
 // nativo de arquivo não é dirigível pelo WebDriver, então a fila é semeada
@@ -98,6 +98,10 @@ describe("Anchor — revisão da importação e fila de pendentes", () => {
 
     await pickOption(byId("review-class"), "FII (B3)");
     await waitForText(byId("review-tax-hint"), (t) => t.includes("FII/Fiagro"), "aviso de FII");
+    // O ETF de renda fixa (ex.: AUPO11) tem classe própria: IR retido na fonte, fora da apuração.
+    await pickOption(byId("review-class"), "ETF (B3, fixed income)");
+    await waitForText(byId("review-tax-hint"), (t) => t.includes("withheld at source"), "aviso do ETF de renda fixa");
+    await snap("import-review-fixed-income-etf");
     await pickOption(byId("review-class"), "Stock (B3)");
     await waitForText(byId("review-tax-hint"), (t) => t.includes("never exempt"), "unit nunca isenta");
 

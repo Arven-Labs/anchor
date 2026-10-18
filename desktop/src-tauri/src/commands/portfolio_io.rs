@@ -41,10 +41,11 @@ const CSV_HEADER: [&str; 12] = [
 ];
 
 /// Classes que o importador sabe criar sozinho, com a moeda e a exposição padrão.
-const CLASS_DEFAULTS: [(&str, &str, &str); 13] = [
+const CLASS_DEFAULTS: [(&str, &str, &str); 14] = [
     ("acao_br", "BRL", "BR"),
     ("fii", "BRL", "BR"),
     ("etf_br", "BRL", "BR"),
+    ("etf_renda_fixa", "BRL", "BR"),
     ("bdr", "BRL", "BR"),
     ("cripto", "USD", "US"),
     ("metal", "BRL", "BR"),
@@ -1152,6 +1153,9 @@ pub async fn discard_import_pending_in(db: &DatabaseConnection, portfolio_id: i3
 /// Tratamento fiscal que a classe implica, em texto curto para a revisão.
 pub fn class_tax_hint_text(asset_class: &str, ticker: &str) -> &'static str {
     use crate::domain::tax::classify::{treatment, TaxTreatment};
+    if asset_class == "etf_renda_fixa" {
+        return "Fixed-income ETF: IR is withheld at source, so it is left out of the monthly assessment";
+    }
     match treatment(asset_class, ticker) {
         TaxTreatment::StockExemptEligible => "Common stock: sales up to the monthly limit may be exempt",
         TaxTreatment::CommonNoExemption => "Taxed as common variable income, never exempt (unit, stock ETF or BDR)",

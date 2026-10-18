@@ -3105,6 +3105,37 @@ async fn an_imported_fixed_income_position_is_not_counted_twice_when_the_account
 }
 
 #[tokio::test]
+async fn a_fixed_income_etf_is_a_class_of_its_own_outside_the_mirrored_cash_and_the_tax_assessment() {
+    use crate::commands::portfolio_io::{class_tax_hint_text, commit_rows, CommitItem, ImportStatus};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Family").await;
+    let pf = portfolio(&db, ws.id, "B3").await;
+    let porquinho = bank_account(&db, ws.id, "Porquinho").await;
+    cash_in(&db, ws.id, porquinho.id, 1000.0, "2026-03-02").await;
+    mark_mirrored(&db, &porquinho, true).await;
+
+    // O final 11 pede a classe; escolhida a do ETF de renda fixa, o ativo nasce em BRL.
+    let csv = "date,type,ticker,quantity,unit_price,total_value\n2026-03-05,compra,AUPO11,10,100,1000\n";
+    let rows = preview_csv(&db, pf.id, csv).await;
+    assert_eq!(rows[0].status, ImportStatus::NeedsClass);
+    let item = CommitItem { proposed: rows[0].proposed.clone().unwrap(), asset_class: Some("etf_renda_fixa".to_string()) };
+    assert_eq!(commit_rows(&db, pf.id, vec![item]).await.unwrap().created, 1);
+    let asset = crate::entity::assets::Entity::find().all(&db).await.unwrap().remove(0);
+    assert_eq!((asset.asset_class.as_str(), asset.currency.as_str()), ("etf_renda_fixa", "BRL"));
+
+    // Fora do desconto de caixa: a renda fixa de verdade cede o caixa da conta marcada, o ETF não.
+    let nw = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(nw.total_market_value, 1000.0), "a posição conta: {}", nw.total_market_value);
+    assert!(close(nw.cash_in_portfolio, 0.0) && close(nw.total_cash, 1000.0), "o caixa não cede nada ao ETF");
+
+    // Fora da apuração, com o aviso próprio na revisão, e cotada como as outras classes da B3.
+    assert!(class_tax_hint_text("etf_renda_fixa", "AUPO11").contains("withheld at source"));
+    assert!(crate::commands::profitability::ASSET_CLASSES_WITH_AUTO_QUOTE.contains(&"etf_renda_fixa"));
+    assert!(crate::domain::position_pricing::ASSET_CLASSES_WITH_AUTO_QUOTE.contains(&"etf_renda_fixa"));
+}
+
+#[tokio::test]
 async fn a_partial_redemption_leaves_the_rest_in_the_position_and_the_yield_stays_out() {
     let db = memory_db().await;
     let ws = workspace(&db, "Family").await;

@@ -36,6 +36,8 @@ pub fn treatment(asset_class: &str, ticker: &str) -> TaxTreatment {
         "fii" => TaxTreatment::Fii,
         "cripto" => TaxTreatment::CryptoWarning,
         "acao_internacional" | "reit" | "etf_us" => TaxTreatment::ForeignWarning,
+        // ETF de renda fixa (ex.: AUPO11): IR retido na fonte, fora da apuração mensal.
+        "etf_renda_fixa" => TaxTreatment::Ignored,
         _ => TaxTreatment::Ignored,
     }
 }
@@ -65,5 +67,6 @@ mod tests {
         assert_eq!(treatment("reit", "O"), TaxTreatment::ForeignWarning);
         assert_eq!(treatment("metal", "XAU"), TaxTreatment::Ignored);
         assert_eq!(treatment("renda_fixa", "CDB"), TaxTreatment::Ignored);
+        assert_eq!(treatment("etf_renda_fixa", "AUPO11"), TaxTreatment::Ignored, "o final 11 não o torna unit nem ETF comum");
     }
 }

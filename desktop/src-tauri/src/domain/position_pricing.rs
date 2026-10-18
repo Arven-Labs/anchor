@@ -6,10 +6,11 @@
 // Mesma lista de classes com cotação automática que `commands/profitability.rs`
 // já usa pro cálculo de rentabilidade (decisão histórica documentada lá:
 // Tesouro Direto/Renda Fixa/Imóvel/Empresa não listada ficam fora).
-pub const ASSET_CLASSES_WITH_AUTO_QUOTE: [&str; 9] = [
+pub const ASSET_CLASSES_WITH_AUTO_QUOTE: [&str; 10] = [
     "acao_br",
     "fii",
     "etf_br",
+    "etf_renda_fixa",
     "cripto",
     "bdr",
     "metal",

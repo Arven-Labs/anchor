@@ -20,6 +20,7 @@ const SHORT_CLASS_LABELS: Record<AssetClass, string> = {
   acao_br: "B3",
   fii: "FII",
   etf_br: "ETF",
+  etf_renda_fixa: "ETF RF",
   cripto: "Crypto",
   bdr: "BDR",
   metal: "Metal",
@@ -36,6 +37,7 @@ const CLASS_LABELS: Record<AssetClass, string> = {
   acao_br: "Stock (B3)",
   fii: "FII (B3)",
   etf_br: "ETF (B3)",
+  etf_renda_fixa: "ETF (B3, fixed income)",
   cripto: "Crypto",
   bdr: "BDR (B3)",
   metal: "Metal",
@@ -51,6 +53,7 @@ const CLASS_LABELS: Record<AssetClass, string> = {
 const PLACEHOLDER_BY_CLASS: Partial<Record<AssetClass, string>> = {
   fii: "HGLG11",
   etf_br: "BOVA11",
+  etf_renda_fixa: "AUPO11",
   cripto: "ETH",
   bdr: "AAPL34",
   metal: "XAU",

@@ -3465,3 +3465,12 @@ registrar tudo no `project/` dos dois. Só documentação e um recado entre sess
 - **Ajuste de saldo (Sessão 162)**: `ReconcileRequest.adjustment` (padrão falso) em `balance_reconciliation.rs`; caixa "Balance adjustment" no diálogo; teste de fluxo (para cima, para baixo, o modo
   rendimento continua recusando, repetir não duplica) e caso novo em `brokerage-cash.e2e.mjs` (saldo 500 → 450 grava despesa de 50). `./dev.sh check` e `tsc` limpos; testes e E2E no CI.
 - **Pendente**: o saldo de abertura e o caixa das 2 vendas de ações emprestadas só fecham quando o dono digitar o saldo da corretora (conciliação, modo ajuste); investigar as liquidações sem negócio de abril.
+
+
+### 2026-10-18 — Sessão 163
+
+**Classe própria para ETF de renda fixa (AUPO11).** Item pendente "IR do AUPO11". Eu ia só sugerir `renda_fixa` na importação e vi que isso mudaria o caixa: `renda_fixa` entra no desconto de caixa das contas marcadas "Already in Portfolio". Perguntei ao dono, que escolheu a classe própria. Plan mode; direto na `main`.
+- **Feito**: `etf_renda_fixa` em `asset.rs`, `portfolio_io.rs` (`CLASS_DEFAULTS` e aviso próprio na revisão), `profitability.rs` e `position_pricing.rs` (cotação), `classify.rs` (`Ignored`), `types.ts`, `GlobalSearch.tsx` e `ProfitabilitySection.tsx`. `net_worth.rs` não mudou (a igualdade com `"renda_fixa"` já a deixa de fora). Detalhes na Entrega 13 do `PHASE.md`.
+- **Verificado**: `./dev.sh check` (compila os testes) e `tsc` limpos; teste unitário do `treatment`; teste de fluxo novo (ativo nasce em BRL, caixa marcado não cede ao ETF, aviso próprio, cotada); caso novo em `import-review.e2e.mjs` com captura. Testes e E2E no CI.
+- **Não verificado**: o app móvel (não tocado); a tela a olho (capturas do CI).
+- **Pendente**: `mobile/` conhecer a classe; unificar a fila com `suggested_dividends` (recomendei não); IA como origem.

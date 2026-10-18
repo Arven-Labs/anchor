@@ -44,7 +44,7 @@ type CollectorSummary = { success: boolean; output: string };
 // ver `collect_crypto_ticker`/`collect_us_price_history` em
 // data-collector/main.py) — sem o filtro aqui, mandar um desses tickers pro
 // coletor `.SA` genérico tentaria algo como `CRIPTO.SA`/`SPY.SA`, errado.
-const YAHOO_BACKFILL_CLASSES = ["acao_br", "fii", "etf_br", "bdr"];
+const YAHOO_BACKFILL_CLASSES = ["acao_br", "fii", "etf_br", "etf_renda_fixa", "bdr"];
 
 // Mesma paleta/convenção de DividendHistoryChart.tsx (rampa de verde do
 // tema, nunca dois eixos Y na mesma barra — ver skill dataviz). A polaridade
