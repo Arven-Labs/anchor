@@ -3413,3 +3413,19 @@ automações. Plan mode para a segunda; direto na `main`.
   destrutivo, selo "Auto yield 100% CDI" na conta e o diálogo com o estado automático.
 - **Não verificado**: rodar tudo na conta real (a estimativa, a B3 e a conciliação pelo saldo) e o percentual do CDI do porquinho contra o saldo do banco.
 - **Pendente**: rodar a estimativa na conta real e fechar a diferença com uma conciliação pelo saldo; a conciliação continua manual porque o saldo do banco só o dono sabe.
+
+
+### 2026-10-18 — Sessão 157
+
+**Registrar o processo de verificação por código e automação, e repassá-lo ao Warden.** O dono do projeto pediu para levar "todo esse processo" ao Claude Code que roda no Warden e
+registrar tudo no `project/` dos dois. Só documentação e um recado entre sessões; nenhum código mudou.
+- **Anchor**: novo `project/AUTOMACAO.md` (regras de ouro, Parte A telas por código com o que as capturas acharam, Parte B automação de fluxos em 9 regras, ritual de cada fatia,
+  o que fica manual por natureza); diretriz nova em `GUIDELINES.md`; linha no `INDEX.md`; memória `feedback_anchor_automate_not_manual`. Commit `c0964ad`.
+- **Correção do próprio texto**: a primeira versão do ritual dizia para rodar `cargo test` no Docker; o `INDEX.md` do Anchor manda validar com `./dev.sh check` e o CI, "em vez de
+  rodar os testes localmente". O doc agora diz que o CI é a verificação nos dois projetos (as sessões anteriores rodaram o `cargo test` no Docker; não é necessário).
+- **Warden**: achei a sessão dele pelo diretório do processo (`~/Documents/workspace/warden`; era a única outra sessão `claude` da máquina, `instalar-skill-por-ar-uri`) e mandei um
+  recado autocontido apontando para o `AUTOMACAO.md` e pedindo que ela: registre no `project/` do Warden pelo protocolo dele (GUIDELINES, INDEX, um `P<n>` novo no PENDING, SESSIONS e uma
+  memória de feedback), entre em plan mode, não rode build local (regra dele: CI), adote as capturas no E2E dele (Playwright em `web/e2e`) e proponha, como itens de PENDING, quais fluxos
+  manuais do Warden dá para automatizar. Eu **não escrevi no repositório do Warden**: a sessão dele estava ocupada e é a dona da numeração e do protocolo do `project/` dele.
+- **Resposta do Warden**: ainda não chegou na hora do registro; o recado pediu um parágrafo de volta (o `P<n>`, o commit, o que as capturas acharam) e eu o anoto aqui quando vier.
+- **Pendente**: registrar a resposta do Warden; os de antes (rodar a estimativa na conta real e conciliar pelo saldo).
