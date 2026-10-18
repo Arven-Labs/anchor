@@ -3237,3 +3237,14 @@ as sugestões de provento entram na tela única, e os cartões do Ledger e de Fi
 - **Próximo passo sugerido**: abrir o app e olhar a aba Pending, os popups e a fila, que nunca foram vistos a olho.
 - **Pendente**: os de antes (aluguel e reembolso da Movimentação; rendimento do porquinho que a B3 não cobre; posição de carteira da
   renda fixa; alíquota de JCP de 17,5% em fonte primária) e ver a tela a olho.
+
+
+### 2026-10-18 — Sessão 146
+
+**Conferência visual da aba Pending.** Sem código novo; o dono do projeto subiu o app (`./dev.sh`) e olhou a aba Pending, o selo, a fila,
+os popups e os avisos no Ledger e em Finances.
+- **Visto a olho**: tudo "muito top", do jeito que ele queria, sem ajustes pedidos.
+- **Não conferido por ele**: idioma dos textos e valores exibidos. Leitura do código: as strings de UI de `pending/` e `DividendConfirmDialog`
+  estão em inglês, sem português vazado (só comentários em português).
+- **Pendente**: os de antes (aluguel e reembolso da Movimentação; rendimento do porquinho que a B3 não cobre; posição de carteira da
+  renda fixa; alíquota de JCP de 17,5% em fonte primária) e conferir os valores na tela com os dados reais.
