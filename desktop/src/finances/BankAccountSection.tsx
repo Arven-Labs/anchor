@@ -12,6 +12,7 @@ import {
 import Field from "../components/Field";
 import { CURRENCIES } from "../stock-lookup/FxLookupSection";
 import ConvertedHint from "./ConvertedHint";
+import EstimateYieldDialog from "./EstimateYieldDialog";
 import ReconcileBalanceDialog from "./ReconcileBalanceDialog";
 import { useBaseCurrency } from "./useBaseCurrency";
 import {
@@ -65,6 +66,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
   const [editTitular, setEditTitular] = useState("");
   const [editCurrency, setEditCurrency] = useState("BRL");
   const [reconcilingAccount, setReconcilingAccount] = useState<BankAccountView | null>(null);
+  const [estimatingAccount, setEstimatingAccount] = useState<BankAccountView | null>(null);
 
   const queryClient = useQueryClient();
   const baseCurrency = useBaseCurrency(workspaceId);
@@ -261,7 +263,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
                             </Badge>
                           )}
                         </TableCell>
-                        <TableCell className="flex gap-2">
+                        <TableCell className="flex flex-wrap gap-2">
                           <Button size="sm" variant="outline" onClick={() => startEditing(account)}>
                             Edit
                           </Button>
@@ -273,6 +275,15 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
                             onClick={() => setReconcilingAccount(account)}
                           >
                             Reconcile balance
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            data-testid="account-estimate"
+                            title="Estimate the yield of each redemption from the account's flows and the Selic rate"
+                            onClick={() => setEstimatingAccount(account)}
+                          >
+                            Estimate yield
                           </Button>
                           <Button
                             size="sm"
@@ -301,6 +312,14 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
           </Table>
         </CardContent>
       </Card>
+
+      {estimatingAccount && (
+        <EstimateYieldDialog
+          account={estimatingAccount}
+          workspaceId={workspaceId}
+          onClose={() => setEstimatingAccount(null)}
+        />
+      )}
 
       {reconcilingAccount && (
         <ReconcileBalanceDialog

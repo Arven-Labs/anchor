@@ -14,6 +14,9 @@ use crate::commands::general_transaction::{create_general_transaction_in, Create
 use crate::entity::{bank_account, general_transaction};
 use crate::error::AppError;
 
+/// Começo da nota da receita da conciliação: a estimativa por resgate a reconhece para não tratar o dia dela como "já tem rendimento".
+pub const RECONCILIATION_NOTE_PREFIX: &str = "Yield by balance reconciliation";
+
 #[derive(Deserialize)]
 pub struct ReconcileRequest {
     pub bank_account_id: i32,
@@ -92,7 +95,7 @@ pub async fn confirm_balance_reconciliation_in(
             valor: preview.difference,
             transaction_date: preview.date.clone(),
             notes: Some(format!(
-                "Yield by balance reconciliation: bank balance {:.2} on {}, ledger {:.2}",
+                "{RECONCILIATION_NOTE_PREFIX}: bank balance {:.2} on {}, ledger {:.2}",
                 preview.bank_balance, preview.date, preview.ledger_balance
             )),
         },

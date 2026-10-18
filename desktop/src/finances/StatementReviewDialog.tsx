@@ -44,6 +44,8 @@ export type YieldDetail = {
   base_price_source: string;
   day_derived_total: number;
   bank_total_that_day: number | null;
+  // Só nas estimativas do porquinho (`base_price_source === "estimate"`): fração do CDI usada.
+  estimate_pct_of_cdi: number | null;
 };
 
 export type StatementPendingItem = {
@@ -98,6 +100,11 @@ function dayCheck(detail: YieldDetail): { text: string; matches: boolean } | nul
 
 // De onde veio o IOF proposto, em uma frase.
 function iofNote(detail: YieldDetail): string {
+  if (detail.base_price_source === "estimate") {
+    return detail.iof_basis === "partial"
+      ? "Estimated from the applications in the account's statement; part of this redemption has no application there, so that part has no yield or IOF here."
+      : `Estimated from the applications in the account's statement (about ${detail.holding_days ?? 0} day(s) held); IOF applies to redemptions within 30 days.`;
+  }
   switch (detail.iof_basis) {
     case "full":
       return `Held ${detail.holding_days ?? 0} day(s): IOF applies to redemptions within 30 days.`;
@@ -323,11 +330,19 @@ function YieldReviewForm({
       <p className="text-sm text-muted-foreground" data-testid="statement-review-counter">
         {total} left to review · line {item.proposed.line} · {item.source}
       </p>
-      <p className="text-sm" data-testid="yield-original">
-        <span className="font-medium">{detail.instrument.toUpperCase()} {detail.code}</span> · redeemed{" "}
-        {formatMoney(detail.gross_value)} for a principal of {formatMoney(detail.principal)} ({detail.quantity} units at{" "}
-        {detail.base_unit_price}, {detail.base_price_source === "application" ? "from its application" : "common to all applications in the file"})
-      </p>
+      {detail.base_price_source === "estimate" ? (
+        <p className="text-sm" data-testid="yield-original">
+          <span className="font-medium">{detail.instrument.toUpperCase()} {detail.code}</span> · estimated from the CDI curve at{" "}
+          {Math.round((detail.estimate_pct_of_cdi ?? 1) * 100)}% of the CDI: a principal of {formatMoney(detail.principal)} redeemed
+          for {formatMoney(detail.gross_value)} before tax. This is an estimate; correct it if the bank paid differently.
+        </p>
+      ) : (
+        <p className="text-sm" data-testid="yield-original">
+          <span className="font-medium">{detail.instrument.toUpperCase()} {detail.code}</span> · redeemed{" "}
+          {formatMoney(detail.gross_value)} for a principal of {formatMoney(detail.principal)} ({detail.quantity} units at{" "}
+          {detail.base_unit_price}, {detail.base_price_source === "application" ? "from its application" : "common to all applications in the file"})
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Date">

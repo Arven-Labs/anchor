@@ -408,6 +408,8 @@ pub struct YieldDetail {
     pub day_derived_total: f64,
     /// O que o extrato já aprovado mostra saindo da conta Porquinho no dia; `None` sem extrato.
     pub bank_total_that_day: Option<f64>,
+    /// Só nas estimativas do porquinho (`base_price_source = "estimate"`): o percentual do CDI usado.
+    pub estimate_pct_of_cdi: Option<f64>,
 }
 
 pub async fn list_statement_pending_in(
@@ -473,6 +475,7 @@ pub async fn list_statement_pending_in(
                         base_price_source: p.base_price_source,
                         day_derived_total: p.day_derived_total,
                         bank_total_that_day: bank_total,
+                        estimate_pct_of_cdi: p.estimate_pct_of_cdi,
                     }),
                 });
             }

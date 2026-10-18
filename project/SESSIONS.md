@@ -3373,4 +3373,21 @@ decisão do dono por pergunta); direto na `main`.
   com o motivo. Nada de lógica mudou.
 - **Limite**: a fonte do aluguel é a B3 educativa; o texto da IN RFB 1.585 (arts. 73 a 75) não abriu (a Receita renderiza por JavaScript, o Diário Oficial caiu).
   A amostra não prova sozinha que o aluguel vem líquido; ela prova o reembolso.
-- **Pendente**: estimar o rendimento por resgate (se fizer falta) e ver a tela a olho.
+- **Pendente**: estimar o rendimento por resgate (se fizer falta) e ver a tela a olho. *(A estimativa foi feita na Sessão 155, abaixo.)*
+
+
+### 2026-10-18 — Sessão 155
+
+**Fase 35, entrega 10: estimativa do rendimento do porquinho, resgate a resgate.** Plan mode, plano aprovado ("manda bala"). Direto na `main`.
+- **Validado antes de construir** (Python, fora do app, só agregados): nos 23 resgates de 2025 explicados pela B3, o modelo a 100% do CDI (CDI ≈ Selic meta − 0,10, dias úteis)
+  erra 0,4% por resgate na mediana; 98% e 102% pioram. Feriados não mudaram as janelas curtas da amostra. O BCB bloqueou o download do CDI aqui, então a tabela da Selic
+  de 2025 foi a que eu conhecia (12,25 → 13,25 → 14,25 → 14,75 → 15,00).
+- **Feito**: `domain/calendar.rs` (dias úteis e Páscoa), `domain/porquinho_yield.rs` (acúmulo pelo CDI, PEPS, IOF e IR, soma fechando no centavo),
+  `commands/porquinho_estimate.rs` (fluxos do ledger, Selic de `selic_daily`, pula dia que já tem rendimento, enfileira como `fixed_income_yield`),
+  campo `estimate_pct_of_cdi` em `ProposedYield` e `YieldDetail`, botão e diálogo "Estimate yield" em Finances → Accounts, texto de estimativa no popup de revisão, e a nota da
+  conciliação ganhou uma constante (`RECONCILIATION_NOTE_PREFIX`) para a estimativa não tratar o dia dela como coberto.
+- **Verificado**: `./dev.sh check` limpo; `cargo test --lib` no Docker (696 passaram, 0 falharam; 23 novos entre calendário, modelo e fluxo: enfileira e aprovar deixa o
+  principal que sobrou, dia coberto é pulado, rodar duas vezes não duplica, conciliação não conta como coberto, Selic que não cobre é recusada, percentual fora da faixa).
+  Spec novo `porquinho-estimate.e2e.mjs` (só roda no CI).
+- **Não verificado**: a tela a olho; o percentual real do CDI do porquinho contra o saldo do banco (a validação foi contra a B3, que é o que há de verdade nos dados).
+- **Pendente**: ver a tela a olho; rodar a estimativa na conta real e fechar a diferença com uma conciliação pelo saldo.

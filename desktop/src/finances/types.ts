@@ -146,6 +146,16 @@ export type ReconcilePreview = {
   difference: number;
 };
 
+// Fase 35, entrega 10 — estimativa do rendimento do porquinho por resgate
+// (`commands::porquinho_estimate::stage_porquinho_yield_estimate`).
+export type EstimateResult = {
+  redemptions: number;
+  staged: number;
+  skipped_covered_day: number;
+  skipped_no_yield: number;
+  duplicates: number;
+};
+
 // Fase 12 — Patrimônio Líquido/Alavancagem cruzando Portfolio + Finanças
 // Gerais (`commands::net_worth::get_net_worth_summary`).
 export type NetWorthSummary = {

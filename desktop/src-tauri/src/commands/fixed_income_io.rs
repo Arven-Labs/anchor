@@ -69,6 +69,9 @@ pub struct ProposedYield {
     pub base_price_source: String,
     /// Σ (principal + líquido) de todos os resgates do mesmo dia no arquivo.
     pub day_derived_total: f64,
+    /// Só nas estimativas do porquinho (`base_price_source = "estimate"`, entrega 10): o percentual do CDI usado.
+    #[serde(default)]
+    pub estimate_pct_of_cdi: Option<f64>,
 }
 
 fn unknown_basis() -> String {
@@ -277,6 +280,7 @@ pub fn parse_fixed_income_rows(rows: &[Vec<String>], rules: &RuleSet) -> YieldPa
             base_unit_price,
             base_price_source: base_price_source.to_string(),
             day_derived_total: 0.0,
+            estimate_pct_of_cdi: None,
         }));
     }
 

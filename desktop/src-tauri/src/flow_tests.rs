@@ -3275,6 +3275,172 @@ async fn a_bank_balance_below_the_ledger_a_future_date_or_a_bad_balance_are_refu
     assert_eq!(list_bank_accounts_view(&db, account.workspace_id).await.unwrap()[0].balance, 600.0);
 }
 
+// ---------------------------------------------------------------------------
+// Estimativa do rendimento do porquinho por resgate (Fase 35, entrega 10)
+// ---------------------------------------------------------------------------
+
+/// Meta Selic de 10,10% (CDI de 10,00%) desde `from`, gravada agora para o app não ir ao BCB.
+async fn seed_selic_meta(db: &sea_orm::DatabaseConnection, from: &str) {
+    use sea_orm::{ActiveModelTrait, Set};
+    crate::entity::selic_daily::ActiveModel {
+        series_code: Set("meta".to_string()),
+        reference_date: Set(from.to_string()),
+        value_pct: Set(10.10),
+        source: Set("test".to_string()),
+        fetched_at: Set(chrono::Utc::now().to_rfc3339()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+}
+
+async fn pocket_leg(db: &sea_orm::DatabaseConnection, ws: i32, account: i32, kind: &str, valor: f64, date: &str) {
+    use sea_orm::{ActiveModelTrait, Set};
+    crate::entity::general_transaction::ActiveModel {
+        workspace_id: Set(ws),
+        bank_account_id: Set(account),
+        transaction_type: Set(kind.to_string()),
+        category_id: Set(None),
+        valor: Set(valor),
+        transaction_date: Set(date.to_string()),
+        notes: Set(None),
+        created_at: Set("2026-01-01T00:00:00Z".to_string()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+}
+
+fn estimate_request(account: i32, pct: f64) -> crate::commands::porquinho_estimate::EstimateRequest {
+    crate::commands::porquinho_estimate::EstimateRequest { bank_account_id: account, pct_of_cdi: pct }
+}
+
+/// Porquinho com 1.000 aplicados em 03/03/2025 e 250,00 pagos num resgate em 03/06/2025.
+async fn porquinho_for_estimate(db: &sea_orm::DatabaseConnection) -> (crate::entity::workspace::Model, crate::entity::bank_account::Model) {
+    let ws = workspace(db, "Family").await;
+    let account = bank_account(db, ws.id, "Porquinho").await;
+    pocket_leg(db, ws.id, account.id, "transferencia_entrada", 1000.0, "2025-03-03").await;
+    pocket_leg(db, ws.id, account.id, "transferencia_saida", 250.0, "2025-06-03").await;
+    (ws, account)
+}
+
+#[tokio::test]
+async fn the_estimate_queues_a_yield_for_the_redemption_and_approving_it_leaves_the_principal_in_the_account() {
+    use crate::commands::bank_account::balance_on;
+    use crate::commands::fixed_income_io::{confirm_yield_pending_in, EditedYield, YieldPayload};
+    use crate::commands::porquinho_estimate::stage_porquinho_yield_estimate_in;
+    let db = memory_db().await;
+    let (ws, account) = porquinho_for_estimate(&db).await;
+    seed_selic_meta(&db, "2024-01-01").await;
+
+    let result = stage_porquinho_yield_estimate_in(&db, estimate_request(account.id, 1.0)).await.unwrap();
+    assert_eq!((result.redemptions, result.staged, result.skipped_covered_day, result.duplicates), (1, 1, 0, 0));
+
+    let queued = crate::entity::import_pending::Entity::find().all(&db).await.unwrap();
+    assert_eq!(queued.len(), 1);
+    assert_eq!((queued[0].kind.as_str(), queued[0].source.as_str()), ("fixed_income_yield", "porquinho_estimate"));
+    let p = serde_json::from_str::<YieldPayload>(&queued[0].payload).unwrap().proposed;
+    assert_eq!((p.base_price_source.as_str(), p.estimate_pct_of_cdi), ("estimate", Some(1.0)));
+    assert_eq!(p.transaction_date, "2025-06-03");
+    assert!(close(p.principal + p.net_yield, 250.0), "o pago fecha no centavo: {} + {}", p.principal, p.net_yield);
+    // Três meses a 10% ao ano sobre cerca de 250: poucos reais de rendimento bruto, IR de 22,5% sem IOF.
+    assert!(p.gross_yield > 3.0 && p.gross_yield < 9.0, "bruto {}", p.gross_yield);
+    assert_eq!(p.iof_amount, 0.0);
+    assert!(close(p.ir_amount, (p.gross_yield * 0.225 * 100.0).round() / 100.0) || (p.ir_amount - p.gross_yield * 0.225).abs() < 0.011);
+    assert!(close(p.day_derived_total, 250.0));
+
+    // Aprovar grava a receita bruta e o IR; o saldo da conta passa a ser o principal que sobrou.
+    confirm_yield_pending_in(
+        &db,
+        ws.id,
+        queued[0].id,
+        EditedYield {
+            transaction_date: p.transaction_date.clone(),
+            gross_yield: p.gross_yield,
+            iof_amount: p.iof_amount,
+            ir_amount: p.ir_amount,
+            notes: None,
+        },
+    )
+    .await
+    .unwrap();
+    let left = balance_on(&db, account.id, "2025-12-31").await.unwrap();
+    assert!((left - (1000.0 - p.principal)).abs() < 0.011, "saldo {left} contra principal que sobrou {}", 1000.0 - p.principal);
+}
+
+#[tokio::test]
+async fn a_day_that_already_has_a_yield_is_skipped_and_running_twice_does_not_duplicate() {
+    use crate::commands::porquinho_estimate::stage_porquinho_yield_estimate_in;
+    let db = memory_db().await;
+    let (ws, account) = porquinho_for_estimate(&db).await;
+    seed_selic_meta(&db, "2024-01-01").await;
+
+    // Rendimento já lançado no dia do resgate (por exemplo, o que a B3 explicou): não há o que estimar.
+    cash_in(&db, ws.id, account.id, 4.0, "2025-06-03").await;
+    let covered = stage_porquinho_yield_estimate_in(&db, estimate_request(account.id, 1.0)).await.unwrap();
+    assert_eq!((covered.staged, covered.skipped_covered_day), (0, 1));
+}
+
+#[tokio::test]
+async fn running_the_estimate_twice_leaves_one_item_in_the_queue() {
+    use crate::commands::porquinho_estimate::stage_porquinho_yield_estimate_in;
+    let db = memory_db().await;
+    let (_, account) = porquinho_for_estimate(&db).await;
+    seed_selic_meta(&db, "2024-01-01").await;
+
+    assert_eq!(stage_porquinho_yield_estimate_in(&db, estimate_request(account.id, 1.0)).await.unwrap().staged, 1);
+    let again = stage_porquinho_yield_estimate_in(&db, estimate_request(account.id, 1.0)).await.unwrap();
+    assert_eq!((again.staged, again.skipped_covered_day), (0, 1), "o dia já tem item na fila");
+    assert_eq!(crate::entity::import_pending::Entity::find().all(&db).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_reconciliation_yield_does_not_mark_its_day_as_covered() {
+    use crate::commands::balance_reconciliation::{confirm_balance_reconciliation_in, ReconcileRequest};
+    use crate::commands::porquinho_estimate::stage_porquinho_yield_estimate_in;
+    let db = memory_db().await;
+    let (_, account) = porquinho_for_estimate(&db).await;
+    seed_selic_meta(&db, "2024-01-01").await;
+
+    // Ledger em 03/06/2025: 1000 − 250 = 750. O banco mostra 760: a conciliação grava 10 nesse mesmo dia.
+    confirm_balance_reconciliation_in(
+        &db,
+        ReconcileRequest { bank_account_id: account.id, bank_balance: 760.0, date: "2025-06-03".to_string() },
+    )
+    .await
+    .unwrap();
+    let result = stage_porquinho_yield_estimate_in(&db, estimate_request(account.id, 1.0)).await.unwrap();
+    assert_eq!((result.staged, result.skipped_covered_day), (1, 0));
+}
+
+#[tokio::test]
+async fn a_selic_history_that_does_not_reach_the_first_application_is_refused() {
+    use crate::commands::porquinho_estimate::stage_porquinho_yield_estimate_in;
+    let db = memory_db().await;
+    let (_, account) = porquinho_for_estimate(&db).await;
+    seed_selic_meta(&db, "2025-05-01").await;
+
+    let err = stage_porquinho_yield_estimate_in(&db, estimate_request(account.id, 1.0)).await.unwrap_err();
+    assert!(err.to_string().contains("Selic history"), "{err}");
+    assert!(crate::entity::import_pending::Entity::find().all(&db).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn the_estimate_refuses_an_out_of_range_percentage_and_does_nothing_without_redemptions() {
+    use crate::commands::porquinho_estimate::stage_porquinho_yield_estimate_in;
+    let db = memory_db().await;
+    let ws = workspace(&db, "Family").await;
+    let empty = bank_account(&db, ws.id, "Porquinho").await;
+    seed_selic_meta(&db, "2024-01-01").await;
+
+    assert!(stage_porquinho_yield_estimate_in(&db, estimate_request(empty.id, 0.0)).await.is_err());
+    assert!(stage_porquinho_yield_estimate_in(&db, estimate_request(empty.id, 5.0)).await.is_err());
+    let none = stage_porquinho_yield_estimate_in(&db, estimate_request(empty.id, 1.0)).await.unwrap();
+    assert_eq!((none.redemptions, none.staged), (0, 0));
+}
+
 #[tokio::test]
 async fn the_mirrored_flag_exists_with_a_false_default_and_travels_with_the_account_view() {
     let db = memory_db().await;

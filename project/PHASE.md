@@ -3480,7 +3480,22 @@ de duplicata é ticker + data + tipo + quantidade + total.
 - **Recusas**: saldo do banco abaixo do ledger (falta um fluxo no extrato ou um rendimento aprovado a mais), data futura, data inválida e saldo negativo.
 - **UI**: botão "Reconcile balance" em Finances → Accounts e diálogo com prévia (saldo do ledger e rendimento a gravar). O valor entra como veio no banco:
   sem IR nem IOF separados (o saldo do banco pode ser bruto ou líquido, não verificado).
-- **Pendente**: estimar o rendimento por resgate; categoria própria para rendimento; ver a tela a olho.
+- **Pendente**: categoria própria para rendimento; ver a tela a olho. *(A estimativa por resgate foi feita na entrega 10, abaixo.)*
+
+**Entrega 10 (feita, Sessão 155)**: estimativa do rendimento do porquinho, resgate a resgate, para os que a B3 não explica.
+- **Validação antes de construir** (offline, só agregados): nos 23 resgates de 2025 que a B3 explica, o modelo a **100% do CDI** (CDI ≈ Selic meta − 0,10 p.p., 252 dias
+  úteis ao ano, PEPS sobre as aplicações) erra **0,4% por resgate** na mediana; a 98% e 102% o erro mediano vai a 2,2% e 2,4%. O total ficou +3,6%, quase todo de um resgate.
+- **Como funciona**: o ledger da conta dá os fluxos (`transferencia_entrada` = aplicação, `transferencia_saida` = o que o banco pagou). `domain/porquinho_yield.rs`
+  consome as aplicações mais antigas primeiro; cada lote rende `k = 1 + g(1 − iof)(1 − ir)` por real de principal, com o IOF da tabela do decreto e o IR da regra
+  `fixed_income_ir_cdb`; o resgate sai com `principal + rendimento líquido` fechando no centavo. `domain/calendar.rs` traz os dias úteis (feriados nacionais fixos e os da
+  Páscoa). `commands/porquinho_estimate.rs` lê a Selic meta de `selic_daily` (baixa no BCB se faltar), pula os dias que já têm rendimento (receita lançada, exceto a
+  da conciliação pelo saldo, ou item na fila) e enfileira o resto como `fixed_income_yield` (`base_price_source = "estimate"`, `estimate_pct_of_cdi`), revisado no
+  mesmo popup, que diz que é estimativa.
+- **UI**: botão "Estimate yield" por conta (Finances → Accounts) com o percentual do CDI (padrão 100) e o resultado (enviadas, puladas por dia coberto, sem rendimento,
+  duplicadas). A série de Selic precisa cobrir a primeira aplicação, senão o comando recusa dizendo a causa.
+- **Limites**: é estimativa (o popup deixa editar bruto, IOF e IR); resgate maior que as aplicações conhecidas (saldo de abertura) só estima a parte conhecida e marca `partial`;
+  dia misto (um resgate da B3 e outro não) é pulado inteiro, e a conciliação pelo saldo (entrega 9) fecha a diferença.
+- **Pendente**: ver a tela a olho; conferir o percentual do CDI de verdade contra o saldo do banco numa conciliação.
 
 **Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
