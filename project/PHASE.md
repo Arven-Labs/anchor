@@ -3480,7 +3480,8 @@ de duplicata é ticker + data + tipo + quantidade + total.
 - **Recusas**: saldo do banco abaixo do ledger (falta um fluxo no extrato ou um rendimento aprovado a mais), data futura, data inválida e saldo negativo.
 - **UI**: botão "Reconcile balance" em Finances → Accounts e diálogo com prévia (saldo do ledger e rendimento a gravar). O valor entra como veio no banco:
   sem IR nem IOF separados (o saldo do banco pode ser bruto ou líquido, não verificado).
-- **Pendente**: categoria própria para rendimento; ver a tela a olho. *(A estimativa por resgate foi feita na entrega 10, abaixo.)*
+- **Pendente**: ver a tela a olho. *(A estimativa por resgate foi feita na entrega 10, abaixo; a categoria própria foi feita na Sessão 158: a receita da conciliação e a
+  receita bruta do rendimento de renda fixa (B3 ou estimativa) caem na categoria **Yield**, criada sob demanda como a Taxes. Lançamentos antigos ficam sem categoria.)*
 
 **Entrega 10 (feita, Sessão 155)**: estimativa do rendimento do porquinho, resgate a resgate, para os que a B3 não explica.
 - **Validação antes de construir** (offline, só agregados): nos 23 resgates de 2025 que a B3 explica, o modelo a **100% do CDI** (CDI ≈ Selic meta − 0,10 p.p., 252 dias

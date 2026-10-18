@@ -23,7 +23,7 @@ use crate::commands::portfolio_io::{
     ProposedTransaction, MOVIMENTACAO_COLUMNS_MESSAGE, STATUS_PENDING,
 };
 use crate::commands::statement_io::{dedup_key, finish_pending, statement_row};
-use crate::commands::tax::{ensure_taxes_category, load_rule_set};
+use crate::commands::tax::{ensure_taxes_category, ensure_yield_category, load_rule_set};
 use crate::domain::tax::iof::iof_rate_for_days;
 use crate::domain::tax::rules::{fixed_income_ir_key, RuleSet};
 use crate::entity::{general_transaction, import_pending};
@@ -607,13 +607,14 @@ pub async fn confirm_yield_pending_in(
     let key_changed = dedup_key(&date, edited.gross_yield) != dedup_key(&proposed.transaction_date, proposed.gross_yield);
 
     let txn = db.begin().await?;
+    let yield_category = ensure_yield_category(&txn, workspace_id).await?;
     create_general_transaction_in(
         &txn,
         CreateGeneralTransactionRequest {
             workspace_id,
             bank_account_id: account_id,
             transaction_type: "receita".to_string(),
-            category_id: None,
+            category_id: Some(yield_category),
             valor: edited.gross_yield,
             transaction_date: date.clone(),
             notes: Some(edited.notes.clone().unwrap_or_else(|| format!("Yield {label} (gross)"))),

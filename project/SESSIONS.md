@@ -3435,3 +3435,12 @@ registrar tudo no `project/` dos dois. Só documentação e um recado entre sess
   desktop do Warden não tem E2E). P162 a P165 estão marcados "a debater, nada feito", como pedi: nenhum fluxo novo sem plan mode e sem o Fabio aprovar. O CI geral do Warden passou
   no `9779331`; o run `web-e2e` estava em andamento quando olhei, então **as capturas dele ainda não tinham sido olhadas**.
 - **Pendente**: o fechamento do Warden (o run do `web-e2e` e o que as capturas dele acharam), que eu anoto quando a sessão terminar; os de antes (rodar a estimativa na conta real e conciliar pelo saldo).
+
+
+### 2026-10-18 — Sessão 158
+
+**Categoria própria para rendimento.** Pendente da Entrega 9: a receita da conciliação pelo saldo entrava sem categoria.
+- **Feito**: `ensure_yield_category` em `commands/tax.rs` (mesmo padrão da Taxes, via um `ensure_category` comum). A receita da conciliação (`balance_reconciliation.rs`) e a receita
+  bruta do rendimento de renda fixa (`fixed_income_io.rs`, vale para B3 e estimativa do porquinho) agora usam a categoria **Yield**. Lançamentos já gravados continuam sem categoria.
+- **Verificado**: `./dev.sh check` limpo; dois asserts novos em `flow_tests.rs` (conciliação e aprovação do rendimento) conferem a categoria. Testes completos no CI.
+- **Pendente**: os de antes (rodar a estimativa na conta real e conciliar pelo saldo; ver a tela a olho).

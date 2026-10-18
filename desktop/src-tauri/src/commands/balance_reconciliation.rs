@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::bank_account::balance_on;
 use crate::commands::general_transaction::{create_general_transaction_in, CreateGeneralTransactionRequest};
+use crate::commands::tax::ensure_yield_category;
 use crate::entity::{bank_account, general_transaction};
 use crate::error::AppError;
 
@@ -85,13 +86,14 @@ pub async fn confirm_balance_reconciliation_in(
             "the bank balance is lower than the ledger balance: a withdrawal may be missing from the statement, or a yield was approved for too much".to_string()
         }));
     }
+    let yield_category = ensure_yield_category(db, account.workspace_id).await?;
     create_general_transaction_in(
         db,
         CreateGeneralTransactionRequest {
             workspace_id: account.workspace_id,
             bank_account_id: account.id,
             transaction_type: "receita".to_string(),
-            category_id: None,
+            category_id: Some(yield_category),
             valor: preview.difference,
             transaction_date: preview.date.clone(),
             notes: Some(format!(

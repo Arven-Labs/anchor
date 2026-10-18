@@ -2811,6 +2811,9 @@ async fn a_cdb_yield_adds_gross_and_ir_and_the_pocket_ends_at_the_remaining_prin
     let ir = lines.iter().find(|l| l.transaction_type == "despesa").unwrap();
     let taxes = list_categories_view(&db, ws).await.unwrap().into_iter().find(|c| c.nome == "Taxes").unwrap();
     assert_eq!(ir.category_id, Some(taxes.id), "o IR retido cai na categoria Taxes");
+    let gross = lines.iter().find(|l| l.transaction_type == "receita").unwrap();
+    let yield_category = list_categories_view(&db, ws).await.unwrap().into_iter().find(|c| c.nome == "Yield").unwrap();
+    assert_eq!(gross.category_id, Some(yield_category.id), "o rendimento bruto cai na categoria Yield");
     assert!(list_statement_pending_in(&db, ws).await.unwrap().is_empty());
 }
 
@@ -3230,6 +3233,8 @@ async fn reconciling_with_the_bank_balance_books_the_missing_yield_once() {
     let booked = confirm_balance_reconciliation_in(&db, reconcile(account.id, 603.25, "2026-03-31")).await.unwrap();
     assert_eq!((booked.transaction_type.as_str(), booked.transaction_date.as_str()), ("receita", "2026-03-31"));
     assert!(close(booked.valor, 3.25));
+    let yield_category = list_categories_view(&db, account.workspace_id).await.unwrap().into_iter().find(|c| c.nome == "Yield").unwrap();
+    assert_eq!(booked.category_id, Some(yield_category.id), "a receita da conciliação cai na categoria Yield");
     assert!(close(balance_on(&db, account.id, "2026-03-31").await.unwrap(), 603.25), "o ledger passa a bater com o banco");
 
     // Conciliar de novo no mesmo dia não duplica: a diferença já é zero.
