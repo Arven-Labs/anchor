@@ -3548,5 +3548,5 @@ de duplicata é ticker + data + tipo + quantidade + total.
 - **Limites**: o painel Research do ETF
   (`StockLookupPanel`) não tem ramo para a classe; o IR retido na fonte não é calculado nem mostrado, só deixado fora da apuração.
 
-**Fora do escopo / pendente**: unificar a fila com `suggested_dividends` (a aba Pending já unifica a tela; recomendei não fazer); IA como origem.
+**Fora do escopo / pendente**: unificar a fila com `suggested_dividends` (a aba Pending já unifica a tela; recomendei não fazer, e o dono não pediu). ~~IA como origem da fila~~: descartado, a IA saiu do Anchor na Sessão 100 e o Warden é a única interface de IA (ver `ROADMAP.md`).
 *(CDB, extrato do Inter, porquinho como conta corrente, conciliação da Liquidação e o IR do AUPO11 estão feitos; ver as entregas 4 a 13.)* *(A dúvida "o resgate do CDB na Movimentação é bruto ou líquido?" está resolvida desde a Sessão 142: é **bruto**; com IOF e IR de 22,5%, 19 de 23 resgates de 2025 fecham a até R$ 0,01.)*
