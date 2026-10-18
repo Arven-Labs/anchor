@@ -3191,3 +3191,27 @@ por enquanto. Pediu também para **não usar branches** enquanto o app não esti
 - **Não verificado**: a tela a olho; a alíquota de 17,5% desde 2026 em fonte primária (só fontes secundárias, já marcadas "verify" em
   `tax_rules`).
 - **Pendente**: aluguel (Empréstimo) e reembolso; o rendimento do porquinho que a B3 não cobre; posição de carteira da renda fixa.
+
+
+### 2026-10-19 — Sessão 144
+
+**Tela única de pendentes: só exploração e desenho, nada implementado.** O dono do projeto escolheu a tela única como próximo passo e
+encerrou a sessão por falta de tokens antes de responder às duas perguntas de desenho. Nenhum código mudou.
+- **O que já se sabe (para retomar sem reexplorar)**: a navegação é a barra de abas de `App.tsx` (`SECTIONS`: home, lookup, portfolio,
+  finances, alerts), sem rotas; a tela única seria uma aba nova (`pending`) com selo de contagem. Os pendentes hoje moram em quatro lugares:
+  lançamentos de carteira (`import_pending`, `kind = transaction`, comandos por `portfolio_id`, cartão no Ledger), linhas de extrato
+  (`bank_transaction`) e rendimentos (`fixed_income_yield`), ambos por Workspace e com cartão em Finances → Transactions, e as sugestões
+  de provento (`suggested_dividends`, tabela e fluxo próprios, tela de proventos).
+- **Desenho proposto**: um comando de contagem por tipo (selo) e uma listagem por Workspace que una os tipos (hoje só os de extrato e
+  rendimento são por Workspace; os de carteira precisam de `list_workspace_import_pending` com `portfolio_id` no item); um popup único que
+  reaproveita os formulários existentes (`ReviewForm` de carteira, `ReviewForm`/`YieldReviewForm` de extrato, que hoje não são exportados)
+  mais um formulário de sugestão de provento (quantidade, Data Com, tipo); um contexto de navegação para que "importar" leve à tela única
+  com o popup aberto, sem passar props por Ledger e Finances. Os E2E `import-review`, `statement-review` e `fixed-income-yield` navegam
+  pelos cartões atuais e precisariam apontar para a nova aba.
+- **Perguntas em aberto (dele)**: (1) as sugestões de provento entram na tela única? (recomendo que sim, é o "mesma coisa para todos" que ele
+  pediu); (2) os cartões do Ledger e de Finances saem, ficando só um aviso com link? (recomendo que sim, para não manter duas listas).
+- **Estado no encerramento**: `main` e `origin/main` iguais, árvore limpa, CI verde no último commit de código (`4b054db`: Private Files,
+  Rust, Frontend e E2E). Amostras privadas só na máquina dele, cobertas pelo `.gitignore` versionado e pelo guarda do CI.
+- **Pendentes gerais**: tela única (acima); aluguel (Empréstimo) e reembolso da Movimentação; rendimento do porquinho que a B3 não cobre;
+  posição de carteira da renda fixa com marca por conta contra a dupla contagem; alíquota de JCP de 17,5% desde 2026 em fonte primária;
+  ver a tela a olho (popups e fila nunca foram vistos, só testados).
