@@ -61,6 +61,9 @@ describe("Anchor — backtest da carteira", () => {
     // CDI de fev, mar e abr (a janela vai até 10/abr): 1% em cada mês encadeado.
     expect(await textOf(byId("backtest-benchmarks"))).toContain("CDI");
     expect(await textOf(byId("backtest-correlation"))).toContain("1.00");
+    await byId("backtest-chart").scrollIntoView({ block: "start" });
+    await snap("backtest-chart");
+    await byId("backtest-metrics").scrollIntoView({ block: "center" });
     await snap("backtest-result");
   });
 
@@ -71,6 +74,7 @@ describe("Anchor — backtest da carteira", () => {
     const text = await textOf(byId("backtest-metrics"));
     expect(text).not.toContain("49.50%");
     expect(text).toMatch(/Rebalances\s*[1-9]/);
+    await byId("backtest-metrics").scrollIntoView({ block: "center" });
     await snap("backtest-rebalanced");
   });
 
