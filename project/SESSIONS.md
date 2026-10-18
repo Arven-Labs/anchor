@@ -3059,7 +3059,12 @@ do `PHASE.md`.
 - **CI** (PR #1, branch `sessao-138-fila-pendentes`): `build` e `test` verdes de primeira. O `e2e` falhou na primeira
   tentativa só no caso "Update now" de `settings.e2e.mjs` (timeout de 120 s; ele usa rede real e não toca no código desta
   sessão) e passou ao reexecutar o job; a `main` já teve a mesma falha intermitente (`09fa8bb`). Não investiguei a causa.
-- **Não verificado**: a tela a olho (popup e fila nunca foram vistos); nenhum E2E novo, porque o diálogo nativo de arquivo
-  não é dirigível pelo WebDriver, então o caminho importar → popup → fila só está coberto no backend.
+- **E2E novo** (`import-review.e2e.mjs`, 6 casos, verde no CI): o diálogo nativo de arquivo não é dirigível pelo WebDriver,
+  então a fila é semeada direto no banco (o mesmo JSON do `stage_import`) e o spec dirige o popup: editar e aprovar (só o
+  editado é gravado), ativo com final 11 bloqueado até escolher a classe com o aviso fiscal mudando, pular, descartar, fechar
+  o popup deixando o item na fila e a posição final. A primeira rodada falhou por erro do spec (a fila mora na aba Ledger, não
+  em Transactions), não do app.
+- **Não verificado**: a tela a olho (o E2E confere comportamento, não aparência); o botão "Import" em si, que abre o diálogo
+  nativo de arquivo (o `stage_import` tem teste de fluxo, mas o clique até ele não).
 - **Pendente**: ver "Fora do escopo" da Fase 35 (proventos da Movimentação, conciliação, CDB e extrato do Inter, CDB como
   conta corrente, IR do AUPO11).
