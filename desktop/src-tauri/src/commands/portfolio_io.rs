@@ -374,6 +374,128 @@ pub fn parse_b3_rows(rows: &[Vec<String>]) -> Parsed {
     out
 }
 
+/// `MDIA3 - M.DIAS BRANCO S.A.` → `MDIA3`. `None` quando o que vem antes do
+/// primeiro " - " não tem cara de ticker da B3 (ex.: `CDB - CDB926...`).
+fn product_ticker(product: &str) -> Option<String> {
+    let head = product.split(" - ").next()?;
+    let ticker = normalize_ticker(head);
+    let letters = ticker.chars().take_while(|c| c.is_ascii_alphabetic()).count();
+    let digits = ticker.chars().skip(letters).take_while(|c| c.is_ascii_digit()).count();
+    (letters == 4 && (1..=2).contains(&digits) && ticker.len() == letters + digits).then_some(ticker)
+}
+
+/// Planilha "Movimentação" da Área do Investidor. Por ora só proventos em
+/// dinheiro (`Dividendo`, `Rendimento`) viram lançamento. O resto é pulado com o
+/// motivo, em vez de adivinhado: JCP (não confirmei se vem bruto ou líquido),
+/// liquidação (repete os negócios da "Negociação"), aluguel, reembolso e CDB.
+pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>]) -> Parsed {
+    let Some(header) = rows.first() else {
+        return vec![Err(ParseIssue { line: 0, message: "planilha vazia".to_string() })];
+    };
+    let find = |needles: &[&str]| {
+        header.iter().position(|h| {
+            let h = normalize_header(h);
+            needles.iter().all(|n| h.contains(n))
+        })
+    };
+    let columns = (
+        find(&["entrada"]),
+        find(&["data"]),
+        find(&["movimentacao"]),
+        find(&["produto"]),
+        find(&["instituicao"]),
+        find(&["quantidade"]),
+        find(&["preco"]),
+        find(&["valor"]),
+    );
+    let (Some(c_flow), Some(c_date), Some(c_move), Some(c_product), Some(c_inst), Some(c_qty), Some(c_price), Some(c_value)) =
+        columns
+    else {
+        return vec![Err(ParseIssue {
+            line: 0,
+            message: "não parece a planilha 'Movimentação' da B3: faltam colunas (Entrada/Saída, Data, Movimentação, Produto, Instituição, Quantidade, Preço unitário, Valor da Operação)".to_string(),
+        })];
+    };
+
+    let mut out = Vec::new();
+    for (index, row) in rows.iter().enumerate().skip(1) {
+        let line = index;
+        if row.iter().all(|c| c.trim().is_empty()) {
+            continue;
+        }
+        let get = |i: usize| row.get(i).map(String::as_str).unwrap_or("");
+        let issue = |message: String| ParseIssue { line, message };
+        let movement = normalize_header(get(c_move));
+        let product = get(c_product).trim();
+
+        if movement.contains("juros sobre capital") {
+            out.push(Err(issue("JCP pulado: não confirmei se o valor da planilha vem bruto ou líquido de IR".to_string())));
+            continue;
+        }
+        if movement.contains("liquidacao") {
+            out.push(Err(issue("liquidação de negócio pulada: os negócios vêm da planilha 'Negociação'".to_string())));
+            continue;
+        }
+        if movement.contains("aplicacao") || movement.contains("resgate") || product.to_uppercase().starts_with("CDB") {
+            out.push(Err(issue("renda fixa (CDB) pulada: ainda não suportada".to_string())));
+            continue;
+        }
+        if movement.contains("emprestimo") {
+            out.push(Err(issue("aluguel de ações (Empréstimo) pulado: ainda não suportado".to_string())));
+            continue;
+        }
+        if movement.contains("reembolso") {
+            out.push(Err(issue("reembolso pulado: ainda não suportado".to_string())));
+            continue;
+        }
+        if movement != "dividendo" && movement != "rendimento" {
+            out.push(Err(issue(format!("movimentação '{}' não suportada", get(c_move).trim()))));
+            continue;
+        }
+        if normalize_header(get(c_flow)) != "credito" {
+            out.push(Err(issue(format!("provento com sentido '{}' (esperado crédito)", get(c_flow).trim()))));
+            continue;
+        }
+        let Some(ticker) = product_ticker(product) else {
+            out.push(Err(issue(format!("não achei o ticker em '{product}'"))));
+            continue;
+        };
+        let Some(transaction_date) = parse_date(get(c_date)) else {
+            out.push(Err(issue(format!("data inválida: '{}'", get(c_date)))));
+            continue;
+        };
+        let parsed = (|| -> Result<(Option<f64>, Option<f64>, f64), String> {
+            let quantity = parse_number(get(c_qty))?;
+            let price = parse_number(get(c_price))?;
+            let value = parse_number(get(c_value))?.ok_or("valor vazio")?;
+            Ok((quantity, price, value))
+        })();
+        let (quantity, unit_price, total_value) = match parsed {
+            Ok(values) => values,
+            Err(message) => {
+                out.push(Err(issue(message)));
+                continue;
+            }
+        };
+        out.push(Ok(ProposedTransaction {
+            line,
+            transaction_date,
+            transaction_type: "provento".to_string(),
+            ticker,
+            asset_class: None,
+            currency: Some("BRL".to_string()),
+            quantity,
+            unit_price,
+            total_value,
+            fee: None,
+            custody: non_empty(get(c_inst)),
+            payment_type: Some("dividendo".to_string()),
+            notes: Some("Importado da B3 (Movimentação)".to_string()),
+        }));
+    }
+    out
+}
+
 /// Lê a primeira aba do xlsx como texto, linha a linha.
 pub fn read_xlsx_rows(path: &str) -> Result<Vec<Vec<String>>, AppError> {
     use calamine::{open_workbook_auto, Data, Reader};
@@ -760,6 +882,7 @@ fn parse_file(path: &str, format: &str) -> Result<Parsed, AppError> {
             parse_anchor_csv(text.trim_start_matches('\u{feff}'))
         }
         "b3_negociacao" => parse_b3_rows(&read_xlsx_rows(path)?),
+        "b3_movimentacao" => parse_b3_movimentacao_rows(&read_xlsx_rows(path)?),
         other => return Err(AppError::InvalidInput(format!("formato '{other}' desconhecido"))),
     })
 }
@@ -1095,6 +1218,66 @@ mod tests {
         assert_eq!(infer_class(&row.ticker), None);
     }
 
+    const MOVEMENT_HEADER: [&str; 8] = [
+        "Entrada/Saída",
+        "Data",
+        "Movimentação",
+        "Produto",
+        "Instituição",
+        "Quantidade",
+        "Preço unitário",
+        "Valor da Operação",
+    ];
+
+    #[test]
+    fn movement_rows_import_cash_dividends_and_skip_the_rest_with_a_reason() {
+        let owned = rows(&[
+            &MOVEMENT_HEADER,
+            &["Credito", "30/09/2026", "Dividendo", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "100", "0.05", "5"],
+            &["Credito", "29/09/2026", "Rendimento", "WXYZ11 - FUNDO IMOBILIARIO", "CORRETORA", "10", "1.2", "12"],
+            &["Credito", "28/09/2026", "Juros Sobre Capital Próprio", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "100", "0.1", "10"],
+            &["Credito", "27/09/2026", "Transferência - Liquidação", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "100", "9", "900"],
+            &["Credito", "26/09/2026", "APLICAÇÃO", "CDB - CDB123", "BANCO", "1000", "0.01", "10"],
+            &["Debito", "25/09/2026", "RESGATE ANTECIPADO/", "CDB - CDB123 - BANCO", "BANCO", "1000", "0.0101", "10.1"],
+            &["Credito", "24/09/2026", "Empréstimo", "ABCD3 - EMPRESA A S.A.      ", "CORRETORA", "0", "-", "1.5"],
+            &["Credito", "23/09/2026", "Reembolso", "ABCD3 - EMPRESA A S.A.      ", "CORRETORA", "0", "-", "2.5"],
+            &["Credito", "22/09/2026", "Bonificação", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "5", "-", "-"],
+        ]);
+        let parsed = parse_b3_movimentacao_rows(&owned);
+        assert_eq!(parsed.len(), 9);
+
+        let dividend = parsed[0].as_ref().unwrap();
+        assert_eq!(dividend.transaction_type, "provento");
+        assert_eq!(dividend.ticker, "ABCD3");
+        assert_eq!(dividend.transaction_date, "2026-09-30");
+        assert_eq!((dividend.quantity, dividend.unit_price, dividend.total_value), (Some(100.0), Some(0.05), 5.0));
+        assert_eq!(dividend.payment_type.as_deref(), Some("dividendo"));
+        assert_eq!(parsed[1].as_ref().unwrap().ticker, "WXYZ11", "rendimento de FII também é provento");
+
+        let reasons: Vec<String> = parsed[2..].iter().map(|r| r.as_ref().unwrap_err().message.clone()).collect();
+        assert!(reasons[0].contains("JCP") && reasons[0].contains("bruto"));
+        assert!(reasons[1].contains("liquidação") && reasons[1].contains("Negociação"));
+        assert!(reasons[2].contains("CDB") && reasons[3].contains("CDB"));
+        assert!(reasons[4].contains("aluguel"));
+        assert!(reasons[5].contains("reembolso"));
+        assert!(reasons[6].contains("Bonificação") && reasons[6].contains("não suportada"));
+    }
+
+    #[test]
+    fn a_movement_sheet_without_the_expected_columns_is_rejected_whole() {
+        let parsed = parse_b3_movimentacao_rows(&rows(&[&["Nome", "Idade"], &["a", "1"]]));
+        assert_eq!(parsed.len(), 1);
+        assert!(parsed[0].as_ref().unwrap_err().message.contains("Movimentação"));
+    }
+
+    #[test]
+    fn product_ticker_reads_the_code_before_the_name() {
+        assert_eq!(product_ticker("MDIA3 - M.DIAS BRANCO").as_deref(), Some("MDIA3"));
+        assert_eq!(product_ticker("taee11 - TRANSMISSORA   ").as_deref(), Some("TAEE11"));
+        assert_eq!(product_ticker("CDB - CDB926EMY03"), None);
+        assert_eq!(product_ticker("Tesouro Selic 2029"), None);
+    }
+
     #[test]
     fn a_sheet_without_the_expected_columns_is_rejected_whole() {
         let parsed = parse_b3_rows(&rows(&[&["Nome", "Idade"], &["a", "1"]]));
@@ -1150,6 +1333,26 @@ mod tests {
         }
         for row in parsed.iter().filter_map(|r| r.as_ref().ok()) {
             println!("ticker {} classe inferida {:?}", row.ticker, infer_class(&row.ticker));
+        }
+    }
+
+    /// Igual ao anterior para a planilha "Movimentação" (`ANCHOR_B3_MOVIMENTACAO`).
+    #[test]
+    #[ignore]
+    fn real_b3_movimentacao_sample_parses() {
+        let path = std::env::var("ANCHOR_B3_MOVIMENTACAO").expect("defina ANCHOR_B3_MOVIMENTACAO");
+        let parsed = parse_b3_movimentacao_rows(&read_xlsx_rows(&path).expect("planilha abre"));
+        let ok = parsed.iter().filter(|r| r.is_ok()).count();
+        println!("linhas lidas: {} proventos, {} puladas", ok, parsed.len() - ok);
+        let mut reasons: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        for issue in parsed.iter().filter_map(|r| r.as_ref().err()) {
+            *reasons.entry(issue.message.clone()).or_insert(0) += 1;
+        }
+        for (reason, count) in reasons {
+            println!("{count}x {reason}");
+        }
+        for row in parsed.iter().filter_map(|r| r.as_ref().ok()) {
+            println!("provento de {} ({})", row.ticker, row.payment_type.as_deref().unwrap_or("-"));
         }
     }
 }
