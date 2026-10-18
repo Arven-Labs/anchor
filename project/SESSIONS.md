@@ -3389,5 +3389,6 @@ decisão do dono por pergunta); direto na `main`.
 - **Verificado**: `./dev.sh check` limpo; `cargo test --lib` no Docker (696 passaram, 0 falharam; 23 novos entre calendário, modelo e fluxo: enfileira e aprovar deixa o
   principal que sobrou, dia coberto é pulado, rodar duas vezes não duplica, conciliação não conta como coberto, Selic que não cobre é recusada, percentual fora da faixa).
   Spec novo `porquinho-estimate.e2e.mjs` (só roda no CI).
+- **CI** (direto na `main`, `05ba8b5`): `Private Files`, `Rust`, `Frontend` e `E2E` verdes de primeira, incluindo o spec novo.
 - **Não verificado**: a tela a olho; o percentual real do CDI do porquinho contra o saldo do banco (a validação foi contra a B3, que é o que há de verdade nos dados).
 - **Pendente**: ver a tela a olho; rodar a estimativa na conta real e fechar a diferença com uma conciliação pelo saldo.
