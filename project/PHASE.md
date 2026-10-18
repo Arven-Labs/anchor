@@ -3430,17 +3430,24 @@ de duplicata é ticker + data + tipo + quantidade + total.
 - **Feito**: o pagamento do aluguel vira `provento` com `payment_type = aluguel` (quantidade em ações, sem preço unitário); o reembolso, com
   `payment_type = reembolso` (sem quantidade); o Empréstimo sem valor segue pulado, agora com o motivo certo. Sem migration, e `net_total` já
   não retém nada fora do JCP. A validação do lançamento aceita os dois tipos; as sugestões de provento continuam só dividendo e JSCP.
-- **Valor como veio**: a B3 não diz se aluguel e reembolso são brutos ou líquidos de IR, então entram como pagos, e a nota do lançamento diz isso.
+- **Valor como veio**: aluguel e reembolso entram como creditados (a dúvida bruto × líquido foi resolvida na Sessão 154: vêm líquidos, ver "IR do aluguel resolvido").
 - **Resultado na amostra**: 5 aluguéis e 1 reembolso importados, 5 linhas de custódia puladas; os proventos foram de 43 para 49.
-- **Pendente**: confirmar se aluguel e reembolso são líquidos de IR; aluguel e reembolso somam na tela de proventos e no DY.
+- **Pendente**: aluguel e reembolso somam na tela de proventos e no DY (líquidos de IR, ver Sessão 154).
 - **Conferência das regras (Sessão 148)**: o JCP a 17,5% está **confirmado em fonte primária**: LC 224/2025, art. 8º, dá ao § 2º do art. 9º da
   Lei 9.249/1995 a alíquota de 17,5%, e o art. 14, III, a faz valer desde 1º/1/2026 (texto na Câmara; o Planalto não abriu). A nota de fonte
   da regra foi trocada na Sessão 150 (`finance_core/tax_rules.rs` e a migration `m20261024`, que atualiza o texto nos bancos existentes).
   Sobre o aluguel, a IN RFB 1.585/2015 (arts. 73 a 75, lidos em trecho citado por busca; o texto oficial não abriu): a remuneração do
   emprestador é tributada **como renda fixa** (tabela regressiva, 22,5% até 180 dias; contratos de dias ou semanas caem aqui) e o valor
   **reembolsado** ao emprestador por proventos é **isento de IRRF** para ele. O tomador é quem arca com o imposto sobre o provento.
-  Fontes secundárias dizem que a B3 retém o IR do aluguel e que o crédito já é líquido. **Não confirmado**: se a coluna "Valor da Operação"
-  da Movimentação é líquida ou bruta (nenhum texto oficial lido diz), e o que o reembolso de JCP traz de fato.
+  Fontes secundárias dizem que a B3 retém o IR do aluguel e que o crédito já é líquido. *(Resolvido na Sessão 154, abaixo.)*
+- **IR do aluguel resolvido (Sessão 154)**: nada a reconstituir. **Aluguel**: a página educativa da B3 (Bora Investir, "Entenda como declarar empréstimo
+  de ações no Imposto de Renda") diz que o rendimento "já vem líquido de imposto", retido pela corretora (22,5% até 180 dias, 20% até 360, até 15% nos
+  prazos maiores), e que a DIRPF pede o valor líquido em tributação exclusiva/definitiva. O app guarda o valor como creditado, que é o que a declaração
+  pede; o bruto só serviria para exibir o IR retido, e o prazo de cada contrato não está na linha de pagamento. **Reembolso**: nos dados, o reembolso é
+  igual ao provento das ações emprestadas. O do JCP (BBDC4, 01/10/2025) dá quantidade emprestada × preço unitário do JCP × 0,848, a mesma razão da
+  linha de JCP das ações em carteira, ou seja, **líquido dos 15%** do JCP (17,5% desde 2026); o de dividendo (GRND3) fica em 1,00 por ação, sem retenção.
+  As notas dos lançamentos importados dizem isso. **Limite**: a fonte do aluguel é a B3 educativa, não o texto da IN 1.585, que não abriu; a amostra
+  não prova o líquido do aluguel por si só.
 
 **Entrega 8 (feita, Sessão 149)**: posição de carteira da renda fixa, com marca por conta contra a dupla contagem.
 - **Decisões do dono**: os papéis entram **a custo** (sem estimar rendimento acumulado); o rendimento segue entrando pela conta (entrega 4). Com a

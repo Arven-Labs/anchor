@@ -3357,4 +3357,20 @@ decisão do dono por pergunta); direto na `main`.
   só roda no CI. A fila de extrato e a de carteira usam o mesmo código, mas só a de proventos tem E2E de lote.
 - **CI** (direto na `main`, `17c81e8`): `Private Files`, `Frontend` e `E2E` verdes de primeira, incluindo o caso novo de `pending-tab.e2e.mjs`; `Rust` não rodou (nenhum arquivo Rust mudou).
 - **Não verificado**: a tela a olho (as caixas, a barra e o texto de confirmação).
-- **Pendente**: os de antes (IR do aluguel líquido ou bruto; estimar o rendimento por resgate) e ver a tela a olho.
+- **Pendente**: os de antes (IR do aluguel líquido ou bruto; estimar o rendimento por resgate) e ver a tela a olho. *(O IR do aluguel foi resolvido na Sessão 154, abaixo.)*
+
+
+### 2026-10-18 — Sessão 154
+
+**IR do aluguel: bruto ou líquido?** Pesquisa e conferência nos dados; uma mudança só de texto no importador. O dono do projeto escolheu este item.
+- **Aluguel**: a página educativa da B3 (Bora Investir) diz que o rendimento "já vem líquido de imposto", retido pela corretora (22,5% até 180 dias, 20% até
+  360, até 15% depois), e que a DIRPF pede o líquido em tributação exclusiva/definitiva. O app já guardava o valor como creditado, então **não há o que
+  reconstituir**: o líquido é o que a declaração pede, e o bruto só serviria para exibir o IR retido (o prazo do contrato não está na linha de pagamento).
+- **Reembolso**: os dados da amostra decidem. O reembolso é igual ao provento das ações emprestadas: o de um JCP dá quantidade emprestada × preço unitário × 0,848,
+  a mesma razão da linha de JCP das ações em carteira (líquido dos 15% do JCP); o de dividendo fica em 1,00 por ação, sem retenção. (Só razões, nenhum valor
+  copiado.)
+- **Feito**: as notas dos lançamentos de aluguel e de reembolso importados e o doc de `parse_b3_movimentacao_rows` dizem agora que o valor é como creditado,
+  com o motivo. Nada de lógica mudou.
+- **Limite**: a fonte do aluguel é a B3 educativa; o texto da IN RFB 1.585 (arts. 73 a 75) não abriu (a Receita renderiza por JavaScript, o Diário Oficial caiu).
+  A amostra não prova sozinha que o aluguel vem líquido; ela prova o reembolso.
+- **Pendente**: estimar o rendimento por resgate (se fizer falta) e ver a tela a olho.

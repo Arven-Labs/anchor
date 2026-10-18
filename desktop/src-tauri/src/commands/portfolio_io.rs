@@ -424,7 +424,10 @@ pub(crate) const MOVIMENTACAO_COLUMNS_MESSAGE: &str = "não parece a planilha 'M
 /// (`fixed_income_io::parse_fixed_income_positions`). O resto é pulado com o motivo, em vez de
 /// adivinhado: liquidação (repete os negócios da "Negociação") e o `Empréstimo` sem valor (só custódia).
 ///
-/// **Aluguel e reembolso**: a B3 não diz se o valor é bruto ou líquido de IR; entra como veio.
+/// **Aluguel e reembolso**: entram como creditados, sem reconstituir bruto. O aluguel vem líquido do IR
+/// retido na fonte (a B3 diz que o rendimento "já vem líquido"; é o valor que a DIRPF pede em tributação
+/// exclusiva). O reembolso é igual ao provento das ações emprestadas: na amostra, o de um JCP bate com
+/// quantidade emprestada × preço unitário × 0,85, o mesmo líquido de 15% do JCP, e o de dividendo não tem retenção.
 ///
 /// **JCP**: na amostra real, o "Valor da Operação" é o **líquido** (o preço unitário é o
 /// bruto por ação, e valor ÷ (quantidade × preço) dá 0,85 em todas as linhas). O app guarda o
@@ -538,13 +541,13 @@ pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>], rules: &RuleSet) -> Pars
             (
                 total_value,
                 PAYMENT_TYPE_ALUGUEL,
-                "Importado da B3 (Movimentação); aluguel de ações, valor como pago pela B3".to_string(),
+                "Importado da B3 (Movimentação); aluguel de ações, valor líquido do IR retido na fonte (como creditado)".to_string(),
             )
         } else if is_refund {
             (
                 total_value,
                 PAYMENT_TYPE_REEMBOLSO,
-                "Importado da B3 (Movimentação); reembolso de provento do aluguel, valor como pago pela B3".to_string(),
+                "Importado da B3 (Movimentação); reembolso de provento do aluguel, valor como creditado (igual ao provento das ações emprestadas: líquido no JCP, sem IR no dividendo)".to_string(),
             )
         } else {
             (total_value, PAYMENT_TYPE_DIVIDENDO, "Importado da B3 (Movimentação)".to_string())
