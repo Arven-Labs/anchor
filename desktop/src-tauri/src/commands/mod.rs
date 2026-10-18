@@ -14,6 +14,7 @@ pub mod dividend_suggestion;
 pub mod option_position;
 pub mod options;
 pub mod fii;
+pub mod fixed_income_io;
 pub mod general_transaction;
 pub mod general_transaction_category;
 pub mod gordon;

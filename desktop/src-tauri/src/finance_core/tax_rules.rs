@@ -38,6 +38,11 @@ const RULES: &[(&str, f64, (i32, u32, u32), &str, &str)] = &[
     ("darf_code_b3", 6015.0, (2005, 1, 1), "DARF revenue code for net gains on the stock exchange (individuals)", RECEITA_CALCULO),
     ("jcp_irrf_rate", 0.15, (1996, 1, 1), "Withholding on interest on equity (JCP)", "Lei 9.249/1995, art. 9º, § 2º"),
     ("jcp_irrf_rate", 0.175, (2026, 1, 1), "Withholding on interest on equity (JCP), raised by LC 224/2025", "LC 224/2025 (secondary sources; verify on planalto.gov.br)"),
+    ("fixed_income_ir_cdb", 0.225, (2005, 1, 1), "IR withheld on CDB redemptions, as a flat rate (22.5% is the first bracket, up to 180 days). The regressive table and IOF are not modeled", "Lei 11.033/2004, art. 1º (secondary sources; verify on planalto.gov.br)"),
+    ("fixed_income_ir_lci", 0.0, (2005, 1, 1), "IR on LCI redemptions (exempt for individuals)", "Lei 11.033/2004, art. 3º (secondary sources; verify on planalto.gov.br)"),
+    ("fixed_income_ir_lca", 0.0, (2005, 1, 1), "IR on LCA redemptions (exempt for individuals)", "Lei 11.033/2004, art. 3º (secondary sources; verify on planalto.gov.br)"),
+    ("fixed_income_ir_cri", 0.0, (2005, 1, 1), "IR on CRI redemptions (exempt for individuals)", "Lei 11.033/2004, art. 3º (secondary sources; verify on planalto.gov.br)"),
+    ("fixed_income_ir_cra", 0.0, (2005, 1, 1), "IR on CRA redemptions (exempt for individuals)", "Lei 11.033/2004, art. 3º (secondary sources; verify on planalto.gov.br)"),
     ("crypto_exemption_monthly_sales", 35000.0, (2019, 1, 1), "Monthly crypto sales up to this amount make crypto gains exempt (domestic exchanges)", "IN RFB 1.888/2019 (secondary sources; verify on gov.br)"),
 ];
 
@@ -74,7 +79,7 @@ mod tests {
         let rules = rules_br();
         let unique: HashSet<_> = rules.iter().map(|r| (r.key, r.effective_from)).collect();
         assert_eq!(unique.len(), rules.len());
-        assert_eq!(rules.len(), 11);
+        assert_eq!(rules.len(), 16);
     }
 
     #[test]

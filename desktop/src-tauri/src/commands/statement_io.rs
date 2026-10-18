@@ -9,7 +9,7 @@
 // sinal) contada com multiplicidade, como os negócios da carteira. Assim o OFX e o
 // CSV do mesmo período não se duplicam, e um lançamento digitado à mão igual conta
 // como já existente.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
@@ -21,6 +21,7 @@ use crate::commands::bank_account::{create_bank_account_in, signed_valor, Create
 use crate::commands::general_transaction::{
     create_general_transaction_in, create_transfer_in, CreateGeneralTransactionRequest, CreateTransferRequest,
 };
+use crate::commands::fixed_income_io::{bank_totals_by_day, YieldPayload, KIND_YIELD};
 use crate::commands::loan::ensure_account_in_workspace;
 use crate::commands::portfolio_io::{
     normalize_header, parse_date, parse_number, ParseIssue, STATUS_CONFIRMED, STATUS_DISCARDED, STATUS_PENDING,
@@ -234,7 +235,7 @@ fn parse_statement_file(path: &str, format: &str) -> Result<ParsedStatement, App
 
 type Key = (String, i64);
 
-fn dedup_key(date: &str, valor: f64) -> Key {
+pub(crate) fn dedup_key(date: &str, valor: f64) -> Key {
     (date.to_string(), (valor * 100.0).round() as i64)
 }
 
@@ -376,9 +377,33 @@ pub struct StatementPendingView {
     pub counterpart_account_name: Option<String>,
     pub source: String,
     pub created_at: String,
+    /// `bank_transaction` ou `fixed_income_yield`.
+    pub kind: String,
+    /// Num rendimento, uma linha sintética (valor = bruto, rótulo = papel) pra tabela da fila.
     pub proposed: ProposedBankTransaction,
-    /// `receita`, `despesa` ou `transferencia` (par com o porquinho).
+    /// `receita`, `despesa` ou `transferencia` (par com o porquinho); `rendimento` nos de renda fixa.
     pub suggested_type: String,
+    pub fixed_income: Option<YieldDetail>,
+}
+
+/// Detalhe de um rendimento derivado da B3, com a checagem contra o extrato do dia.
+#[derive(Serialize)]
+pub struct YieldDetail {
+    pub instrument: String,
+    pub code: String,
+    pub quantity: f64,
+    pub principal: f64,
+    pub gross_value: f64,
+    pub gross_yield: f64,
+    pub ir_rate: f64,
+    pub ir_amount: f64,
+    pub net_yield: f64,
+    pub base_unit_price: f64,
+    pub base_price_source: String,
+    /// O que os resgates do dia no arquivo da B3 explicam (principal + líquido).
+    pub day_derived_total: f64,
+    /// O que o extrato já aprovado mostra saindo da conta Porquinho no dia; `None` sem extrato.
+    pub bank_total_that_day: Option<f64>,
 }
 
 pub async fn list_statement_pending_in(
@@ -387,10 +412,13 @@ pub async fn list_statement_pending_in(
 ) -> Result<Vec<StatementPendingView>, AppError> {
     let rows = import_pending::Entity::find()
         .filter(import_pending::Column::WorkspaceId.eq(workspace_id))
-        .filter(import_pending::Column::Kind.eq(KIND_BANK))
+        .filter(import_pending::Column::Kind.is_in([KIND_BANK, KIND_YIELD]))
         .filter(import_pending::Column::Status.eq(STATUS_PENDING))
         .all(db)
         .await?;
+    let yield_accounts: HashSet<i32> =
+        rows.iter().filter(|r| r.kind == KIND_YIELD).filter_map(|r| r.bank_account_id).collect();
+    let bank_totals = bank_totals_by_day(db, &yield_accounts).await?;
     let names: HashMap<i32, String> = bank_account::Entity::find()
         .filter(bank_account::Column::WorkspaceId.eq(workspace_id))
         .all(db)
@@ -401,8 +429,47 @@ pub async fn list_statement_pending_in(
     let mut items: Vec<StatementPendingView> = rows
         .into_iter()
         .filter_map(|row| {
-            let payload: BankPayload = serde_json::from_str(&row.payload).ok()?;
             let account_id = row.bank_account_id?;
+            if row.kind == KIND_YIELD {
+                let p = serde_json::from_str::<YieldPayload>(&row.payload).ok()?.proposed;
+                let bank_total = bank_totals.get(&(account_id, p.transaction_date.clone())).copied();
+                return Some(StatementPendingView {
+                    id: row.id,
+                    bank_account_id: account_id,
+                    bank_account_name: names.get(&account_id).cloned().unwrap_or_default(),
+                    counterpart_account_id: None,
+                    counterpart_account_name: None,
+                    source: row.source,
+                    created_at: row.created_at,
+                    kind: row.kind,
+                    proposed: ProposedBankTransaction {
+                        line: p.line,
+                        transaction_date: p.transaction_date.clone(),
+                        valor: p.gross_yield,
+                        label: "Yield".to_string(),
+                        description: format!("{} {}", p.instrument.to_uppercase(), p.code),
+                        reference: None,
+                        porquinho: false,
+                    },
+                    suggested_type: "rendimento".to_string(),
+                    fixed_income: Some(YieldDetail {
+                        instrument: p.instrument,
+                        code: p.code,
+                        quantity: p.quantity,
+                        principal: p.principal,
+                        gross_value: p.gross_value,
+                        gross_yield: p.gross_yield,
+                        ir_rate: p.ir_rate,
+                        ir_amount: p.ir_amount,
+                        net_yield: p.net_yield,
+                        base_unit_price: p.base_unit_price,
+                        base_price_source: p.base_price_source,
+                        day_derived_total: p.day_derived_total,
+                        bank_total_that_day: bank_total,
+                    }),
+                });
+            }
+            let payload: BankPayload = serde_json::from_str(&row.payload).ok()?;
             let is_transfer = payload.proposed.porquinho && row.counterpart_account_id.is_some();
             let suggested_type = if is_transfer {
                 "transferencia"
@@ -419,8 +486,10 @@ pub async fn list_statement_pending_in(
                 counterpart_account_name: row.counterpart_account_id.and_then(|id| names.get(&id).cloned()),
                 source: row.source,
                 created_at: row.created_at,
+                kind: row.kind,
                 proposed: payload.proposed,
                 suggested_type: suggested_type.to_string(),
+                fixed_income: None,
             })
         })
         .collect();
@@ -428,11 +497,12 @@ pub async fn list_statement_pending_in(
     Ok(items)
 }
 
-async fn statement_row(db: &DatabaseConnection, workspace_id: i32, id: i32) -> Result<import_pending::Model, AppError> {
+/// Item aguardando revisão do Workspace, de extrato ou de rendimento.
+pub(crate) async fn statement_row(db: &DatabaseConnection, workspace_id: i32, id: i32) -> Result<import_pending::Model, AppError> {
     let row = import_pending::Entity::find_by_id(id)
         .one(db)
         .await?
-        .filter(|r| r.kind == KIND_BANK && r.workspace_id == workspace_id)
+        .filter(|r| (r.kind == KIND_BANK || r.kind == KIND_YIELD) && r.workspace_id == workspace_id)
         .ok_or_else(|| AppError::InvalidInput(format!("pendente {id} não existe neste Workspace")))?;
     if row.status != STATUS_PENDING {
         return Err(AppError::InvalidInput(format!("pendente {id} não está aguardando revisão (status '{}')", row.status)));
@@ -461,6 +531,9 @@ pub async fn confirm_statement_pending_in(
     edited: EditedBankItem,
 ) -> Result<(), AppError> {
     let row = statement_row(db, workspace_id, id).await?;
+    if row.kind != KIND_BANK {
+        return Err(AppError::InvalidInput(format!("pendente {id} não é uma linha de extrato")));
+    }
     let payload: BankPayload = serde_json::from_str(&row.payload)
         .map_err(|e| AppError::InvalidInput(format!("pendente {id} ilegível: {e}")))?;
     let bank_account_id = row
@@ -526,7 +599,7 @@ pub async fn confirm_statement_pending_in(
 
 /// Tira o item aprovado da fila, ou o guarda como `confirmed` quando a edição mudou
 /// a chave de duplicata (ver `confirm_statement_pending_in`).
-async fn finish_pending<C: ConnectionTrait>(db: &C, row: import_pending::Model, keep_marker: bool) -> Result<(), AppError> {
+pub(crate) async fn finish_pending<C: ConnectionTrait>(db: &C, row: import_pending::Model, keep_marker: bool) -> Result<(), AppError> {
     if keep_marker {
         let mut active: import_pending::ActiveModel = row.into();
         active.status = Set(STATUS_CONFIRMED.to_string());

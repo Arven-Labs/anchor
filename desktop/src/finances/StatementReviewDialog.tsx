@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import type { GeneralTransactionCategory } from "./types";
 import Field from "../components/Field";
@@ -24,8 +24,27 @@ export type ProposedBankTransaction = {
   porquinho: boolean;
 };
 
+// Rendimento de renda fixa derivado da Movimentação da B3 (entrega 4): o bruto vem do
+// valor do resgate, o IR da taxa por papel em Settings → Taxes.
+export type YieldDetail = {
+  instrument: string;
+  code: string;
+  quantity: number;
+  principal: number;
+  gross_value: number;
+  gross_yield: number;
+  ir_rate: number;
+  ir_amount: number;
+  net_yield: number;
+  base_unit_price: number;
+  base_price_source: string;
+  day_derived_total: number;
+  bank_total_that_day: number | null;
+};
+
 export type StatementPendingItem = {
   id: number;
+  kind: "bank_transaction" | "fixed_income_yield";
   bank_account_id: number;
   bank_account_name: string;
   counterpart_account_id: number | null;
@@ -33,7 +52,8 @@ export type StatementPendingItem = {
   source: string;
   created_at: string;
   proposed: ProposedBankTransaction;
-  suggested_type: "receita" | "despesa" | "transferencia";
+  suggested_type: "receita" | "despesa" | "transferencia" | "rendimento";
+  fixed_income: YieldDetail | null;
 };
 
 export const STATEMENT_PENDING_KEY = "statement_pending";
@@ -43,6 +63,33 @@ const TYPE_LABELS: Record<string, string> = { receita: "Income", despesa: "Expen
 
 function formatMoney(value: number): string {
   return value.toFixed(2);
+}
+
+function refreshAfterReview(queryClient: QueryClient, workspaceId: number) {
+  queryClient.invalidateQueries({ queryKey: [STATEMENT_PENDING_KEY, workspaceId] });
+  for (const key of ["general-transactions", "bank-accounts", "net-worth", "workspace-summary", "general-transaction-categories"]) {
+    queryClient.invalidateQueries({ queryKey: [key] });
+  }
+}
+
+// Compara o que o extrato já aprovado mostra saindo do porquinho no dia com o que o
+// arquivo da B3 explica. A diferença costuma ser IOF ou uma faixa de IR maior que a
+// taxa fixa; corrija o IR abaixo para o banco e o app concordarem.
+function dayCheck(detail: YieldDetail): { text: string; matches: boolean } | null {
+  if (detail.bank_total_that_day === null) return null;
+  const diff = detail.bank_total_that_day - detail.day_derived_total;
+  if (Math.abs(diff) < 0.005) {
+    return { text: `The statement shows R$ ${formatMoney(detail.bank_total_that_day)} leaving the pocket that day, exactly what the B3 file explains.`, matches: true };
+  }
+  return {
+    text:
+      `The statement shows R$ ${formatMoney(detail.bank_total_that_day)} leaving the pocket that day, but the B3 file explains ` +
+      `R$ ${formatMoney(detail.day_derived_total)} (difference R$ ${formatMoney(diff)}). ` +
+      (diff < 0
+        ? "The bank paid less: more tax was withheld than the rate here (IOF, or a higher IR bracket)."
+        : "The bank paid more: less tax was withheld than the rate here."),
+    matches: false,
+  };
 }
 
 function ReviewForm({
@@ -73,10 +120,7 @@ function ReviewForm({
   const categories = categoriesQuery.data ?? [];
 
   function refresh() {
-    queryClient.invalidateQueries({ queryKey: [STATEMENT_PENDING_KEY, workspaceId] });
-    for (const key of ["general-transactions", "bank-accounts", "net-worth", "workspace-summary"]) {
-      queryClient.invalidateQueries({ queryKey: [key] });
-    }
+    refreshAfterReview(queryClient, workspaceId);
   }
 
   const confirmMutation = useMutation<void, AppError, void>({
@@ -198,6 +242,119 @@ function ReviewForm({
   );
 }
 
+function YieldReviewForm({
+  workspaceId,
+  item,
+  detail,
+  total,
+  onSkip,
+}: {
+  workspaceId: number;
+  item: StatementPendingItem;
+  detail: YieldDetail;
+  total: number;
+  onSkip: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [date, setDate] = useState(item.proposed.transaction_date);
+  const [gross, setGross] = useState(detail.gross_yield.toString());
+  const [ir, setIr] = useState(detail.ir_amount.toString());
+  const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const net = Number(gross) - Number(ir);
+  const invalid =
+    gross.trim() === "" || ir.trim() === "" || Number.isNaN(Number(gross)) || Number.isNaN(Number(ir)) ||
+    Number(gross) <= 0 || Number(ir) < 0 || Number(ir) > Number(gross);
+  const check = dayCheck(detail);
+
+  const confirmMutation = useMutation<void, AppError, void>({
+    mutationFn: () =>
+      invoke("confirm_yield_pending", {
+        workspaceId,
+        id: item.id,
+        edited: {
+          transaction_date: date,
+          gross_yield: Number(gross),
+          ir_amount: Number(ir),
+          notes: notes.trim() === "" ? null : notes.trim(),
+        },
+      }),
+    onSuccess: () => {
+      setError(null);
+      refreshAfterReview(queryClient, workspaceId);
+    },
+    onError: (err) => setError(err.message),
+  });
+
+  const discardMutation = useMutation<void, AppError, void>({
+    mutationFn: () => invoke("discard_statement_pending", { workspaceId, id: item.id }),
+    onSuccess: () => {
+      setError(null);
+      refreshAfterReview(queryClient, workspaceId);
+    },
+    onError: (err) => setError(err.message),
+  });
+
+  const busy = confirmMutation.isPending || discardMutation.isPending;
+
+  return (
+    <div className="flex flex-col gap-4" data-testid="statement-review-form">
+      <p className="text-sm text-muted-foreground" data-testid="statement-review-counter">
+        {total} left to review · line {item.proposed.line} · {item.source}
+      </p>
+      <p className="text-sm" data-testid="yield-original">
+        <span className="font-medium">{detail.instrument.toUpperCase()} {detail.code}</span> · redeemed{" "}
+        {formatMoney(detail.gross_value)} for a principal of {formatMoney(detail.principal)} ({detail.quantity} units at{" "}
+        {detail.base_unit_price}, {detail.base_price_source === "application" ? "from its application" : "common to all applications in the file"})
+      </p>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date">
+          <Input value={date} onChange={(e) => setDate(e.target.value)} placeholder="YYYY-MM-DD" data-testid="yield-date" />
+        </Field>
+        <Field label={`Gross yield (income) — ${item.bank_account_name}`}>
+          <Input inputMode="decimal" value={gross} onChange={(e) => setGross(e.target.value)} data-testid="yield-gross" />
+        </Field>
+        <Field label={`IR withheld (${(detail.ir_rate * 100).toFixed(1)}% → expense in Taxes)`}>
+          <Input inputMode="decimal" value={ir} onChange={(e) => setIr(e.target.value)} data-testid="yield-ir" />
+        </Field>
+        <Field label="Net yield (what stays in the account)">
+          <p className="py-2 text-sm font-medium" data-testid="yield-net">
+            {invalid ? "—" : formatMoney(net)}
+          </p>
+        </Field>
+        <Field label="Notes" className="col-span-2">
+          <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" data-testid="yield-notes" />
+        </Field>
+      </div>
+
+      {check && (
+        <p className={check.matches ? "text-sm text-muted-foreground" : "text-sm text-amber-600"} data-testid="yield-check">
+          {check.text}
+        </p>
+      )}
+      {error && (
+        <p className="text-sm text-destructive" data-testid="statement-error">
+          {error}
+        </p>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" data-testid="statement-correct" disabled={busy || invalid} onClick={() => confirmMutation.mutate()}>
+          Correct
+        </Button>
+        <Button type="button" variant="outline" data-testid="statement-discard" disabled={busy} onClick={() => discardMutation.mutate()}>
+          Discard
+        </Button>
+        <Button type="button" variant="ghost" data-testid="statement-skip" disabled={busy} onClick={onSkip}>
+          Skip
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function StatementReviewDialog({
   workspaceId,
   open,
@@ -250,7 +407,17 @@ function StatementReviewDialog({
             </Button>
           </div>
         )}
-        {current && (
+        {current && current.fixed_income && (
+          <YieldReviewForm
+            key={current.id}
+            workspaceId={workspaceId}
+            item={current}
+            detail={current.fixed_income}
+            total={ordered.length}
+            onSkip={skipCurrent}
+          />
+        )}
+        {current && !current.fixed_income && (
           <ReviewForm key={current.id} workspaceId={workspaceId} item={current} total={ordered.length} onSkip={skipCurrent} />
         )}
       </DialogContent>

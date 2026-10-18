@@ -15,6 +15,7 @@ const TYPE_LABELS: Record<string, string> = {
   receita: "Income",
   despesa: "Expense",
   transferencia: "Transfer",
+  rendimento: "Yield",
 };
 
 function StatementPendingSection({

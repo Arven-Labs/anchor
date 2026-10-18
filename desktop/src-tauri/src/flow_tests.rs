@@ -2685,6 +2685,211 @@ async fn deleting_the_account_clears_its_pending_items() {
     assert!(list_statement_pending_in(&db, ws.id).await.unwrap().is_empty());
 }
 
+// ---------------------------------------------------------------------------
+// Rendimento do porquinho derivado da Movimentação (Fase 35, entrega 4). Dados inventados.
+// ---------------------------------------------------------------------------
+
+fn movement_sheet(lines: &[&[&str]]) -> Vec<Vec<String>> {
+    let header = ["Entrada/Saída", "Data", "Movimentação", "Produto", "Instituição", "Quantidade", "Preço unitário", "Valor da Operação"];
+    std::iter::once(header.as_slice())
+        .chain(lines.iter().copied())
+        .map(|r| r.iter().map(|c| c.to_string()).collect())
+        .collect()
+}
+
+/// Conta e Porquinho com o extrato aprovado: aplicação de 100,00 e resgate de 50,31 (o que caiu líquido).
+async fn pocket_with_statement(db: &sea_orm::DatabaseConnection) -> (i32, crate::entity::bank_account::Model, crate::entity::bank_account::Model) {
+    use crate::commands::statement_io::{parse_inter_csv, stage_statement_parsed};
+    let ws = workspace(db, "Yield").await;
+    let checking = crate::test_support::bank_account(db, ws.id, "Checking").await;
+    let csv = "Data Lançamento;Histórico;Descrição;Valor;Saldo\n\
+01/03/2026;Aplicação;Cdb Porquinho Banco X;-100,00;0,00\n\
+05/03/2026;Resgate;Cdb Porquinho Banco X;50,31;0,00\n";
+    stage_statement_parsed(db, ws.id, checking.id, None, true, "inter_csv", parse_inter_csv(csv)).await.unwrap();
+    confirm_all_statement_items(db, ws.id).await;
+    let pocket = crate::entity::bank_account::Entity::find()
+        .filter(crate::entity::bank_account::Column::Nome.eq("Cdb Porquinho"))
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    (ws.id, checking, pocket)
+}
+
+async fn account_balance(db: &sea_orm::DatabaseConnection, ws: i32, id: i32) -> f64 {
+    list_bank_accounts_view(db, ws).await.unwrap().into_iter().find(|a| a.id == id).unwrap().balance
+}
+
+const CDB_SHEET: [&[&str]; 2] = [
+    &["Credito", "01/03/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "10000", "0.01", "100"],
+    &["Debito", "05/03/2026", "RESGATE ANTECIPADO/", "CDB - CDBAAA - BANCO", "BANCO", "5000", "0.0108", "50.40"],
+];
+
+#[tokio::test]
+async fn a_cdb_yield_adds_gross_and_ir_and_the_pocket_ends_at_the_remaining_principal() {
+    use crate::commands::fixed_income_io::{confirm_yield_pending_in, parse_fixed_income_rows, stage_yield_parsed, EditedYield};
+    use crate::commands::statement_io::list_statement_pending_in;
+    use crate::commands::tax::load_rule_set;
+
+    let db = memory_db().await;
+    let (ws, _checking, pocket) = pocket_with_statement(&db).await;
+    // Só o fluxo do extrato: aplicou 100,00 e resgatou 50,31 → 49,69 (o rendimento ficou de fora).
+    assert!(close(account_balance(&db, ws, pocket.id).await, 49.69));
+
+    let rules = load_rule_set(&db).await.unwrap();
+    let staged = stage_yield_parsed(&db, ws, pocket.id, "b3_fixed_income", parse_fixed_income_rows(&movement_sheet(&CDB_SHEET), &rules))
+        .await
+        .unwrap();
+    assert_eq!((staged.staged, staged.duplicates, staged.skipped.len()), (1, 0, 1), "a aplicação é pulada");
+
+    let pending = list_statement_pending_in(&db, ws).await.unwrap();
+    assert_eq!(pending.len(), 1);
+    let detail = pending[0].fixed_income.as_ref().unwrap();
+    assert_eq!((pending[0].kind.as_str(), pending[0].suggested_type.as_str()), ("fixed_income_yield", "rendimento"));
+    assert!(close(detail.gross_yield, 0.40) && close(detail.ir_amount, 0.09) && close(detail.net_yield, 0.31));
+    // A checagem do dia: a B3 explica 50,31 (principal 50 + líquido 0,31) e o extrato mostra 50,31 saindo do porquinho.
+    assert!(close(detail.day_derived_total, 50.31));
+    assert!(close(detail.bank_total_that_day.unwrap(), 50.31));
+
+    confirm_yield_pending_in(
+        &db,
+        ws,
+        pending[0].id,
+        EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: 0.40, ir_amount: 0.09, notes: None },
+    )
+    .await
+    .unwrap();
+
+    // 49,69 + 0,40 (receita bruta) − 0,09 (IR retido) = 50,00: o principal que sobrou (10000 − 5000 unidades × 0,01).
+    assert!(close(account_balance(&db, ws, pocket.id).await, 50.0));
+    let lines = crate::entity::general_transaction::Entity::find()
+        .filter(crate::entity::general_transaction::Column::BankAccountId.eq(pocket.id))
+        .filter(crate::entity::general_transaction::Column::TransactionType.is_in(["receita", "despesa"]))
+        .all(&db)
+        .await
+        .unwrap();
+    assert_eq!(lines.len(), 2);
+    let ir = lines.iter().find(|l| l.transaction_type == "despesa").unwrap();
+    let taxes = list_categories_view(&db, ws).await.unwrap().into_iter().find(|c| c.nome == "Taxes").unwrap();
+    assert_eq!(ir.category_id, Some(taxes.id), "o IR retido cai na categoria Taxes");
+    assert!(list_statement_pending_in(&db, ws).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn an_exempt_instrument_records_only_the_gross_line() {
+    use crate::commands::fixed_income_io::{confirm_yield_pending_in, parse_fixed_income_rows, stage_yield_parsed, EditedYield};
+    use crate::commands::statement_io::list_statement_pending_in;
+    use crate::commands::tax::load_rule_set;
+
+    let db = memory_db().await;
+    let (ws, _checking, pocket) = pocket_with_statement(&db).await;
+    let sheet = movement_sheet(&[
+        &["Credito", "01/03/2026", "APLICAÇÃO", "LCI - LCIAAA", "BANCO", "10000", "0.01", "100"],
+        &["Debito", "05/03/2026", "RESGATE", "LCI - LCIAAA - BANCO", "BANCO", "5000", "0.0108", "50.40"],
+    ]);
+    let rules = load_rule_set(&db).await.unwrap();
+    stage_yield_parsed(&db, ws, pocket.id, "b3_fixed_income", parse_fixed_income_rows(&sheet, &rules)).await.unwrap();
+    let item = list_statement_pending_in(&db, ws).await.unwrap().remove(0);
+    let detail = item.fixed_income.as_ref().unwrap();
+    assert_eq!((detail.instrument.as_str(), detail.ir_rate, detail.ir_amount), ("lci", 0.0, 0.0));
+
+    confirm_yield_pending_in(
+        &db,
+        ws,
+        item.id,
+        EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: detail.gross_yield, ir_amount: 0.0, notes: None },
+    )
+    .await
+    .unwrap();
+    let despesas = crate::entity::general_transaction::Entity::find()
+        .filter(crate::entity::general_transaction::Column::BankAccountId.eq(pocket.id))
+        .filter(crate::entity::general_transaction::Column::TransactionType.eq("despesa"))
+        .all(&db)
+        .await
+        .unwrap();
+    assert!(despesas.is_empty(), "isento: nenhuma linha de IR");
+}
+
+#[tokio::test]
+async fn editing_the_tax_rate_changes_the_proposal_and_a_bad_ir_is_refused() {
+    use crate::commands::fixed_income_io::{confirm_yield_pending_in, parse_fixed_income_rows, stage_yield_parsed, EditedYield};
+    use crate::commands::statement_io::list_statement_pending_in;
+    use crate::commands::tax::load_rule_set;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let db = memory_db().await;
+    let (ws, _checking, pocket) = pocket_with_statement(&db).await;
+    // O usuário edita a alíquota do CDB em Settings → Taxes (15% em vez de 22,5%).
+    let row = crate::entity::tax_rules::Entity::find()
+        .filter(crate::entity::tax_rules::Column::RuleKey.eq("fixed_income_ir_cdb"))
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut active: crate::entity::tax_rules::ActiveModel = row.into();
+    active.value = Set(0.15);
+    active.update(&db).await.unwrap();
+
+    let rules = load_rule_set(&db).await.unwrap();
+    stage_yield_parsed(&db, ws, pocket.id, "b3_fixed_income", parse_fixed_income_rows(&movement_sheet(&CDB_SHEET), &rules)).await.unwrap();
+    let item = list_statement_pending_in(&db, ws).await.unwrap().remove(0);
+    let detail = item.fixed_income.as_ref().unwrap();
+    assert!(close(detail.ir_rate, 0.15) && close(detail.ir_amount, 0.06) && close(detail.net_yield, 0.34));
+
+    for ir in [-0.01, 0.41] {
+        let bad = EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: 0.40, ir_amount: ir, notes: None };
+        assert!(confirm_yield_pending_in(&db, ws, item.id, bad).await.is_err(), "IR {ir} fora de 0..=bruto");
+    }
+    assert_eq!(list_statement_pending_in(&db, ws).await.unwrap().len(), 1, "continua pendente");
+}
+
+#[tokio::test]
+async fn reimporting_the_yields_never_duplicates_even_after_editing_the_gross() {
+    use crate::commands::fixed_income_io::{confirm_yield_pending_in, parse_fixed_income_rows, stage_yield_parsed, EditedYield};
+    use crate::commands::statement_io::list_statement_pending_in;
+    use crate::commands::tax::load_rule_set;
+
+    let db = memory_db().await;
+    let (ws, _checking, pocket) = pocket_with_statement(&db).await;
+    let rules = load_rule_set(&db).await.unwrap();
+    let stage = || async {
+        stage_yield_parsed(&db, ws, pocket.id, "b3_fixed_income", parse_fixed_income_rows(&movement_sheet(&CDB_SHEET), &rules))
+            .await
+            .unwrap()
+    };
+    assert_eq!(stage().await.staged, 1);
+    assert_eq!((stage().await.staged, stage().await.duplicates), (0, 1), "ainda pendente");
+
+    let item = list_statement_pending_in(&db, ws).await.unwrap().remove(0);
+    // Aprova corrigindo o bruto (o banco pagou 0,41 em vez de 0,40): a marca `confirmed` segura a reimportação.
+    confirm_yield_pending_in(
+        &db,
+        ws,
+        item.id,
+        EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: 0.41, ir_amount: 0.09, notes: None },
+    )
+    .await
+    .unwrap();
+    let again = stage().await;
+    assert_eq!((again.staged, again.duplicates), (0, 1));
+}
+
+#[tokio::test]
+async fn the_fixed_income_rules_exist_after_the_migrations_and_the_cdb_defaults_to_22_5() {
+    let db = memory_db().await;
+    let rules = crate::entity::tax_rules::Entity::find()
+        .filter(crate::entity::tax_rules::Column::RuleKey.like("fixed_income_ir_%"))
+        .all(&db)
+        .await
+        .unwrap();
+    assert_eq!(rules.len(), 5);
+    let rate = |key: &str| rules.iter().find(|r| r.rule_key == key).unwrap().value;
+    assert!(close(rate("fixed_income_ir_cdb"), 0.225));
+    for exempt in ["lci", "lca", "cri", "cra"] {
+        assert!(close(rate(&format!("fixed_income_ir_{exempt}")), 0.0));
+    }
+}
+
 #[tokio::test]
 async fn the_migration_keeps_an_old_pending_item_and_gives_it_a_workspace() {
     use migration::{Migrator, MigratorTrait};
@@ -2693,8 +2898,13 @@ async fn the_migration_keeps_an_old_pending_item_and_gives_it_a_workspace() {
     let mut options = ConnectOptions::new("sqlite::memory:");
     options.max_connections(1).min_connections(1).sqlx_logging(false);
     let db = Database::connect(options).await.unwrap();
-    let all = Migrator::migrations().len() as u32;
-    Migrator::up(&db, Some(all - 1)).await.unwrap();
+    // Aplica tudo até a migration que reconstrói a fila (sem ela), pelo nome, pra
+    // não quebrar quando entrarem migrations depois dela.
+    let before_rebuild = Migrator::migrations()
+        .iter()
+        .position(|m| m.name().contains("rebuild_import_pending_by_workspace"))
+        .expect("a migration de reconstrução existe") as u32;
+    Migrator::up(&db, Some(before_rebuild)).await.unwrap();
 
     let ws = workspace(&db, "Legacy").await;
     let pf = portfolio(&db, ws.id, "Main").await;

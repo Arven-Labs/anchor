@@ -384,6 +384,34 @@ fn product_ticker(product: &str) -> Option<String> {
     (letters == 4 && (1..=2).contains(&digits) && ticker.len() == letters + digits).then_some(ticker)
 }
 
+/// Posição de cada coluna da planilha "Movimentação", achada pelo nome.
+pub(crate) struct MovimentacaoColumns {
+    pub flow: usize,
+    pub date: usize,
+    pub movement: usize,
+    pub product: usize,
+    pub institution: usize,
+    pub quantity: usize,
+    pub price: usize,
+    pub value: usize,
+}
+
+pub(crate) fn movimentacao_columns(header: &[String]) -> Option<MovimentacaoColumns> {
+    let find = |needle: &str| header.iter().position(|h| normalize_header(h).contains(needle));
+    Some(MovimentacaoColumns {
+        flow: find("entrada")?,
+        date: find("data")?,
+        movement: find("movimentacao")?,
+        product: find("produto")?,
+        institution: find("instituicao")?,
+        quantity: find("quantidade")?,
+        price: find("preco")?,
+        value: find("valor")?,
+    })
+}
+
+pub(crate) const MOVIMENTACAO_COLUMNS_MESSAGE: &str = "não parece a planilha 'Movimentação' da B3: faltam colunas (Entrada/Saída, Data, Movimentação, Produto, Instituição, Quantidade, Preço unitário, Valor da Operação)";
+
 /// Planilha "Movimentação" da Área do Investidor. Por ora só proventos em
 /// dinheiro (`Dividendo`, `Rendimento`) viram lançamento. O resto é pulado com o
 /// motivo, em vez de adivinhado: JCP (não confirmei se vem bruto ou líquido),
@@ -392,28 +420,20 @@ pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>]) -> Parsed {
     let Some(header) = rows.first() else {
         return vec![Err(ParseIssue { line: 0, message: "planilha vazia".to_string() })];
     };
-    let find = |needles: &[&str]| {
-        header.iter().position(|h| {
-            let h = normalize_header(h);
-            needles.iter().all(|n| h.contains(n))
-        })
-    };
-    let columns = (
-        find(&["entrada"]),
-        find(&["data"]),
-        find(&["movimentacao"]),
-        find(&["produto"]),
-        find(&["instituicao"]),
-        find(&["quantidade"]),
-        find(&["preco"]),
-        find(&["valor"]),
-    );
-    let (Some(c_flow), Some(c_date), Some(c_move), Some(c_product), Some(c_inst), Some(c_qty), Some(c_price), Some(c_value)) =
-        columns
+    let Some(MovimentacaoColumns {
+        flow: c_flow,
+        date: c_date,
+        movement: c_move,
+        product: c_product,
+        institution: c_inst,
+        quantity: c_qty,
+        price: c_price,
+        value: c_value,
+    }) = movimentacao_columns(header)
     else {
         return vec![Err(ParseIssue {
             line: 0,
-            message: "não parece a planilha 'Movimentação' da B3: faltam colunas (Entrada/Saída, Data, Movimentação, Produto, Instituição, Quantidade, Preço unitário, Valor da Operação)".to_string(),
+            message: MOVIMENTACAO_COLUMNS_MESSAGE.to_string(),
         })];
     };
 
@@ -437,7 +457,9 @@ pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>]) -> Parsed {
             continue;
         }
         if movement.contains("aplicacao") || movement.contains("resgate") || product.to_uppercase().starts_with("CDB") {
-            out.push(Err(issue("renda fixa (CDB) pulada: ainda não suportada".to_string())));
+            out.push(Err(issue(
+                "renda fixa (CDB) pulada aqui: o rendimento entra por Finances → Transactions → Fixed-income yield".to_string(),
+            )));
             continue;
         }
         if movement.contains("emprestimo") {

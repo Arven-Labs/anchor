@@ -3115,4 +3115,29 @@ o extrato real nos dois formatos, pediu os dois, e alertou: "cuidado com os arqu
   fora, o saldo dessa conta não bate com o do app do banco.
 - **Pendente**: rendimento do porquinho; conciliar com os CDBs da Movimentação da B3 e evitar contar o CDB duas vezes no
   patrimônio (conta + carteira); tela global única de pendentes; categorias automáticas e IA; transferência entre contas próprias
-  escolhida no popup.
+  escolhida no popup. *(O rendimento do porquinho foi feito na Sessão 141, abaixo.)*
+
+
+### 2026-10-19 — Sessão 141
+
+**Fase 35, entrega 4: rendimento do porquinho derivado da Movimentação da B3, com IR configurável.** Plan mode, plano aprovado.
+O dono do projeto respondeu: derivar da B3, o resgate cai **líquido**, IR ~22,5% porque ele não espera a regressiva, "melhor
+isso ser configurável" (LCI, LCA, CRI e CRA são isentos), rendimento em **duas linhas** (bruto e IR retido) e **só na conta**
+por enquanto. Pediu também para **não usar branches** enquanto o app não estiver em produção: esta sessão foi direto na `main`.
+- **Achado antes de planejar**: nos 9 resgates da amostra, o valor da B3 é exatamente quantidade × preço unitário, ou seja,
+  **bruto**; e toda aplicação tem preço unitário R$ 0,01. Dá para derivar o rendimento de cada resgate sozinho, sem saldo de abertura.
+- **Feito**: regras `fixed_income_ir_*` em `tax_rules` (tabela embarcada, migration e rótulos em Settings → Taxes),
+  `fixed_income_io.rs` (leitor, fila, confirmar em duas linhas, total do dia no extrato), `ensure_taxes_category` extraído do DARF,
+  `movimentacao_columns` extraído, e na UI o bloco "Fixed-income yield" no painel de importação e o ramo de rendimento no popup
+  (bruto e IR editáveis, líquido calculado, checagem do dia).
+- **Verificado**: `./dev.sh check` limpo; `cargo test --lib` inteiro no Docker (647 passaram, 0 falharam), com 8 unitários do leitor e
+  5 testes de fluxo: o saldo do porquinho termina **exatamente no principal que sobrou** depois do rendimento líquido; LCI isenta
+  grava uma linha só; mudar a alíquota em `tax_rules` muda a proposta e IR fora de 0..bruto é recusado; reimportar não duplica nem
+  depois de editar o bruto; as regras existem após as migrations. A amostra real (`#[ignore]`, `ANCHOR_B3_MOVIMENTACAO`) dá 9 propostas.
+- **Corrigido no caminho**: o teste da migration da fila supunha "a última migration é a de reconstrução"; agora acha a migration
+  pelo nome.
+- **Não verificado**: o CI desta entrega (resultado abaixo); a tela a olho; o clique em "Import B3 Movimentação (yield)"
+  (diálogo nativo). **A hipótese "valor da B3 = bruto" e a taxa de 22,5% não foram conferidas contra o extrato**, porque os períodos
+  não se sobrepõem (extrato de 2025, Movimentação de setembro/2026): falta o dono do projeto exportar a Movimentação de 2025.
+- **Pendente**: validação com períodos sobrepostos; rendimento ainda não resgatado; posição de carteira da renda fixa com marca por
+  conta; JCP bruto/líquido; tela global de pendentes.

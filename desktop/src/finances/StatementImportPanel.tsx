@@ -32,8 +32,22 @@ const FORMATS: { format: StatementFormat; label: string; extension: string }[] =
   { format: "inter_csv", label: "Import CSV", extension: "csv" },
 ];
 
+type YieldStageResult = { staged: number; duplicates: number; skipped: { line: number; message: string }[] };
+
+// As linhas puladas se repetem (uma por lançamento): mostra cada motivo uma vez, com a contagem.
+function groupByReason(skipped: { message: string }[]): [string, number][] {
+  return Object.entries(
+    skipped.reduce<Record<string, number>>((acc, s) => {
+      acc[s.message] = (acc[s.message] ?? 0) + 1;
+      return acc;
+    }, {}),
+  );
+}
+
 function StatementImportPanel({ workspaceId, onStaged }: { workspaceId: number; onStaged: () => void }) {
   const queryClient = useQueryClient();
+  const [yieldAccountId, setYieldAccountId] = useState("");
+  const [yieldResult, setYieldResult] = useState<YieldStageResult | null>(null);
   const [accountId, setAccountId] = useState("");
   const [porquinho, setPorquinho] = useState(NO_PORQUINHO);
   const [result, setResult] = useState<StageResult | null>(null);
@@ -65,13 +79,21 @@ function StatementImportPanel({ workspaceId, onStaged }: { workspaceId: number; 
     },
   });
 
-  // As linhas puladas se repetem (uma por lançamento): mostra cada motivo uma vez, com a contagem.
-  const skippedByReason = Object.entries(
-    (result?.skipped ?? []).reduce<Record<string, number>>((acc, s) => {
-      acc[s.message] = (acc[s.message] ?? 0) + 1;
-      return acc;
-    }, {}),
-  );
+  const yieldMutation = useMutation<YieldStageResult, AppError, void>({
+    mutationFn: async () => {
+      const path = await open({ multiple: false, filters: [{ name: "Excel", extensions: ["xlsx", "xls"] }] });
+      if (typeof path !== "string") throw new Error("cancelled");
+      return invoke("stage_fixed_income_yield", { workspaceId, pocketAccountId: Number(yieldAccountId), path });
+    },
+    onSuccess: (outcome) => {
+      setYieldResult(outcome);
+      queryClient.invalidateQueries({ queryKey: [STATEMENT_PENDING_KEY, workspaceId] });
+      if (outcome.staged > 0) onStaged();
+    },
+  });
+
+  const skippedByReason = groupByReason(result?.skipped ?? []);
+  const yieldSkippedByReason = groupByReason(yieldResult?.skipped ?? []);
 
   return (
     <Card data-testid="statement-import-panel">
@@ -155,6 +177,65 @@ function StatementImportPanel({ workspaceId, onStaged }: { workspaceId: number; 
             )}
           </div>
         )}
+
+        <div className="flex flex-col gap-3 border-t pt-4" data-testid="yield-import">
+          <div>
+            <h3 className="text-base font-medium">Fixed-income yield (B3 Movimentação)</h3>
+            <p className="text-sm text-muted-foreground">
+              Reads the redemptions of CDB, LCI, LCA, CRI and CRA in the B3 “Movimentação” spreadsheet and proposes the yield
+              for the Porquinho account: the gross income, and the IR withheld as an expense. The IR rate per instrument is
+              in Settings → Taxes.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Account that holds the fixed income">
+              <Select value={yieldAccountId} onValueChange={setYieldAccountId}>
+                <SelectTrigger className="w-full" data-testid="yield-account">
+                  <SelectValue placeholder="Choose the Porquinho account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={String(a.id)}>
+                      {a.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+          <div>
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="yield-import-button"
+              disabled={yieldAccountId === "" || yieldMutation.isPending}
+              onClick={() => yieldMutation.mutate()}
+            >
+              Import B3 Movimentação (yield)
+            </Button>
+          </div>
+          {yieldMutation.isError && yieldMutation.error.message !== "cancelled" && (
+            <p className="text-sm text-destructive">{yieldMutation.error.message}</p>
+          )}
+          {yieldResult && (
+            <div className="text-sm" data-testid="yield-import-result">
+              <p>
+                {yieldResult.staged} sent to review
+                {yieldResult.duplicates > 0 ? `, ${yieldResult.duplicates} already there` : ""}
+                {yieldResult.skipped.length > 0 ? `, ${yieldResult.skipped.length} skipped` : ""}.
+              </p>
+              {yieldSkippedByReason.length > 0 && (
+                <ul className="list-disc pl-5 text-muted-foreground" data-testid="yield-import-skipped">
+                  {yieldSkippedByReason.map(([reason, count]) => (
+                    <li key={reason}>
+                      {count}× {reason}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

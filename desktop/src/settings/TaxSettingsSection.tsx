@@ -60,6 +60,11 @@ const RULE_META: Record<string, { label: string; unit: Unit }> = {
   darf_code_b3: { label: "DARF code (stock exchange)", unit: "code" },
   jcp_irrf_rate: { label: "Interest on equity (JCP) withholding", unit: "percent" },
   crypto_exemption_monthly_sales: { label: "Crypto sales exemption (per month)", unit: "money" },
+  fixed_income_ir_cdb: { label: "Fixed income IR — CDB (flat rate)", unit: "percent" },
+  fixed_income_ir_lci: { label: "Fixed income IR — LCI", unit: "percent" },
+  fixed_income_ir_lca: { label: "Fixed income IR — LCA", unit: "percent" },
+  fixed_income_ir_cri: { label: "Fixed income IR — CRI", unit: "percent" },
+  fixed_income_ir_cra: { label: "Fixed income IR — CRA", unit: "percent" },
 };
 
 function unitOf(key: string): Unit {

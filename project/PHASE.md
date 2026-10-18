@@ -3363,6 +3363,26 @@ de duplicata é ticker + data + tipo + quantidade + total.
   se algum arquivo parecido com planilha ou extrato for rastreado, e os testes usam só dados e tickers inventados. Os tickers
   reais que tinham escapado para testes e comentários foram trocados (continuam no histórico público).
 
+**Entrega 4 (feita, Sessão 141)**: rendimento do porquinho (e de LCI/LCA/CRI/CRA) derivado da Movimentação da B3, com IR configurável.
+- **Premissa verificada na amostra**: o "Valor da Operação" de um resgate é **bruto** (= quantidade × preço unitário da curva) e o
+  preço unitário de toda aplicação é R$ 0,01. Logo, cada resgate se explica sozinho: principal = quantidade × preço-base, rendimento
+  bruto = valor − principal, **sem depender de saldo de abertura**. O preço-base é o da aplicação do mesmo código no arquivo; sem
+  ela, o preço comum a todas as aplicações do arquivo; se forem diferentes, a linha é pulada com o motivo.
+- **IR configurável** (`tax_rules`, Settings → Taxes): `fixed_income_ir_cdb` = 22,5% (taxa fixa; a primeira faixa, resgate em até 180
+  dias) e `_lci`/`_lca`/`_cri`/`_cra` = 0%, com vigência por data, valor padrão e reset como as demais regras. Migration
+  `m20261021` insere as linhas. As fontes estão marcadas "verify" (secundárias). **Não modelados**: tabela regressiva e IOF.
+- **Fluxo**: `commands/fixed_income_io.rs` lê o xlsx, deriva um item por resgate e o guarda na fila (`kind = fixed_income_yield`,
+  conta Porquinho). Aprovar grava **duas linhas**: receita bruta e despesa "IR retido" (categoria Taxes, criada se faltar; some se o
+  IR é zero). O IR proposto é editável no popup, então o líquido pode ser acertado com o que o banco realmente pagou.
+- **Checagem contra o extrato**: o popup compara o que o extrato já aprovado mostra saindo do porquinho no dia com o que o arquivo
+  da B3 explica (principal + líquido de todos os resgates do dia) e avisa a diferença (IOF ou faixa de IR maior).
+- **Só na conta**: os papéis não viram posição de carteira, então o patrimônio não conta em dobro. A visão de carteira (renda fixa
+  com rendimento) fica para depois, com uma marca por conta.
+- **Amostra real** (só agregados): 9 resgates viram propostas, rendimento bruto de 0,20% a 1,08% sobre o principal; 3 aplicações e as
+  linhas de proventos e negócios são puladas com motivo.
+- **Pendente**: **validar com períodos sobrepostos** (exportar a Movimentação do mesmo período do extrato, hoje 2025 contra setembro/2026)
+  para confirmar bruto × líquido e a taxa de 22,5%; rendimento ainda não resgatado (curva acumulada); categoria própria para rendimento.
+
 **Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
 Inter; CDB/porquinho visto também como conta corrente sem contar o patrimônio duas vezes; IR do AUPO11; unificar a fila com

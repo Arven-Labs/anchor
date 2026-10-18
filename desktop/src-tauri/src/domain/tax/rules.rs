@@ -15,6 +15,19 @@ pub const DARF_CODE_B3: &str = "darf_code_b3";
 pub const JCP_IRRF_RATE: &str = "jcp_irrf_rate";
 pub const CRYPTO_EXEMPTION_MONTHLY_SALES: &str = "crypto_exemption_monthly_sales";
 
+/// IR retido no resgate de renda fixa, uma taxa fixa por papel (a tabela
+/// regressiva e o IOF não são modelados). `None` para papel desconhecido.
+pub fn fixed_income_ir_key(instrument: &str) -> Option<&'static str> {
+    match instrument {
+        "cdb" => Some("fixed_income_ir_cdb"),
+        "lci" => Some("fixed_income_ir_lci"),
+        "lca" => Some("fixed_income_ir_lca"),
+        "cri" => Some("fixed_income_ir_cri"),
+        "cra" => Some("fixed_income_ir_cra"),
+        _ => None,
+    }
+}
+
 pub struct Rule {
     pub key: String,
     pub effective_from: NaiveDate,
