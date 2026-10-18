@@ -3329,3 +3329,16 @@ decisão do dono por pergunta); direto na `main`.
 - **Não verificado**: a tela a olho; se o saldo do app do banco é bruto ou líquido de IR.
 - **Deslize**: um `head` no extrato para ver o cabeçalho imprimiu o número da conta e um nome na tela; nada foi copiado para arquivo, doc ou commit.
 - **Pendente**: estimar o rendimento por resgate (se fizer falta); IR do aluguel líquido ou bruto; ver a tela a olho.
+
+
+### 2026-10-18 — Sessão 152
+
+**Widget "Losses to offset" na Home (Fase 24).** Fatia pequena, só front e sem schema novo; sem plan mode; direto na `main`.
+- **Feito**: widget `losses_to_offset` na Home (saldo de prejuízo e economia estimada por gaveta, total quando há mais de uma, "No losses to offset"
+  quando não há), com a mesma apuração da aba Taxes (mesma chave de cache `tax-assessment`) e a query só ligada com o widget visível. Entra pelo
+  `mergeWithDefaults` também para quem já personalizou a Home. Os tipos de prejuízo (`Bucket`, `LossBalance`, `BUCKET_LABELS`) saíram de
+  `TaxesSection.tsx` para `portfolio/taxLosses.ts`, que as duas telas usam. O backend não valida as chaves de widget, então nada mudou nele.
+- **Verificado**: `./dev.sh check` limpo (tsc). Caso novo em `taxes.e2e.mjs` (a Home mostra o saldo semeado e a economia de 15%); só roda no CI.
+- **Não verificado**: a tela a olho; sem botão para a aba Taxes (a navegação para essa aba é estado interno do painel de carteira, e o widget só
+  aponta o caminho no texto).
+- **Pendente**: os de antes (descartar em lote nas Pendentes; IR do aluguel líquido ou bruto; estimar o rendimento por resgate) e ver a tela a olho.

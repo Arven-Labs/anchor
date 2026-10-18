@@ -2182,7 +2182,7 @@ uma venda hipotética ("se eu vender X com lucro Y, abato Z"). Não implementado
 (`LossBalance`: gaveta, saldo, alíquota, `tax_saved` = saldo × alíquota), lido do `loss_carried`
 do último mês em que cada gaveta teve vendas; só gavetas com saldo > 0. Card "Losses to offset"
 na aba Portfolio → Taxes, com a regra no texto (gavetas não se misturam, sem prazo). 2 testes
-novos em `domain::tax::assessment`. **Segue de fora**: widget na Home. A regra de prazo/gavetas é a já implementada na Fase 24, não foi reconferida na Receita
+novos em `domain::tax::assessment`. **Widget na Home**: feito na Sessão 152 (`losses_to_offset`, mesma apuração da aba Taxes, saldo e economia por gaveta). A regra de prazo/gavetas é a já implementada na Fase 24, não foi reconferida na Receita
 nesta sessão.
 
 **Simulação de venda (Sessão 106, fatia 2)**: comando `simulate_tax_sale` + card "Simulate a

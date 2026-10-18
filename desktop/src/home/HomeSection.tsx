@@ -16,6 +16,7 @@ import { Eye, EyeOff, GripVertical, LayoutGrid } from "lucide-react";
 import type { AppError } from "../types";
 import type { Asset, AssetFavorite } from "../portfolio/types";
 import { ASSET_CLASS_LABELS, type AssetClass } from "../portfolio/types";
+import { BUCKET_LABELS, type LossBalance } from "../portfolio/taxLosses";
 import type { StockQuote } from "../collector/types";
 import { latestForTicker } from "../collector/latestForTicker";
 import type { WorkspaceSummary, MonthlyReturn, HomeWidgetLayout, WidgetKey } from "./types";
@@ -68,6 +69,7 @@ const WIDGET_TITLES: Record<WidgetKey, string> = {
   portfolios_table: "Portfolios",
   market_panel: "★ Market panel",
   interest_rates: "Interest rates",
+  losses_to_offset: "Losses to offset",
 };
 
 // Fase 10.8 fatia 2 — mesma disposição visual da fatia 1 (Sessão 84), agora
@@ -86,6 +88,8 @@ const DEFAULT_LAYOUT: HomeWidgetLayout[] = [
   { widget_key: "market_panel", position: 6, w: 12, h: 8, visible: true },
   // Fase 17 — entra pra quem já personalizou via `mergeWithDefaults`.
   { widget_key: "interest_rates", position: 7, w: 6, h: 10, visible: true },
+  // Fase 24 — saldo de prejuízo a compensar por grupo; entra pra quem já personalizou via `mergeWithDefaults`.
+  { widget_key: "losses_to_offset", position: 8, w: 6, h: 8, visible: true },
 ];
 
 function mergeWithDefaults(saved: HomeWidgetLayout[]): HomeWidgetLayout[] {
@@ -366,6 +370,15 @@ function HomeSection({
     [layoutQuery.data],
   );
 
+  // O saldo de prejuízo vem da mesma apuração da aba Taxes (mesma chave de cache), e só roda com o widget visível.
+  const lossesVisible = (draftLayout ?? savedLayout).find((w) => w.widget_key === "losses_to_offset")?.visible ?? true;
+  const lossesQuery = useQuery<{ assessment: { loss_balances: LossBalance[] } }, AppError>({
+    queryKey: ["tax-assessment", workspaceId],
+    queryFn: () => invoke("get_tax_assessment", { workspaceId }),
+    enabled: lossesVisible,
+  });
+  const lossBalances = lossesQuery.data?.assessment.loss_balances ?? [];
+
   const summary = summaryQuery.data;
   const monthly = profitabilityQuery.data ?? [];
   const assets = assetsQuery.data ?? [];
@@ -551,6 +564,34 @@ function HomeSection({
         <Button variant="outline" size="sm" className="w-fit" onClick={onOpenRates}>
           Details
         </Button>
+      </div>
+    ),
+    losses_to_offset: () => (
+      <div className="flex flex-col gap-3" data-testid="losses-widget">
+        {lossesQuery.isLoading && <p className="text-sm">Loading…</p>}
+        {lossesQuery.isError && <p className="text-sm text-red-600">{lossesQuery.error.message}</p>}
+        {lossesQuery.data && lossBalances.length === 0 && (
+          <p className="text-sm text-muted-foreground">No losses to offset.</p>
+        )}
+        {lossBalances.map((l) => (
+          <div key={l.bucket}>
+            <p className="text-sm text-muted-foreground">{BUCKET_LABELS[l.bucket]}</p>
+            <p className="text-2xl font-semibold" data-testid={`losses-widget-${l.bucket}`}>
+              {formatMoney(l.balance, "BRL")}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Saves up to {formatMoney(l.tax_saved, "BRL")} at {(l.rate * 100).toFixed(0)}%
+            </p>
+          </div>
+        ))}
+        {lossBalances.length > 1 && (
+          <p className="text-sm text-muted-foreground" data-testid="losses-widget-total">
+            Total potential savings: {formatMoney(lossBalances.reduce((sum, l) => sum + l.tax_saved, 0), "BRL")}
+          </p>
+        )}
+        {lossBalances.length > 0 && (
+          <p className="text-xs text-muted-foreground">Details in Portfolio → Taxes.</p>
+        )}
       </div>
     ),
   };

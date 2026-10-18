@@ -24,6 +24,23 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     );
   });
 
+  // Fase 24: o mesmo saldo aparece no widget da Home, vindo da mesma apuração.
+  it("a Home mostra o prejuízo a compensar no widget", async () => {
+    await byId("nav-home").click();
+    await waitForText(
+      byId("losses-widget-common"),
+      (text) => text.includes("1.000,00"),
+      "o widget da Home deveria mostrar R$ 1.000,00 de prejuízo na gaveta comum",
+    );
+    await waitForText(
+      byId("losses-widget"),
+      (text) => text.includes("Saves up to") && text.includes("150,00"),
+      "o widget deveria mostrar a economia de 15% sobre o saldo",
+    );
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+  });
+
   it("simula uma venda que usa o prejuízo e paga imposto só sobre o resto", async () => {
     // Lucro 1.500, compensa 1.000 e a alíquota semeada incide sobre 500
     // (15% → R$ 75,00).

@@ -37,7 +37,8 @@ export type WidgetKey =
   | "allocation_donut"
   | "portfolios_table"
   | "market_panel"
-  | "interest_rates";
+  | "interest_rates"
+  | "losses_to_offset";
 
 export type HomeWidgetLayout = {
   widget_key: WidgetKey;

@@ -7,6 +7,7 @@ import type { BankAccountView } from "../finances/types";
 import Field from "../components/Field";
 import SaleSimulationCard from "./SaleSimulationCard";
 import { Badge } from "@/components/ui/badge";
+import { BUCKET_LABELS, type Bucket, type LossBalance } from "./taxLosses";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,7 +39,6 @@ import {
 // transações de TODAS as carteiras do Workspace — imposto é por CPF). Aqui só
 // exibe, monta o guia do DARF e registra o pagamento.
 
-type Bucket = "common" | "day_trade" | "fii";
 
 type SaleResult = {
   tx_id: number;
@@ -101,22 +101,9 @@ type TaxPayment = {
   created_at: string;
 };
 
-type LossBalance = {
-  bucket: Bucket;
-  balance: number;
-  rate: number;
-  tax_saved: number;
-};
-
 type TaxAssessmentView = {
   assessment: { months: MonthAssessment[]; warnings: TaxWarning[]; loss_balances: LossBalance[] };
   payments: TaxPayment[];
-};
-
-const BUCKET_LABELS: Record<Bucket, string> = {
-  common: "Regular trades (stocks, units, ETFs, BDRs)",
-  day_trade: "Day trade",
-  fii: "Real estate funds (FII)",
 };
 
 // Páginas oficiais da Receita conferidas na Sessão 101: o serviço "Meu
