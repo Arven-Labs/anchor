@@ -3067,4 +3067,23 @@ do `PHASE.md`.
 - **Não verificado**: a tela a olho (o E2E confere comportamento, não aparência); o botão "Import" em si, que abre o diálogo
   nativo de arquivo (o `stage_import` tem teste de fluxo, mas o clique até ele não).
 - **Pendente**: ver "Fora do escopo" da Fase 35 (proventos da Movimentação, conciliação, CDB e extrato do Inter, CDB como
-  conta corrente, IR do AUPO11).
+  conta corrente, IR do AUPO11). *(Os proventos da Movimentação foram feitos na Sessão 139, abaixo; o PR #1 foi mergeado
+  pelo dono do projeto, porque o classificador de permissões bloqueou o merge feito por mim.)*
+
+
+### 2026-10-19 — Sessão 139
+
+**Fase 35, entrega 2: proventos da planilha "Movimentação".** O dono do projeto escolheu o item 2 ("vamos de 2"); fatia
+pequena que reaproveita o parser, a fila e o popup, então sem plan mode. Detalhe na Fase 35 do `PHASE.md`.
+- **Feito**: `parse_b3_movimentacao_rows`, formato `b3_movimentacao`, botão no `ImportExportPanel` e o resumo passa a dizer
+  "skipped" em vez de "could not be read". Só `Dividendo` e `Rendimento` viram lançamento; o resto é pulado com motivo.
+- **Decisão**: não importar JCP, porque não sei se o valor da planilha é bruto ou líquido (o app desconta 15% de IR do bruto)
+  e a amostra não tem JCP para conferir. Importar errado dobraria ou omitiria o imposto sem erro nenhum.
+- **Verificado**: `tsc` limpo; `cargo test --lib` inteiro no Docker (623 passaram, 0 falharam), com 3 unitários novos
+  (valores inventados, nenhum da planilha real) e 1 teste de fluxo (planilha → fila → aprovar → provento no ledger e no
+  resumo de proventos → reimportar não duplica); a amostra real (teste `#[ignore]`, `ANCHOR_B3_MOVIMENTACAO`) deu 2
+  proventos e 19 puladas, cada uma com motivo, e as 21 linhas fecham.
+- **Não verificado**: o CI desta entrega; a tela a olho; o botão "Import" da Movimentação em si (diálogo nativo de arquivo);
+  nenhum E2E novo (o do popup já cobre a revisão, e o formato novo só muda o leitor).
+- **Pendente**: JCP (precisa de uma amostra com JCP para saber bruto ou líquido), aluguel e reembolso, CDB e conciliação, extrato
+  do Inter, CDB como conta corrente.

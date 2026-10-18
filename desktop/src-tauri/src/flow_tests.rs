@@ -2438,6 +2438,57 @@ async fn an_approved_item_is_a_duplicate_on_reimport_through_the_ledger() {
     assert_eq!((again.staged, again.duplicates), (0, 3));
 }
 
+#[tokio::test]
+async fn a_movement_sheet_stages_the_dividend_and_confirming_it_records_a_provento() {
+    use crate::commands::portfolio_io::{
+        confirm_import_pending_in, list_import_pending_in, parse_b3_movimentacao_rows, stage_parsed,
+    };
+    use crate::commands::proventos::proventos_summary_in;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Movement").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let sheet: Vec<Vec<String>> = [
+        ["Entrada/Saída", "Data", "Movimentação", "Produto", "Instituição", "Quantidade", "Preço unitário", "Valor da Operação"],
+        ["Credito", "30/09/2026", "Dividendo", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "100", "0.05", "5"],
+        ["Credito", "22/09/2026", "Transferência - Liquidação", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "100", "9", "900"],
+    ]
+    .iter()
+    .map(|r| r.iter().map(|c| c.to_string()).collect())
+    .collect();
+
+    let staged = stage_parsed(&db, pf.id, "b3_movimentacao", parse_b3_movimentacao_rows(&sheet)).await.unwrap();
+    assert_eq!((staged.staged, staged.duplicates, staged.errors.len()), (1, 0, 1));
+    assert!(staged.errors[0].message.contains("liquidação"));
+
+    let pending = list_import_pending_in(&db, pf.id).await.unwrap();
+    assert_eq!(pending.len(), 1);
+    assert!(pending[0].needs_class, "o ativo ainda não existe");
+    let result = confirm_import_pending_in(
+        &db,
+        pf.id,
+        pending[0].id,
+        pending[0].proposed.clone(),
+        Some("acao_br".to_string()),
+    )
+    .await
+    .unwrap();
+    assert_eq!((result.created, result.errors.len()), (1, 0));
+
+    let txs = crate::entity::transactions::Entity::find().all(&db).await.unwrap();
+    assert_eq!(txs.len(), 1);
+    assert_eq!(txs[0].transaction_type, "provento");
+    assert_eq!(txs[0].payment_type.as_deref(), Some("dividendo"));
+    assert!(close(txs[0].total_value, 5.0));
+    let summary = proventos_summary_in(&db, pf.id).await.unwrap();
+    assert!(close(summary.total_all_time, 5.0), "o resumo de proventos conta o lançamento importado");
+    assert_eq!(summary.rows.len(), 1);
+
+    // Reimportar a mesma planilha não traz o provento de volta.
+    let again = stage_parsed(&db, pf.id, "b3_movimentacao", parse_b3_movimentacao_rows(&sheet)).await.unwrap();
+    assert_eq!((again.staged, again.duplicates), (0, 1));
+}
+
 #[test]
 fn the_tax_hint_follows_the_class_chosen_for_an_eleven_ticker() {
     use crate::commands::portfolio_io::class_tax_hint_text;

@@ -3331,7 +3331,16 @@ recusa e não reaparece na reimportação; primeira entrega = fila + popup + B3 
   contador), `PendingItemsSection` (fila com Review e Discard) e `ImportExportPanel` reduzido a exportar e importar, ambos
   montados no `LedgerSection`.
 
-**Fora do escopo / pendente**: leitor de dividendos da Movimentação; conciliação de "Transferência - Liquidação" com os
+**Entrega 2 (feita, Sessão 139)**: `parse_b3_movimentacao_rows` e o formato `b3_movimentacao` (botão no painel do Ledger). Só
+`Dividendo` e `Rendimento` (FII) em crédito viram `provento` (`payment_type` dividendo) e entram na mesma fila e no mesmo
+popup. O resto é **pulado com o motivo**, não adivinhado: JCP (não confirmei se o valor da planilha vem bruto ou líquido de
+IR; a amostra real não tem JCP), "Transferência - Liquidação" (repete os negócios da Negociação), aplicação/resgate de CDB,
+Empréstimo (aluguel), Reembolso e qualquer outro nome. O resumo da importação diz quantas linhas foram puladas e por quê.
+Na amostra real: 2 proventos e 19 puladas (12 CDB, 3 aluguel, 3 liquidação, 1 reembolso). Cuidado conhecido: um provento já
+confirmado pela tela de sugestões (Yahoo) com quantidade ou valor diferentes não é reconhecido como duplicata, porque a chave
+de duplicata é ticker + data + tipo + quantidade + total.
+
+**Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
 Inter; CDB/porquinho visto também como conta corrente sem contar o patrimônio duas vezes; IR do AUPO11; unificar a fila com
 `suggested_dividends`; IA como origem. **Dúvida aberta**: o valor de resgate do CDB na Movimentação é bruto ou líquido de IR?

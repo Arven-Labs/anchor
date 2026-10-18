@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 // direto: o que é novo vai para a fila de pendentes e abre o popup de revisão,
 // onde o dono do projeto aprova, edita ou descarta item a item.
 
-type ImportFormat = "anchor_csv" | "b3_negociacao";
+type ImportFormat = "anchor_csv" | "b3_negociacao" | "b3_movimentacao";
 
 type StageResult = {
   staged: number;
@@ -23,6 +23,7 @@ type StageResult = {
 const FORMAT_LABEL: Record<ImportFormat, string> = {
   anchor_csv: "Anchor CSV",
   b3_negociacao: "B3 spreadsheet (Negociação)",
+  b3_movimentacao: "B3 spreadsheet (Movimentação, dividends only)",
 };
 
 function ImportExportPanel({
@@ -112,7 +113,7 @@ function ImportExportPanel({
             <p>
               {result.staged} sent to review
               {result.duplicates > 0 ? `, ${result.duplicates} already there` : ""}
-              {result.errors.length > 0 ? `, ${result.errors.length} could not be read` : ""}.
+              {result.errors.length > 0 ? `, ${result.errors.length} skipped` : ""}.
             </p>
             {result.errors.length > 0 && (
               <ul className="list-disc pl-5 text-destructive" data-testid="import-errors">
