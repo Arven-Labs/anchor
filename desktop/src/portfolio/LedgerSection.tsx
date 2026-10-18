@@ -256,11 +256,7 @@ function LedgerSection({ portfolioId }: { portfolioId: number }) {
         portfolioId={portfolioId}
         onStaged={() => openPending({ kind: "portfolio", portfolioId })}
       />
-      <PendingNotice
-        count={pendingQuery.data?.length ?? 0}
-        focus={{ kind: "portfolio", portfolioId }}
-        testId="pending-notice-portfolio"
-      />
+      <PendingNotice count={pendingQuery.data?.length ?? 0} testId="pending-notice-portfolio" />
       <Card>
         <CardHeader>
           <CardTitle>Monthly contributions</CardTitle>

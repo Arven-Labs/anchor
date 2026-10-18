@@ -61,11 +61,7 @@ function FinancesPanel({ workspaceId }: { workspaceId: number }) {
       <TabsContent value="transactions">
         <div className="flex flex-col gap-6">
           <StatementImportPanel workspaceId={workspaceId} onStaged={() => openPending({ kind: "statement" })} />
-          <PendingNotice
-            count={pendingQuery.data?.length ?? 0}
-            focus={{ kind: "statement" }}
-            testId="pending-notice-statement"
-          />
+          <PendingNotice count={pendingQuery.data?.length ?? 0} testId="pending-notice-statement" />
           <GeneralTransactionSection workspaceId={workspaceId} />
         </div>
       </TabsContent>

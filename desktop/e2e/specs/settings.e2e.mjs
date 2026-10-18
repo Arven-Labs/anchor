@@ -29,12 +29,13 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
   it("a navegação principal não tem aba de IA e a Home mostra seus widgets", async () => {
     await enterWorkspace("Settings E2E");
 
-    // Fase 20: sem chat/aba de IA, só as 5 abas de sempre.
+    // Fase 20: sem chat/aba de IA. Fase 35: mais a aba Pending.
     expect(await testIds('[data-testid^="nav-"]')).toEqual([
       "nav-alerts",
       "nav-finances",
       "nav-home",
       "nav-lookup",
+      "nav-pending",
       "nav-portfolio",
     ]);
 

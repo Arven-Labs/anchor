@@ -78,11 +78,12 @@ mod tests {
         .unwrap();
     }
 
-    async fn dividend(db: &DatabaseConnection, pf: i32, asset_id: i32, status: &str) {
+    // A data distinta por linha evita a chave única (carteira, ativo, data, fonte).
+    async fn dividend(db: &DatabaseConnection, pf: i32, asset_id: i32, status: &str, day: u32) {
         suggested_dividends::ActiveModel {
             portfolio_id: Set(pf),
             asset_id: Set(asset_id),
-            payment_date: Set("2026-10-20".to_string()),
+            payment_date: Set(format!("2026-10-{day:02}")),
             amount: Set(1.0),
             quantity: Set(10.0),
             total: Set(10.0),
@@ -114,12 +115,12 @@ mod tests {
         queue_row(&db, ws.id, None, KIND_BANK, "confirmed").await;
         queue_row(&db, other.id, Some(other_pf.id), KIND_TRANSACTION, "pending").await;
 
-        dividend(&db, pf.id, ticker.id, "pending").await;
-        dividend(&db, pf.id, ticker.id, "matched").await;
-        dividend(&db, pf.id, ticker.id, "divergent").await;
-        dividend(&db, pf.id, ticker.id, "confirmed").await;
-        dividend(&db, pf.id, ticker.id, "discarded").await;
-        dividend(&db, other_pf.id, ticker.id, "pending").await;
+        dividend(&db, pf.id, ticker.id, "pending", 1).await;
+        dividend(&db, pf.id, ticker.id, "matched", 2).await;
+        dividend(&db, pf.id, ticker.id, "divergent", 3).await;
+        dividend(&db, pf.id, ticker.id, "confirmed", 4).await;
+        dividend(&db, pf.id, ticker.id, "discarded", 5).await;
+        dividend(&db, other_pf.id, ticker.id, "pending", 1).await;
 
         let counts = count_pending_in(&db, ws.id).await.unwrap();
         assert_eq!(counts.transactions, 2);
