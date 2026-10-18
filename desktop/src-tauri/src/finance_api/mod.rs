@@ -2,6 +2,7 @@
 // chama `finance_core`) e gravam no `anchor.db`, uma classe de ativo por módulo.
 // Foi a camada que falava com o sidecar do Lume (Fases 14 e 17); na Fase 26 o
 // sidecar foi aposentado e `client` passou a usar as fontes nativas.
+pub mod adjusted_close;
 pub mod benchmark;
 pub mod client;
 pub mod crypto;

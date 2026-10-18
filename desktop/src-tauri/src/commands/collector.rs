@@ -241,8 +241,32 @@ pub async fn run_price_history_backfill(
             success: true,
             output: format!("Fetched {count} daily price point(s)"),
         });
+    // O fechamento ajustado (retorno total do backtest) vem junto, em melhor esforço: se falhar, o preço
+    // já baixado fica e o backtest avisa quais ativos ainda precisam do ajuste.
+    if result.is_ok() {
+        let _ = crate::finance_api::adjusted_close::collect_adjusted_close(db.inner(), &tickers, false).await;
+    }
     lock.store(false, Ordering::SeqCst);
 
+    result
+}
+
+// Fase 22 — só o fechamento ajustado (dividendos e desdobramentos) de ativos da B3 (`global = false`) ou
+// estrangeiros (`global = true`), usado pelo backtest.
+#[tauri::command]
+pub async fn run_adjusted_close_backfill(
+    lock: tauri::State<'_, AtomicBool>,
+    db: tauri::State<'_, DatabaseConnection>,
+    tickers: Vec<String>,
+    global: bool,
+) -> Result<CollectorSummary, AppError> {
+    if lock.swap(true, Ordering::SeqCst) {
+        return Err(AppError::CollectorBusy);
+    }
+    let result = crate::finance_api::adjusted_close::collect_adjusted_close(db.inner(), &tickers, global)
+        .await
+        .map(|count| CollectorSummary { success: true, output: format!("Fetched {count} adjusted close point(s)") });
+    lock.store(false, Ordering::SeqCst);
     result
 }
 

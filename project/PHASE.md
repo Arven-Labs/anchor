@@ -2033,7 +2033,14 @@ separado — seria útil também pro usuário avançado, não só pensando numa 
 e aproveita a base de usuários que já valida teses ativo por ativo no Anchor (valuation/teses
 viram estratégia de carteira testável).
 
-**Estado**: puro registro de intenção, nada decidido sobre escopo, UI ou onde o cálculo roda.
+**Estado**: puro registro de intenção, nada decidido sobre escopo, UI ou onde o cálculo roda. *(Decidido na Sessão 165, abaixo.)*
+
+**Escopo decidido (Sessão 165, plan mode)**: simular a **carteira atual no passado** (não uma lista livre de tickers), com **retorno total** (dividendos reinvestidos), **pesos fixos + rebalanceamento**
+(nunca, mensal, trimestral, anual), **aportes mensais**, **comparação com benchmarks** (CDI, IBOV, IPCA) e **custos e imposto** (corretagem e IR das vendas do rebalanceamento pelo motor de
+imposto existente). Quatro fatias, cada uma com teste e CI verde: (1) fechamento ajustado, (2) motor puro `domain/backtest.rs` (curva diária, CAGR, volatilidade, drawdown máximo, Sharpe contra o CDI, correlação),
+(3) comando e aba "Backtest" no Portfolio, (4) custos e imposto. Janela comum: começa no primeiro dia em que todos os ativos têm preço; renda fixa e ativos sem série saem da simulação com aviso.
+Sem alocação-alvo persistida (os pesos são parâmetros do teste), sem otimização, sem intraday. **Fatia 1 feita (Sessão 165)**: tabela `stock_adjusted_close` (preço ajustado do Yahoo, regravado a cada
+coleta porque o ajuste de pregões antigos muda a cada dividendo), coletada junto do backfill de preços e por `run_adjusted_close_backfill`. Cripto: 365 dias e sem ajuste.
 
 ### Fase 23 — Attestations cross-app via TruthID (provar fatos da carteira sem expor dados; ideia registrada na Sessão 100, não decidida)
 

@@ -3784,3 +3784,28 @@ async fn a_brokerage_account_has_to_be_another_account() {
     let same = stage_statement_with_broker(&db, ws.id, checking.id, None, false, Some(checking.id), "inter_csv", parse_inter_csv(BROKER_STATEMENT_CSV)).await;
     assert!(matches!(same, Err(e) if e.to_string().contains("outra conta")));
 }
+
+// ---------------------------------------------------------------------------
+// Fechamento ajustado para o retorno total do backtest (Fase 22, fatia 1)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn the_adjusted_close_is_overwritten_on_each_run_because_old_adjustments_change_with_new_dividends() {
+    use crate::entity::stock_adjusted_close;
+    use crate::finance_api::adjusted_close::store;
+    use chrono::NaiveDate;
+
+    let db = memory_db().await;
+    let day = |d: u32| NaiveDate::from_ymd_opt(2026, 1, d).unwrap();
+    assert_eq!(store(&db, "PETR4", &[(day(5), 9.0), (day(6), 9.5)], "2026-01-10T00:00:00Z").await.unwrap(), 2);
+    store(&db, "VALE3", &[(day(5), 50.0)], "2026-01-10T00:00:00Z").await.unwrap();
+
+    // Um dividendo novo reajusta os pregões antigos: a segunda coleta regrava os mesmos dias com o valor novo
+    // e acrescenta o dia que faltava, sem duplicar nem mexer em outro ticker.
+    store(&db, "PETR4", &[(day(5), 8.8), (day(6), 9.3), (day(7), 9.6)], "2026-01-11T00:00:00Z").await.unwrap();
+    let rows = stock_adjusted_close::Entity::find().all(&db).await.unwrap();
+    assert_eq!(rows.len(), 4, "3 de PETR4 + 1 de VALE3");
+    let petr = |d: &str| rows.iter().find(|r| r.ticker == "PETR4" && r.price_date == d).unwrap();
+    assert!(close(petr("2026-01-05").adj_close_price, 8.8) && close(petr("2026-01-06").adj_close_price, 9.3));
+    assert!(close(rows.iter().find(|r| r.ticker == "VALE3").unwrap().adj_close_price, 50.0));
+}

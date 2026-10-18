@@ -3476,3 +3476,14 @@ registrar tudo no `project/` dos dois. Só documentação e um recado entre sess
 - **Pendente**: `mobile/` conhecer a classe; unificar a fila com `suggested_dividends` (recomendei não); IA como origem.
 
 - **App móvel (Sessão 164)**: `AssetClass.etfRendaFixa` em `mobile/lib/models/asset.dart` (rótulo, ticker de exemplo AUPO11, BRL, cotado pelo Yahoo `.SA` em `quote_dispatcher.dart`, fora de `isFixedIncome`) e teste novo em `mobile/test/asset_test.dart`. Não compilo o Flutter local; a verificação é o `flutter analyze` e o `flutter test` do `CI Mobile`.
+
+
+### 2026-10-18 — Sessão 165
+
+**Backtest da carteira (Fase 22), fatia 1: fechamento ajustado para o retorno total.** O dono escolheu "backtest" no que sobrava do roadmap e, em plan mode, o escopo: simular a **carteira atual no passado**,
+com **retorno total**, pesos fixos com rebalanceamento, aportes mensais, benchmarks e custos com imposto, em 4 fatias (plano em `PHASE.md`, Fase 22).
+- **Feito**: tabela própria `stock_adjusted_close` (migration `m20261026`, entidade nova) em vez de coluna nova em `stock_price_history`, para não quebrar os coletores que montam `ActiveModel` literal.
+  `yahoo.rs` lê `adjclose` (`adjusted_close_history_of`); `finance_api/adjusted_close.rs` grava com **sobrescrita** (o ajuste de pregões antigos muda a cada dividendo novo); o backfill de preços já grava o ajustado
+  junto (melhor esforço) e há o comando `run_adjusted_close_backfill`.
+- **Verificado**: `./dev.sh check` limpo (compila os testes); teste unitário do parser (dia sem ajuste fica de fora, resposta sem `adjclose` dá série vazia) e teste de fluxo (regravar a série troca os valores, acrescenta o dia novo e não mexe em outro ticker). Testes no CI.
+- **Pendente**: fatias 2 (motor `domain/backtest.rs`), 3 (comando e aba Backtest) e 4 (custos e imposto). Cripto segue com 365 dias de histórico e sem ajuste.

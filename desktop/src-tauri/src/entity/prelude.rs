@@ -40,6 +40,7 @@ pub use super::stock_dividend_payments::Entity as StockDividendPayments;
 pub use super::stock_dividends_avg::Entity as StockDividendsAvg;
 pub use super::stock_fundamentals::Entity as StockFundamentals;
 pub use super::stock_notes::Entity as StockNotes;
+pub use super::stock_adjusted_close::Entity as StockAdjustedClose;
 pub use super::stock_price_history::Entity as StockPriceHistory;
 pub use super::stock_quotes::Entity as StockQuotes;
 pub use super::stock_technicals::Entity as StockTechnicals;

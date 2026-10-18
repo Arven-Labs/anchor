@@ -78,6 +78,14 @@ struct Meta {
 #[derive(Deserialize)]
 struct Indicators {
     quote: Vec<QuoteIndicator>,
+    /// Fechamento ajustado a dividendos e desdobramentos; ausente nas respostas que não o trazem.
+    #[serde(default)]
+    adjclose: Vec<AdjCloseIndicator>,
+}
+
+#[derive(Deserialize)]
+struct AdjCloseIndicator {
+    adjclose: Vec<Option<f64>>,
 }
 
 #[derive(Deserialize)]
@@ -149,6 +157,23 @@ pub fn price_history_of(result: &ChartResult) -> Result<Vec<(NaiveDate, f64)>, A
         .iter()
         .zip(closes)
         .filter_map(|(&ts, close)| Some((date_of(ts)?, (*close)?)))
+        .collect())
+}
+
+/// Fechamento ajustado a dividendos e desdobramentos, um ponto por pregão (retorno total). Dias sem valor
+/// são pulados; vazio quando a resposta não traz `adjclose`.
+pub fn adjusted_close_history_of(result: &ChartResult) -> Result<Vec<(NaiveDate, f64)>, AppError> {
+    let timestamps = result.timestamp.as_deref().ok_or_else(|| unavailable("response missing history"))?;
+    let adjusted = result
+        .indicators
+        .as_ref()
+        .and_then(|i| i.adjclose.first())
+        .map(|a| a.adjclose.as_slice())
+        .unwrap_or(&[]);
+    Ok(timestamps
+        .iter()
+        .zip(adjusted)
+        .filter_map(|(&ts, value)| Some((date_of(ts)?, (*value)?)))
         .collect())
 }
 
@@ -330,6 +355,11 @@ pub async fn quote(instrument: &Instrument) -> Result<Sourced<Quote>, AppError> 
     from_providers("quote", instrument, |p, i| p.quote(i)).await
 }
 
+/// Fechamento ajustado de 10 anos direto do Yahoo (só ele traz `adjclose`, sem a cadeia de provedores).
+pub async fn adjusted_close_history(instrument: &Instrument) -> Result<Vec<(NaiveDate, f64)>, AppError> {
+    adjusted_close_history_of(&fetch_chart(instrument, &format!("range={HISTORY_RANGE}&interval=1d")).await?)
+}
+
 pub async fn price_history(instrument: &Instrument) -> Result<Sourced<Vec<(NaiveDate, f64)>>, AppError> {
     from_providers("price history", instrument, |p, i| p.price_history(i)).await
 }
@@ -421,6 +451,18 @@ mod tests {
     fn history_skips_days_without_a_close() {
         let r = parse(&[T0, T0 + DAY, T0 + 2 * DAY], &[Some(10.0), None, Some(11.0)], &[]);
         assert_eq!(price_history_of(&r).unwrap(), vec![(d(2026, 1, 5), 10.0), (d(2026, 1, 7), 11.0)]);
+    }
+
+    #[test]
+    fn the_adjusted_close_comes_from_adjclose_and_skips_days_without_it() {
+        let body = r#"{"chart":{"result":[{"meta":{},"timestamp":[1767571200,1767657600,1767744000],
+            "indicators":{"quote":[{"close":[10.0,10.5,11.0]}],"adjclose":[{"adjclose":[9.0,null,10.0]}]}}]}}"#;
+        let adjusted = adjusted_close_history_of(&parse_chart(body).unwrap()).unwrap();
+        assert_eq!(adjusted.len(), 2, "o dia sem ajuste fica de fora");
+        assert!((adjusted[0].1 - 9.0).abs() < 1e-9 && (adjusted[1].1 - 10.0).abs() < 1e-9);
+        // Sem `adjclose` na resposta, a série é vazia (o backtest pede o backfill).
+        let plain = r#"{"chart":{"result":[{"meta":{},"timestamp":[1767571200],"indicators":{"quote":[{"close":[10.0]}]}}]}}"#;
+        assert!(adjusted_close_history_of(&parse_chart(plain).unwrap()).unwrap().is_empty());
     }
 
     #[test]
