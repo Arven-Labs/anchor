@@ -3308,3 +3308,21 @@ a custo (sem rendimento acumulado estimado) e a marca por conta, com o dinheiro 
   `embedded_rules_match_the_migration_seed` compara o banco já migrado.
 - **Verificado**: `./dev.sh check` limpo; `cargo test --lib` no Docker (669 passaram, 0 falharam).
 - **Pendente**: os de antes (rendimento do porquinho que a B3 não cobre; IR do aluguel líquido ou bruto) e ver a tela a olho.
+
+
+### 2026-10-18 — Sessão 151
+
+**Fase 35, entrega 9: rendimento do porquinho que a B3 não cobre, por conciliação com o saldo real.** Sem plan mode (fatia fechada, uma
+decisão do dono por pergunta); direto na `main`.
+- **Medido antes de decidir** (só agregados): 75 aplicações e 125 resgates do Porquinho no extrato de 2025; a B3 explica 23. Rendimento diário
+  implícito dos 23 cobertos entre 0,027% e 0,055% por dia corrido, mediana 0,040%, compatível com ~100% do CDI. O BCB bloqueou o CDI diário aqui
+  (até a URL que o app usa devolveu "Requisição inválida") e o banco de dev não tem `selic_daily`, então a curva não foi validada fina.
+- **Decisão do dono**: conciliar pelo saldo que o banco mostra, e não estimar resgate a resgate.
+- **Feito**: `commands/balance_reconciliation.rs` (prévia e confirmação), `bank_account::balance_on`, botão "Reconcile balance" e diálogo
+  (`ReconcileBalanceDialog.tsx`) em Finances → Accounts. Grava uma receita pela diferença; recusa saldo abaixo do ledger, data futura ou inválida e
+  saldo negativo; conciliar de novo na mesma data não duplica.
+- **Verificado**: `./dev.sh check` limpo; `cargo test --lib` no Docker (673 passaram, 0 falharam; 4 novos de fluxo: grava uma vez, não recontando o rendimento
+  aprovado da B3, saldo na data escolhida, recusas). Caso novo no `fixed-income-yield.e2e.mjs` (só roda no CI).
+- **Não verificado**: a tela a olho; se o saldo do app do banco é bruto ou líquido de IR.
+- **Deslize**: um `head` no extrato para ver o cabeçalho imprimiu o número da conta e um nome na tela; nada foi copiado para arquivo, doc ou commit.
+- **Pendente**: estimar o rendimento por resgate (se fizer falta); IR do aluguel líquido ou bruto; ver a tela a olho.

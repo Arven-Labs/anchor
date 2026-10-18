@@ -12,6 +12,7 @@ import {
 import Field from "../components/Field";
 import { CURRENCIES } from "../stock-lookup/FxLookupSection";
 import ConvertedHint from "./ConvertedHint";
+import ReconcileBalanceDialog from "./ReconcileBalanceDialog";
 import { useBaseCurrency } from "./useBaseCurrency";
 import {
   Select,
@@ -63,6 +64,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
   const [editNome, setEditNome] = useState("");
   const [editTitular, setEditTitular] = useState("");
   const [editCurrency, setEditCurrency] = useState("BRL");
+  const [reconcilingAccount, setReconcilingAccount] = useState<BankAccountView | null>(null);
 
   const queryClient = useQueryClient();
   const baseCurrency = useBaseCurrency(workspaceId);
@@ -266,6 +268,15 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
                           <Button
                             size="sm"
                             variant="outline"
+                            data-testid="account-reconcile"
+                            title="Enter the balance your bank shows and book the difference as yield"
+                            onClick={() => setReconcilingAccount(account)}
+                          >
+                            Reconcile balance
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
                             data-testid="account-mirrored-toggle"
                             disabled={updateMutation.isPending}
                             title="Turn on when the fixed income held in this account is also imported as Portfolio positions"
@@ -290,6 +301,14 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
           </Table>
         </CardContent>
       </Card>
+
+      {reconcilingAccount && (
+        <ReconcileBalanceDialog
+          account={reconcilingAccount}
+          workspaceId={workspaceId}
+          onClose={() => setReconcilingAccount(null)}
+        />
+      )}
 
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="sm:max-w-md">

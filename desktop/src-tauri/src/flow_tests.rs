@@ -3178,6 +3178,103 @@ async fn a_redemption_without_its_position_is_refused_instead_of_going_negative(
     assert!(result.errors[0].message.contains("quantidade em carteira"), "{}", result.errors[0].message);
 }
 
+// ---------------------------------------------------------------------------
+// Conciliação do saldo pelo saldo real do banco (Fase 35, entrega 9)
+// ---------------------------------------------------------------------------
+
+fn reconcile(account_id: i32, bank_balance: f64, date: &str) -> crate::commands::balance_reconciliation::ReconcileRequest {
+    crate::commands::balance_reconciliation::ReconcileRequest {
+        bank_account_id: account_id,
+        bank_balance,
+        date: date.to_string(),
+    }
+}
+
+/// Conta com 1.000 aplicados em 01/03 e 400 resgatados em 10/03 (saldo do ledger: 600, sem rendimento).
+async fn porquinho_with_flows(db: &sea_orm::DatabaseConnection) -> (crate::entity::workspace::Model, crate::entity::bank_account::Model) {
+    use crate::commands::general_transaction::{create_general_transaction_in, CreateGeneralTransactionRequest};
+    let ws = workspace(db, "Family").await;
+    let account = bank_account(db, ws.id, "Porquinho").await;
+    cash_in(db, ws.id, account.id, 1000.0, "2026-03-01").await;
+    create_general_transaction_in(
+        db,
+        CreateGeneralTransactionRequest {
+            workspace_id: ws.id,
+            bank_account_id: account.id,
+            transaction_type: "despesa".to_string(),
+            category_id: None,
+            valor: 400.0,
+            transaction_date: "2026-03-10".to_string(),
+            notes: None,
+        },
+    )
+    .await
+    .unwrap();
+    (ws, account)
+}
+
+#[tokio::test]
+async fn reconciling_with_the_bank_balance_books_the_missing_yield_once() {
+    use crate::commands::balance_reconciliation::{confirm_balance_reconciliation_in, preview_balance_reconciliation_in};
+    use crate::commands::bank_account::balance_on;
+    let db = memory_db().await;
+    let (_, account) = porquinho_with_flows(&db).await;
+
+    let preview = preview_balance_reconciliation_in(&db, reconcile(account.id, 603.25, "2026-03-31")).await.unwrap();
+    assert!(close(preview.ledger_balance, 600.0) && close(preview.difference, 3.25));
+
+    let booked = confirm_balance_reconciliation_in(&db, reconcile(account.id, 603.25, "2026-03-31")).await.unwrap();
+    assert_eq!((booked.transaction_type.as_str(), booked.transaction_date.as_str()), ("receita", "2026-03-31"));
+    assert!(close(booked.valor, 3.25));
+    assert!(close(balance_on(&db, account.id, "2026-03-31").await.unwrap(), 603.25), "o ledger passa a bater com o banco");
+
+    // Conciliar de novo no mesmo dia não duplica: a diferença já é zero.
+    let again = confirm_balance_reconciliation_in(&db, reconcile(account.id, 603.25, "2026-03-31")).await;
+    assert!(again.unwrap_err().to_string().contains("nothing to reconcile"));
+}
+
+#[tokio::test]
+async fn a_yield_already_approved_from_the_b3_file_is_not_counted_again() {
+    use crate::commands::balance_reconciliation::preview_balance_reconciliation_in;
+    let db = memory_db().await;
+    let (ws, account) = porquinho_with_flows(&db).await;
+    // Rendimento de um resgate que a B3 explicou e que o dono já aprovou: está no ledger.
+    cash_in(&db, ws.id, account.id, 1.5, "2026-03-10").await;
+
+    let preview = preview_balance_reconciliation_in(&db, reconcile(account.id, 603.25, "2026-03-31")).await.unwrap();
+    assert!(close(preview.ledger_balance, 601.5) && close(preview.difference, 1.75));
+}
+
+#[tokio::test]
+async fn the_ledger_balance_is_taken_at_the_chosen_date() {
+    use crate::commands::balance_reconciliation::preview_balance_reconciliation_in;
+    let db = memory_db().await;
+    let (_, account) = porquinho_with_flows(&db).await;
+
+    // Em 05/03 o resgate de 400 ainda não tinha acontecido.
+    let preview = preview_balance_reconciliation_in(&db, reconcile(account.id, 1001.0, "2026-03-05")).await.unwrap();
+    assert!(close(preview.ledger_balance, 1000.0) && close(preview.difference, 1.0));
+}
+
+#[tokio::test]
+async fn a_bank_balance_below_the_ledger_a_future_date_or_a_bad_balance_are_refused() {
+    use crate::commands::balance_reconciliation::confirm_balance_reconciliation_in;
+    let db = memory_db().await;
+    let (_, account) = porquinho_with_flows(&db).await;
+
+    // Banco mostra menos que o ledger: falta um fluxo no extrato, não é rendimento.
+    let lower = confirm_balance_reconciliation_in(&db, reconcile(account.id, 590.0, "2026-03-31")).await;
+    assert!(lower.unwrap_err().to_string().contains("lower than the ledger"));
+    let future = confirm_balance_reconciliation_in(&db, reconcile(account.id, 700.0, "2999-01-01")).await;
+    assert!(future.unwrap_err().to_string().contains("future"));
+    let negative = confirm_balance_reconciliation_in(&db, reconcile(account.id, -1.0, "2026-03-31")).await;
+    assert!(negative.is_err());
+    let bad_date = confirm_balance_reconciliation_in(&db, reconcile(account.id, 700.0, "31/03/2026")).await;
+    assert!(bad_date.unwrap_err().to_string().contains("invalid date"));
+    // Nada foi gravado em nenhum dos casos.
+    assert_eq!(list_bank_accounts_view(&db, account.workspace_id).await.unwrap()[0].balance, 600.0);
+}
+
 #[tokio::test]
 async fn the_mirrored_flag_exists_with_a_false_default_and_travels_with_the_account_view() {
     let db = memory_db().await;

@@ -135,6 +135,17 @@ export type LiabilityView = Liability & {
   spread_12m_pct: number | null;
 };
 
+// Fase 35, entrega 9 — conciliação do saldo pelo saldo real do banco
+// (`commands::balance_reconciliation::preview_balance_reconciliation`).
+export type ReconcilePreview = {
+  date: string;
+  bank_balance: number;
+  /** Saldo do ledger no fim do dia, sem o rendimento que falta. */
+  ledger_balance: number;
+  /** `bank_balance − ledger_balance`; só vira receita se for positiva. */
+  difference: number;
+};
+
 // Fase 12 — Patrimônio Líquido/Alavancagem cruzando Portfolio + Finanças
 // Gerais (`commands::net_worth::get_net_worth_summary`).
 export type NetWorthSummary = {

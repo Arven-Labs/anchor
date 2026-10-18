@@ -3456,6 +3456,21 @@ de duplicata é ticker + data + tipo + quantidade + total.
 - **Pendente**: ver a tela a olho (a marca, a posição na carteira e o caixa no patrimônio); rendimento acumulado estimado do papel; a marca é por conta,
   sem ligação com os papéis dela (a repartição entre várias contas marcadas é uma convenção).
 
+**Entrega 9 (feita, Sessão 151)**: rendimento do porquinho que a B3 não cobre, por conciliação com o saldo real do banco.
+- **Achado**: o extrato de 2025 tem 75 aplicações e 125 resgates do Porquinho; a B3 explica 23 resgates, ficam cerca de 100. Nos 23 cobertos, o
+  rendimento diário implícito fica entre 0,027% e 0,055% por dia corrido (mediana 0,040%), compatível com ~100% do CDI (média de 2025 ≈ 0,037%).
+  Não deu para validar fino: o BCB bloqueou o download do CDI diário e o app só guarda a Selic meta diária e o CDI mensal.
+- **Decisão do dono**: conciliar pelo saldo real, não estimar resgate a resgate pela curva. A estimativa por resgate (PEPS sobre as aplicações do
+  extrato, ~100% do CDI, IOF e IR já modelados) fica como possível entrega futura.
+- **Feito**: o dono digita o saldo que o app do banco mostra numa data; `commands/balance_reconciliation.rs` compara com o saldo do ledger naquela data
+  (`bank_account::balance_on`, só lançamentos até o dia) e grava **uma receita** pela diferença, sem categoria, com nota que guarda saldo do banco e do
+  ledger. Exato no total e cobre o rendimento ainda não resgatado; não dá o rendimento de cada resgate. O que a B3 já explicou e foi aprovado está no
+  ledger, então não conta de novo, e conciliar duas vezes na mesma data não duplica (a diferença já é zero).
+- **Recusas**: saldo do banco abaixo do ledger (falta um fluxo no extrato ou um rendimento aprovado a mais), data futura, data inválida e saldo negativo.
+- **UI**: botão "Reconcile balance" em Finances → Accounts e diálogo com prévia (saldo do ledger e rendimento a gravar). O valor entra como veio no banco:
+  sem IR nem IOF separados (o saldo do banco pode ser bruto ou líquido, não verificado).
+- **Pendente**: estimar o rendimento por resgate; categoria própria para rendimento; ver a tela a olho.
+
 **Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
 Inter; CDB/porquinho visto também como conta corrente sem contar o patrimônio duas vezes; IR do AUPO11; unificar a fila com

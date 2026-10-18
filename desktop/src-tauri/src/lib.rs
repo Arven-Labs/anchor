@@ -202,6 +202,8 @@ pub fn run() {
             commands::bank_account::create_bank_account,
             commands::bank_account::update_bank_account,
             commands::bank_account::delete_bank_account,
+            commands::balance_reconciliation::preview_balance_reconciliation,
+            commands::balance_reconciliation::confirm_balance_reconciliation,
             commands::general_transaction::list_general_transactions,
             commands::general_transaction::create_general_transaction,
             commands::general_transaction::update_general_transaction,

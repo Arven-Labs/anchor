@@ -1,6 +1,7 @@
 pub mod alert_rule;
 pub mod asset;
 pub mod backup;
+pub mod balance_reconciliation;
 pub mod bank_account;
 pub mod banks;
 pub mod bazin;

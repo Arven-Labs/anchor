@@ -156,4 +156,30 @@ describe("Anchor — rendimento do porquinho pela Movimentação da B3", () => {
     // −0,28 do extrato semeado + 0,40 (CDB) − 0,30 (IOF) − 0,05 (IR) + 0,40 (LCI) = 0,17.
     expect(balance(pocket)).toBeCloseTo(0.17, 2);
   });
+
+  // Entrega 9: o que a B3 não explica entra pela conciliação com o saldo que o banco mostra.
+  it("conciliar com o saldo do banco grava a diferença como rendimento e iguala o saldo", async () => {
+    await byId("nav-finances").click();
+    await byId("finances-tab-accounts").click();
+    await byId("account-reconcile").waitForClickable({ timeout: 20_000 });
+    await byId("account-reconcile").click();
+
+    // Sem saldo digitado não há prévia nem botão ligado.
+    await byId("reconcile-balance").waitForDisplayed({ timeout: 10_000 });
+    expect(await byId("reconcile-confirm").isEnabled()).toBe(false);
+
+    await byId("reconcile-balance").setValue("0.50");
+    await waitForText(byId("reconcile-ledger"), (text) => text === "0.17", "o saldo do ledger é o semeado, 0,17");
+    expect(await textOf(byId("reconcile-difference"))).toBe("0.33");
+
+    await byId("reconcile-confirm").click();
+    await browser.waitUntil(() => ledger(pocket, "receita") === 3, {
+      timeout: 20_000,
+      timeoutMsg: "a receita da conciliação deveria estar gravada",
+    });
+    expect(balance(pocket)).toBeCloseTo(0.5, 2);
+    expect(sql(`SELECT notes FROM general_transactions WHERE bank_account_id = ${pocket} ORDER BY id DESC LIMIT 1`)).toContain(
+      "Yield by balance reconciliation",
+    );
+  });
 });

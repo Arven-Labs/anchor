@@ -216,6 +216,15 @@ fn compute_balances(
     balances
 }
 
+/// Saldo de uma conta no fim de `date` (`YYYY-MM-DD`), na moeda dela: só os lançamentos até essa data.
+pub async fn balance_on(db: &DatabaseConnection, bank_account_id: i32, date: &str) -> Result<f64, AppError> {
+    let transactions = general_transaction::Entity::find()
+        .filter(general_transaction::Column::BankAccountId.eq(bank_account_id))
+        .all(db)
+        .await?;
+    Ok(compute_balances(&transactions, date).get(&bank_account_id).copied().unwrap_or(0.0))
+}
+
 /// Soma o saldo (já derivado por `compute_balances`) de todas as contas do
 /// workspace — reaproveitado por `commands::net_worth::get_net_worth_summary`
 /// (Fase 12), sem duplicar a query/filtro de data que `list_bank_accounts`
