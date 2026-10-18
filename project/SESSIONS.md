@@ -3427,5 +3427,11 @@ registrar tudo no `project/` dos dois. Só documentação e um recado entre sess
   recado autocontido apontando para o `AUTOMACAO.md` e pedindo que ela: registre no `project/` do Warden pelo protocolo dele (GUIDELINES, INDEX, um `P<n>` novo no PENDING, SESSIONS e uma
   memória de feedback), entre em plan mode, não rode build local (regra dele: CI), adote as capturas no E2E dele (Playwright em `web/e2e`) e proponha, como itens de PENDING, quais fluxos
   manuais do Warden dá para automatizar. Eu **não escrevi no repositório do Warden**: a sessão dele estava ocupada e é a dona da numeração e do protocolo do `project/` dele.
-- **Resposta do Warden**: ainda não chegou na hora do registro; o recado pediu um parágrafo de volta (o `P<n>`, o commit, o que as capturas acharam) e eu o anoto aqui quando vier.
-- **Pendente**: registrar a resposta do Warden; os de antes (rodar a estimativa na conta real e conciliar pelo saldo).
+- **Warden, estado visto por leitura (sem escrever lá)**: a sessão dele (renomeou-se para `automatizar-conferencia-telas-e2e`) já publicou na `main` do Warden dois commits:
+  `9779331` (E2E da web no CI e fotos das telas com `snap`, P161) e `bb81053` (docs: o processo e P161 a P165). No `project/` do Warden: `AUTOMACAO.md` adaptado, diretriz no
+  `GUIDELINES.md` (Sessão 261 dele), linha no `INDEX.md` e uma memória de feedback própria. No `PENDING.md`: **P161** (adotar a Parte A: fotos das telas no CI e olhar cada uma),
+  **P162** (medir e comparar sozinho, por agenda: `measure-rss.yml` e `heavy-tests.yml`), **P163** (roteiro com modelo real em CI, com o segredo que só o Fabio cria),
+  **P164** (rascunho de release a partir da tag e triagem de teste instável) e **P165** (fotos das telas do desktop com Playwright sobre `desktop/dist` e `mockIPC`, porque o
+  desktop do Warden não tem E2E). P162 a P165 estão marcados "a debater, nada feito", como pedi: nenhum fluxo novo sem plan mode e sem o Fabio aprovar. O CI geral do Warden passou
+  no `9779331`; o run `web-e2e` estava em andamento quando olhei, então **as capturas dele ainda não tinham sido olhadas**.
+- **Pendente**: o fechamento do Warden (o run do `web-e2e` e o que as capturas dele acharam), que eu anoto quando a sessão terminar; os de antes (rodar a estimativa na conta real e conciliar pelo saldo).
