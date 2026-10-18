@@ -3458,4 +3458,9 @@ registrar tudo no `project/` dos dois. Só documentação e um recado entre sess
 - **Não verificado**: rodar com a conta real (o dono não quer testar na mão).
 - **Proventos no caixa (Sessão 160)**: `parse_b3_settlements` passou a ler também dividendo, rendimento, JCP, aluguel com valor e reembolso (sempre `Credito`, entra dinheiro, rótulo "Provento").
   Teste unitário novo dos cinco tipos e do sentido errado; o de fluxo agora fecha a Corretora em 410 (inclui o dividendo). `./dev.sh check` limpo; testes no CI.
-- **Pendente**: saldo de abertura; investigar as liquidações sem negócio de abril.
+- **Liquidações sem par (Sessão 161)**: refiz o casamento com feriados e agrupando por dia de liquidação: 60 de 64 casam. Achei um **defeito meu**: a devolução de ações emprestadas vem como `Credito`
+  de liquidação com valor, e eu a lançava como compra (3 casos, cerca de R$ 6,3 mil de saída falsa). Corrigido em `parse_b3_settlements` (pula a que tem pagamento de aluguel do mesmo ativo e
+  quantidade até 5 dias antes) com teste unitário novo. Detalhes na Entrega 12 do `PHASE.md`. Não rodei a amostra real pelo parser de produção (o teste `#[ignore]` pede Docker); a medição foi em Python
+  sobre os arquivos, só agregados.
+- **Pendente**: o caixa das 2 vendas de ações emprestadas, que a Movimentação não traz (só a conciliação pelo saldo cobre);
+  saldo de abertura; investigar as liquidações sem negócio de abril.

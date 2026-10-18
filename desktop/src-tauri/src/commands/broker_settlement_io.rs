@@ -12,6 +12,7 @@
 // provento da carteira não mexem no caixa, então sem isto o saldo da Corretora ficaria abaixo do real.
 // Os negócios continuam vindo da "Negociação"; aqui só o dinheiro. Cada linha vai para a mesma fila de
 // revisão do extrato (`bank_transaction`), com a data da liquidação ou do pagamento, que é quando o caixa se move.
+use chrono::NaiveDate;
 use sea_orm::DatabaseConnection;
 
 use crate::commands::portfolio_io::{
@@ -30,6 +31,18 @@ pub fn parse_b3_settlements(rows: &[Vec<String>]) -> ParsedStatement {
     let Some(columns) = movimentacao_columns(header) else {
         return statement(vec![Err(ParseIssue { line: 0, message: MOVIMENTACAO_COLUMNS_MESSAGE.to_string() })]);
     };
+    // Pagamentos de aluguel (Empréstimo com valor): cada um pode ser o par de uma devolução de ações emprestadas.
+    let mut loan_payments: Vec<LoanPayment> = rows
+        .iter()
+        .skip(1)
+        .filter(|row| normalize_header(row.get(columns.movement).map(String::as_str).unwrap_or("")).contains("emprestimo"))
+        .filter(|row| matches!(parse_number(row.get(columns.value).map(String::as_str).unwrap_or("")), Ok(Some(v)) if v > 0.0))
+        .filter_map(|row| {
+            let get = |i: usize| row.get(i).map(String::as_str).unwrap_or("");
+            let date = NaiveDate::parse_from_str(&parse_date(get(columns.date))?, "%Y-%m-%d").ok()?;
+            Some(LoanPayment { ticker: ticker_of(get(columns.product)), quantity: parse_number(get(columns.quantity)).ok()??, date, used: false })
+        })
+        .collect();
     let mut out = Vec::new();
     for (line, row) in rows.iter().enumerate().skip(1) {
         let get = |i: usize| row.get(i).map(String::as_str).unwrap_or("");
@@ -59,6 +72,25 @@ pub fn parse_b3_settlements(rows: &[Vec<String>]) -> ParsedStatement {
             out.push(Err(issue(format!("data inválida: '{}'", get(columns.date).trim()))));
             continue;
         };
+        // Devolução de ações emprestadas: a B3 a registra como `Credito` de liquidação, com o valor de mercado, de 1 a 3
+        // dias depois do pagamento do aluguel (mesmo ativo, mesma quantidade). As ações voltam, mas não sai dinheiro.
+        if is_settlement && is_buy {
+            if let Some(day) = NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok() {
+                let ticker = ticker_of(get(columns.product));
+                let quantity = parse_number(get(columns.quantity)).ok().flatten().unwrap_or(0.0);
+                if let Some(payment) = loan_payments.iter_mut().find(|p| {
+                    !p.used
+                        && p.ticker == ticker
+                        && (p.quantity - quantity).abs() < 1e-9
+                        && day >= p.date
+                        && (day - p.date).num_days() <= LOAN_RETURN_WINDOW_DAYS
+                }) {
+                    payment.used = true;
+                    out.push(Err(issue("devolução de ações emprestadas (aluguel) pulada: as ações voltam, mas não sai dinheiro".to_string())));
+                    continue;
+                }
+            }
+        }
         // Sem valor é o movimento do aluguel (só move a custódia): não há dinheiro a lançar.
         let value = match parse_number(get(columns.value)) {
             Ok(Some(v)) if v.is_finite() && v > 0.0 => v,
@@ -71,7 +103,7 @@ pub fn parse_b3_settlements(rows: &[Vec<String>]) -> ParsedStatement {
                 continue;
             }
         };
-        let ticker = get(columns.product).split(" - ").next().unwrap_or("").trim().to_string();
+        let ticker = ticker_of(get(columns.product));
         let quantity = get(columns.quantity).trim();
         out.push(Ok(ProposedBankTransaction {
             line,
@@ -93,6 +125,20 @@ pub fn parse_b3_settlements(rows: &[Vec<String>]) -> ParsedStatement {
         out.push(Err(ParseIssue { line: 0, message: "não achei nenhuma liquidação nem provento na planilha".to_string() }));
     }
     statement(out)
+}
+
+/// Dias entre o pagamento do aluguel e a devolução das ações (na amostra, 1 a 3, com fim de semana).
+const LOAN_RETURN_WINDOW_DAYS: i64 = 5;
+
+struct LoanPayment {
+    ticker: String,
+    quantity: f64,
+    date: NaiveDate,
+    used: bool,
+}
+
+fn ticker_of(product: &str) -> String {
+    product.split(" - ").next().unwrap_or("").trim().to_string()
 }
 
 fn statement(rows: Vec<Result<ProposedBankTransaction, ParseIssue>>) -> ParsedStatement {
@@ -155,6 +201,26 @@ mod tests {
         let parsed = parse_b3_settlements(&rows).rows;
         assert_eq!(parsed.len(), 1);
         assert!(parsed[0].as_ref().unwrap_err().message.contains("sem valor"));
+    }
+
+    #[test]
+    fn the_return_of_lent_shares_is_not_a_purchase_but_a_real_purchase_still_is() {
+        let rows = sheet(&[
+            // Aluguel: pagamento na sexta, devolução das ações (Credito de liquidação, valor de mercado) na segunda.
+            ["Credito", "17/01/2025", "Empréstimo", "ABCD4 - EMPRESA S.A.", "CORRETORA", "81", "-", "0.01"],
+            ["Credito", "20/01/2025", "Transferência - Liquidação", "ABCD4 - EMPRESA S.A.", "CORRETORA", "81", "11", "900"],
+            // Mesma quantidade, mas sem pagamento de aluguel antes: é compra.
+            ["Credito", "21/01/2025", "Transferência - Liquidação", "ABCD4 - EMPRESA S.A.", "CORRETORA", "81", "11", "900"],
+            // Outro ativo com o pagamento ainda não usado: não se confunde.
+            ["Credito", "20/01/2025", "Transferência - Liquidação", "WXYZ3 - OUTRA S.A.", "CORRETORA", "81", "5", "405"],
+        ]);
+        let parsed = parse_b3_settlements(&rows).rows;
+        // Pagamento do aluguel (+0,01), devolução pulada, compra (−900) e outra compra (−405).
+        let values: Vec<f64> = parsed.iter().filter_map(|r| r.as_ref().ok()).map(|p| p.valor).collect();
+        assert_eq!(values, vec![0.01, -900.0, -405.0]);
+        let skipped: Vec<&str> = parsed.iter().filter_map(|r| r.as_ref().err()).map(|e| e.message.as_str()).collect();
+        assert_eq!(skipped.len(), 1);
+        assert!(skipped[0].contains("devolução de ações emprestadas"));
     }
 
     #[test]

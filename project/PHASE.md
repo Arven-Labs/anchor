@@ -3527,7 +3527,12 @@ de duplicata é ticker + data + tipo + quantidade + total.
 - **Proventos (Sessão 160)**: a mesma importação lê também dividendo, rendimento de fundo, JCP, pagamento do aluguel e reembolso da Movimentação e credita a Corretora pelo valor creditado
   (JCP e aluguel já líquidos de IR), na data do pagamento; na amostra de 2025 são 49 linhas com valor, todas `Credito`. O movimento do aluguel sem valor é pulado com o motivo.
 - **Limites**: o saldo de abertura da Corretora (o que já estava lá antes do primeiro arquivo) não vem de nenhum arquivo;
-  toda `Transferência enviada/recebida` do extrato vira candidata a aporte (descarte a que for para outra pessoa); as 11 liquidações sem negócio na Negociação (quase todas de abril) não foram investigadas.
+  toda `Transferência enviada/recebida` do extrato vira candidata a aporte (descarte a que for para outra pessoa).
+- **As liquidações sem par (Sessão 161)**: com os feriados no D+2 (Sexta-feira Santa e Tiradentes deslocavam abril), **60 das 64** liquidações com valor casam por ativo, dia e lado com a soma
+  dos negócios, sem nenhuma diferença de quantidade. Sobram 4 só na liquidação: **3 são devolução de ações emprestadas** (aluguel): a B3 as registra como `Credito` de liquidação com o valor de
+  mercado, 1 a 3 dias depois do pagamento do aluguel, mesmo ativo e mesma quantidade, e **não sai dinheiro**. Eu as estava lançando como compra: o parser agora as pula (par com um pagamento
+  de aluguel até 5 dias antes, usado uma vez). A 4ª é uma compra de 30/12/2024, fora do período da Negociação. Sobram 4 negócios sem liquidação: 2 são day trade (compra e venda iguais no
+  dia, a B3 liquida o líquido) e 2 são vendas de ações que estavam emprestadas, sem liquidação com valor na planilha (o caixa dessas duas vendas não aparece na Movimentação).
 
 **Fora do escopo / pendente**: ~~conciliação de "Transferência - Liquidação" com os
 negócios~~ (Entrega 12); CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
