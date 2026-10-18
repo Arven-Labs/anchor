@@ -3187,6 +3187,7 @@ por enquanto. Pediu também para **não usar branches** enquanto o app não esti
   reconstituído volta para o mesmo centavo em 5000 líquidos × 2 taxas, o JCP de dez/2025 (15%) e jan/2026 (17,5%), a recusa sem
   regra, e um fluxo que devolve na tela de proventos o líquido exato da B3. Amostra real: 43 proventos (16 JCP), bruto a até 0,66% de
   quantidade × preço.
-- **Não verificado**: o CI desta mudança (resultado abaixo); a tela a olho; a alíquota de 17,5% desde 2026 em fonte primária (só fontes
-  secundárias, já marcadas "verify" em `tax_rules`).
+- **CI** (direto na `main`): `Private Files`, `Rust`, `Frontend` e `E2E` verdes de primeira.
+- **Não verificado**: a tela a olho; a alíquota de 17,5% desde 2026 em fonte primária (só fontes secundárias, já marcadas "verify" em
+  `tax_rules`).
 - **Pendente**: aluguel (Empréstimo) e reembolso; o rendimento do porquinho que a B3 não cobre; posição de carteira da renda fixa.
