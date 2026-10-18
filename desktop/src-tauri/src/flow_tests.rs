@@ -3867,6 +3867,8 @@ async fn the_backtest_simulates_the_current_portfolio_and_says_what_it_left_out(
         initial: 1000.0,
         monthly_contribution: 0.0,
         start_date: None,
+        brokerage_per_order: 0.0,
+        apply_tax: false,
     };
     let hold = run_backtest_in(&db, request(vec![], "never")).await.unwrap();
     let monthly = run_backtest_in(&db, request(vec![], "monthly")).await.unwrap();
@@ -3899,8 +3901,22 @@ async fn the_backtest_simulates_the_current_portfolio_and_says_what_it_left_out(
     assert_eq!(only_a.assets.len(), 1);
     assert!(only_a.warnings.iter().any(|w| w.starts_with("BBBB3") && w.contains("no weight given")));
 
+    // Custos: a corretagem tira do patrimônio e é devolvida nas métricas; o imposto liga com as regras do banco
+    // (aqui as vendas do rebalanceamento são pequenas e ficam isentas, então não há DARF).
+    let mut costly = request(vec![], "monthly");
+    costly.brokerage_per_order = 1.0;
+    costly.apply_tax = true;
+    let costly = run_backtest_in(&db, costly).await.unwrap();
+    assert!(costly.metrics.total_fees >= 2.0, "ao menos a compra inicial dos dois ativos: {}", costly.metrics.total_fees);
+    assert!(costly.metrics.final_value < monthly.metrics.final_value && costly.metrics.twr_pct < monthly.metrics.twr_pct);
+    assert!(close(costly.metrics.total_tax_paid, 0.0) && close(costly.metrics.tax_pending, 0.0), "{:?}", costly.metrics.total_tax_paid);
+    assert!(close(monthly.metrics.total_fees, 0.0), "sem corretagem nada é cobrado");
+
     // Parâmetros inválidos.
     assert!(run_backtest_in(&db, request(vec![], "daily")).await.is_err());
+    let mut negative = request(vec![], "never");
+    negative.brokerage_per_order = -1.0;
+    assert!(run_backtest_in(&db, negative).await.is_err());
     let mut broke = request(vec![], "never");
     broke.initial = 0.0;
     assert!(run_backtest_in(&db, broke).await.is_err());
@@ -3913,7 +3929,7 @@ async fn the_backtest_refuses_a_portfolio_with_nothing_to_simulate() {
     let db = memory_db().await;
     let ws = workspace(&db, "Empty").await;
     let pf = portfolio(&db, ws.id, "Main").await;
-    let request = BacktestRequest { portfolio_id: pf.id, weights: vec![], rebalance: "never".to_string(), initial: 1000.0, monthly_contribution: 0.0, start_date: None };
+    let request = BacktestRequest { portfolio_id: pf.id, weights: vec![], rebalance: "never".to_string(), initial: 1000.0, monthly_contribution: 0.0, start_date: None, brokerage_per_order: 0.0, apply_tax: false };
     let error = run_backtest_in(&db, request).await.err().expect("carteira vazia");
     assert!(error.to_string().contains("no asset to simulate"));
 }

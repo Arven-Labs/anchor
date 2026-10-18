@@ -13,7 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatMoney } from "@/lib/utils";
 
 // Fase 22 — backtest da carteira atual no passado (commands/backtest.rs): pesos fixos, rebalanceamento periódico,
-// aporte mensal, retorno total (fechamento ajustado) e comparação com CDI, IPCA e IBOV. Custos e imposto: fatia 4.
+// aporte mensal, retorno total (fechamento ajustado), corretagem por ordem, IR de renda variável opcional e comparação
+// com CDI, IPCA e IBOV.
 
 type BacktestResponse = {
   start: string;
@@ -29,6 +30,9 @@ type BacktestResponse = {
     max_drawdown_date: string | null;
     sharpe: number | null;
     rebalance_count: number;
+    total_fees: number;
+    total_tax_paid: number;
+    tax_pending: number;
     risk_free_pct: number;
   };
   months: {
@@ -71,6 +75,8 @@ function BacktestSection({ portfolioId }: { portfolioId: number }) {
   const [initial, setInitial] = useState("10000");
   const [contribution, setContribution] = useState("0");
   const [startDate, setStartDate] = useState("");
+  const [brokerage, setBrokerage] = useState("0");
+  const [applyTax, setApplyTax] = useState(false);
   const [weightEdits, setWeightEdits] = useState<Record<number, string>>({});
 
   const positionsQuery = useQuery<PositionView[], AppError>({
@@ -105,6 +111,8 @@ function BacktestSection({ portfolioId }: { portfolioId: number }) {
           initial: Number(initial),
           monthly_contribution: Number(contribution) || 0,
           start_date: startDate === "" ? null : startDate,
+          brokerage_per_order: Number(brokerage) || 0,
+          apply_tax: applyTax,
         },
       }),
   });
@@ -122,7 +130,7 @@ function BacktestSection({ portfolioId }: { portfolioId: number }) {
     [result],
   );
 
-  const ready = Number(initial) > 0 && eligible.length > 0 && eligible.some((p) => weightOf(p.asset_id) > 0);
+  const ready = Number(initial) > 0 && Number(brokerage) >= 0 && eligible.length > 0 && eligible.some((p) => weightOf(p.asset_id) > 0);
 
   return (
     <div className="flex flex-col gap-4" data-testid="backtest-section">
@@ -131,8 +139,8 @@ function BacktestSection({ portfolioId }: { portfolioId: number }) {
           <CardTitle>Backtest</CardTitle>
           <CardDescription>
             Replays your current holdings in the past with fixed weights, optional rebalancing and monthly
-            contributions. Returns include dividends (adjusted close). Costs and taxes are not counted yet. Past
-            performance does not predict future results.
+            contributions. Returns include dividends (adjusted close). Brokerage and capital gains tax are optional
+            costs. Past performance does not predict future results.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -160,6 +168,13 @@ function BacktestSection({ portfolioId }: { portfolioId: number }) {
             <Field label="Start date (optional)">
               <Input type="date" data-testid="backtest-start" value={startDate} onChange={(e) => setStartDate(e.currentTarget.value)} />
             </Field>
+            <Field label="Brokerage per order (BRL)">
+              <Input type="number" min="0" step="0.01" data-testid="backtest-brokerage" value={brokerage} onChange={(e) => setBrokerage(e.currentTarget.value)} />
+            </Field>
+            <label className="flex items-center gap-2 self-end pb-2 text-sm">
+              <input type="checkbox" data-testid="backtest-apply-tax" checked={applyTax} onChange={(e) => setApplyTax(e.currentTarget.checked)} />
+              Apply capital gains tax (paid the month after each sale)
+            </label>
           </div>
 
           {positionsQuery.isLoading ? (
@@ -270,6 +285,15 @@ function BacktestSection({ portfolioId }: { portfolioId: number }) {
                       <TableCell className="text-right">{result.metrics.sharpe === null ? "-" : result.metrics.sharpe.toFixed(2)}</TableCell>
                     </TableRow>
                     <TableRow><TableCell>Rebalances</TableCell><TableCell className="text-right">{result.metrics.rebalance_count}</TableCell></TableRow>
+                    {result.metrics.total_fees > 0 && (
+                      <TableRow><TableCell>Brokerage paid</TableCell><TableCell className="text-right" data-testid="backtest-fees">{formatMoney(result.metrics.total_fees, "BRL")}</TableCell></TableRow>
+                    )}
+                    {(result.metrics.total_tax_paid > 0 || result.metrics.tax_pending > 0) && (
+                      <>
+                        <TableRow><TableCell>Tax paid</TableCell><TableCell className="text-right" data-testid="backtest-tax-paid">{formatMoney(result.metrics.total_tax_paid, "BRL")}</TableCell></TableRow>
+                        <TableRow><TableCell>Tax still due</TableCell><TableCell className="text-right" data-testid="backtest-tax-pending">{formatMoney(result.metrics.tax_pending, "BRL")}</TableCell></TableRow>
+                      </>
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>

@@ -9,8 +9,15 @@
 //   entram o aporte e o rebalanceamento. Assim o aporte não vira "retorno" e a série de retornos (TWR) é limpa.
 // - **Aporte** vai pelos pesos-alvo, no primeiro dia de cada mês depois do mês de início. **Rebalancear** volta aos
 //   pesos-alvo no primeiro dia do mês, trimestre ou ano seguinte ao do início, depois do aporte do mesmo dia.
-// - Sem custos nem imposto (fatia 4). Rendimento passado não garante nada, a tela diz isso.
+// - **Ordens**: o fluxo do dia (aporte + rebalanceamento) vira uma ordem líquida por ativo, e cada ordem paga a corretagem
+//   fixa na hora. Corretagem e imposto são custo, não aporte: entram no TWR.
+// - **Imposto** (opcional): as ordens viram `Trade`s para o motor de IR de renda variável, que apura mês a mês; o DARF do mês
+//   é debitado do patrimônio no primeiro pregão do mês seguinte. O do último mês fica como "a pagar".
+// Rendimento passado não garante nada, a tela diz isso.
 use chrono::{Datelike, NaiveDate};
+
+use crate::domain::tax::assessment::{assess_with_options, Side, Trade};
+use crate::domain::tax::rules::RuleSet;
 
 /// Dias de pregão por ano, para anualizar a volatilidade.
 const TRADING_DAYS_PER_YEAR: f64 = 252.0;
@@ -42,7 +49,13 @@ pub struct AssetSeries {
     pub points: Vec<(NaiveDate, f64)>,
 }
 
-#[derive(Clone, Debug)]
+/// Regras e classe de cada ativo para apurar o IR das vendas.
+pub struct TaxModel {
+    pub rules: RuleSet,
+    /// `(classe, ticker)` na mesma ordem das séries.
+    pub assets: Vec<(String, String)>,
+}
+
 pub struct Params {
     /// Peso-alvo de cada ativo, na mesma ordem das séries; são normalizados para somar 1.
     pub weights: Vec<f64>,
@@ -51,6 +64,9 @@ pub struct Params {
     pub monthly_contribution: f64,
     /// Taxa livre de risco anual (fração, 0,10 = 10%), para o Sharpe.
     pub risk_free_annual: f64,
+    /// Corretagem fixa, em R$, por ordem executada.
+    pub brokerage_per_order: f64,
+    pub tax: Option<TaxModel>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -78,6 +94,11 @@ pub struct Metrics {
     /// `None` com volatilidade zero.
     pub sharpe: Option<f64>,
     pub rebalance_count: u32,
+    pub total_fees: f64,
+    /// IR já debitado do patrimônio.
+    pub total_tax_paid: f64,
+    /// IR do mês final (e do que ficou abaixo do mínimo de DARF), devido mas não debitado.
+    pub tax_pending: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -136,6 +157,98 @@ fn correlation(a: &[f64], b: &[f64]) -> f64 {
     covariance / (sa * sb)
 }
 
+/// Ordem líquida abaixo disto (em R$) é arredondamento, não negócio: não paga corretagem.
+const MIN_ORDER_VALUE: f64 = 0.005;
+
+fn period_of(date: NaiveDate) -> String {
+    format!("{:04}-{:02}", date.year(), date.month())
+}
+
+/// Ordens, corretagem e imposto acumulados da simulação.
+struct Ledger<'a> {
+    brokerage: f64,
+    tax: Option<&'a TaxModel>,
+    /// Só preenchido quando há imposto a apurar.
+    trades: Vec<Trade>,
+    fees: f64,
+    tax_paid: f64,
+    /// Último mês (`YYYY-MM`) cujo DARF já foi debitado.
+    paid_through: String,
+}
+
+impl<'a> Ledger<'a> {
+    /// Compara as unidades antes e depois dos fluxos do dia, registra uma ordem líquida por ativo
+    /// e devolve a corretagem do dia.
+    fn settle(&mut self, date: NaiveDate, before: &[f64], after: &[f64], prices: &[f64]) -> f64 {
+        let mut fee_today = 0.0;
+        for (asset, ((b, a), price)) in before.iter().zip(after).zip(prices).enumerate() {
+            let delta = a - b;
+            let gross = delta.abs() * price;
+            if gross < MIN_ORDER_VALUE {
+                continue;
+            }
+            fee_today += self.brokerage;
+            if let Some(model) = self.tax {
+                let id = self.trades.len() as i32;
+                let (class, ticker) = &model.assets[asset];
+                self.trades.push(Trade {
+                    tx_id: id,
+                    portfolio_id: 0,
+                    asset_id: asset as i32,
+                    ticker: ticker.clone(),
+                    asset_class: class.clone(),
+                    currency: "BRL".to_string(),
+                    // Uma "corretora" por ordem: compra e venda do mesmo dia nunca casam como day trade.
+                    custodia_id: Some(id),
+                    date,
+                    side: if delta > 0.0 { Side::Buy } else { Side::Sell },
+                    quantity: delta.abs(),
+                    gross_value: gross,
+                    fee: self.brokerage,
+                });
+            }
+        }
+        self.fees += fee_today;
+        fee_today
+    }
+
+    /// DARF dos meses até `last_period` (inclusive) que ainda não foi debitado; marca como pago.
+    fn take_due(&mut self, last_period: &str) -> Result<f64, String> {
+        let Some(model) = self.tax else { return Ok(0.0) };
+        let assessment = assess_with_options(&self.trades, &[], &model.rules).map_err(|e| e.to_string())?;
+        let due = assessment
+            .months
+            .iter()
+            .filter(|m| m.period.as_str() > self.paid_through.as_str() && m.period.as_str() <= last_period)
+            .map(|m| m.due)
+            .sum();
+        self.paid_through = last_period.to_string();
+        Ok(due)
+    }
+
+    /// IR devido no fim da janela e ainda não debitado (inclui o que ficou abaixo do mínimo de DARF).
+    fn pending(&self) -> Result<f64, String> {
+        let Some(model) = self.tax else { return Ok(0.0) };
+        let assessment = assess_with_options(&self.trades, &[], &model.rules).map_err(|e| e.to_string())?;
+        let unpaid: Vec<_> = assessment.months.iter().filter(|m| m.period.as_str() > self.paid_through.as_str()).collect();
+        Ok(unpaid.iter().map(|m| m.due).sum::<f64>() + unpaid.last().map_or(0.0, |m| m.carried_out))
+    }
+}
+
+/// Debita `amount` do patrimônio, na proporção dos ativos, e o desconta do índice (custo é retorno perdido).
+/// Devolve o que foi de fato debitado (nunca mais que o patrimônio).
+fn charge(amount: f64, value: &mut f64, index: &mut f64, units: &mut [f64]) -> f64 {
+    let amount = amount.min(*value);
+    if amount <= 0.0 {
+        return 0.0;
+    }
+    let factor = (*value - amount) / *value;
+    units.iter_mut().for_each(|u| *u *= factor);
+    *value -= amount;
+    *index *= factor;
+    amount
+}
+
 pub fn run(series: &[AssetSeries], params: &Params) -> Result<BacktestResult, String> {
     if series.is_empty() {
         return Err("escolha pelo menos um ativo".to_string());
@@ -148,6 +261,12 @@ pub fn run(series: &[AssetSeries], params: &Params) -> Result<BacktestResult, St
     }
     if !params.initial.is_finite() || params.initial <= 0.0 || !params.monthly_contribution.is_finite() || params.monthly_contribution < 0.0 {
         return Err("o capital inicial tem de ser positivo e o aporte não pode ser negativo".to_string());
+    }
+    if !params.brokerage_per_order.is_finite() || params.brokerage_per_order < 0.0 {
+        return Err("a corretagem por ordem não pode ser negativa".to_string());
+    }
+    if params.tax.as_ref().is_some_and(|t| t.assets.len() != series.len()) {
+        return Err("é preciso a classe e o ticker de cada ativo para apurar o imposto".to_string());
     }
     if let Some(empty) = series.iter().find(|s| s.points.is_empty() || s.points.iter().any(|(_, p)| !p.is_finite() || *p <= 0.0)) {
         return Err(format!("{}: sem preços válidos", empty.name));
@@ -172,6 +291,16 @@ pub fn run(series: &[AssetSeries], params: &Params) -> Result<BacktestResult, St
     let mut value = params.initial;
     let mut invested = params.initial;
     let mut index = 1.0;
+    let mut ledger = Ledger {
+        brokerage: params.brokerage_per_order,
+        tax: params.tax.as_ref(),
+        trades: Vec::new(),
+        fees: 0.0,
+        tax_paid: 0.0,
+        paid_through: String::new(),
+    };
+    let initial_fee = ledger.settle(dates[0], &vec![0.0; series.len()], &units, &first_prices);
+    charge(initial_fee, &mut value, &mut index, &mut units);
     let mut peak = 1.0;
     let mut max_drawdown = 0.0_f64;
     let mut max_drawdown_date = None;
@@ -193,8 +322,14 @@ pub fn run(series: &[AssetSeries], params: &Params) -> Result<BacktestResult, St
         index *= 1.0 + daily_return;
         value = before_flows;
 
-        // Aporte no primeiro dia de um mês novo; o rebalanceamento vem depois, no mesmo dia.
         let new_month = (date.year(), date.month()) != (previous_date.year(), previous_date.month());
+        // O DARF do mês que acabou sai do patrimônio antes dos fluxos do dia.
+        if new_month {
+            let due = ledger.take_due(&period_of(previous_date))?;
+            ledger.tax_paid += charge(due, &mut value, &mut index, &mut units);
+        }
+        // Aporte no primeiro dia de um mês novo; o rebalanceamento vem depois, no mesmo dia.
+        let units_before_flows = units.clone();
         if new_month && params.monthly_contribution > 0.0 {
             for (unit, (w, p)) in units.iter_mut().zip(weights.iter().zip(&prices)) {
                 *unit += params.monthly_contribution * w / p;
@@ -208,6 +343,8 @@ pub fn run(series: &[AssetSeries], params: &Params) -> Result<BacktestResult, St
             }
             rebalance_count += 1;
         }
+        let fee_today = ledger.settle(date, &units_before_flows, &units, &prices);
+        charge(fee_today, &mut value, &mut index, &mut units);
 
         peak = f64::max(peak, index);
         let drawdown = index / peak - 1.0;
@@ -247,6 +384,9 @@ pub fn run(series: &[AssetSeries], params: &Params) -> Result<BacktestResult, St
             max_drawdown_date,
             sharpe,
             rebalance_count,
+            total_fees: ledger.fees,
+            total_tax_paid: ledger.tax_paid,
+            tax_pending: ledger.pending()?,
         },
         correlation: correlation_matrix,
         final_weights: final_values.iter().map(|v| v / final_total).collect(),
@@ -266,7 +406,29 @@ mod tests {
     }
 
     fn params(weights: &[f64]) -> Params {
-        Params { weights: weights.to_vec(), rebalance: Rebalance::Never, initial: 1000.0, monthly_contribution: 0.0, risk_free_annual: 0.0 }
+        Params {
+            weights: weights.to_vec(),
+            rebalance: Rebalance::Never,
+            initial: 1000.0,
+            monthly_contribution: 0.0,
+            risk_free_annual: 0.0,
+            brokerage_per_order: 0.0,
+            tax: None,
+        }
+    }
+
+    /// A dobra de preço em 1/fev: 50/50 que rebalanceia em `initial` de capital, 70 dias (até 11/mar), imposto ligado.
+    fn doubling_with_tax(class: &str, ticker: &str, initial: f64, days: usize) -> Result<BacktestResult, String> {
+        let a: Vec<f64> = (0..days).map(|i| if i < 31 { 100.0 } else { 200.0 }).collect();
+        let b = vec![100.0; days];
+        let mut p = params(&[0.5, 0.5]);
+        p.rebalance = Rebalance::Monthly;
+        p.initial = initial;
+        p.tax = Some(TaxModel {
+            rules: crate::domain::tax::rules::test_rule_set(),
+            assets: vec![(class.to_string(), ticker.to_string()), ("acao_br".to_string(), "BBBB3".to_string())],
+        });
+        run(&[series("A", 0, &a), series("B", 0, &b)], &p)
     }
 
     fn close(a: f64, b: f64) -> bool {
@@ -366,6 +528,87 @@ mod tests {
         let apart = run(&[series("A", 0, &[100.0, 101.0]), series("B", 10, &[5.0, 6.0])], &params(&[0.5, 0.5]));
         assert!(apart.unwrap_err().contains("em comum"));
         assert!(run(&[series("A", 0, &[100.0, -1.0])], &params(&[1.0])).unwrap_err().contains("sem preços válidos"));
+    }
+
+    #[test]
+    fn a_fixed_brokerage_per_order_comes_out_of_the_value_and_the_return() {
+        let mut p = params(&[1.0]);
+        p.brokerage_per_order = 10.0;
+        let result = run(&[series("A", 0, &[100.0, 100.0, 100.0])], &p).unwrap();
+        // Uma ordem de compra no início: 1000 viram 990 e o custo é retorno perdido.
+        assert!(close(result.metrics.final_value, 990.0) && close(result.metrics.total_fees, 10.0));
+        assert!(close(result.metrics.twr_pct, -1.0), "{}", result.metrics.twr_pct);
+        assert!(close(result.metrics.total_invested, 1000.0));
+    }
+
+    #[test]
+    fn contribution_and_rebalance_of_the_same_day_are_one_net_order_per_asset() {
+        // 50/50 mensal com aporte: no 1º dia de fev há aporte e rebalanceamento, mas só um negócio por ativo.
+        let a: Vec<f64> = (0..40).map(|i| if i < 31 { 100.0 } else { 200.0 }).collect();
+        let b = vec![100.0; 40];
+        let mut p = params(&[0.5, 0.5]);
+        p.rebalance = Rebalance::Monthly;
+        p.monthly_contribution = 1000.0;
+        p.brokerage_per_order = 1.0;
+        let result = run(&[series("A", 0, &a), series("B", 0, &b)], &p).unwrap();
+        // 2 ordens na compra inicial + 2 em 1/fev (as duas de compra: o aporte cobre o rebalanceamento).
+        assert!(close(result.metrics.total_fees, 4.0), "{}", result.metrics.total_fees);
+    }
+
+    #[test]
+    fn rebalancing_a_gain_above_the_exemption_pays_the_darf_the_next_month() {
+        let result = doubling_with_tax("acao_br", "AAAA3", 100_000.0, 70).unwrap();
+        // 1/fev: A vale 100 mil e B 50 mil; volta a 75/75 vendendo 125 cotas de A a 200 (25 mil, acima dos 20 mil).
+        // Ganho de 125 × 100 = 12.500; 15% = 1.875, debitados em 1/mar.
+        assert!(close(result.metrics.total_tax_paid, 1875.0), "{}", result.metrics.total_tax_paid);
+        assert!(close(result.metrics.tax_pending, 0.0));
+        assert!(close(result.metrics.final_value, 150_000.0 - 1875.0), "{}", result.metrics.final_value);
+    }
+
+    #[test]
+    fn the_tax_of_the_last_month_is_pending_not_paid() {
+        let result = doubling_with_tax("acao_br", "AAAA3", 100_000.0, 40).unwrap();
+        assert!(close(result.metrics.total_tax_paid, 0.0));
+        assert!(close(result.metrics.tax_pending, 1875.0), "{}", result.metrics.tax_pending);
+        assert!(close(result.metrics.final_value, 150_000.0));
+    }
+
+    #[test]
+    fn stock_sales_under_the_monthly_limit_are_exempt() {
+        // Capital de 40 mil: a venda de 1/fev é de 10 mil, abaixo dos 20 mil.
+        let result = doubling_with_tax("acao_br", "AAAA3", 40_000.0, 70).unwrap();
+        assert!(close(result.metrics.total_tax_paid, 0.0) && close(result.metrics.tax_pending, 0.0));
+    }
+
+    #[test]
+    fn a_fii_is_taxed_at_its_own_rate_with_no_exemption() {
+        // Mesma venda de 25 mil (ganho 12.500), mas FII: 20% = 2.500.
+        let result = doubling_with_tax("fii", "HGLG11", 100_000.0, 70).unwrap();
+        assert!(close(result.metrics.total_tax_paid, 2500.0), "{}", result.metrics.total_tax_paid);
+        let small = doubling_with_tax("fii", "HGLG11", 40_000.0, 70).unwrap();
+        assert!(small.metrics.total_tax_paid > 0.0, "FII não tem a isenção das ações");
+    }
+
+    #[test]
+    fn without_tax_or_brokerage_nothing_is_charged() {
+        let a: Vec<f64> = (0..70).map(|i| if i < 31 { 100.0 } else { 200.0 }).collect();
+        let b = vec![100.0; 70];
+        let mut p = params(&[0.5, 0.5]);
+        p.rebalance = Rebalance::Monthly;
+        let result = run(&[series("A", 0, &a), series("B", 0, &b)], &p).unwrap();
+        assert!(close(result.metrics.total_fees, 0.0) && close(result.metrics.total_tax_paid, 0.0) && close(result.metrics.tax_pending, 0.0));
+        assert!(close(result.metrics.final_value, 1500.0), "{}", result.metrics.final_value);
+    }
+
+    #[test]
+    fn a_negative_brokerage_or_a_tax_model_out_of_step_is_refused() {
+        let a = series("A", 0, &[100.0, 101.0]);
+        let mut p = params(&[1.0]);
+        p.brokerage_per_order = -1.0;
+        assert!(run(&[a.clone()], &p).unwrap_err().contains("corretagem"));
+        let mut q = params(&[1.0]);
+        q.tax = Some(TaxModel { rules: crate::domain::tax::rules::test_rule_set(), assets: vec![] });
+        assert!(run(&[a], &q).unwrap_err().contains("classe e o ticker"));
     }
 
     #[test]

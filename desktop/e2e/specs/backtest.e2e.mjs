@@ -78,6 +78,18 @@ describe("Anchor — backtest da carteira", () => {
     await snap("backtest-rebalanced");
   });
 
+  it("a corretagem por ordem entra no resultado e aparece nas métricas", async () => {
+    await pickOption(byId("backtest-rebalance"), "Never (buy and hold)");
+    await byId("backtest-brokerage").setValue("10");
+    await byId("backtest-run").click();
+    // Duas ordens de compra (A e B) de R$ 10 = R$ 20; o patrimônio de 14.950,00 encolhe na mesma proporção (× 0,998).
+    await waitForText(byId("backtest-final-value"), (t) => t.includes("14.920,10"), "o resultado desconta a corretagem");
+    expect(await textOf(byId("backtest-fees"))).toContain("20,00");
+    await byId("backtest-metrics").scrollIntoView({ block: "center" });
+    await snap("backtest-brokerage");
+    await byId("backtest-brokerage").setValue("0");
+  });
+
   it("pesos zerados desligam o botão e um ativo sem peso vira aviso", async () => {
     await byId("backtest-weight-AAAA3").setValue("100");
     await byId("backtest-weight-BBBB3").setValue("0");

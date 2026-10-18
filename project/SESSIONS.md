@@ -3498,3 +3498,15 @@ com **retorno total**, pesos fixos com rebalanceamento, aportes mensais, benchma
   pesos escolhidos; entradas inválidas) e teste da carteira vazia; spec `backtest.e2e.mjs` (semeia carteira, preços e CDI, roda sem rebalancear com resultado conferido à mão: +49,50%, patrimônio 14.950,00) com capturas. Testes e E2E no CI.
   Um erro meu achado antes de enviar: o `seed_macro` do teste não preenchia `source` (NOT NULL) e quebraria em tempo de execução.
 - **Pendente**: fatia 4 (custos e imposto). Cripto segue com 365 dias de histórico e sem ajuste.
+
+
+### 2026-10-18 — Sessão 166
+
+**Backtest da carteira (Fase 22), fatia 4: corretagem e imposto.** Retomada depois que a sessão anterior caiu; plan mode. O dono escolheu: IR pelo motor existente, corretagem fixa por ordem, DARF debitado no mês seguinte.
+- **Feito**: `domain/backtest.rs` ganhou `Ledger` (ordens líquidas por ativo e dia, corretagem, DARF), `TaxModel` e `charge` (custo sai do patrimônio na proporção dos ativos e do índice, então entra no TWR). `Params` perdeu
+  `Clone`/`Debug` (o `RuleSet` não os tem). `commands/backtest.rs`: `brokerage_per_order` e `apply_tax` no pedido, `load_rule_set` do `commands/tax.rs`, aviso para classe sem IR modelado, três métricas novas
+  (`total_fees`, `total_tax_paid`, `tax_pending`). Aba Backtest: campo de corretagem, caixa de IR e as linhas novas no resultado. Detalhes na Fase 22 do `PHASE.md`.
+- **Verificado**: `./dev.sh check` (compila os testes) e `tsc` limpos. Testes unitários novos (corretagem no valor e no TWR, uma ordem líquida por ativo com aporte e rebalanceamento no mesmo dia, DARF de ação acima da
+  isenção debitado em 1/mar, imposto do último mês como pendente, isenção abaixo de R$ 20 mil, FII a 20% sem isenção, sem custo nada muda, entradas inválidas), teste de fluxo estendido e caso novo em
+  `backtest.e2e.mjs` (corretagem de R$ 10 por ordem: patrimônio 14.920,10). Testes e E2E rodam no CI.
+- **Pendente**: nada da Fase 22 planejada. Ideias: IR de cripto, IRRF de swing (0,005%) estimado, custódia.

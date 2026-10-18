@@ -1,5 +1,5 @@
 // Fase 22, fatia 3 — comando do backtest: monta as séries da carteira atual (fechamento ajustado), roda o motor puro
-// (`domain::backtest`) e compara com CDI, IPCA e IBOV. Sem custos nem imposto (fatia 4).
+// (`domain::backtest`) e compara com CDI, IPCA e IBOV. Fatia 4: corretagem por ordem e IR opcional das vendas.
 //
 // A carteira de partida são as posições abertas de ações, FIIs, ETFs, BDRs e cripto em BRL; os pesos padrão são o
 // valor de mercado de hoje, ou os que o usuário mandar. O que não dá para simular (renda fixa, imóvel, moeda
@@ -12,7 +12,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::profitability::ASSET_CLASSES_WITH_AUTO_QUOTE;
 use crate::commands::transaction::compute_positions;
-use crate::domain::backtest::{self, AssetSeries, Params, Rebalance};
+use crate::commands::tax::load_rule_set;
+use crate::domain::backtest::{self, AssetSeries, Params, Rebalance, TaxModel};
+use crate::domain::tax::classify::{treatment, TaxTreatment};
 use crate::entity::{macro_index_monthly, stock_adjusted_close, stock_price_history};
 use crate::error::AppError;
 
@@ -38,6 +40,12 @@ pub struct BacktestRequest {
     /// `YYYY-MM-DD`: corta o início da janela (por padrão, o primeiro dia em que todos têm preço).
     #[serde(default)]
     pub start_date: Option<String>,
+    /// Corretagem fixa, em R$, por ordem (compra inicial, aportes e rebalanceamentos).
+    #[serde(default)]
+    pub brokerage_per_order: f64,
+    /// Apura o IR de renda variável das vendas do rebalanceamento e o debita no mês seguinte.
+    #[serde(default)]
+    pub apply_tax: bool,
 }
 
 #[derive(Serialize)]
@@ -61,6 +69,10 @@ pub struct BacktestMetrics {
     pub max_drawdown_date: Option<String>,
     pub sharpe: Option<f64>,
     pub rebalance_count: u32,
+    pub total_fees: f64,
+    pub total_tax_paid: f64,
+    /// IR do último mês, devido e ainda não debitado.
+    pub tax_pending: f64,
     /// Taxa livre de risco usada no Sharpe (CDI anualizado no período), em %.
     pub risk_free_pct: f64,
 }
@@ -170,6 +182,7 @@ pub async fn run_backtest_in(db: &DatabaseConnection, request: BacktestRequest) 
     let overrides: HashMap<i32, f64> = request.weights.iter().map(|w| (w.asset_id, w.weight)).collect();
     let mut series: Vec<AssetSeries> = Vec::new();
     let mut picked: Vec<(i32, String, f64, bool)> = Vec::new(); // asset_id, ticker, peso, price_only
+    let mut classes: Vec<(String, String)> = Vec::new(); // classe, ticker (para o IR), na ordem de `series`
 
     for position in compute_positions(db, request.portfolio_id).await? {
         if position.quantity <= 0.0 {
@@ -208,6 +221,10 @@ pub async fn run_backtest_in(db: &DatabaseConnection, request: BacktestRequest) 
         if price_only {
             warnings.push(format!("{label}: no dividend-adjusted close yet, so its return counts the price only (run Update price history)"));
         }
+        if request.apply_tax && !matches!(treatment(&position.asset_class, &position.ticker), TaxTreatment::StockExemptEligible | TaxTreatment::CommonNoExemption | TaxTreatment::Fii) {
+            warnings.push(format!("{label}: no tax modelled for its class, so its sales are not taxed here"));
+        }
+        classes.push((position.asset_class.clone(), position.ticker.clone()));
         series.push(AssetSeries { name: position.ticker.clone(), points });
         picked.push((position.asset_id, position.ticker.clone(), weight, price_only));
     }
@@ -233,6 +250,7 @@ pub async fn run_backtest_in(db: &DatabaseConnection, request: BacktestRequest) 
     };
 
     let total_weight: f64 = picked.iter().map(|p| p.2).sum();
+    let tax = if request.apply_tax { Some(TaxModel { rules: load_rule_set(db).await?, assets: classes }) } else { None };
     let result = backtest::run(
         &series,
         &Params {
@@ -241,6 +259,8 @@ pub async fn run_backtest_in(db: &DatabaseConnection, request: BacktestRequest) 
             initial: request.initial,
             monthly_contribution: request.monthly_contribution,
             risk_free_annual: risk_free,
+            brokerage_per_order: request.brokerage_per_order,
+            tax,
         },
     )
     .map_err(AppError::InvalidInput)?;
@@ -321,6 +341,9 @@ pub async fn run_backtest_in(db: &DatabaseConnection, request: BacktestRequest) 
             max_drawdown_date: m.max_drawdown_date.map(|d| d.to_string()),
             sharpe: m.sharpe,
             rebalance_count: m.rebalance_count,
+            total_fees: m.total_fees,
+            total_tax_paid: m.total_tax_paid,
+            tax_pending: m.tax_pending,
             risk_free_pct: risk_free * 100.0,
         },
         months,

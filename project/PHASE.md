@@ -2041,6 +2041,10 @@ imposto existente). Quatro fatias, cada uma com teste e CI verde: (1) fechamento
 (3) comando e aba "Backtest" no Portfolio, (4) custos e imposto. Janela comum: começa no primeiro dia em que todos os ativos têm preço; renda fixa e ativos sem série saem da simulação com aviso.
 Sem alocação-alvo persistida (os pesos são parâmetros do teste), sem otimização, sem intraday. **Fatia 1 feita (Sessão 165)**: tabela `stock_adjusted_close` (preço ajustado do Yahoo, regravado a cada
 coleta porque o ajuste de pregões antigos muda a cada dividendo), coletada junto do backfill de preços e por `run_adjusted_close_backfill`. Cripto: 365 dias e sem ajuste.
+**Fatia 4 feita (Sessão 166)**: corretagem fixa por ordem e IR opcional. O fluxo do dia (aporte + rebalanceamento) vira uma ordem líquida por ativo (ordem abaixo de R$ 0,005 não paga corretagem); cada
+ordem debita a corretagem na hora. O IR reusa `assess_with_options` (isenção de R$ 20 mil em ações, compensação de prejuízo, FII a 20%, mínimo de DARF) sobre `Trade`s sintéticos, cada um numa "corretora"
+própria para compra e venda do mesmo dia não casarem como day trade; o DARF do mês é debitado no primeiro pregão do mês seguinte e o do último mês sai como "a pagar". Corretagem e imposto entram no TWR.
+Cripto, exterior e renda fixa não têm IR modelado aqui (aviso). Sem custódia nem spread.
 
 ### Fase 23 — Attestations cross-app via TruthID (provar fatos da carteira sem expor dados; ideia registrada na Sessão 100, não decidida)
 
