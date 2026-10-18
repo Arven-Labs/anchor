@@ -57,6 +57,7 @@ Leia o arquivo relevante para o que você precisa:
 | Decisões de arquitetura em aberto | `ARCHITECTURE.md` |
 | Roadmap, evoluções planejadas | `ROADMAP.md` |
 | Log completo de sessões de trabalho | `SESSIONS.md` |
+| **Conferir telas por código (capturas no CI) e automatizar fluxos** — o processo, as regras e o que cada uma evitou | **`AUTOMACAO.md`** |
 
 **Ao começar uma sessão**: diga ao Claude Code "leia os arquivos em `project/` e me ajude a continuar"
 **Ao validar código**: `cd desktop && ./dev.sh check` (tsc + cargo check, leve) enquanto desenvolve; depois dê push e confira o CI no GitHub Actions (`gh run list`), em vez de rodar os testes localmente. Ver `OVERVIEW.md`, "CI no GitHub Actions"

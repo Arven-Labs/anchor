@@ -35,6 +35,18 @@ O usuário não é iniciante em programação (ver Fase 2 abaixo — já desenho
 
 ---
 
+# Diretriz de verificação e automação (IMPORTANTE — Sessão 156, pedido explícito do dono)
+
+O dono do projeto **não quer conferir tela nem disparar passo à mão** ("prefiro seguir por código, não gosto de fazer essas coisas manualmente"). Processo completo, com
+o porquê de cada regra, em **`AUTOMACAO.md`**. O resumo:
+- **Telas**: o E2E fotografa as telas-chave (`snap()`), o CI sobe as capturas sempre como artefato, e o Claude baixa (`gh run download <id> -n e2e-artifacts`) e **olha cada
+  PNG**, corrigindo o que achar. Nunca fechar uma fatia com "abra o app e confira a tela".
+- **Fluxos**: o que dá para rodar sozinho roda sozinho (gatilho pelo estado dos dados, melhor esforço, idempotente, resultado como proposta na fila de revisão, botão
+  manual de reserva, marca com três estados). Só fica manual o que depende de dado que só o dono tem, dito uma vez como limite.
+- As capturas usam **só dados inventados** (repo público).
+
+---
+
 # Ritmo e Expectativa do Projeto
 
 - **Prioridade do usuário hoje é o TruthID.** O Practice Valuation existe pra resolver uma dor real (organizar preços-teto e acompanhar cripto), mas anda em ritmo de fundo — sessões espaçadas, sem pressa de terminar rápido.
