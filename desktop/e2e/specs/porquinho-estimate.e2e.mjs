@@ -1,5 +1,5 @@
 import { browser, expect } from "@wdio/globals";
-import { byId, clickCentered, enterWorkspace, sql, textOf, waitForText } from "./helpers.mjs";
+import { byId, clickCentered, enterWorkspace, snap, sql, textOf, waitForText } from "./helpers.mjs";
 
 // Fase 35, entrega 10 — estimativa do rendimento do porquinho por resgate. A conta, as pernas do extrato e a
 // Selic meta são semeadas no banco (a Selic com `fetched_at` de agora, para o app não ir ao BCB); o spec dirige
@@ -48,6 +48,7 @@ describe("Anchor — estimativa do rendimento do porquinho", () => {
       "a estimativa deveria enfileirar o único resgate",
     );
     expect(pendingYields()).toBe(1);
+    await snap("estimate-dialog-result");
 
     // Rodar de novo não duplica: o dia já tem item na fila.
     await byId("estimate-run").click();
@@ -73,6 +74,7 @@ describe("Anchor — estimativa do rendimento do porquinho", () => {
     expect(gross).toBeGreaterThan(3);
     expect(gross).toBeLessThan(9);
     expect(await byId("yield-iof").getValue()).toBe("0");
+    await snap("estimate-review-popup");
 
     await byId("statement-correct").click();
     await browser.waitUntil(() => pendingYields() === 0, { timeout: 20_000, timeoutMsg: "a proposta deveria ter sido aprovada" });

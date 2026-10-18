@@ -1,5 +1,5 @@
 import { $$, browser, expect } from "@wdio/globals";
-import { byId, enterWorkspace, pickOption, textOf, waitForText } from "./helpers.mjs";
+import { byId, enterWorkspace, pickOption, snap, textOf, waitForText } from "./helpers.mjs";
 
 // `$$` devolve um objeto que não é iterável; `Array.from` dá a lista de verdade.
 async function elementsOf(selector) {
@@ -55,6 +55,7 @@ describe("Anchor — moeda por conta, de ponta a ponta", () => {
       timeoutMsg: "a conta marcada deveria ganhar o selo 'In Portfolio'",
     });
     expect(await textOf(byId("account-mirrored-toggle"))).toBe("Count as cash");
+    await snap("accounts-list-with-actions");
 
     await byId("account-mirrored-toggle").click();
     await browser.waitUntil(async () => (await elementsOf('[data-testid="account-mirrored-badge"]')).length === 0, {

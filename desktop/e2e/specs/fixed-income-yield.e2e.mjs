@@ -1,5 +1,5 @@
 import { $$, browser, expect } from "@wdio/globals";
-import { byId, clickCentered, enterWorkspace, pickOption, sql, textOf, waitForText } from "./helpers.mjs";
+import { byId, clickCentered, enterWorkspace, pickOption, snap, sql, textOf, waitForText } from "./helpers.mjs";
 
 // Fase 35, entrega 4 — rendimento do porquinho derivado da Movimentação da B3. O
 // diálogo nativo de arquivo não é dirigível pelo WebDriver, então a fila é semeada no
@@ -110,6 +110,7 @@ describe("Anchor — rendimento do porquinho pela Movimentação da B3", () => {
     expect(await byId("yield-iof").getValue()).toBe("0.3");
     expect(await textOf(byId("yield-check"))).toContain("exactly what the B3 file explains");
     expect(await textOf(byId("yield-net"))).toBe("0.08");
+    await snap("yield-review-popup-b3");
 
     await byId("yield-ir").setValue("0.05");
     await waitForText(byId("yield-net"), (t) => t === "0.05", "líquido = 0,40 − 0,30 − 0,05");
@@ -174,6 +175,7 @@ describe("Anchor — rendimento do porquinho pela Movimentação da B3", () => {
     await byId("reconcile-balance").setValue("0.50");
     await waitForText(byId("reconcile-ledger"), (text) => text === "0.17", "o saldo do ledger é o semeado, 0,17");
     expect(await textOf(byId("reconcile-difference"))).toBe("0.33");
+    await snap("reconcile-dialog-preview");
 
     await byId("reconcile-confirm").click();
     await browser.waitUntil(() => ledger(pocket, "receita") === 3, {

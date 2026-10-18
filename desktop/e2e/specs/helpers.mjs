@@ -1,5 +1,24 @@
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { $, browser } from "@wdio/globals";
+
+const screensDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../artifacts/screens");
+
+/**
+ * Guarda uma captura de tela da janela em `e2e/artifacts/screens/<spec>--<nome>.png`. O CI sobe a pasta como
+ * artefato (mesmo quando tudo passa), para olhar as telas sem abrir o app. Nunca derruba o teste: se a captura
+ * falhar, só segue.
+ */
+export async function snap(name) {
+  try {
+    fs.mkdirSync(screensDir, { recursive: true });
+    await browser.saveScreenshot(path.join(screensDir, `${name.replace(/[^a-z0-9-]+/gi, "-").toLowerCase()}.png`));
+  } catch (error) {
+    console.warn(`snap(${name}) failed:`, error?.message ?? error);
+  }
+}
 
 // Seletores por `data-testid` (os que o app expõe de propósito pro E2E).
 export const byId = (id) => $(`[data-testid="${id}"]`);

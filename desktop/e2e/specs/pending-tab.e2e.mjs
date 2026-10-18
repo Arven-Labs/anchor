@@ -1,5 +1,5 @@
 import { $$, browser, expect } from "@wdio/globals";
-import { byId, clickCentered, enterWorkspace, sql, textOf, waitForText } from "./helpers.mjs";
+import { byId, clickCentered, enterWorkspace, snap, sql, textOf, waitForText } from "./helpers.mjs";
 
 // Fase 35, entrega 6 — a aba Pending com as sugestões de provento. As três filas
 // (carteira, extrato e proventos) aparecem juntas e o selo soma o que está acionável.
@@ -45,6 +45,7 @@ describe("Anchor — aba Pending com sugestões de provento", () => {
     expect(await textOf(byId("dividend-pending"))).toContain("Dividend suggestions (3)");
     await byId("pending-badge").waitForDisplayed({ timeout: 10_000 });
     expect(await badge()).toBe("3");
+    await snap("pending-tab-with-badge");
   });
 
   it("confirma a primeira com a quantidade editada e grava o provento", async () => {
@@ -99,6 +100,7 @@ describe("Anchor — aba Pending com sugestões de provento", () => {
     // Primeiro clique só pede confirmação; nada é descartado ainda.
     await clickCentered(byId("dividend-pending-discard-selected"));
     await waitForText(byId("dividend-pending-discard-selected"), (t) => t === "Confirm discarding 2?", "pede confirmação");
+    await snap("pending-bulk-discard-confirm");
     expect(suggestionStatus(ids[0])).toBe("pending");
 
     await clickCentered(byId("dividend-pending-discard-selected"));
