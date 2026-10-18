@@ -3452,5 +3452,8 @@ registrar tudo no `project/` dos dois. Só documentação e um recado entre sess
 - **Medição que mudou o plano** (detalhes na Entrega 12 do `PHASE.md`): a Liquidação é por ativo e por dia, liquida em D+2, bruta e sem taxa, e **não bate com nenhuma saída do banco**; o dinheiro vai em aportes soltos (`Transferência enviada/recebida`). O plano antigo (casar saída do banco com Liquidação) caiu.
 - **Feito**: `broker_settlement_io.rs` (lê a Liquidação para a fila de revisão, compra sai e venda entra), `statement_io.rs` (`broker` na linha, `stage_statement_with_broker`, aporte e saque como transferência para a Corretora), comando `stage_b3_settlements`, seletor "Brokerage account" e bloco de importação no painel. A Liquidação continua pulada na importação de negócios (a posição vem da Negociação).
 - **Verificado**: `./dev.sh check` limpo (compila os testes); 3 unitários do parser e 3 de fluxo (transferência sem Corretora segue despesa e receita; aporte, saque, compra e venda fecham os saldos e não duplicam ao reimportar; Corretora tem de ser outra conta). Testes e E2E no CI.
-- **Não verificado**: a tela a olho; sem spec E2E novo nesta sessão; rodar com a conta real.
+- **E2E** (`brokerage-cash.e2e.mjs`, só no CI): aporte como transferência "Checking → Brokerage", compra e venda na Corretora, saldos 1000 e 500. Falhou uma vez por erro meu (o popup vazio ainda cobria a
+  navegação) e passou no commit seguinte. Capturas do CI conferidas por código (painel, popup da transferência, contas): nada quebrado. A conta Corretora mostra os botões "Estimate yield" e
+  "Already in Portfolio", que valem para qualquer conta (já era assim).
+- **Não verificado**: rodar com a conta real (o dono não quer testar na mão).
 - **Pendente**: proventos no caixa da Corretora; saldo de abertura; investigar as liquidações sem negócio de abril.
