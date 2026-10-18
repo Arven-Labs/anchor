@@ -3294,5 +3294,6 @@ a custo (sem rendimento acumulado estimado) e a marca por conta, com o dinheiro 
   fluxo: conta marcada não dobra o patrimônio, resgate parcial deixa o resto a custo, caixa nunca negativo, resgate sem posição é recusado, coluna e visão).
   Amostra real (as duas planilhas): 2025 com 17 compras e 33 vendas (10 com aplicação fora do arquivo); 2026 com 3 compras e 9 vendas (6 fora).
 - **Efeito de uso**: vender mais do que a posição tem é recusado; a planilha de 2026 só passa inteira depois da de 2025.
-- **Não verificado**: a tela a olho; o CI da rodada (o spec novo de `accounts.e2e.mjs` só roda lá).
+- **CI** (direto na `main`, `39f344f`): `Private Files`, `Rust`, `Frontend` e `E2E` verdes de primeira, incluindo o caso novo de `accounts.e2e.mjs` (selo e botão).
+- **Não verificado**: a tela a olho (a marca, a posição na carteira e o caixa no patrimônio).
 - **Pendente**: os de antes (rendimento do porquinho que a B3 não cobre; IR do aluguel líquido ou bruto; nota de fonte do JCP) e ver a tela a olho.
