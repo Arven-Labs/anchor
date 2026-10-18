@@ -2461,7 +2461,8 @@ async fn a_movement_sheet_stages_the_dividend_and_confirming_it_records_a_proven
     .map(|r| r.iter().map(|c| c.to_string()).collect())
     .collect();
 
-    let staged = stage_parsed(&db, pf.id, "b3_movimentacao", parse_b3_movimentacao_rows(&sheet)).await.unwrap();
+    let rules = crate::commands::tax::load_rule_set(&db).await.unwrap();
+    let staged = stage_parsed(&db, pf.id, "b3_movimentacao", parse_b3_movimentacao_rows(&sheet, &rules)).await.unwrap();
     assert_eq!((staged.staged, staged.duplicates, staged.errors.len()), (1, 0, 1));
     assert!(staged.errors[0].message.contains("liquidação"));
 
@@ -2489,8 +2490,42 @@ async fn a_movement_sheet_stages_the_dividend_and_confirming_it_records_a_proven
     assert_eq!(summary.rows.len(), 1);
 
     // Reimportar a mesma planilha não traz o provento de volta.
-    let again = stage_parsed(&db, pf.id, "b3_movimentacao", parse_b3_movimentacao_rows(&sheet)).await.unwrap();
+    let again = stage_parsed(&db, pf.id, "b3_movimentacao", parse_b3_movimentacao_rows(&sheet, &rules)).await.unwrap();
     assert_eq!((again.staged, again.duplicates), (0, 1));
+}
+
+#[tokio::test]
+async fn a_jcp_from_the_movement_sheet_is_booked_gross_and_reads_back_as_the_net_the_b3_paid() {
+    use crate::commands::portfolio_io::{
+        confirm_import_pending_in, list_import_pending_in, parse_b3_movimentacao_rows, stage_parsed,
+    };
+    use crate::commands::proventos::proventos_summary_in;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "JCP").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let header = ["Entrada/Saída", "Data", "Movimentação", "Produto", "Instituição", "Quantidade", "Preço unitário", "Valor da Operação"];
+    fn jcp<'a>(date: &'a str, net: &'a str) -> [&'a str; 8] {
+        ["Credito", date, "Juros Sobre Capital Próprio", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "100", "0.1", net]
+    }
+    // A B3 informa o líquido: 8,50 em dez/2025 (IRRF de 15% → bruto 10,00) e 8,25 em jan/2026 (17,5% → bruto 10,00).
+    let sheet: Vec<Vec<String>> = [header, jcp("15/12/2025", "8.50"), jcp("10/01/2026", "8.25")]
+        .iter()
+        .map(|r| r.iter().map(|c| c.to_string()).collect())
+        .collect();
+
+    let rules = crate::commands::tax::load_rule_set(&db).await.unwrap();
+    let staged = stage_parsed(&db, pf.id, "b3_movimentacao", parse_b3_movimentacao_rows(&sheet, &rules)).await.unwrap();
+    assert_eq!((staged.staged, staged.errors.len()), (2, 0));
+    for item in list_import_pending_in(&db, pf.id).await.unwrap() {
+        assert_eq!(item.proposed.payment_type.as_deref(), Some("jscp"));
+        confirm_import_pending_in(&db, pf.id, item.id, item.proposed.clone(), item.asset_class.clone()).await.unwrap();
+    }
+
+    let stored = crate::entity::transactions::Entity::find().all(&db).await.unwrap();
+    assert!(stored.iter().all(|t| close(t.total_value, 10.0)), "o bruto é o que fica gravado");
+    let summary = proventos_summary_in(&db, pf.id).await.unwrap();
+    assert!(close(summary.total_all_time, 16.75), "o app desconta o IRRF da data e devolve o líquido da B3 (8,50 + 8,25)");
 }
 
 #[test]

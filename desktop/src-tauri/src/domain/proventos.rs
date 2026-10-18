@@ -21,6 +21,21 @@ pub fn net_total(total: f64, payment_type: Option<&str>, jscp_rate: f64) -> f64 
     }
 }
 
+/// Inverso de `net_total` para JCP: o bruto, em centavos, cujo líquido (bruto × (1 − taxa),
+/// arredondado) é exatamente o `net` recebido. A B3 informa só o líquido; o app guarda o bruto.
+/// Vale a estimativa arredondada; se ela não fecha no centavo, tenta os vizinhos.
+pub fn jscp_gross_from_net(net: f64, rate: f64) -> f64 {
+    let net_cents = (net * 100.0).round();
+    let guess = (net_cents / (1.0 - rate)).round();
+    for delta in [0.0, 1.0, -1.0, 2.0, -2.0] {
+        let gross_cents = guess + delta;
+        if (gross_cents * (1.0 - rate)).round() == net_cents {
+            return gross_cents / 100.0;
+        }
+    }
+    guess / 100.0
+}
+
 pub struct ProventoEntry {
     pub asset_id: i32,
     pub payment_date: String, // "YYYY-MM-DD"
@@ -68,6 +83,20 @@ pub fn by_asset(entries: &[ProventoEntry]) -> HashMap<i32, f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_jscp_gross_rebuilt_from_the_net_nets_back_to_the_same_cents() {
+        // Para qualquer líquido em centavos, o bruto reconstituído, descontado a taxa, devolve o líquido.
+        for rate in [0.15, 0.175] {
+            for net_cents in 1..=5000 {
+                let net = net_cents as f64 / 100.0;
+                let gross = jscp_gross_from_net(net, rate);
+                assert_eq!((gross * (1.0 - rate) * 100.0).round() as i64, net_cents, "líquido {net} à taxa {rate}");
+            }
+        }
+        assert_eq!(jscp_gross_from_net(8.5, 0.15), 10.0);
+        assert_eq!(jscp_gross_from_net(12.34, 0.15), 14.52);
+    }
 
     #[test]
     fn net_total_dividendo_has_no_withholding() {

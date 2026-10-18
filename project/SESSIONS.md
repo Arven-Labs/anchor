@@ -3172,3 +3172,21 @@ por enquanto. Pediu também para **não usar branches** enquanto o app não esti
 - **Limites**: 4 de 23 resgates ainda erram mais de 1 centavo (arredondamento, lotes de mais de uma aplicação ou o par errado no
   cruzamento); resgates cujo CDB não tem a aplicação no arquivo ficam sem IOF e são marcados; o rendimento do porquinho que a B3 não
   cobre continua sem fonte. Os 16 JCP do arquivo seguem sem uso (precisam de uma fonte do valor líquido para decidir bruto ou líquido).
+  *(O JCP foi resolvido na Sessão 143, abaixo: os próprios dados da planilha dizem que o valor é líquido.)*
+
+
+### 2026-10-19 — Sessão 143
+
+**JCP na importação da Movimentação.** O dono do projeto pediu "jcp". Fatia pequena e fechada pelos dados, sem plan mode; direto na `main`.
+- **A dúvida bruto × líquido se resolveu sem fonte externa**: nas 16 linhas de JCP de 2025, valor ÷ (quantidade × preço unitário) dá 0,85
+  em todas (0,845 a 0,852); nos dividendos e rendimentos de FII dá 1,00. O preço unitário é o bruto por ação e o valor é o **líquido**.
+- **Feito**: o JCP deixou de ser pulado. Como o app guarda o bruto e desconta o IRRF na leitura, o importador reconstitui o bruto do
+  líquido com a `jcp_irrf_rate` da data (`jscp_gross_from_net`, exata ao centavo) e grava `payment_type = jscp`. O leitor da Movimentação
+  passou a receber o `RuleSet` (as chamadas assíncronas carregam `load_rule_set`). Rótulo do botão no Ledger atualizado.
+- **Verificado**: `./dev.sh check` limpo; `cargo test --lib` inteiro no Docker (657 passaram, 0 falharam), com teste de que o bruto
+  reconstituído volta para o mesmo centavo em 5000 líquidos × 2 taxas, o JCP de dez/2025 (15%) e jan/2026 (17,5%), a recusa sem
+  regra, e um fluxo que devolve na tela de proventos o líquido exato da B3. Amostra real: 43 proventos (16 JCP), bruto a até 0,66% de
+  quantidade × preço.
+- **Não verificado**: o CI desta mudança (resultado abaixo); a tela a olho; a alíquota de 17,5% desde 2026 em fonte primária (só fontes
+  secundárias, já marcadas "verify" em `tax_rules`).
+- **Pendente**: aluguel (Empréstimo) e reembolso; o rendimento do porquinho que a B3 não cobre; posição de carteira da renda fixa.

@@ -3333,8 +3333,8 @@ recusa e não reaparece na reimportação; primeira entrega = fila + popup + B3 
 
 **Entrega 2 (feita, Sessão 139)**: `parse_b3_movimentacao_rows` e o formato `b3_movimentacao` (botão no painel do Ledger). Só
 `Dividendo` e `Rendimento` (FII) em crédito viram `provento` (`payment_type` dividendo) e entram na mesma fila e no mesmo
-popup. O resto é **pulado com o motivo**, não adivinhado: JCP (não confirmei se o valor da planilha vem bruto ou líquido de
-IR; a amostra real não tem JCP), "Transferência - Liquidação" (repete os negócios da Negociação), aplicação/resgate de CDB,
+popup. O resto é **pulado com o motivo**, não adivinhado: JCP (resolvido na entrega 5, abaixo; aqui ainda era pulado porque a
+amostra da época não tinha JCP), "Transferência - Liquidação" (repete os negócios da Negociação), aplicação/resgate de CDB,
 Empréstimo (aluguel), Reembolso e qualquer outro nome. O resumo da importação diz quantas linhas foram puladas e por quê.
 Na amostra real: 2 proventos e 19 puladas (12 CDB, 3 aluguel, 3 liquidação, 1 reembolso). Cuidado conhecido: um provento já
 confirmado pela tela de sugestões (Yahoo) com quantidade ou valor diferentes não é reconhecido como duplicata, porque a chave
@@ -3393,6 +3393,22 @@ de duplicata é ticker + data + tipo + quantidade + total.
   do porquinho** (os demais resgates não têm rendimento derivável por este caminho).
 - **Pendente**: rendimento do porquinho que a B3 não cobre; rendimento ainda não resgatado (curva acumulada); categoria própria para
   rendimento; tabela regressiva do IR.
+
+**Entrega 5 (feita, Sessão 143)**: JCP na importação da Movimentação, com a dúvida bruto × líquido resolvida pelos dados.
+- **Achado**: nas 16 linhas de JCP da Movimentação de 2025, "Valor da Operação" ÷ (quantidade × preço unitário) fica entre 0,845 e
+  0,852, ou seja, **0,85**: o preço unitário é o **bruto por ação** e o valor é o **líquido** (15% retidos). Em dividendos e rendimentos
+  de FII a razão é 1,00 (sem retenção).
+- **Convenção do app**: num JCP, `total_value` é o **bruto** e o líquido é `total × (1 − alíquota da data)` (`domain::proventos::net_total`).
+  Logo, o importador **reconstitui o bruto** a partir do líquido da B3 com a `jcp_irrf_rate` vigente na data do pagamento (15% até 2025,
+  17,5% desde 2026, por LC 224/2025 em fontes secundárias, ainda a confirmar) e grava `payment_type = jscp`. `jscp_gross_from_net`
+  procura o bruto em centavos que, descontada a taxa, devolve o líquido exato (testado para todos os líquidos de R$ 0,01 a R$ 50,00 nas
+  duas taxas). A nota do lançamento guarda o líquido e a alíquota usados. Sem a regra de IRRF do JCP, a linha é recusada em vez de assumir
+  uma alíquota.
+- **Resultado na amostra**: 43 proventos (16 JCP, 15 dividendos, 12 rendimentos de FII); o bruto reconstituído dos JCP fica a até 0,66% de
+  quantidade × preço unitário, o esperado pelo arredondamento do preço. Um teste de fluxo confere o ciclo inteiro: o resumo de proventos
+  devolve o líquido que a B3 mostrou.
+- **Cuidado conhecido**: um JCP já confirmado pela tela de sugestões (Yahoo) com bruto diferente não é reconhecido como duplicata.
+- **Pendente**: confirmar a alíquota de 17,5% em fonte primária (o app a usa a partir de 2026); aluguel (Empréstimo) e reembolso.
 
 **Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do

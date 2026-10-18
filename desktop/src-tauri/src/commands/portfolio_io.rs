@@ -16,6 +16,9 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 
 use crate::commands::currency::workspace_of_portfolio;
+use crate::commands::tax::load_rule_set;
+use crate::domain::proventos::jscp_gross_from_net;
+use crate::domain::tax::rules::{RuleSet, JCP_IRRF_RATE};
 use crate::commands::transaction::{create_transaction_in, CreateTransactionRequest};
 use crate::entity::{assets, custodia, import_pending, transactions};
 use crate::error::AppError;
@@ -413,10 +416,15 @@ pub(crate) fn movimentacao_columns(header: &[String]) -> Option<MovimentacaoColu
 pub(crate) const MOVIMENTACAO_COLUMNS_MESSAGE: &str = "não parece a planilha 'Movimentação' da B3: faltam colunas (Entrada/Saída, Data, Movimentação, Produto, Instituição, Quantidade, Preço unitário, Valor da Operação)";
 
 /// Planilha "Movimentação" da Área do Investidor. Por ora só proventos em
-/// dinheiro (`Dividendo`, `Rendimento`) viram lançamento. O resto é pulado com o
-/// motivo, em vez de adivinhado: JCP (não confirmei se vem bruto ou líquido),
-/// liquidação (repete os negócios da "Negociação"), aluguel, reembolso e CDB.
-pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>]) -> Parsed {
+/// dinheiro (`Dividendo`, `Rendimento`, JCP) viram lançamento. O resto é pulado com o
+/// motivo, em vez de adivinhado: liquidação (repete os negócios da "Negociação"),
+/// aluguel, reembolso e CDB.
+///
+/// **JCP**: na amostra real, o "Valor da Operação" é o **líquido** (o preço unitário é o
+/// bruto por ação, e valor ÷ (quantidade × preço) dá 0,85 em todas as linhas). O app guarda o
+/// bruto em `total_value` e desconta o IR na leitura, então o bruto é reconstituído do
+/// líquido com a alíquota de `jcp_irrf_rate` vigente na data do pagamento.
+pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>], rules: &RuleSet) -> Parsed {
     let Some(header) = rows.first() else {
         return vec![Err(ParseIssue { line: 0, message: "planilha vazia".to_string() })];
     };
@@ -448,10 +456,7 @@ pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>]) -> Parsed {
         let movement = normalize_header(get(c_move));
         let product = get(c_product).trim();
 
-        if movement.contains("juros sobre capital") {
-            out.push(Err(issue("JCP pulado: não confirmei se o valor da planilha vem bruto ou líquido de IR".to_string())));
-            continue;
-        }
+        let is_jcp = movement.contains("juros sobre capital");
         if movement.contains("liquidacao") {
             out.push(Err(issue("liquidação de negócio pulada: os negócios vêm da planilha 'Negociação'".to_string())));
             continue;
@@ -470,7 +475,7 @@ pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>]) -> Parsed {
             out.push(Err(issue("reembolso pulado: ainda não suportado".to_string())));
             continue;
         }
-        if movement != "dividendo" && movement != "rendimento" {
+        if movement != "dividendo" && movement != "rendimento" && !is_jcp {
             out.push(Err(issue(format!("movimentação '{}' não suportada", get(c_move).trim()))));
             continue;
         }
@@ -499,6 +504,27 @@ pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>]) -> Parsed {
                 continue;
             }
         };
+        let (total_value, payment_type, notes) = if is_jcp {
+            let rate = NaiveDate::parse_from_str(&transaction_date, "%Y-%m-%d")
+                .map_err(|e| e.to_string())
+                .and_then(|date| rules.get(JCP_IRRF_RATE, date).map_err(|e| e.to_string()));
+            match rate {
+                Ok(rate) => (
+                    jscp_gross_from_net(total_value, rate),
+                    "jscp",
+                    format!(
+                        "Importado da B3 (Movimentação); JCP: líquido {total_value:.2}, bruto reconstituído à alíquota de {:.1}%",
+                        rate * 100.0
+                    ),
+                ),
+                Err(message) => {
+                    out.push(Err(issue(message)));
+                    continue;
+                }
+            }
+        } else {
+            (total_value, "dividendo", "Importado da B3 (Movimentação)".to_string())
+        };
         out.push(Ok(ProposedTransaction {
             line,
             transaction_date,
@@ -511,8 +537,8 @@ pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>]) -> Parsed {
             total_value,
             fee: None,
             custody: non_empty(get(c_inst)),
-            payment_type: Some("dividendo".to_string()),
-            notes: Some("Importado da B3 (Movimentação)".to_string()),
+            payment_type: Some(payment_type.to_string()),
+            notes: Some(notes),
         }));
     }
     out
@@ -896,7 +922,7 @@ pub async fn export_transactions_csv(
     Ok(rows.len())
 }
 
-fn parse_file(path: &str, format: &str) -> Result<Parsed, AppError> {
+fn parse_file(path: &str, format: &str, rules: &RuleSet) -> Result<Parsed, AppError> {
     Ok(match format {
         "anchor_csv" => {
             let text = std::fs::read_to_string(path)
@@ -904,7 +930,7 @@ fn parse_file(path: &str, format: &str) -> Result<Parsed, AppError> {
             parse_anchor_csv(text.trim_start_matches('\u{feff}'))
         }
         "b3_negociacao" => parse_b3_rows(&read_xlsx_rows(path)?),
-        "b3_movimentacao" => parse_b3_movimentacao_rows(&read_xlsx_rows(path)?),
+        "b3_movimentacao" => parse_b3_movimentacao_rows(&read_xlsx_rows(path)?, rules),
         other => return Err(AppError::InvalidInput(format!("formato '{other}' desconhecido"))),
     })
 }
@@ -915,7 +941,7 @@ pub async fn preview_import_in(
     path: &str,
     format: &str,
 ) -> Result<ImportPreview, AppError> {
-    let parsed = parse_file(path, format)?;
+    let parsed = parse_file(path, format, &load_rule_set(db).await?)?;
     Ok(ImportPreview { rows: preview_rows(db, portfolio_id, parsed).await? })
 }
 
@@ -966,7 +992,8 @@ pub async fn stage_import_in(
     path: &str,
     format: &str,
 ) -> Result<StageResult, AppError> {
-    stage_parsed(db, portfolio_id, format, parse_file(path, format)?).await
+    let rules = load_rule_set(db).await?;
+    stage_parsed(db, portfolio_id, format, parse_file(path, format, &rules)?).await
 }
 
 /// O mesmo que `stage_import_in` para linhas já lidas, de qualquer origem.
@@ -1171,6 +1198,7 @@ pub fn class_tax_hint(asset_class: String, ticker: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::tax::rules::test_rule_set;
 
     fn rows(lines: &[&[&str]]) -> Vec<Vec<String>> {
         lines.iter().map(|l| l.iter().map(|c| c.to_string()).collect()).collect()
@@ -1284,7 +1312,7 @@ mod tests {
             &["Credito", "23/09/2026", "Reembolso", "ABCD3 - EMPRESA A S.A.      ", "CORRETORA", "0", "-", "2.5"],
             &["Credito", "22/09/2026", "Bonificação", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "5", "-", "-"],
         ]);
-        let parsed = parse_b3_movimentacao_rows(&owned);
+        let parsed = parse_b3_movimentacao_rows(&owned, &test_rule_set());
         assert_eq!(parsed.len(), 9);
 
         let dividend = parsed[0].as_ref().unwrap();
@@ -1295,18 +1323,39 @@ mod tests {
         assert_eq!(dividend.payment_type.as_deref(), Some("dividendo"));
         assert_eq!(parsed[1].as_ref().unwrap().ticker, "WXYZ11", "rendimento de FII também é provento");
 
-        let reasons: Vec<String> = parsed[2..].iter().map(|r| r.as_ref().unwrap_err().message.clone()).collect();
-        assert!(reasons[0].contains("JCP") && reasons[0].contains("bruto"));
-        assert!(reasons[1].contains("liquidação") && reasons[1].contains("Negociação"));
-        assert!(reasons[2].contains("CDB") && reasons[3].contains("CDB"));
-        assert!(reasons[4].contains("aluguel"));
-        assert!(reasons[5].contains("reembolso"));
-        assert!(reasons[6].contains("Bonificação") && reasons[6].contains("não suportada"));
+        // JCP: o valor da planilha é o líquido; o bruto é reconstituído com a alíquota da data (17,5% desde 2026).
+        let jcp = parsed[2].as_ref().unwrap();
+        assert_eq!(jcp.payment_type.as_deref(), Some("jscp"));
+        assert_eq!((jcp.quantity, jcp.unit_price, jcp.total_value), (Some(100.0), Some(0.1), 12.12));
+        assert!(jcp.notes.as_deref().unwrap().contains("líquido 10.00") && jcp.notes.as_deref().unwrap().contains("17.5%"));
+
+        let reasons: Vec<String> = parsed[3..].iter().map(|r| r.as_ref().unwrap_err().message.clone()).collect();
+        assert!(reasons[0].contains("liquidação") && reasons[0].contains("Negociação"));
+        assert!(reasons[1].contains("CDB") && reasons[2].contains("CDB"));
+        assert!(reasons[3].contains("aluguel"));
+        assert!(reasons[4].contains("reembolso"));
+        assert!(reasons[5].contains("Bonificação") && reasons[5].contains("não suportada"));
+    }
+
+    #[test]
+    fn a_jcp_gross_is_rebuilt_from_the_net_with_the_rate_of_the_payment_date() {
+        let sheet = rows(&[
+            &MOVEMENT_HEADER,
+            &["Credito", "15/12/2025", "Juros Sobre Capital Próprio", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "100", "0.1470", "12.34"],
+            &["Credito", "02/01/2026", "Juros Sobre Capital Próprio", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "100", "0.1470", "12.34"],
+        ]);
+        let parsed = parse_b3_movimentacao_rows(&sheet, &test_rule_set());
+        // 2025: IRRF de 15% → bruto 14,52 (14,52 × 0,85 = 12,342 → 12,34). 2026: 17,5% → bruto 14,96 (× 0,825 = 12,342 → 12,34).
+        assert_eq!(parsed[0].as_ref().unwrap().total_value, 14.52);
+        assert_eq!(parsed[1].as_ref().unwrap().total_value, 14.96);
+        // Sem a regra de IRRF do JCP, a linha é recusada em vez de assumir uma alíquota.
+        let none = parse_b3_movimentacao_rows(&sheet, &RuleSet::new(vec![]));
+        assert!(none[0].as_ref().unwrap_err().message.contains("jcp_irrf_rate"));
     }
 
     #[test]
     fn a_movement_sheet_without_the_expected_columns_is_rejected_whole() {
-        let parsed = parse_b3_movimentacao_rows(&rows(&[&["Nome", "Idade"], &["a", "1"]]));
+        let parsed = parse_b3_movimentacao_rows(&rows(&[&["Nome", "Idade"], &["a", "1"]]), &test_rule_set());
         assert_eq!(parsed.len(), 1);
         assert!(parsed[0].as_ref().unwrap_err().message.contains("Movimentação"));
     }
@@ -1382,9 +1431,23 @@ mod tests {
     #[ignore]
     fn real_b3_movimentacao_sample_parses() {
         let path = std::env::var("ANCHOR_B3_MOVIMENTACAO").expect("defina ANCHOR_B3_MOVIMENTACAO");
-        let parsed = parse_b3_movimentacao_rows(&read_xlsx_rows(&path).expect("planilha abre"));
+        let parsed = parse_b3_movimentacao_rows(&read_xlsx_rows(&path).expect("planilha abre"), &test_rule_set());
         let ok = parsed.iter().filter(|r| r.is_ok()).count();
         println!("linhas lidas: {} proventos, {} puladas", ok, parsed.len() - ok);
+        // JCP: o bruto reconstituído tem de ficar perto de quantidade × preço unitário (o preço é bruto por ação).
+        let deviations: Vec<f64> = parsed
+            .iter()
+            .filter_map(|r| r.as_ref().ok())
+            .filter(|p| p.payment_type.as_deref() == Some("jscp"))
+            .filter_map(|p| Some((p.total_value / (p.quantity? * p.unit_price?) - 1.0).abs()))
+            .collect();
+        if !deviations.is_empty() {
+            println!(
+                "JCP: {} linhas, desvio do bruto reconstituído contra quantidade × preço: máx {:.2}%",
+                deviations.len(),
+                deviations.iter().cloned().fold(0.0, f64::max) * 100.0
+            );
+        }
         let mut reasons: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
         for issue in parsed.iter().filter_map(|r| r.as_ref().err()) {
             *reasons.entry(issue.message.clone()).or_insert(0) += 1;
