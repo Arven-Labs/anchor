@@ -109,7 +109,11 @@ describe("Anchor — caixa da conta Corretora", () => {
     expect(balance(checking) + balance(broker)).toBeCloseTo(1500, 2);
     expect(sql("SELECT group_concat(DISTINCT transaction_type) FROM general_transactions WHERE bank_account_id = " + broker)).toContain("transferencia_entrada");
 
+    // O popup, vazio, continua aberto: fecha antes de navegar.
+    await browser.keys("Escape");
+    await byId("statement-review-empty").waitForDisplayed({ reverse: true, timeout: 10_000 });
     await byId("nav-finances").click();
+    await byId("finances-tab-accounts").waitForDisplayed({ timeout: 30_000 });
     await byId("finances-tab-accounts").click();
     await browser.pause(500);
     await snap("brokerage-accounts");
