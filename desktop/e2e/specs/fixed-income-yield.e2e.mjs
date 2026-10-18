@@ -159,6 +159,9 @@ describe("Anchor — rendimento do porquinho pela Movimentação da B3", () => {
 
   // Entrega 9: o que a B3 não explica entra pela conciliação com o saldo que o banco mostra.
   it("conciliar com o saldo do banco grava a diferença como rendimento e iguala o saldo", async () => {
+    // O caso anterior deixa o popup de revisão aberto, mostrando a fila vazia; ele cobre a barra de abas.
+    await browser.keys("Escape");
+    await byId("statement-review-empty").waitForExist({ reverse: true, timeout: 10_000 });
     await byId("nav-finances").click();
     await byId("finances-tab-accounts").click();
     await byId("account-reconcile").waitForClickable({ timeout: 20_000 });
