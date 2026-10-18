@@ -3409,5 +3409,7 @@ automações. Plan mode para a segunda; direto na `main`.
 - **Defeito achado pelo teste**: desligar a estimativa gravando nulo era desfeito na próxima transferência aprovada (nulo também era "não decidido"). Desligar passou a gravar 0.
 - **Verificado**: `./dev.sh check` limpo; `cargo test --lib` no Docker (702 passaram, 0 falharam; 6 novos de fluxo: estima ao fechar a revisão e liga a marca, conta desligada não estima, falha da
   estimativa não falha a aprovação, B3 substitui estimativa pendente, B3 pula dia com estimativa aprovada, validação e desligar do percentual). Caso novo em `porquinho-estimate.e2e.mjs`.
-- **Não verificado**: as telas novas desta rodada a olho (as capturas do CI mostrarão o diálogo com o estado automático e o selo); rodar tudo na conta real.
-- **Pendente**: conferir as capturas da última rodada; rodar a estimativa na conta real e fechar a diferença com uma conciliação pelo saldo.
+- **CI** (direto na `main`, `9a3d160`): `Private Files`, `Rust`, `Frontend` e `E2E` verdes de primeira. Capturas da rodada conferidas: caixas de seleção com borda e ✓ verde, "Confirm discarding 2?" em tom
+  destrutivo, selo "Auto yield 100% CDI" na conta e o diálogo com o estado automático.
+- **Não verificado**: rodar tudo na conta real (a estimativa, a B3 e a conciliação pelo saldo) e o percentual do CDI do porquinho contra o saldo do banco.
+- **Pendente**: rodar a estimativa na conta real e fechar a diferença com uma conciliação pelo saldo; a conciliação continua manual porque o saldo do banco só o dono sabe.
