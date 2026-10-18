@@ -3518,4 +3518,4 @@ de duplicata é ticker + data + tipo + quantidade + total.
 **Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
 Inter; CDB/porquinho visto também como conta corrente sem contar o patrimônio duas vezes; IR do AUPO11; unificar a fila com
-`suggested_dividends`; IA como origem. **Dúvida aberta**: o valor de resgate do CDB na Movimentação é bruto ou líquido de IR?
+`suggested_dividends`; IA como origem. *(A dúvida "o resgate do CDB na Movimentação é bruto ou líquido?" está resolvida desde a Sessão 142: é **bruto**; com IOF e IR de 22,5%, 19 de 23 resgates de 2025 fecham a até R$ 0,01.)*
