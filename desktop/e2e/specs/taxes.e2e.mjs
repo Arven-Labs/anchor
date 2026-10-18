@@ -38,6 +38,8 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
       (text) => text.includes("Saves up to") && text.includes("150,00"),
       "o widget deveria mostrar a economia de 15% sobre o saldo",
     );
+    // O widget fica abaixo da dobra: centraliza antes da captura.
+    await (await byId("losses-widget")).scrollIntoView({ block: "center" });
     await snap("home-losses-widget");
     await byId("nav-portfolio").click();
     await byId("portfolio-tab-taxes").click();

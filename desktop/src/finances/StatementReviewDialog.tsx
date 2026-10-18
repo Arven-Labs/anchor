@@ -84,12 +84,14 @@ function refreshAfterReview(queryClient: QueryClient, workspaceId: number) {
 function dayCheck(detail: YieldDetail): { text: string; matches: boolean } | null {
   if (detail.bank_total_that_day === null) return null;
   const diff = detail.bank_total_that_day - detail.day_derived_total;
+  // Numa estimativa, o total do dia é o próprio valor que o extrato mostrou: dizer "o que a B3 explica" seria falso.
+  const source = detail.base_price_source === "estimate" ? "this estimate" : "the B3 file";
   if (Math.abs(diff) < 0.005) {
-    return { text: `The statement shows R$ ${formatMoney(detail.bank_total_that_day)} leaving the pocket that day, exactly what the B3 file explains.`, matches: true };
+    return { text: `The statement shows R$ ${formatMoney(detail.bank_total_that_day)} leaving the pocket that day, exactly what ${source} explains.`, matches: true };
   }
   return {
     text:
-      `The statement shows R$ ${formatMoney(detail.bank_total_that_day)} leaving the pocket that day, but the B3 file explains ` +
+      `The statement shows R$ ${formatMoney(detail.bank_total_that_day)} leaving the pocket that day, but ${source} explains ` +
       `R$ ${formatMoney(detail.day_derived_total)} (difference R$ ${formatMoney(diff)}). ` +
       (diff < 0
         ? "The bank paid less: more tax was withheld than computed here (for example IOF on units whose application is not in the file, or a higher IR bracket)."
@@ -328,7 +330,8 @@ function YieldReviewForm({
   return (
     <div className="flex flex-col gap-4" data-testid="statement-review-form">
       <p className="text-sm text-muted-foreground" data-testid="statement-review-counter">
-        {total} left to review · line {item.proposed.line} · {item.source}
+        {total} left to review ·{" "}
+        {detail.base_price_source === "estimate" ? "estimate" : `line ${item.proposed.line} · ${item.source}`}
       </p>
       {detail.base_price_source === "estimate" ? (
         <p className="text-sm" data-testid="yield-original">

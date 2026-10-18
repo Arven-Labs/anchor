@@ -102,7 +102,8 @@ function mergeWithDefaults(saved: HomeWidgetLayout[]): HomeWidgetLayout[] {
 }
 
 function formatCurrency(value: number): string {
-  return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Mesma regra de `formatMoney`: nada de "-0,00".
+  return (Math.abs(value) < 0.005 ? 0 : value).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatPct(value: number): string {

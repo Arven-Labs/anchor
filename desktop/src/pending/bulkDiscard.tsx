@@ -78,6 +78,7 @@ export function BulkDiscardBar({
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
+          className="size-4 cursor-pointer accent-primary"
           data-testid={`${testIdPrefix}-select-all`}
           checked={selection.allSelected}
           disabled={total === 0 || busy}
@@ -121,6 +122,7 @@ export function RowCheckbox({
     <input
       type="checkbox"
       aria-label="Select item"
+      className="size-4 cursor-pointer accent-primary"
       data-testid={`${testIdPrefix}-select-${id}`}
       checked={selection.selected.has(id)}
       disabled={disabled}
