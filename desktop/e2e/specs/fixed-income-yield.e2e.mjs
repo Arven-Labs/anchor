@@ -53,13 +53,23 @@ describe("Anchor — rendimento do porquinho pela Movimentação da B3", () => {
         "INSERT INTO general_transactions (workspace_id, bank_account_id, transaction_type, valor, transaction_date, created_at) " +
           `VALUES (${workspace}, ${pocket}, '${type}', ${valor}, '${date}', '${date}T00:00:00Z')`,
       );
-    // O que o extrato aprovado já registrou: aplicou 100,00; resgatou 50,31 em 05/03 e 50,20 em 12/03.
+    // O que o extrato aprovado já registrou: aplicou 100,00; resgatou 50,08 em 05/03 e 50,20 em 12/03.
     leg("transferencia_entrada", 100, "2026-03-01");
-    leg("transferencia_saida", 50.31, "2026-03-05");
+    leg("transferencia_saida", 50.08, "2026-03-05");
     leg("transferencia_saida", 50.2, "2026-03-12");
 
     const cdb = { instrument: "cdb", code: "CDBAAA", ir_rate: 0.225, ir_amount: 0.09, net_yield: 0.31 };
-    seedYield(workspace, pocket, { ...cdb, transaction_date: "2026-03-05", day_derived_total: 50.31 });
+    // Aplicado 4 dias antes: o IOF leva 0,30 do rendimento bruto de 0,40; o IR de 22,5% sobre 0,10 é 0,02.
+    seedYield(workspace, pocket, {
+      ...cdb,
+      iof_amount: 0.3,
+      holding_days: 4,
+      iof_basis: "full",
+      ir_amount: 0.02,
+      net_yield: 0.08,
+      transaction_date: "2026-03-05",
+      day_derived_total: 50.08,
+    });
     seedYield(workspace, pocket, {
       instrument: "lci",
       code: "LCIAAA",
@@ -76,7 +86,7 @@ describe("Anchor — rendimento do porquinho pela Movimentação da B3", () => {
     await byId("finances-tab-transactions").click();
     await byId("statement-review-open").waitForDisplayed({ timeout: 30_000 });
     expect(await textOf(byId("statement-pending"))).toContain("Statement pending review (3)");
-    expect(balance(pocket)).toBeCloseTo(-0.51, 2);
+    expect(balance(pocket)).toBeCloseTo(-0.28, 2);
   });
 
   it("o botão de importar o rendimento só liga depois de escolher a conta", async () => {
@@ -85,21 +95,29 @@ describe("Anchor — rendimento do porquinho pela Movimentação da B3", () => {
     expect(await byId("yield-import-button").isEnabled()).toBe(true);
   });
 
-  it("o CDB mostra a checagem que bate, e editar o IR muda o líquido", async () => {
+  it("o CDB recente mostra o IOF e a checagem que bate, e editar o IR muda o líquido", async () => {
     await clickCentered(byId("statement-review-open"));
     await byId("yield-gross").waitForDisplayed({ timeout: 20_000 });
     expect(await textOf(byId("yield-original"))).toContain("CDB CDBAAA");
+    expect(await textOf(byId("yield-iof-note"))).toContain("Held 4 day(s)");
+    expect(await byId("yield-iof").getValue()).toBe("0.3");
     expect(await textOf(byId("yield-check"))).toContain("exactly what the B3 file explains");
-    expect(await textOf(byId("yield-net"))).toBe("0.31");
+    expect(await textOf(byId("yield-net"))).toBe("0.08");
 
-    await byId("yield-ir").setValue("0.10");
-    await waitForText(byId("yield-net"), (t) => t === "0.30", "líquido = 0,40 − 0,10");
+    await byId("yield-ir").setValue("0.05");
+    await waitForText(byId("yield-net"), (t) => t === "0.05", "líquido = 0,40 − 0,30 − 0,05");
     await byId("statement-correct").click();
 
+    // Três linhas: receita bruta, despesa de IOF e despesa de IR, as duas na categoria Taxes.
     await browser.waitUntil(() => ledger(pocket, "receita") === 1, { timeout: 20_000, timeoutMsg: "a receita bruta deveria estar gravada" });
-    expect(ledger(pocket, "despesa")).toBe(1);
-    expect(sql("SELECT valor FROM general_transactions WHERE transaction_type = 'despesa'")).toBe("0.1");
-    expect(sql("SELECT c.nome FROM general_transactions g JOIN general_transaction_categories c ON c.id = g.category_id WHERE g.transaction_type = 'despesa'")).toBe("Taxes");
+    expect(ledger(pocket, "despesa")).toBe(2);
+    expect(sql("SELECT round(sum(valor), 2) FROM general_transactions WHERE transaction_type = 'despesa'")).toBe("0.35");
+    expect(
+      sql(
+        "SELECT group_concat(DISTINCT c.nome) FROM general_transactions g JOIN general_transaction_categories c ON c.id = g.category_id WHERE g.transaction_type = 'despesa'",
+      ),
+    ).toBe("Taxes");
+    expect(Number(sql("SELECT count(*) FROM general_transactions WHERE notes LIKE 'IOF%'"))).toBe(1);
   });
 
   it("a LCI é isenta: uma linha só e nenhuma checagem sem extrato do dia", async () => {
@@ -108,10 +126,12 @@ describe("Anchor — rendimento do porquinho pela Movimentação da B3", () => {
       timeoutMsg: "o segundo item é a LCI",
     });
     expect(await byId("yield-ir").getValue()).toBe("0");
+    expect(await byId("yield-iof").getValue()).toBe("0");
+    expect(await textOf(byId("yield-iof-note"))).toContain("No IOF for this instrument");
     expect((await $$('[data-testid="yield-check"]')).length).toBe(0);
     await byId("statement-correct").click();
     await browser.waitUntil(() => ledger(pocket, "receita") === 2, { timeout: 20_000, timeoutMsg: "a receita da LCI deveria estar gravada" });
-    expect(ledger(pocket, "despesa")).toBe(1);
+    expect(ledger(pocket, "despesa")).toBe(2);
   });
 
   it("quando o banco pagou menos que a B3 explica, avisa e deixa descartar", async () => {
@@ -126,7 +146,7 @@ describe("Anchor — rendimento do porquinho pela Movimentação da B3", () => {
   });
 
   it("o saldo do porquinho soma o rendimento líquido que ficou", async () => {
-    // −0,51 do extrato semeado + 0,40 (CDB) − 0,10 (IR) + 0,40 (LCI) = 0,19.
-    expect(balance(pocket)).toBeCloseTo(0.19, 2);
+    // −0,28 do extrato semeado + 0,40 (CDB) − 0,30 (IOF) − 0,05 (IR) + 0,40 (LCI) = 0,17.
+    expect(balance(pocket)).toBeCloseTo(0.17, 2);
   });
 });

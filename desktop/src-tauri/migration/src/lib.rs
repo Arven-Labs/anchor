@@ -77,6 +77,7 @@ mod m20261018_100000_create_ingestion_runs;
 mod m20261019_100000_create_import_pending;
 mod m20261020_100000_rebuild_import_pending_by_workspace;
 mod m20261021_100000_seed_fixed_income_tax_rules;
+mod m20261022_100000_update_fixed_income_cdb_rule_description;
 
 pub struct Migrator;
 
@@ -161,6 +162,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261019_100000_create_import_pending::Migration),
             Box::new(m20261020_100000_rebuild_import_pending_by_workspace::Migration),
             Box::new(m20261021_100000_seed_fixed_income_tax_rules::Migration),
+            Box::new(m20261022_100000_update_fixed_income_cdb_rule_description::Migration),
         ]
     }
 }

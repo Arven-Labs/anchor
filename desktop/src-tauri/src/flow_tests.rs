@@ -2720,8 +2720,9 @@ async fn account_balance(db: &sea_orm::DatabaseConnection, ws: i32, id: i32) -> 
     list_bank_accounts_view(db, ws).await.unwrap().into_iter().find(|a| a.id == id).unwrap().balance
 }
 
+/// Aplicada 63 dias antes do resgate: já passou dos 30 dias do IOF, só o IR incide.
 const CDB_SHEET: [&[&str]; 2] = [
-    &["Credito", "01/03/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "10000", "0.01", "100"],
+    &["Credito", "01/01/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "10000", "0.01", "100"],
     &["Debito", "05/03/2026", "RESGATE ANTECIPADO/", "CDB - CDBAAA - BANCO", "BANCO", "5000", "0.0108", "50.40"],
 ];
 
@@ -2755,7 +2756,7 @@ async fn a_cdb_yield_adds_gross_and_ir_and_the_pocket_ends_at_the_remaining_prin
         &db,
         ws,
         pending[0].id,
-        EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: 0.40, ir_amount: 0.09, notes: None },
+        EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: 0.40, iof_amount: 0.0, ir_amount: 0.09, notes: None },
     )
     .await
     .unwrap();
@@ -2773,6 +2774,61 @@ async fn a_cdb_yield_adds_gross_and_ir_and_the_pocket_ends_at_the_remaining_prin
     let taxes = list_categories_view(&db, ws).await.unwrap().into_iter().find(|c| c.nome == "Taxes").unwrap();
     assert_eq!(ir.category_id, Some(taxes.id), "o IR retido cai na categoria Taxes");
     assert!(list_statement_pending_in(&db, ws).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_short_cdb_holding_records_gross_iof_and_ir_as_three_lines() {
+    use crate::commands::fixed_income_io::{confirm_yield_pending_in, parse_fixed_income_rows, stage_yield_parsed, EditedYield};
+    use crate::commands::statement_io::list_statement_pending_in;
+    use crate::commands::tax::load_rule_set;
+
+    let db = memory_db().await;
+    let (ws, _checking, pocket) = pocket_with_statement(&db).await;
+    // Aplicado em 01/03 e resgatado em 05/03 (4 dias): o IOF leva 86% do rendimento bruto de 0,50.
+    let sheet = movement_sheet(&[
+        &["Credito", "01/03/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "10000", "0.01", "100"],
+        &["Debito", "05/03/2026", "RESGATE ANTECIPADO/", "CDB - CDBAAA - BANCO", "BANCO", "5000", "0.0101", "50.50"],
+    ]);
+    let rules = load_rule_set(&db).await.unwrap();
+    stage_yield_parsed(&db, ws, pocket.id, "b3_fixed_income", parse_fixed_income_rows(&sheet, &rules)).await.unwrap();
+
+    let item = list_statement_pending_in(&db, ws).await.unwrap().remove(0);
+    let detail = item.fixed_income.as_ref().unwrap();
+    assert_eq!((detail.holding_days, detail.iof_basis.as_str()), (Some(4), "full"));
+    assert!(close(detail.gross_yield, 0.50) && close(detail.iof_amount, 0.43) && close(detail.ir_amount, 0.02) && close(detail.net_yield, 0.05));
+
+    confirm_yield_pending_in(
+        &db,
+        ws,
+        item.id,
+        EditedYield {
+            transaction_date: "2026-03-05".to_string(),
+            gross_yield: detail.gross_yield,
+            iof_amount: detail.iof_amount,
+            ir_amount: detail.ir_amount,
+            notes: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let lines = crate::entity::general_transaction::Entity::find()
+        .filter(crate::entity::general_transaction::Column::BankAccountId.eq(pocket.id))
+        .filter(crate::entity::general_transaction::Column::TransactionType.is_in(["receita", "despesa"]))
+        .all(&db)
+        .await
+        .unwrap();
+    assert_eq!(lines.len(), 3, "receita bruta + IOF + IR");
+    assert_eq!(lines.iter().filter(|l| l.transaction_type == "despesa").count(), 2);
+    assert!(lines.iter().any(|l| l.notes.as_deref().is_some_and(|n| n.starts_with("IOF"))));
+    // 49,69 do extrato + 0,50 − 0,43 − 0,02 = 49,74: só ficou o líquido de 0,05.
+    assert!(close(account_balance(&db, ws, pocket.id).await, 49.74));
+
+    // Passar do rendimento bruto somando IOF e IR é recusado.
+    stage_yield_parsed(&db, ws, pocket.id, "b3_fixed_income", parse_fixed_income_rows(&movement_sheet(&CDB_SHEET), &rules)).await.unwrap();
+    let next = list_statement_pending_in(&db, ws).await.unwrap().remove(0);
+    let too_much = EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: 0.40, iof_amount: 0.30, ir_amount: 0.20, notes: None };
+    assert!(confirm_yield_pending_in(&db, ws, next.id, too_much).await.is_err());
 }
 
 #[tokio::test]
@@ -2797,7 +2853,7 @@ async fn an_exempt_instrument_records_only_the_gross_line() {
         &db,
         ws,
         item.id,
-        EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: detail.gross_yield, ir_amount: 0.0, notes: None },
+        EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: detail.gross_yield, iof_amount: 0.0, ir_amount: 0.0, notes: None },
     )
     .await
     .unwrap();
@@ -2837,7 +2893,7 @@ async fn editing_the_tax_rate_changes_the_proposal_and_a_bad_ir_is_refused() {
     assert!(close(detail.ir_rate, 0.15) && close(detail.ir_amount, 0.06) && close(detail.net_yield, 0.34));
 
     for ir in [-0.01, 0.41] {
-        let bad = EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: 0.40, ir_amount: ir, notes: None };
+        let bad = EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: 0.40, iof_amount: 0.0, ir_amount: ir, notes: None };
         assert!(confirm_yield_pending_in(&db, ws, item.id, bad).await.is_err(), "IR {ir} fora de 0..=bruto");
     }
     assert_eq!(list_statement_pending_in(&db, ws).await.unwrap().len(), 1, "continua pendente");
@@ -2866,7 +2922,7 @@ async fn reimporting_the_yields_never_duplicates_even_after_editing_the_gross() 
         &db,
         ws,
         item.id,
-        EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: 0.41, ir_amount: 0.09, notes: None },
+        EditedYield { transaction_date: "2026-03-05".to_string(), gross_yield: 0.41, iof_amount: 0.0, ir_amount: 0.09, notes: None },
     )
     .await
     .unwrap();

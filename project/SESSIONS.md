@@ -3143,4 +3143,29 @@ por enquanto. Pediu também para **não usar branches** enquanto o app não esti
   (diálogo nativo). **A hipótese "valor da B3 = bruto" e a taxa de 22,5% não foram conferidas contra o extrato**, porque os períodos
   não se sobrepõem (extrato de 2025, Movimentação de setembro/2026): falta o dono do projeto exportar a Movimentação de 2025.
 - **Pendente**: validação com períodos sobrepostos; rendimento ainda não resgatado; posição de carteira da renda fixa com marca por
-  conta; JCP bruto/líquido; tela global de pendentes.
+  conta; JCP bruto/líquido; tela global de pendentes. *(A validação foi feita na Sessão 142, abaixo, e mudou o modelo.)*
+
+
+### 2026-10-19 — Sessão 142
+
+**Validação do rendimento com a Movimentação de 2025, e o IOF entra no modelo.** O dono do projeto exportou a Movimentação de 2025
+(mesmo período do extrato). Direto na `main`.
+- **Cruzamento (só agregados, nenhum valor ou código nos docs)**: as 17 aplicações de CDB da B3 têm par exato no extrato (mesmo valor,
+  até 3 dias de diferença), mas são só 17 das 75 do extrato; dos 125 resgates do extrato, só alguns existem na B3. A B3 **cobre parte
+  do porquinho**. Cruzar por dia exato dava só 2 dias em comum e taxas absurdas; a causa era data de liquidação (o extrato antecede a B3
+  em 1 a 3 dias) e, principalmente, o IOF.
+- **Hipótese testada**: valor da B3 = bruto e IR de 22,5% sobre o rendimento. Sozinha, acertava o valor pago em **1 de 23** resgates
+  (erro mediano R$ 0,12). Com o **IOF regressivo** (tempo aplicado de 1 a 25 dias, mediana 9) antes do IR: **19 de 23 a até R$ 0,01**
+  e 21 de 23 a até R$ 0,03, medido com o código de produção (teste `#[ignore]` com `ANCHOR_B3_MOVIMENTACAO` e `ANCHOR_INTER_CSV`).
+  Confirma que o valor da B3 é bruto e que o IR é 22,5%, e mostra que o meu "IOF não modelado" da Sessão 141 estava errado: no
+  padrão de uso dele (dias ou semanas), o IOF leva a maior parte do rendimento.
+- **Feito**: `domain/tax/iof.rs` (tabela do decreto), lotes PEPS por código e IOF ponderado em `fixed_income_io.rs`, IR sobre o que
+  sobra do IOF, campo editável de IOF e nota de origem no popup, até três linhas ao aprovar, migration que corrige a descrição da
+  regra do CDB. E2E do rendimento ampliado (IOF, três linhas, LCI sem IOF).
+- **Verificado**: `./dev.sh check` limpo; `cargo test --lib` inteiro no Docker (654 passaram, 0 falharam), com testes unitários do IOF
+  (96% no 1º dia, 0% no 30º, tabela nunca sobe), do consumo PEPS dos lotes e das origens `full`/`partial`/`unknown`/`not_applicable`,
+  e um fluxo com aplicação recente (três linhas, saldo do porquinho = extrato + líquido).
+- **Não verificado**: o CI desta mudança (resultado abaixo); a tela a olho; o clique no botão de importar.
+- **Limites**: 4 de 23 resgates ainda erram mais de 1 centavo (arredondamento, lotes de mais de uma aplicação ou o par errado no
+  cruzamento); resgates cujo CDB não tem a aplicação no arquivo ficam sem IOF e são marcados; o rendimento do porquinho que a B3 não
+  cobre continua sem fonte. Os 16 JCP do arquivo seguem sem uso (precisam de uma fonte do valor líquido para decidir bruto ou líquido).

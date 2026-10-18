@@ -3,8 +3,10 @@
 // conta Porquinho; o rendimento aparece como resgate maior que o aplicado. Cada resgate
 // da B3 se explica sozinho: o valor é o bruto (quantidade × preço unitário da curva), o
 // principal é a quantidade × o preço unitário da aplicação, e a diferença é o rendimento
-// bruto, de onde sai o IR por uma taxa fixa por papel (`tax_rules`, editável). Não
-// depende de saldo de abertura. A tabela regressiva e o IOF não são modelados.
+// bruto, de onde saem o IOF (CDB resgatado em menos de 30 dias, tabela do decreto, pelos
+// dias aplicados de cada lote) e o IR (taxa fixa por papel em `tax_rules`, editável, sobre o
+// que sobra do IOF). Não depende de saldo de abertura, só da data da aplicação, que o arquivo
+// traz quando a aplicação está nele. A tabela regressiva do IR não é modelada.
 //
 // Cada resgate vira um item da fila (`kind = fixed_income_yield`) na conta Porquinho;
 // aprovar grava duas linhas: receita bruta e despesa "IR retido" (categoria Taxes).
@@ -22,6 +24,7 @@ use crate::commands::portfolio_io::{
 };
 use crate::commands::statement_io::{dedup_key, finish_pending, statement_row};
 use crate::commands::tax::{ensure_taxes_category, load_rule_set};
+use crate::domain::tax::iof::iof_rate_for_days;
 use crate::domain::tax::rules::{fixed_income_ir_key, RuleSet};
 use crate::entity::{general_transaction, import_pending};
 use crate::error::AppError;
@@ -46,7 +49,18 @@ pub struct ProposedYield {
     /// Valor do resgate na B3 (bruto, antes do IR).
     pub gross_value: f64,
     pub gross_yield: f64,
+    /// IOF sobre o rendimento (só CDB, só na parte com data de aplicação conhecida no
+    /// arquivo); descontado antes do IR.
+    #[serde(default)]
+    pub iof_amount: f64,
+    /// Dias aplicados (média ponderada dos lotes resgatados), quando conhecidos.
+    #[serde(default)]
+    pub holding_days: Option<u32>,
+    /// `full` (toda a quantidade tem aplicação no arquivo), `partial`, `unknown` ou `not_applicable`.
+    #[serde(default = "unknown_basis")]
+    pub iof_basis: String,
     pub ir_rate: f64,
+    /// IR sobre o rendimento depois do IOF.
     pub ir_amount: f64,
     pub net_yield: f64,
     pub base_unit_price: f64,
@@ -57,7 +71,17 @@ pub struct ProposedYield {
     pub day_derived_total: f64,
 }
 
+fn unknown_basis() -> String {
+    "unknown".to_string()
+}
+
 pub type YieldParsed = Vec<Result<ProposedYield, ParseIssue>>;
+
+/// Lotes de uma aplicação consumidos por um resgate (PEPS): (dias aplicados, cotas).
+struct Holding {
+    portions: Vec<(i64, f64)>,
+    covered: f64,
+}
 
 /// `CDB - CDB926EMY03 - BANCO` → (`cdb`, `CDB926EMY03`). O primeiro pedaço é o papel.
 fn parse_product(product: &str) -> Option<(String, String)> {
@@ -93,6 +117,47 @@ pub fn parse_fixed_income_rows(rows: &[Vec<String>], rules: &RuleSet) -> YieldPa
         Some(first) if all_prices.iter().all(|p| (p - first).abs() < 1e-12) => Some(*first),
         _ => None,
     };
+
+    // Lotes de cada código (data da aplicação, cotas). Os resgates, em ordem cronológica,
+    // consomem os lotes mais antigos primeiro (PEPS): é daí que saem os dias aplicados do IOF.
+    let mut lots: HashMap<String, Vec<(NaiveDate, f64)>> = HashMap::new();
+    let mut redemptions: Vec<(NaiveDate, usize, String, f64)> = Vec::new();
+    for (index, row) in rows.iter().enumerate().skip(1) {
+        let Some((_, code)) = parse_product(&get(row, cols.product)) else { continue };
+        let Some(date) = parse_date(&get(row, cols.date)).and_then(|d| NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok()) else {
+            continue;
+        };
+        let Ok(Some(quantity)) = parse_number(&get(row, cols.quantity)) else { continue };
+        let movement = normalize_header(&get(row, cols.movement));
+        if movement.contains("aplicacao") {
+            lots.entry(code).or_default().push((date, quantity));
+        } else if movement.contains("resgate") || movement.contains("vencimento") {
+            redemptions.push((date, index, code, quantity));
+        }
+    }
+    for code_lots in lots.values_mut() {
+        code_lots.sort_by_key(|lot| lot.0);
+    }
+    redemptions.sort_by_key(|r| (r.0, r.1));
+    let mut holdings: HashMap<usize, Holding> = HashMap::new();
+    for (date, line, code, quantity) in redemptions {
+        let mut left = quantity;
+        let mut holding = Holding { portions: Vec::new(), covered: 0.0 };
+        for lot in lots.get_mut(&code).into_iter().flatten() {
+            if left <= 1e-9 {
+                break;
+            }
+            if lot.1 <= 1e-9 || lot.0 > date {
+                continue;
+            }
+            let take = lot.1.min(left);
+            lot.1 -= take;
+            left -= take;
+            holding.covered += take;
+            holding.portions.push(((date - lot.0).num_days(), take));
+        }
+        holdings.insert(line, holding);
+    }
 
     let mut out: YieldParsed = Vec::new();
     for (index, row) in rows.iter().enumerate().skip(1) {
@@ -162,7 +227,26 @@ pub fn parse_fixed_income_rows(rows: &[Vec<String>], rules: &RuleSet) -> YieldPa
                 continue;
             }
         };
-        let ir_amount = round2(gross_yield * ir_rate);
+        // IOF só no CDB e só na parte cuja aplicação está no arquivo; o resto fica sem IOF e
+        // marcado (`partial`/`unknown`) pra o usuário acertar com o que o banco pagou.
+        let (iof_amount, holding_days, iof_basis) = if instrument == "cdb" {
+            match holdings.get(&line).filter(|h| h.covered > 1e-9) {
+                Some(h) => {
+                    let iof: f64 = h
+                        .portions
+                        .iter()
+                        .map(|(days, units)| gross_yield * (units / quantity) * iof_rate_for_days(*days))
+                        .sum();
+                    let weighted_days: f64 = h.portions.iter().map(|(days, units)| *days as f64 * units).sum::<f64>() / h.covered;
+                    let basis = if h.covered >= quantity - 1e-9 { "full" } else { "partial" };
+                    (round2(iof), Some(weighted_days.round().max(0.0) as u32), basis)
+                }
+                None => (0.0, None, "unknown"),
+            }
+        } else {
+            (0.0, None, "not_applicable")
+        };
+        let ir_amount = round2((gross_yield - iof_amount) * ir_rate);
         out.push(Ok(ProposedYield {
             line,
             transaction_date,
@@ -172,9 +256,12 @@ pub fn parse_fixed_income_rows(rows: &[Vec<String>], rules: &RuleSet) -> YieldPa
             principal,
             gross_value,
             gross_yield,
+            iof_amount,
+            holding_days,
+            iof_basis: iof_basis.to_string(),
             ir_rate,
             ir_amount,
-            net_yield: round2(gross_yield - ir_amount),
+            net_yield: round2(gross_yield - iof_amount - ir_amount),
             base_unit_price,
             base_price_source: base_price_source.to_string(),
             day_derived_total: 0.0,
@@ -295,12 +382,14 @@ pub async fn stage_fixed_income_yield_in(
 pub struct EditedYield {
     pub transaction_date: String,
     pub gross_yield: f64,
+    #[serde(default)]
+    pub iof_amount: f64,
     pub ir_amount: f64,
     pub notes: Option<String>,
 }
 
-/// Aprova um rendimento: receita bruta na conta Porquinho e, se houver IR, a despesa
-/// "IR retido" na categoria Taxes, numa transação só.
+/// Aprova um rendimento: receita bruta na conta Porquinho e, para cada imposto retido
+/// (IOF, IR) maior que zero, uma despesa na categoria Taxes, numa transação só.
 pub async fn confirm_yield_pending_in(
     db: &DatabaseConnection,
     workspace_id: i32,
@@ -317,8 +406,12 @@ pub async fn confirm_yield_pending_in(
     if !edited.gross_yield.is_finite() || edited.gross_yield <= 0.0 {
         return Err(AppError::InvalidInput("o rendimento bruto tem de ser positivo".to_string()));
     }
-    if !edited.ir_amount.is_finite() || edited.ir_amount < 0.0 || edited.ir_amount > edited.gross_yield {
-        return Err(AppError::InvalidInput("o IR retido tem de estar entre zero e o rendimento bruto".to_string()));
+    if [edited.ir_amount, edited.iof_amount].iter().any(|v| !v.is_finite() || *v < 0.0)
+        || edited.ir_amount + edited.iof_amount > edited.gross_yield + 1e-9
+    {
+        return Err(AppError::InvalidInput(
+            "o IOF e o IR retidos não podem ser negativos nem passar do rendimento bruto".to_string(),
+        ));
     }
     let date = parse_date(&edited.transaction_date)
         .ok_or_else(|| AppError::InvalidInput(format!("data inválida: '{}'", edited.transaction_date)))?;
@@ -340,7 +433,11 @@ pub async fn confirm_yield_pending_in(
         },
     )
     .await?;
-    if edited.ir_amount > 0.0 {
+    let withheld = [
+        (edited.iof_amount, format!("IOF withheld on {label} yield")),
+        (edited.ir_amount, format!("IR withheld on {label} yield ({:.1}%)", proposed.ir_rate * 100.0)),
+    ];
+    for (amount, notes) in withheld.into_iter().filter(|(amount, _)| *amount > 0.0) {
         let taxes = ensure_taxes_category(&txn, workspace_id).await?;
         create_general_transaction_in(
             &txn,
@@ -349,9 +446,9 @@ pub async fn confirm_yield_pending_in(
                 bank_account_id: account_id,
                 transaction_type: "despesa".to_string(),
                 category_id: Some(taxes),
-                valor: edited.ir_amount,
-                transaction_date: date,
-                notes: Some(format!("IR withheld on {label} yield ({:.1}%)", proposed.ir_rate * 100.0)),
+                valor: amount,
+                transaction_date: date.clone(),
+                notes: Some(notes),
             },
         )
         .await?;
@@ -449,7 +546,7 @@ mod tests {
     fn a_cdb_redemption_splits_principal_gross_ir_and_net() {
         let parsed = parse_fixed_income_rows(
             &rows(&[
-                &["Credito", "01/03/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "10000", "0.01", "100"],
+                &["Credito", "01/01/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "10000", "0.01", "100"],
                 &["Debito", "05/03/2026", "RESGATE ANTECIPADO/", "CDB - CDBAAA - BANCO", "BANCO", "5000", "0.0101", "50.50"],
             ]),
             &rules(),
@@ -459,9 +556,81 @@ mod tests {
         assert_eq!((r.instrument.as_str(), r.code.as_str()), ("cdb", "CDBAAA"));
         assert_eq!((r.principal, r.gross_value, r.gross_yield), (50.0, 50.5, 0.5));
         assert_eq!(r.ir_rate, 0.225);
+        assert_eq!((r.iof_amount, r.holding_days, r.iof_basis.as_str()), (0.0, Some(63), "full"), "mais de 30 dias: sem IOF");
         assert_eq!((r.ir_amount, r.net_yield), (0.11, 0.39), "0,5 × 22,5% = 0,1125 → 0,11");
         assert_eq!(r.base_price_source, "application");
         assert_eq!(r.transaction_date, "2026-03-05");
+    }
+
+    #[test]
+    fn a_short_holding_pays_iof_first_and_ir_on_what_is_left() {
+        let parsed = parse_fixed_income_rows(
+            &rows(&[
+                &["Credito", "01/03/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "10000", "0.01", "100"],
+                &["Debito", "05/03/2026", "RESGATE ANTECIPADO/", "CDB - CDBAAA - BANCO", "BANCO", "5000", "0.0101", "50.50"],
+            ]),
+            &rules(),
+        );
+        let r = ok(&parsed, 1);
+        // 4 dias aplicados: IOF de 86% do rendimento de 0,50 = 0,43; IR de 22,5% sobre 0,07 = 0,02.
+        assert_eq!((r.holding_days, r.iof_basis.as_str()), (Some(4), "full"));
+        assert_eq!((r.gross_yield, r.iof_amount, r.ir_amount, r.net_yield), (0.5, 0.43, 0.02, 0.05));
+    }
+
+    #[test]
+    fn redemptions_consume_the_oldest_lots_first_and_the_iof_is_weighted() {
+        let parsed = parse_fixed_income_rows(
+            &rows(&[
+                &["Credito", "01/03/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "10000", "0.01", "100"],
+                &["Credito", "11/03/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "10000", "0.01", "100"],
+                &["Debito", "21/03/2026", "RESGATE ANTECIPADO/", "CDB - CDBAAA - BANCO", "BANCO", "15000", "0.0104", "156"],
+            ]),
+            &rules(),
+        );
+        let r = ok(&parsed, 2);
+        // 10000 cotas do lote de 20 dias (IOF 33%) e 5000 do de 10 dias (66%) sobre o rendimento bruto de 6,00.
+        assert_eq!((r.principal, r.gross_yield), (150.0, 6.0));
+        assert_eq!((r.holding_days, r.iof_basis.as_str()), (Some(17), "full"));
+        assert_eq!(r.iof_amount, 2.64, "6,00 × (2/3 × 33% + 1/3 × 66%)");
+        assert_eq!((r.ir_amount, r.net_yield), (0.76, 2.6), "IR de 22,5% sobre 3,36");
+    }
+
+    #[test]
+    fn units_without_an_application_in_the_file_get_no_iof_and_are_marked() {
+        let partial = parse_fixed_income_rows(
+            &rows(&[
+                &["Credito", "01/03/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "2000", "0.01", "20"],
+                &["Debito", "05/03/2026", "RESGATE", "CDB - CDBAAA - BANCO", "BANCO", "4000", "0.0110", "44"],
+            ]),
+            &rules(),
+        );
+        let r = ok(&partial, 1);
+        assert_eq!((r.iof_basis.as_str(), r.holding_days), ("partial", Some(4)));
+        assert_eq!(r.gross_yield, 4.0);
+        assert_eq!(r.iof_amount, 1.72, "só a metade com aplicação conhecida: 4,00 × 1/2 × 86%");
+
+        let unknown = parse_fixed_income_rows(
+            &rows(&[
+                &["Credito", "01/03/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "2000", "0.01", "20"],
+                &["Debito", "05/03/2026", "RESGATE", "CDB - CDBBBB - BANCO", "BANCO", "1000", "0.0110", "11"],
+            ]),
+            &rules(),
+        );
+        let r = ok(&unknown, 1);
+        assert_eq!((r.iof_basis.as_str(), r.holding_days, r.iof_amount), ("unknown", None, 0.0));
+    }
+
+    #[test]
+    fn exempt_instruments_never_get_iof() {
+        let parsed = parse_fixed_income_rows(
+            &rows(&[
+                &["Credito", "01/03/2026", "APLICAÇÃO", "LCI - LCIAAA", "BANCO", "1000", "0.01", "10"],
+                &["Debito", "05/03/2026", "RESGATE", "LCI - LCIAAA - BANCO", "BANCO", "1000", "0.0110", "11"],
+            ]),
+            &rules(),
+        );
+        let r = ok(&parsed, 1);
+        assert_eq!((r.iof_amount, r.iof_basis.as_str(), r.net_yield), (0.0, "not_applicable", 1.0));
     }
 
     #[test]
@@ -538,7 +707,7 @@ mod tests {
     fn redemptions_of_the_same_day_share_the_derived_total() {
         let parsed = parse_fixed_income_rows(
             &rows(&[
-                &["Credito", "01/03/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "10000", "0.01", "100"],
+                &["Credito", "01/01/2026", "APLICAÇÃO", "CDB - CDBAAA", "BANCO", "10000", "0.01", "100"],
                 &["Debito", "05/03/2026", "RESGATE", "CDB - CDBAAA - BANCO", "BANCO", "1000", "0.0104", "10.40"],
                 &["Debito", "05/03/2026", "RESGATE", "CDB - CDBAAA - BANCO", "BANCO", "2000", "0.0102", "20.40"],
                 &["Debito", "06/03/2026", "RESGATE", "CDB - CDBAAA - BANCO", "BANCO", "1000", "0.0104", "10.40"],
@@ -582,6 +751,44 @@ mod tests {
             acc
         });
         println!("origem do preço-base: {sources:?}");
+
+        // Se o extrato do mesmo período vier em `ANCHOR_INTER_CSV`, confere o líquido previsto
+        // (principal + rendimento depois de IOF e IR) com o resgate mais próximo do extrato, em até
+        // 3 dias. Só vale para quem tem a aplicação no arquivo (`full`): o resto não tem IOF.
+        if let Ok(statement_path) = std::env::var("ANCHOR_INTER_CSV") {
+            use crate::commands::statement_io::{decode_text, parse_inter_csv};
+            let statement = parse_inter_csv(&decode_text(&std::fs::read(statement_path).expect("extrato abre")));
+            let redemptions: Vec<(NaiveDate, f64)> = statement
+                .rows
+                .iter()
+                .filter_map(|r| r.as_ref().ok())
+                .filter(|p| p.porquinho && p.valor > 0.0)
+                .filter_map(|p| Some((NaiveDate::parse_from_str(&p.transaction_date, "%Y-%m-%d").ok()?, p.valor)))
+                .collect();
+            let mut errors: Vec<f64> = Vec::new();
+            for p in good.iter().filter(|p| p.iof_basis == "full") {
+                let day = NaiveDate::parse_from_str(&p.transaction_date, "%Y-%m-%d").unwrap();
+                let predicted = p.principal + p.net_yield;
+                if let Some(error) = redemptions
+                    .iter()
+                    .filter(|(d, _)| (*d - day).num_days().abs() <= 3)
+                    .map(|(_, v)| (v - predicted).abs())
+                    .reduce(f64::min)
+                {
+                    errors.push(error);
+                }
+            }
+            errors.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            if !errors.is_empty() {
+                println!(
+                    "conferência com o extrato: {} resgates com aplicação conhecida | dentro de R$ 0,01: {} | dentro de R$ 0,03: {} | erro mediano R$ {:.3}",
+                    errors.len(),
+                    errors.iter().filter(|e| **e <= 0.0101).count(),
+                    errors.iter().filter(|e| **e <= 0.0301).count(),
+                    errors[errors.len() / 2],
+                );
+            }
+        }
         if let (Some(min), Some(max)) = (
             good.iter().map(|p| p.gross_yield / p.principal * 100.0).reduce(f64::min),
             good.iter().map(|p| p.gross_yield / p.principal * 100.0).reduce(f64::max),

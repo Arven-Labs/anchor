@@ -16,7 +16,8 @@ pub const JCP_IRRF_RATE: &str = "jcp_irrf_rate";
 pub const CRYPTO_EXEMPTION_MONTHLY_SALES: &str = "crypto_exemption_monthly_sales";
 
 /// IR retido no resgate de renda fixa, uma taxa fixa por papel (a tabela
-/// regressiva e o IOF não são modelados). `None` para papel desconhecido.
+/// regressiva do IR não é modelada; o IOF mora em `domain::tax::iof`). `None`
+/// para papel desconhecido.
 pub fn fixed_income_ir_key(instrument: &str) -> Option<&'static str> {
     match instrument {
         "cdb" => Some("fixed_income_ir_cdb"),

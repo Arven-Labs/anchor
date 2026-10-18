@@ -33,6 +33,10 @@ export type YieldDetail = {
   principal: number;
   gross_value: number;
   gross_yield: number;
+  iof_amount: number;
+  holding_days: number | null;
+  // `full`, `partial`, `unknown` ou `not_applicable`: de onde veio o IOF.
+  iof_basis: "full" | "partial" | "unknown" | "not_applicable";
   ir_rate: number;
   ir_amount: number;
   net_yield: number;
@@ -86,10 +90,24 @@ function dayCheck(detail: YieldDetail): { text: string; matches: boolean } | nul
       `The statement shows R$ ${formatMoney(detail.bank_total_that_day)} leaving the pocket that day, but the B3 file explains ` +
       `R$ ${formatMoney(detail.day_derived_total)} (difference R$ ${formatMoney(diff)}). ` +
       (diff < 0
-        ? "The bank paid less: more tax was withheld than the rate here (IOF, or a higher IR bracket)."
-        : "The bank paid more: less tax was withheld than the rate here."),
+        ? "The bank paid less: more tax was withheld than computed here (for example IOF on units whose application is not in the file, or a higher IR bracket)."
+        : "The bank paid more: less tax was withheld than computed here."),
     matches: false,
   };
+}
+
+// De onde veio o IOF proposto, em uma frase.
+function iofNote(detail: YieldDetail): string {
+  switch (detail.iof_basis) {
+    case "full":
+      return `Held ${detail.holding_days ?? 0} day(s): IOF applies to redemptions within 30 days.`;
+    case "partial":
+      return `Only part of the units has its application in the file (about ${detail.holding_days ?? 0} day(s)); the rest has no IOF here. Enter it if the bank paid less.`;
+    case "unknown":
+      return "This CDB has no application in the file, so the holding time is unknown and the IOF is 0 here. Enter it if the bank paid less.";
+    default:
+      return "No IOF for this instrument.";
+  }
 }
 
 function ReviewForm({
@@ -258,14 +276,15 @@ function YieldReviewForm({
   const queryClient = useQueryClient();
   const [date, setDate] = useState(item.proposed.transaction_date);
   const [gross, setGross] = useState(detail.gross_yield.toString());
+  const [iof, setIof] = useState(detail.iof_amount.toString());
   const [ir, setIr] = useState(detail.ir_amount.toString());
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const net = Number(gross) - Number(ir);
+  const net = Number(gross) - Number(iof) - Number(ir);
   const invalid =
-    gross.trim() === "" || ir.trim() === "" || Number.isNaN(Number(gross)) || Number.isNaN(Number(ir)) ||
-    Number(gross) <= 0 || Number(ir) < 0 || Number(ir) > Number(gross);
+    [gross, iof, ir].some((v) => v.trim() === "" || Number.isNaN(Number(v))) ||
+    Number(gross) <= 0 || Number(iof) < 0 || Number(ir) < 0 || Number(iof) + Number(ir) > Number(gross);
   const check = dayCheck(detail);
 
   const confirmMutation = useMutation<void, AppError, void>({
@@ -276,6 +295,7 @@ function YieldReviewForm({
         edited: {
           transaction_date: date,
           gross_yield: Number(gross),
+          iof_amount: Number(iof),
           ir_amount: Number(ir),
           notes: notes.trim() === "" ? null : notes.trim(),
         },
@@ -316,7 +336,10 @@ function YieldReviewForm({
         <Field label={`Gross yield (income) — ${item.bank_account_name}`}>
           <Input inputMode="decimal" value={gross} onChange={(e) => setGross(e.target.value)} data-testid="yield-gross" />
         </Field>
-        <Field label={`IR withheld (${(detail.ir_rate * 100).toFixed(1)}% → expense in Taxes)`}>
+        <Field label="IOF withheld (expense in Taxes)">
+          <Input inputMode="decimal" value={iof} onChange={(e) => setIof(e.target.value)} data-testid="yield-iof" />
+        </Field>
+        <Field label={`IR withheld (${(detail.ir_rate * 100).toFixed(1)}% of the yield after IOF)`}>
           <Input inputMode="decimal" value={ir} onChange={(e) => setIr(e.target.value)} data-testid="yield-ir" />
         </Field>
         <Field label="Net yield (what stays in the account)">
@@ -329,6 +352,9 @@ function YieldReviewForm({
         </Field>
       </div>
 
+      <p className="text-xs text-muted-foreground" data-testid="yield-iof-note">
+        {iofNote(detail)}
+      </p>
       {check && (
         <p className={check.matches ? "text-sm text-muted-foreground" : "text-sm text-amber-600"} data-testid="yield-check">
           {check.text}

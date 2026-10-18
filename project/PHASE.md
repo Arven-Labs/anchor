@@ -3370,18 +3370,29 @@ de duplicata é ticker + data + tipo + quantidade + total.
   ela, o preço comum a todas as aplicações do arquivo; se forem diferentes, a linha é pulada com o motivo.
 - **IR configurável** (`tax_rules`, Settings → Taxes): `fixed_income_ir_cdb` = 22,5% (taxa fixa; a primeira faixa, resgate em até 180
   dias) e `_lci`/`_lca`/`_cri`/`_cra` = 0%, com vigência por data, valor padrão e reset como as demais regras. Migration
-  `m20261021` insere as linhas. As fontes estão marcadas "verify" (secundárias). **Não modelados**: tabela regressiva e IOF.
+  `m20261021` insere as linhas. As fontes estão marcadas "verify" (secundárias). **Não modelada**: a tabela regressiva do IR.
+- **IOF modelado (Sessão 142)**: CDB resgatado em menos de 30 dias paga IOF sobre o **rendimento**, de 96% no 1º dia a 0% no 30º
+  (tabela do Decreto 6.306/2007 em `domain/tax/iof.rs`, fixada por decreto, por isso fora de `tax_rules`), descontado **antes** do IR.
+  Os dias aplicados vêm da data da aplicação do mesmo código no arquivo, com os resgates consumindo os lotes mais antigos primeiro
+  (PEPS) e o IOF ponderado por lote. Cada proposta diz a origem do IOF: `full` (toda a quantidade tem aplicação no arquivo), `partial`,
+  `unknown` (sem aplicação no arquivo: IOF zero e um aviso, o usuário digita o que o banco cobrou) ou `not_applicable` (LCI/LCA/CRI/CRA).
+  Aprovar grava até **três linhas**: receita bruta, despesa de IOF e despesa de IR (as duas na categoria Taxes, só as maiores que zero).
 - **Fluxo**: `commands/fixed_income_io.rs` lê o xlsx, deriva um item por resgate e o guarda na fila (`kind = fixed_income_yield`,
   conta Porquinho). Aprovar grava **duas linhas**: receita bruta e despesa "IR retido" (categoria Taxes, criada se faltar; some se o
   IR é zero). O IR proposto é editável no popup, então o líquido pode ser acertado com o que o banco realmente pagou.
 - **Checagem contra o extrato**: o popup compara o que o extrato já aprovado mostra saindo do porquinho no dia com o que o arquivo
-  da B3 explica (principal + líquido de todos os resgates do dia) e avisa a diferença (IOF ou faixa de IR maior).
+  da B3 explica (principal + líquido de todos os resgates do dia) e avisa a diferença (por exemplo, IOF de unidades cuja aplicação não
+  está no arquivo, ou uma faixa de IR maior).
 - **Só na conta**: os papéis não viram posição de carteira, então o patrimônio não conta em dobro. A visão de carteira (renda fixa
   com rendimento) fica para depois, com uma marca por conta.
 - **Amostra real** (só agregados): 9 resgates viram propostas, rendimento bruto de 0,20% a 1,08% sobre o principal; 3 aplicações e as
   linhas de proventos e negócios são puladas com motivo.
-- **Pendente**: **validar com períodos sobrepostos** (exportar a Movimentação do mesmo período do extrato, hoje 2025 contra setembro/2026)
-  para confirmar bruto × líquido e a taxa de 22,5%; rendimento ainda não resgatado (curva acumulada); categoria própria para rendimento.
+- **Validação com períodos sobrepostos (Sessão 142)**: com a Movimentação de 2025 (mesmo período do extrato), o modelo (valor da B3 = bruto,
+  IOF pela tabela e IR de 22,5%) acerta o que o banco pagou em **19 de 23 resgates a até R$ 0,01** (21 a até R$ 0,03); o modelo só com IR
+  acertava 1 de 23. As 17 aplicações da B3 têm par exato no extrato, mas elas são só uma parte das do extrato: **a B3 cobre só parte
+  do porquinho** (os demais resgates não têm rendimento derivável por este caminho).
+- **Pendente**: rendimento do porquinho que a B3 não cobre; rendimento ainda não resgatado (curva acumulada); categoria própria para
+  rendimento; tabela regressiva do IR.
 
 **Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
