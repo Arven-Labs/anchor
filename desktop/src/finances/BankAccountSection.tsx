@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -49,6 +50,7 @@ type UpdateBankAccountRequest = {
   nome: string;
   titular: string;
   currency: string;
+  mirrored_in_portfolio?: boolean;
 };
 
 function BankAccountSection({ workspaceId }: { workspaceId: number }) {
@@ -89,9 +91,21 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
     mutationFn: (request) => invoke("update_bank_account", { request }),
     onSuccess: () => {
       invalidate();
+      queryClient.invalidateQueries({ queryKey: ["net-worth", workspaceId] });
       setEditingId(null);
     },
   });
+
+  // Marca "já na carteira": o saldo deixa de contar no caixa do patrimônio na parte que a renda fixa importada cobre.
+  function toggleMirrored(account: BankAccountView) {
+    updateMutation.mutate({
+      bank_account_id: account.id,
+      nome: account.nome,
+      titular: account.titular,
+      currency: account.currency,
+      mirrored_in_portfolio: !account.mirrored_in_portfolio,
+    });
+  }
 
   const deleteMutation = useMutation<void, AppError, number>({
     mutationFn: (bankAccountId) => invoke("delete_bank_account", { bankAccountId }),
@@ -234,10 +248,30 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
                             baseCurrency={baseCurrency}
                             inBase={account.balance_in_base}
                           />
+                          {account.mirrored_in_portfolio && (
+                            <Badge
+                              variant="secondary"
+                              className="ml-2"
+                              data-testid="account-mirrored-badge"
+                              title="The fixed-income positions in the Portfolio are subtracted from this balance in net worth, so they are not counted twice."
+                            >
+                              In Portfolio
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="flex gap-2">
                           <Button size="sm" variant="outline" onClick={() => startEditing(account)}>
                             Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            data-testid="account-mirrored-toggle"
+                            disabled={updateMutation.isPending}
+                            title="Turn on when the fixed income held in this account is also imported as Portfolio positions"
+                            onClick={() => toggleMirrored(account)}
+                          >
+                            {account.mirrored_in_portfolio ? "Count as cash" : "Already in Portfolio"}
                           </Button>
                           <Button
                             variant={isConfirming ? "destructive" : "outline"}

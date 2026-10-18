@@ -13,6 +13,8 @@ pub struct Model {
     pub titular: String,
     // Fase 19 — moeda do saldo, das dívidas e dos lançamentos da conta.
     pub currency: String,
+    // Fase 35, entrega 8 — o saldo já está na carteira (renda fixa importada): o patrimônio não o conta de novo no caixa.
+    pub mirrored_in_portfolio: bool,
     pub created_at: String,
 }
 

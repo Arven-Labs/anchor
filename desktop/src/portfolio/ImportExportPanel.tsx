@@ -23,7 +23,7 @@ type StageResult = {
 const FORMAT_LABEL: Record<ImportFormat, string> = {
   anchor_csv: "Anchor CSV",
   b3_negociacao: "B3 spreadsheet (Negociação)",
-  b3_movimentacao: "B3 spreadsheet (Movimentação: dividends, JCP, share lending and reimbursements)",
+  b3_movimentacao: "B3 spreadsheet (Movimentação: dividends, JCP, share lending, reimbursements and fixed income)",
 };
 
 function ImportExportPanel({

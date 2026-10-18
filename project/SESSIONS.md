@@ -3281,3 +3281,18 @@ fonte primária a alíquota do JCP e o IR do aluguel.
 - **Aberto**: se o valor da Movimentação é líquido ou bruto. Hipótese das fontes secundárias: a B3 retém e o crédito é líquido (22,5% nos
   contratos curtos da amostra); não deu para provar. Decidir se reconstitui o bruto como no JCP, e com qual regra de prazo, fica para o dono.
 - **Pendente**: trocar a nota de fonte do JCP em `tax_rules.rs` e no seed da migration; ver o texto oficial dos arts. 73 a 75; os demais de antes.
+
+
+### 2026-10-18 — Sessão 149
+
+**Fase 35, entrega 8: posição de carteira da renda fixa, com marca por conta.** Plan mode, plano aprovado. O dono do projeto escolheu os papéis
+a custo (sem rendimento acumulado estimado) e a marca por conta, com o dinheiro contando na carteira quando a conta está marcada. Direto na `main`.
+- **Feito**: `parse_fixed_income_positions` (aplicação = compra, resgate/vencimento = venda ao custo, ativo `renda_fixa`), chamado pelo leitor da
+  Movimentação no lugar do "CDB pulado"; helpers extraídos do leitor de rendimento; migration `m20261023` com `bank_accounts.mirrored_in_portfolio`;
+  `mirrored_cash_deduction` e `cash_in_portfolio` no patrimônio; botão e selo em Finances → Accounts.
+- **Verificado**: `./dev.sh check` limpo; `cargo test --lib` no Docker (669 passaram, 0 falharam; 10 novos: 3 do leitor de posições, 2 da dedução, 5 de
+  fluxo: conta marcada não dobra o patrimônio, resgate parcial deixa o resto a custo, caixa nunca negativo, resgate sem posição é recusado, coluna e visão).
+  Amostra real (as duas planilhas): 2025 com 17 compras e 33 vendas (10 com aplicação fora do arquivo); 2026 com 3 compras e 9 vendas (6 fora).
+- **Efeito de uso**: vender mais do que a posição tem é recusado; a planilha de 2026 só passa inteira depois da de 2025.
+- **Não verificado**: a tela a olho; o CI da rodada (o spec novo de `accounts.e2e.mjs` só roda lá).
+- **Pendente**: os de antes (rendimento do porquinho que a B3 não cobre; IR do aluguel líquido ou bruto; nota de fonte do JCP) e ver a tela a olho.

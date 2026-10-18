@@ -1536,6 +1536,7 @@ async fn an_account_currency_only_changes_while_the_account_is_unused() {
         nome: "Chase".to_string(),
         titular: "Me".to_string(),
         currency: Some(currency.to_string()),
+        mirrored_in_portfolio: None,
     };
     assert_eq!(update_bank_account_in(&db, update("EUR")).await.unwrap().currency, "EUR");
     assert!(update_bank_account_in(&db, update("VND")).await.is_err());
@@ -3012,4 +3013,178 @@ async fn the_migration_keeps_an_old_pending_item_and_gives_it_a_workspace() {
     assert_eq!(rows.len(), 1);
     assert_eq!((rows[0].workspace_id, rows[0].portfolio_id), (ws.id, Some(pf.id)));
     assert_eq!(rows[0].bank_account_id, None);
+}
+
+// ---------------------------------------------------------------------------
+// Renda fixa na carteira (Fase 35, entrega 8): posição importada + marca por conta
+// ---------------------------------------------------------------------------
+
+/// Importa as linhas da Movimentação pelo caminho real (leitor → commit) e devolve o resultado do commit.
+async fn import_movimentacao(
+    db: &sea_orm::DatabaseConnection,
+    portfolio_id: i32,
+    lines: &[&[&str]],
+) -> crate::commands::portfolio_io::CommitResult {
+    use crate::commands::portfolio_io::{commit_rows, parse_b3_movimentacao_rows, CommitItem};
+    let mut rows: Vec<Vec<String>> = vec![[
+        "Entrada/Saída",
+        "Data",
+        "Movimentação",
+        "Produto",
+        "Instituição",
+        "Quantidade",
+        "Preço unitário",
+        "Valor da Operação",
+    ]
+    .iter()
+    .map(|c| c.to_string())
+    .collect()];
+    rows.extend(lines.iter().map(|l| l.iter().map(|c| c.to_string()).collect()));
+    let rules = crate::commands::tax::load_rule_set(db).await.unwrap();
+    let items: Vec<CommitItem> = parse_b3_movimentacao_rows(&rows, &rules)
+        .into_iter()
+        .map(|r| CommitItem { proposed: r.expect("linha lida"), asset_class: None })
+        .collect();
+    commit_rows(db, portfolio_id, items).await.unwrap()
+}
+
+const FI_APPLICATION: [&str; 8] =
+    ["Debito", "02/03/2026", "APLICAÇÃO", "CDB - CDBAAA111 - BANCO X", "BANCO X", "100000", "0.01", "1000"];
+const FI_REDEMPTION: [&str; 8] =
+    ["Credito", "20/03/2026", "RESGATE", "CDB - CDBAAA111 - BANCO X", "BANCO X", "60000", "0.0102", "1020"];
+
+async fn mark_mirrored(db: &sea_orm::DatabaseConnection, account: &crate::entity::bank_account::Model, on: bool) {
+    update_bank_account_in(
+        db,
+        UpdateBankAccountRequest {
+            bank_account_id: account.id,
+            nome: account.nome.clone(),
+            titular: account.titular.clone(),
+            currency: None,
+            mirrored_in_portfolio: Some(on),
+        },
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn an_imported_fixed_income_position_is_not_counted_twice_when_the_account_is_marked() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Family").await;
+    let pf = portfolio(&db, ws.id, "B3").await;
+    let porquinho = bank_account(&db, ws.id, "Porquinho").await;
+    cash_in(&db, ws.id, porquinho.id, 1000.0, "2026-03-02").await;
+
+    let result = import_movimentacao(&db, pf.id, &[&FI_APPLICATION]).await;
+    assert_eq!((result.created, result.errors.len()), (1, 0));
+
+    // Sem marca: o mesmo dinheiro conta na carteira e no caixa, como antes de a conta ser marcada.
+    let unmarked = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(unmarked.total_market_value, 1000.0), "posição a custo: {}", unmarked.total_market_value);
+    assert!(close(unmarked.total_cash, 1000.0) && close(unmarked.cash_in_portfolio, 0.0));
+    assert!(close(unmarked.net_worth, 2000.0));
+
+    // Com a marca: o caixa cede o que a carteira já tem.
+    mark_mirrored(&db, &porquinho, true).await;
+    let marked = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(marked.total_market_value, 1000.0));
+    assert!(close(marked.total_cash, 0.0) && close(marked.cash_in_portfolio, 1000.0));
+    assert!(close(marked.net_worth, 1000.0), "o patrimônio não pode dobrar: {}", marked.net_worth);
+
+    // Desmarcar volta ao que era.
+    mark_mirrored(&db, &porquinho, false).await;
+    assert!(close(compute_net_worth(&db, ws.id).await.unwrap().net_worth, 2000.0));
+}
+
+#[tokio::test]
+async fn a_partial_redemption_leaves_the_rest_in_the_position_and_the_yield_stays_out() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Family").await;
+    let pf = portfolio(&db, ws.id, "B3").await;
+    let porquinho = bank_account(&db, ws.id, "Porquinho").await;
+    mark_mirrored(&db, &porquinho, true).await;
+    // Saldo da conta depois do resgate: principal que ficou (400) + o que voltou da B3 e foi gasto, aqui 100 de folga.
+    cash_in(&db, ws.id, porquinho.id, 500.0, "2026-03-02").await;
+
+    let result = import_movimentacao(&db, pf.id, &[&FI_APPLICATION, &FI_REDEMPTION]).await;
+    assert_eq!((result.created, result.errors.len()), (2, 0));
+
+    // A venda é ao custo (600 de 1000): sobram 400 na posição, e os 1020 do resgate não viram ganho realizado.
+    let nw = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(nw.total_market_value, 400.0), "sobra a custo: {}", nw.total_market_value);
+    // O caixa cede só o que a carteira cobre (400 de 500); os 100 restantes seguem como caixa.
+    assert!(close(nw.cash_in_portfolio, 400.0) && close(nw.total_cash, 100.0));
+    assert!(close(nw.net_worth, 500.0));
+}
+
+#[tokio::test]
+async fn the_cash_never_goes_negative_when_the_portfolio_has_more_than_the_marked_balance() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Family").await;
+    let pf = portfolio(&db, ws.id, "B3").await;
+    let porquinho = bank_account(&db, ws.id, "Porquinho").await;
+    mark_mirrored(&db, &porquinho, true).await;
+    cash_in(&db, ws.id, porquinho.id, 300.0, "2026-03-02").await;
+
+    import_movimentacao(&db, pf.id, &[&FI_APPLICATION]).await;
+
+    // A carteira tem 1000 e a conta só 300: a conta cede 300, nunca mais.
+    let nw = compute_net_worth(&db, ws.id).await.unwrap();
+    assert!(close(nw.cash_in_portfolio, 300.0) && close(nw.total_cash, 0.0));
+    assert!(close(nw.net_worth, 1000.0));
+}
+
+#[tokio::test]
+async fn a_redemption_without_its_position_is_refused_instead_of_going_negative() {
+    use crate::commands::portfolio_io::{commit_rows, parse_b3_movimentacao_rows, CommitItem};
+    let db = memory_db().await;
+    let ws = workspace(&db, "Family").await;
+    let pf = portfolio(&db, ws.id, "B3").await;
+
+    // Só o resgate, sem a aplicação (nem no arquivo nem na carteira): a venda passaria da posição.
+    let header: Vec<String> = [
+        "Entrada/Saída",
+        "Data",
+        "Movimentação",
+        "Produto",
+        "Instituição",
+        "Quantidade",
+        "Preço unitário",
+        "Valor da Operação",
+    ]
+    .iter()
+    .map(|c| c.to_string())
+    .collect();
+    let sheet = vec![header, FI_REDEMPTION.iter().map(|c| c.to_string()).collect()];
+    let rules = crate::commands::tax::load_rule_set(&db).await.unwrap();
+    // Sem aplicação no arquivo não há preço-base: o leitor pula a linha com o motivo, em vez de inventar um.
+    let parsed = parse_b3_movimentacao_rows(&sheet, &rules);
+    assert!(parsed[0].as_ref().unwrap_err().message.contains("sem preço-base"));
+
+    // Com o preço-base vindo de outra aplicação do arquivo, a venda sai com aviso e a validação a recusa.
+    let other_application = ["Debito", "01/03/2026", "APLICAÇÃO", "CDB - CDBZZZ999 - BANCO X", "BANCO X", "10", "0.01", "0.1"];
+    let mut sheet = sheet;
+    sheet.push(other_application.iter().map(|c| c.to_string()).collect());
+    let items: Vec<CommitItem> = parse_b3_movimentacao_rows(&sheet, &rules)
+        .into_iter()
+        .map(|r| CommitItem { proposed: r.expect("linha lida"), asset_class: None })
+        .filter(|item| item.proposed.transaction_type == "venda")
+        .collect();
+    assert_eq!(items.len(), 1);
+    assert!(items[0].proposed.notes.as_deref().unwrap().contains("não está toda"));
+    let result = commit_rows(&db, pf.id, items).await.unwrap();
+    assert_eq!(result.created, 0);
+    assert!(result.errors[0].message.contains("quantidade em carteira"), "{}", result.errors[0].message);
+}
+
+#[tokio::test]
+async fn the_mirrored_flag_exists_with_a_false_default_and_travels_with_the_account_view() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Family").await;
+    let account = bank_account(&db, ws.id, "Porquinho").await;
+    assert!(!account.mirrored_in_portfolio);
+    mark_mirrored(&db, &account, true).await;
+    let views = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    assert!(views[0].mirrored_in_portfolio);
 }

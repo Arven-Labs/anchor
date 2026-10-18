@@ -19,8 +19,8 @@ use serde::{Deserialize, Serialize};
 use crate::commands::general_transaction::{create_general_transaction_in, CreateGeneralTransactionRequest};
 use crate::commands::loan::ensure_account_in_workspace;
 use crate::commands::portfolio_io::{
-    movimentacao_columns, normalize_header, parse_date, parse_number, read_xlsx_rows, ParseIssue,
-    MOVIMENTACAO_COLUMNS_MESSAGE, STATUS_PENDING,
+    movimentacao_columns, normalize_header, parse_date, parse_number, read_xlsx_rows, MovimentacaoColumns, ParseIssue,
+    ProposedTransaction, MOVIMENTACAO_COLUMNS_MESSAGE, STATUS_PENDING,
 };
 use crate::commands::statement_io::{dedup_key, finish_pending, statement_row};
 use crate::commands::tax::{ensure_taxes_category, load_rule_set};
@@ -91,16 +91,9 @@ fn parse_product(product: &str) -> Option<(String, String)> {
     (INSTRUMENTS.contains(&instrument.as_str()) && !code.is_empty()).then_some((instrument, code))
 }
 
-pub fn parse_fixed_income_rows(rows: &[Vec<String>], rules: &RuleSet) -> YieldParsed {
-    let Some(header) = rows.first() else {
-        return vec![Err(ParseIssue { line: 0, message: "planilha vazia".to_string() })];
-    };
-    let Some(cols) = movimentacao_columns(header) else {
-        return vec![Err(ParseIssue { line: 0, message: MOVIMENTACAO_COLUMNS_MESSAGE.to_string() })];
-    };
+/// Preço unitário das aplicações: por código e o comum a todas (se for um só).
+fn application_prices(rows: &[Vec<String>], cols: &MovimentacaoColumns) -> (HashMap<String, f64>, Option<f64>) {
     let get = |row: &Vec<String>, i: usize| row.get(i).map(String::as_str).unwrap_or("").to_string();
-
-    // Preço unitário das aplicações: por código e o comum a todas (se for um só).
     let mut application_price: HashMap<String, f64> = HashMap::new();
     let mut all_prices: Vec<f64> = Vec::new();
     for row in rows.iter().skip(1) {
@@ -117,9 +110,14 @@ pub fn parse_fixed_income_rows(rows: &[Vec<String>], rules: &RuleSet) -> YieldPa
         Some(first) if all_prices.iter().all(|p| (p - first).abs() < 1e-12) => Some(*first),
         _ => None,
     };
+    (application_price, common_price)
+}
 
-    // Lotes de cada código (data da aplicação, cotas). Os resgates, em ordem cronológica,
-    // consomem os lotes mais antigos primeiro (PEPS): é daí que saem os dias aplicados do IOF.
+/// Lotes de cada código (data da aplicação, cotas). Os resgates, em ordem cronológica,
+/// consomem os lotes mais antigos primeiro (PEPS): é daí que saem os dias aplicados do IOF e
+/// o quanto de cada resgate tem aplicação no arquivo. A chave é a linha do resgate.
+fn file_holdings(rows: &[Vec<String>], cols: &MovimentacaoColumns) -> HashMap<usize, Holding> {
+    let get = |row: &Vec<String>, i: usize| row.get(i).map(String::as_str).unwrap_or("").to_string();
     let mut lots: HashMap<String, Vec<(NaiveDate, f64)>> = HashMap::new();
     let mut redemptions: Vec<(NaiveDate, usize, String, f64)> = Vec::new();
     for (index, row) in rows.iter().enumerate().skip(1) {
@@ -158,6 +156,20 @@ pub fn parse_fixed_income_rows(rows: &[Vec<String>], rules: &RuleSet) -> YieldPa
         }
         holdings.insert(line, holding);
     }
+    holdings
+}
+
+pub fn parse_fixed_income_rows(rows: &[Vec<String>], rules: &RuleSet) -> YieldParsed {
+    let Some(header) = rows.first() else {
+        return vec![Err(ParseIssue { line: 0, message: "planilha vazia".to_string() })];
+    };
+    let Some(cols) = movimentacao_columns(header) else {
+        return vec![Err(ParseIssue { line: 0, message: MOVIMENTACAO_COLUMNS_MESSAGE.to_string() })];
+    };
+    let get = |row: &Vec<String>, i: usize| row.get(i).map(String::as_str).unwrap_or("").to_string();
+
+    let (application_price, common_price) = application_prices(rows, &cols);
+    let holdings = file_holdings(rows, &cols);
 
     let mut out: YieldParsed = Vec::new();
     for (index, row) in rows.iter().enumerate().skip(1) {
@@ -274,6 +286,119 @@ pub fn parse_fixed_income_rows(rows: &[Vec<String>], rules: &RuleSet) -> YieldPa
     }
     for item in out.iter_mut().flatten() {
         item.day_derived_total = round2(per_day[&item.transaction_date]);
+    }
+    out
+}
+
+/// Posição de carteira da renda fixa (entrega 8): a aplicação vira `compra` e o resgate/vencimento vira
+/// `venda` **ao custo** (quantidade × preço-base da aplicação), de um ativo `renda_fixa` com o código do
+/// papel. O rendimento não entra aqui, porque já entra na conta pelo leitor acima; vender ao custo deixa o
+/// ganho realizado em zero e não o conta duas vezes. A chave do mapa é a linha da planilha.
+///
+/// A venda leva a quantidade inteira do resgate. Se a aplicação está fora do arquivo, ela só passa na
+/// confirmação quando a posição já foi importada antes (a validação recusa vender mais do que a carteira tem);
+/// a nota do lançamento avisa quando o arquivo não cobre o resgate.
+pub fn parse_fixed_income_positions(rows: &[Vec<String>]) -> HashMap<usize, Result<ProposedTransaction, ParseIssue>> {
+    let mut out = HashMap::new();
+    let Some(cols) = rows.first().and_then(|header| movimentacao_columns(header)) else {
+        return out;
+    };
+    let get = |row: &Vec<String>, i: usize| row.get(i).map(String::as_str).unwrap_or("").to_string();
+    let (application_price, common_price) = application_prices(rows, &cols);
+    let holdings = file_holdings(rows, &cols);
+
+    for (index, row) in rows.iter().enumerate().skip(1) {
+        let line = index;
+        let Some((instrument, code)) = parse_product(&get(row, cols.product)) else { continue };
+        let issue = |message: String| ParseIssue { line, message };
+        let movement = normalize_header(&get(row, cols.movement));
+        let is_application = movement.contains("aplicacao");
+        let is_redemption = movement.contains("resgate") || movement.contains("vencimento");
+        if !is_application && !is_redemption {
+            out.insert(
+                line,
+                Err(issue(format!("movimentação '{}' de renda fixa não suportada", get(row, cols.movement).trim()))),
+            );
+            continue;
+        }
+        let Some(transaction_date) = parse_date(&get(row, cols.date)) else {
+            out.insert(line, Err(issue(format!("data inválida: '{}'", get(row, cols.date)))));
+            continue;
+        };
+        let quantity = match parse_number(&get(row, cols.quantity)) {
+            Ok(Some(q)) if q > 0.0 => q,
+            Ok(_) => {
+                out.insert(line, Err(issue("quantidade vazia".to_string())));
+                continue;
+            }
+            Err(message) => {
+                out.insert(line, Err(issue(message)));
+                continue;
+            }
+        };
+        let custody = Some(get(row, cols.institution).trim().to_string()).filter(|s| !s.is_empty());
+        let (transaction_type, unit_price, total_value, notes) = if is_application {
+            let price = parse_number(&get(row, cols.price)).ok().flatten();
+            let value = parse_number(&get(row, cols.value)).ok().flatten();
+            let amounts = match (price, value) {
+                (Some(p), Some(v)) => Some((p, v)),
+                (Some(p), None) => Some((p, round2(quantity * p))),
+                (None, Some(v)) => Some((v / quantity, v)),
+                (None, None) => None,
+            };
+            let Some((unit_price, total_value)) = amounts else {
+                out.insert(line, Err(issue("aplicação sem preço nem valor".to_string())));
+                continue;
+            };
+            (
+                "compra",
+                unit_price,
+                total_value,
+                format!("Importado da B3 (Movimentação); aplicação em {} {code}", instrument.to_uppercase()),
+            )
+        } else {
+            let base = match (application_price.get(&code), common_price) {
+                (Some(price), _) => *price,
+                (None, Some(price)) => price,
+                (None, None) => {
+                    out.insert(
+                        line,
+                        Err(issue(format!(
+                            "sem preço-base para {code}: não há aplicação dele no arquivo e as aplicações têm preços diferentes"
+                        ))),
+                    );
+                    continue;
+                }
+            };
+            let covered = holdings.get(&line).map_or(0.0, |h| h.covered);
+            let mut notes = format!(
+                "Importado da B3 (Movimentação); {} de {} {code} ao custo (principal): o rendimento entra pela conta",
+                if movement.contains("vencimento") { "vencimento" } else { "resgate" },
+                instrument.to_uppercase()
+            );
+            if covered < quantity - 1e-9 {
+                notes.push_str("; a aplicação não está toda no arquivo, a venda só passa se a posição já foi importada");
+            }
+            ("venda", base, round2(quantity * base), notes)
+        };
+        out.insert(
+            line,
+            Ok(ProposedTransaction {
+                line,
+                transaction_date,
+                transaction_type: transaction_type.to_string(),
+                ticker: code,
+                asset_class: Some("renda_fixa".to_string()),
+                currency: Some("BRL".to_string()),
+                quantity: Some(quantity),
+                unit_price: Some(unit_price),
+                total_value,
+                fee: None,
+                custody,
+                payment_type: None,
+                notes: Some(notes),
+            }),
+        );
     }
     out
 }
@@ -540,6 +665,53 @@ mod tests {
 
     fn ok(parsed: &YieldParsed, i: usize) -> &ProposedYield {
         parsed[i].as_ref().unwrap_or_else(|e| panic!("linha {i}: {}", e.message))
+    }
+
+    #[test]
+    fn an_application_is_a_buy_and_a_redemption_is_a_sale_at_cost() {
+        let sheet = rows(&[
+            &["Debito", "02/03/2026", "APLICAÇÃO", "CDB - CDBAAA111 - BANCO X", "BANCO X", "1000", "0.01", "10"],
+            &["Credito", "20/03/2026", "RESGATE", "CDB - CDBAAA111 - BANCO X", "BANCO X", "400", "0.0102", "4.08"],
+        ]);
+        let positions = parse_fixed_income_positions(&sheet);
+        let buy = positions[&1].as_ref().unwrap();
+        assert_eq!((buy.transaction_type.as_str(), buy.ticker.as_str(), buy.asset_class.as_deref()), ("compra", "CDBAAA111", Some("renda_fixa")));
+        assert_eq!((buy.quantity, buy.unit_price, buy.total_value), (Some(1000.0), Some(0.01), 10.0));
+        assert_eq!(buy.transaction_date, "2026-03-02");
+        assert_eq!(buy.custody.as_deref(), Some("BANCO X"));
+
+        // A venda é ao custo: o preço é o da aplicação, não o do resgate; o rendimento (4,08 − 4,00) fica de fora.
+        let sell = positions[&2].as_ref().unwrap();
+        assert_eq!(sell.transaction_type, "venda");
+        assert_eq!((sell.quantity, sell.unit_price, sell.total_value), (Some(400.0), Some(0.01), 4.0));
+        assert!(!sell.notes.as_deref().unwrap().contains("não está toda"), "a aplicação cobre o resgate");
+    }
+
+    #[test]
+    fn a_redemption_without_its_application_in_the_file_is_flagged_and_uses_the_common_price() {
+        let sheet = rows(&[
+            &["Debito", "02/03/2026", "APLICAÇÃO", "CDB - CDBAAA111 - BANCO X", "BANCO X", "100", "0.01", "1"],
+            &["Credito", "20/03/2026", "RESGATE", "CDB - CDBBBB222 - BANCO X", "BANCO X", "300", "0.0105", "3.15"],
+        ]);
+        let positions = parse_fixed_income_positions(&sheet);
+        let sell = positions[&2].as_ref().unwrap();
+        assert_eq!((sell.quantity, sell.unit_price, sell.total_value), (Some(300.0), Some(0.01), 3.0));
+        assert!(sell.notes.as_deref().unwrap().contains("não está toda"));
+    }
+
+    #[test]
+    fn position_rows_skip_with_a_reason_when_the_price_base_is_ambiguous_or_the_movement_is_unknown() {
+        let sheet = rows(&[
+            &["Debito", "02/03/2026", "APLICAÇÃO", "CDB - CDBAAA111 - BANCO X", "BANCO X", "100", "0.01", "1"],
+            &["Debito", "03/03/2026", "APLICAÇÃO", "CDB - CDBBBB222 - BANCO X", "BANCO X", "100", "0.02", "2"],
+            &["Credito", "20/03/2026", "RESGATE", "CDB - CDBCCC333 - BANCO X", "BANCO X", "300", "0.0105", "3.15"],
+            &["Credito", "21/03/2026", "Juros", "CDB - CDBAAA111 - BANCO X", "BANCO X", "1", "-", "-"],
+            &["Credito", "22/03/2026", "Dividendo", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "10", "0.1", "1"],
+        ]);
+        let positions = parse_fixed_income_positions(&sheet);
+        assert!(positions[&3].as_ref().unwrap_err().message.contains("sem preço-base"));
+        assert!(positions[&4].as_ref().unwrap_err().message.contains("não suportada"));
+        assert!(!positions.contains_key(&5), "linha que não é renda fixa fica com o outro leitor");
     }
 
     #[test]

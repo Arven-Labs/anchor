@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set, Unchanged,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set, Unchanged,
 };
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +40,7 @@ pub async fn create_bank_account_in(
         nome: Set(request.nome),
         titular: Set(request.titular),
         currency: Set(currency),
+        mirrored_in_portfolio: Set(false),
         created_at: Set(chrono::Utc::now().to_rfc3339()),
         ..Default::default()
     }
@@ -59,6 +60,9 @@ pub struct UpdateBankAccountRequest {
     /// seria reinterpretado em outra moeda.
     #[serde(default)]
     pub currency: Option<String>,
+    /// Omitida = não muda.
+    #[serde(default)]
+    pub mirrored_in_portfolio: Option<bool>,
 }
 
 #[tauri::command]
@@ -94,6 +98,7 @@ pub async fn update_bank_account_in(
         nome: Set(request.nome),
         titular: Set(request.titular),
         currency: Set(currency),
+        mirrored_in_portfolio: Set(request.mirrored_in_portfolio.unwrap_or(existing.mirrored_in_portfolio)),
         ..Default::default()
     }
     .update(db)
@@ -175,6 +180,8 @@ pub struct BankAccountView {
     pub balance_in_base: Option<f64>,
     /// Tem lançamento, dívida, empréstimo ou baixa: a moeda não pode mais mudar.
     pub in_use: bool,
+    /// O saldo já está na carteira (renda fixa importada): o patrimônio não o conta de novo no caixa.
+    pub mirrored_in_portfolio: bool,
 }
 
 /// Saldo é sempre derivado, nunca gravado — soma de `receita` menos soma de
@@ -220,13 +227,19 @@ pub async fn compute_total_cash(
     let accounts = list_bank_accounts_view(db, workspace_id).await?;
     let mut total_in_base = 0.0;
     let mut accounts_missing_fx = 0;
+    let mut mirrored_balances_in_base = Vec::new();
     for account in &accounts {
         match account.balance_in_base {
-            Some(value) => total_in_base += value,
+            Some(value) => {
+                total_in_base += value;
+                if account.mirrored_in_portfolio {
+                    mirrored_balances_in_base.push(value);
+                }
+            }
             None => accounts_missing_fx += 1,
         }
     }
-    Ok(TotalCash { total_in_base, accounts_missing_fx })
+    Ok(TotalCash { total_in_base, accounts_missing_fx, mirrored_balances_in_base })
 }
 
 /// Caixa do workspace na moeda base. Conta sem cotação do par fica fora da
@@ -234,6 +247,23 @@ pub async fn compute_total_cash(
 pub struct TotalCash {
     pub total_in_base: f64,
     pub accounts_missing_fx: usize,
+    /// Saldo (na base) das contas marcadas como "já na carteira", em ordem de id; já está em `total_in_base`.
+    pub mirrored_balances_in_base: Vec<f64>,
+}
+
+/// Quanto do caixa já está na carteira (Fase 35, entrega 8): o valor da renda fixa importada é repartido
+/// entre as contas marcadas, na ordem dada, e cada conta cede no máximo o próprio saldo (nunca negativo).
+/// Cobertura parcial da B3 não subconta: o que passa do valor da carteira segue como caixa. Com uma conta
+/// marcada, a conta é exata; com várias, a ordem é uma convenção.
+pub fn mirrored_cash_deduction(mirrored_balances: &[f64], portfolio_fixed_income_value: f64) -> f64 {
+    let mut remaining = portfolio_fixed_income_value.max(0.0);
+    let mut deduction = 0.0;
+    for balance in mirrored_balances {
+        let take = balance.max(0.0).min(remaining);
+        deduction += take;
+        remaining -= take;
+    }
+    deduction
 }
 
 #[tauri::command]
@@ -250,6 +280,7 @@ pub async fn list_bank_accounts_view(
 ) -> Result<Vec<BankAccountView>, AppError> {
     let accounts = bank_account::Entity::find()
         .filter(bank_account::Column::WorkspaceId.eq(workspace_id))
+        .order_by_asc(bank_account::Column::Id)
         .all(db)
         .await?;
 
@@ -276,6 +307,7 @@ pub async fn list_bank_accounts_view(
             titular: account.titular,
             created_at: account.created_at,
             currency: account.currency,
+            mirrored_in_portfolio: account.mirrored_in_portfolio,
         });
     }
     Ok(views)
@@ -310,6 +342,25 @@ mod tests {
         let balances = compute_balances(&transactions, "2026-08-09");
         assert_eq!(balances.get(&1), Some(&600.0));
         assert_eq!(balances.get(&2), Some(&75.0));
+    }
+
+    #[test]
+    fn the_mirrored_deduction_never_exceeds_the_portfolio_value_or_the_balance() {
+        // Carteira cobre só parte do saldo: só essa parte sai do caixa.
+        assert_eq!(mirrored_cash_deduction(&[1000.0], 400.0), 400.0);
+        // Carteira passa do saldo: a conta cede o saldo inteiro, nunca mais (o caixa não fica negativo).
+        assert_eq!(mirrored_cash_deduction(&[300.0], 1000.0), 300.0);
+        // Sem conta marcada ou sem renda fixa na carteira, nada sai.
+        assert_eq!(mirrored_cash_deduction(&[], 1000.0), 0.0);
+        assert_eq!(mirrored_cash_deduction(&[500.0], 0.0), 0.0);
+        // Saldo negativo não gera dedução negativa.
+        assert_eq!(mirrored_cash_deduction(&[-50.0], 100.0), 0.0);
+    }
+
+    #[test]
+    fn the_mirrored_deduction_is_shared_between_marked_accounts_in_order() {
+        assert_eq!(mirrored_cash_deduction(&[300.0, 500.0], 600.0), 600.0);
+        assert_eq!(mirrored_cash_deduction(&[300.0, 500.0], 2000.0), 800.0);
     }
 
     #[test]

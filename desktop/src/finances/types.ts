@@ -11,6 +11,8 @@ export type BankAccountView = {
   balance_in_base: number | null;
   // Fase 19 — com lançamento, dívida, empréstimo ou baixa a moeda não muda mais.
   in_use: boolean;
+  // Fase 35, entrega 8 — o saldo já está na carteira (renda fixa importada): o patrimônio não o conta de novo no caixa.
+  mirrored_in_portfolio: boolean;
 };
 
 export type GeneralTransactionCategory = {
@@ -142,6 +144,8 @@ export type NetWorthSummary = {
   items_missing_fx: number;
   total_market_value: number;
   total_cash: number;
+  /** Parte do saldo das contas marcadas "já na carteira" que saiu do caixa por já estar nas posições de renda fixa. */
+  cash_in_portfolio: number;
   total_debt: number;
   total_loans_receivable: number;
   /** Posições em opções abertas com a flag ligada (Fase 18): comprada soma, lançada subtrai. */

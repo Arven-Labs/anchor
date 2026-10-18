@@ -419,9 +419,10 @@ pub(crate) const MOVIMENTACAO_COLUMNS_MESSAGE: &str = "não parece a planilha 'M
 
 /// Planilha "Movimentação" da Área do Investidor. Viram lançamento os proventos em
 /// dinheiro (`Dividendo`, `Rendimento`, JCP), o pagamento do aluguel de ações (`Empréstimo`
-/// com valor, tipo `aluguel`) e o `Reembolso` de provento do aluguel (tipo `reembolso`). O resto
-/// é pulado com o motivo, em vez de adivinhado: liquidação (repete os negócios da "Negociação"),
-/// o `Empréstimo` sem valor (só custódia) e CDB.
+/// com valor, tipo `aluguel`) e o `Reembolso` de provento do aluguel (tipo `reembolso`). A renda fixa
+/// (CDB, LCI, LCA, CRI, CRA) vira posição: aplicação é `compra` e resgate é `venda` ao custo
+/// (`fixed_income_io::parse_fixed_income_positions`). O resto é pulado com o motivo, em vez de
+/// adivinhado: liquidação (repete os negócios da "Negociação") e o `Empréstimo` sem valor (só custódia).
 ///
 /// **Aluguel e reembolso**: a B3 não diz se o valor é bruto ou líquido de IR; entra como veio.
 ///
@@ -451,6 +452,7 @@ pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>], rules: &RuleSet) -> Pars
     };
 
     let mut out = Vec::new();
+    let mut positions = crate::commands::fixed_income_io::parse_fixed_income_positions(rows);
     for (index, row) in rows.iter().enumerate().skip(1) {
         let line = index;
         if row.iter().all(|c| c.trim().is_empty()) {
@@ -466,10 +468,14 @@ pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>], rules: &RuleSet) -> Pars
             out.push(Err(issue("liquidação de negócio pulada: os negócios vêm da planilha 'Negociação'".to_string())));
             continue;
         }
+        // Renda fixa: aplicação vira compra e resgate vira venda ao custo (posição de carteira); o
+        // rendimento entra pela conta, por Finances → Transactions → Fixed-income yield.
+        if let Some(position) = positions.remove(&line) {
+            out.push(position);
+            continue;
+        }
         if movement.contains("aplicacao") || movement.contains("resgate") || product.to_uppercase().starts_with("CDB") {
-            out.push(Err(issue(
-                "renda fixa (CDB) pulada aqui: o rendimento entra por Finances → Transactions → Fixed-income yield".to_string(),
-            )));
+            out.push(Err(issue("aplicação ou resgate de produto que não é renda fixa reconhecida pulado".to_string())));
             continue;
         }
         let is_rental = movement.contains("emprestimo");
@@ -1360,12 +1366,19 @@ mod tests {
         assert_eq!(refund.payment_type.as_deref(), Some("reembolso"));
         assert_eq!((refund.quantity, refund.total_value), (None, 2.5));
 
-        let reasons: Vec<String> =
-            [3, 4, 5, 8, 9].iter().map(|&i| parsed[i].as_ref().unwrap_err().message.clone()).collect();
+        // Renda fixa: a aplicação vira compra e o resgate, venda ao custo (o preço da aplicação, não o do resgate).
+        let application = parsed[4].as_ref().unwrap();
+        assert_eq!((application.transaction_type.as_str(), application.asset_class.as_deref()), ("compra", Some("renda_fixa")));
+        assert_eq!((application.ticker.as_str(), application.quantity, application.total_value), ("CDB123", Some(1000.0), 10.0));
+        let redemption = parsed[5].as_ref().unwrap();
+        assert_eq!(redemption.transaction_type, "venda");
+        assert_eq!((redemption.quantity, redemption.unit_price, redemption.total_value), (Some(1000.0), Some(0.01), 10.0));
+        assert!(redemption.notes.as_deref().unwrap().contains("ao custo"));
+
+        let reasons: Vec<String> = [3, 8, 9].iter().map(|&i| parsed[i].as_ref().unwrap_err().message.clone()).collect();
         assert!(reasons[0].contains("liquidação") && reasons[0].contains("Negociação"));
-        assert!(reasons[1].contains("CDB") && reasons[2].contains("CDB"));
-        assert!(reasons[3].contains("Bonificação") && reasons[3].contains("não suportada"));
-        assert!(reasons[4].contains("custódia") && reasons[4].contains("aluguel"));
+        assert!(reasons[1].contains("Bonificação") && reasons[1].contains("não suportada"));
+        assert!(reasons[2].contains("custódia") && reasons[2].contains("aluguel"));
     }
 
     #[test]
@@ -1469,6 +1482,20 @@ mod tests {
             parsed.iter().filter_map(|r| r.as_ref().ok()).filter(|p| p.payment_type.as_deref() == Some(kind)).count()
         };
         println!("aluguel: {} linhas, reembolso: {} linhas", by_type("aluguel"), by_type("reembolso"));
+        let fixed_income = |kind: &str| -> Vec<&ProposedTransaction> {
+            parsed
+                .iter()
+                .filter_map(|r| r.as_ref().ok())
+                .filter(|p| p.asset_class.as_deref() == Some("renda_fixa") && p.transaction_type == kind)
+                .collect()
+        };
+        let sells = fixed_income("venda");
+        println!(
+            "renda fixa: {} compras, {} vendas ao custo ({} com a aplicação fora do arquivo)",
+            fixed_income("compra").len(),
+            sells.len(),
+            sells.iter().filter(|p| p.notes.as_deref().is_some_and(|n| n.contains("não está toda"))).count()
+        );
         // JCP: o bruto reconstituído tem de ficar perto de quantidade × preço unitário (o preço é bruto por ação).
         let deviations: Vec<f64> = parsed
             .iter()

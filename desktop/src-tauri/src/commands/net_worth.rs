@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Serialize;
 
-use crate::commands::bank_account::compute_total_cash;
+use crate::commands::bank_account::{compute_total_cash, mirrored_cash_deduction};
 use crate::commands::currency::{base_currency, positions_in_base, rates_for, DEFAULT_BASE_CURRENCY};
 use crate::commands::liability::list_liabilities_view;
 use crate::commands::loan::list_loans_view;
@@ -16,6 +16,9 @@ use crate::commands::option_position::list_option_positions_view;
 use crate::domain::net_worth::{compute_leverage, sum_options_in_net_worth, sum_receivable_in_net_worth};
 use crate::entity::portfolio;
 use crate::error::AppError;
+
+/// Classe dos papéis de renda fixa que a importação da Movimentação cria como posição.
+const FIXED_INCOME_CLASS: &str = "renda_fixa";
 
 #[derive(Serialize)]
 pub struct NetWorthSummary {
@@ -26,6 +29,8 @@ pub struct NetWorthSummary {
     pub items_missing_fx: usize,
     pub total_market_value: f64,
     pub total_cash: f64,
+    /// Quanto do saldo das contas marcadas "já na carteira" saiu do caixa por já estar nas posições de renda fixa.
+    pub cash_in_portfolio: f64,
     pub total_debt: f64,
     /// Saldo a receber dos empréstimos concedidos marcados pra entrar no
     /// patrimônio (Fase 29). Os que ficaram de fora não aparecem aqui.
@@ -62,6 +67,9 @@ pub async fn compute_net_worth(
     let mut items_missing_fx = 0;
 
     let mut total_market_value = 0.0;
+    // Renda fixa importada da Movimentação (a custo): é o que as contas marcadas como "já na carteira"
+    // têm dentro, então esse valor sai do caixa delas pra não contar duas vezes.
+    let mut portfolio_fixed_income_value = 0.0;
     for p in &portfolios {
         let (positions, _) = positions_in_base(db, p.id).await?;
         for pos in &positions {
@@ -71,12 +79,16 @@ pub async fn compute_net_worth(
                 }
             } else if let Some(value) = pos.market_value {
                 total_market_value += value;
+                if pos.asset_class == FIXED_INCOME_CLASS {
+                    portfolio_fixed_income_value += value;
+                }
             }
         }
     }
 
     let cash = compute_total_cash(db, workspace_id).await?;
-    let total_cash = cash.total_in_base;
+    let cash_in_portfolio = mirrored_cash_deduction(&cash.mirrored_balances_in_base, portfolio_fixed_income_value);
+    let total_cash = cash.total_in_base - cash_in_portfolio;
     items_missing_fx += cash.accounts_missing_fx;
 
     let liabilities = list_liabilities_view(db, workspace_id).await?;
@@ -132,6 +144,7 @@ pub async fn compute_net_worth(
         items_missing_fx,
         total_market_value,
         total_cash,
+        cash_in_portfolio,
         total_debt,
         total_loans_receivable,
         total_options_value,

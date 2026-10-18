@@ -44,6 +44,25 @@ describe("Anchor — moeda por conta, de ponta a ponta", () => {
     expect(currencies.sort()).toEqual(["ARS", "BRL"]);
   });
 
+  // Fase 35, entrega 8. A conta marcada "já na carteira" ganha o selo; o efeito no patrimônio é coberto
+  // pelos testes de fluxo (Rust), aqui só o que a tela mostra e persiste.
+  it("marcar a conta como já na carteira mostra o selo, e desmarcar o tira", async () => {
+    expect((await elementsOf('[data-testid="account-mirrored-badge"]')).length).toBe(0);
+
+    await byId("account-mirrored-toggle").click();
+    await browser.waitUntil(async () => (await elementsOf('[data-testid="account-mirrored-badge"]')).length === 1, {
+      timeout: 20_000,
+      timeoutMsg: "a conta marcada deveria ganhar o selo 'In Portfolio'",
+    });
+    expect(await textOf(byId("account-mirrored-toggle"))).toBe("Count as cash");
+
+    await byId("account-mirrored-toggle").click();
+    await browser.waitUntil(async () => (await elementsOf('[data-testid="account-mirrored-badge"]')).length === 0, {
+      timeout: 20_000,
+      timeoutMsg: "desmarcar deveria tirar o selo",
+    });
+  });
+
   it("uma transferência entre moedas vira uma linha só e mostra a taxa efetiva", async () => {
     await byId("finances-tab-transactions").click();
     await byId("transfer-new").click();

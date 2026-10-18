@@ -3438,6 +3438,24 @@ de duplicata é ticker + data + tipo + quantidade + total.
   Fontes secundárias dizem que a B3 retém o IR do aluguel e que o crédito já é líquido. **Não confirmado**: se a coluna "Valor da Operação"
   da Movimentação é líquida ou bruta (nenhum texto oficial lido diz), e o que o reembolso de JCP traz de fato.
 
+**Entrega 8 (feita, Sessão 149)**: posição de carteira da renda fixa, com marca por conta contra a dupla contagem.
+- **Decisões do dono**: os papéis entram **a custo** (sem estimar rendimento acumulado); o rendimento segue entrando pela conta (entrega 4). Com a
+  marca por conta, o dinheiro conta na carteira e sai do caixa; sem marca, tudo como antes.
+- **Importação**: o leitor da Movimentação passa a ler CDB, LCI, LCA, CRI e CRA como posição (`fixed_income_io::parse_fixed_income_positions`, chamado
+  por `parse_b3_movimentacao_rows`): a aplicação vira `compra` e o resgate/vencimento vira `venda` **ao custo** (quantidade × preço-base da aplicação) de
+  um ativo `renda_fixa` com o código do papel. O rendimento fica de fora, então o ganho realizado é zero e o rendimento não conta duas vezes. A leitura
+  de preços de aplicação e a baixa PEPS dos lotes foram extraídas (`application_prices`, `file_holdings`), sem mudar o leitor de rendimento.
+- **Marca por conta**: `bank_accounts.mirrored_in_portfolio` (migration `m20261023`, padrão falso). No patrimônio, o caixa das contas marcadas cede o valor
+  das posições `renda_fixa` da carteira, repartido entre elas em ordem de id, e cada conta cede no máximo o próprio saldo
+  (`mirrored_cash_deduction`): a B3 cobre só parte do porquinho, então cobertura parcial nunca subconta e o caixa nunca fica negativo.
+  `NetWorthSummary.cash_in_portfolio` informa quanto saiu. Em Finances → Accounts, o botão "Already in Portfolio" / "Count as cash" e o selo "In Portfolio".
+- **Venda sem posição**: a venda leva a quantidade inteira do resgate. Sem a aplicação no arquivo, ela só passa se a posição já foi importada (a validação
+  recusa vender mais do que a carteira tem na data); a nota do lançamento avisa. **Importar primeiro a planilha mais antiga.** Sem preço-base, a linha é pulada.
+- **Amostra real** (só agregados): planilha de 2025 com 17 compras e 33 vendas ao custo (10 com a aplicação fora do arquivo); a de 2026 com 3 compras e 9 vendas
+  (6 fora do arquivo), então a de 2026 só passa inteira depois da de 2025.
+- **Pendente**: ver a tela a olho (a marca, a posição na carteira e o caixa no patrimônio); rendimento acumulado estimado do papel; a marca é por conta,
+  sem ligação com os papéis dela (a repartição entre várias contas marcadas é uma convenção).
+
 **Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
 Inter; CDB/porquinho visto também como conta corrente sem contar o patrimônio duas vezes; IR do AUPO11; unificar a fila com
