@@ -26,6 +26,7 @@ type StageResult = {
 
 const NO_PORQUINHO = "none";
 const CREATE_PORQUINHO = "create";
+const NO_BROKER = "none";
 
 const FORMATS: { format: StatementFormat; label: string; extension: string }[] = [
   { format: "inter_ofx", label: "Import OFX", extension: "ofx" },
@@ -50,6 +51,9 @@ function StatementImportPanel({ workspaceId, onStaged }: { workspaceId: number; 
   const [yieldResult, setYieldResult] = useState<YieldStageResult | null>(null);
   const [accountId, setAccountId] = useState("");
   const [porquinho, setPorquinho] = useState(NO_PORQUINHO);
+  const [broker, setBroker] = useState(NO_BROKER);
+  const [settlementAccountId, setSettlementAccountId] = useState("");
+  const [settlementResult, setSettlementResult] = useState<YieldStageResult | null>(null);
   const [result, setResult] = useState<StageResult | null>(null);
 
   const accountsQuery = useQuery<BankAccountView[], AppError>({
@@ -67,6 +71,7 @@ function StatementImportPanel({ workspaceId, onStaged }: { workspaceId: number; 
         bankAccountId: Number(accountId),
         porquinhoAccountId: porquinho === NO_PORQUINHO || porquinho === CREATE_PORQUINHO ? null : Number(porquinho),
         createPorquinho: porquinho === CREATE_PORQUINHO,
+        brokerAccountId: broker === NO_BROKER ? null : Number(broker),
         path,
         format,
       });
@@ -94,7 +99,22 @@ function StatementImportPanel({ workspaceId, onStaged }: { workspaceId: number; 
     },
   });
 
+  const settlementMutation = useMutation<YieldStageResult, AppError, void>({
+    mutationFn: async () => {
+      const path = await open({ multiple: false, filters: [{ name: "Excel", extensions: ["xlsx", "xls"] }] });
+      if (typeof path !== "string") throw new Error("cancelled");
+      return invoke("stage_b3_settlements", { workspaceId, brokerAccountId: Number(settlementAccountId), path });
+    },
+    onSuccess: (outcome) => {
+      setSettlementResult(outcome);
+      queryClient.invalidateQueries({ queryKey: [STATEMENT_PENDING_KEY, workspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["pending-counts"] });
+      if (outcome.staged > 0) onStaged();
+    },
+  });
+
   const skippedByReason = groupByReason(result?.skipped ?? []);
+  const settlementSkippedByReason = groupByReason(settlementResult?.skipped ?? []);
   const yieldSkippedByReason = groupByReason(yieldResult?.skipped ?? []);
 
   return (
@@ -130,6 +150,23 @@ function StatementImportPanel({ workspaceId, onStaged }: { workspaceId: number; 
               <SelectContent>
                 <SelectItem value={NO_PORQUINHO}>None (skip those lines)</SelectItem>
                 <SelectItem value={CREATE_PORQUINHO}>Create a “Cdb Porquinho” account</SelectItem>
+                {accounts
+                  .filter((a) => String(a.id) !== accountId)
+                  .map((a) => (
+                    <SelectItem key={a.id} value={String(a.id)}>
+                      {a.nome}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Brokerage account (for transfers to and from the broker)">
+            <Select value={broker} onValueChange={setBroker}>
+              <SelectTrigger className="w-full" data-testid="statement-broker">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_BROKER}>None (keep them as income and expenses)</SelectItem>
                 {accounts
                   .filter((a) => String(a.id) !== accountId)
                   .map((a) => (
@@ -179,6 +216,66 @@ function StatementImportPanel({ workspaceId, onStaged }: { workspaceId: number; 
             )}
           </div>
         )}
+
+        <div className="flex flex-col gap-3 border-t pt-4" data-testid="settlement-import">
+          <div>
+            <h3 className="text-base font-medium">Brokerage cash (B3 settlements)</h3>
+            <p className="text-sm text-muted-foreground">
+              Reads the “Transferência - Liquidação” lines of the B3 “Movimentação” spreadsheet: each purchase takes cash out
+              of the brokerage account and each sale puts cash in, on the settlement date. The trades themselves still come
+              from the “Negociação” spreadsheet. Import the bank statement with this brokerage account chosen above so the
+              transfers you sent to the broker are not counted as expenses.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Brokerage account">
+              <Select value={settlementAccountId} onValueChange={setSettlementAccountId}>
+                <SelectTrigger className="w-full" data-testid="settlement-account">
+                  <SelectValue placeholder="Choose the brokerage account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={String(a.id)}>
+                      {a.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+          <div>
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="settlement-import-button"
+              disabled={settlementAccountId === "" || settlementMutation.isPending}
+              onClick={() => settlementMutation.mutate()}
+            >
+              Import B3 Movimentação (settlements)
+            </Button>
+          </div>
+          {settlementMutation.isError && settlementMutation.error.message !== "cancelled" && (
+            <p className="text-sm text-destructive">{settlementMutation.error.message}</p>
+          )}
+          {settlementResult && (
+            <div className="text-sm" data-testid="settlement-import-result">
+              <p>
+                {settlementResult.staged} sent to review
+                {settlementResult.duplicates > 0 ? `, ${settlementResult.duplicates} already there` : ""}
+                {settlementResult.skipped.length > 0 ? `, ${settlementResult.skipped.length} skipped` : ""}.
+              </p>
+              {settlementSkippedByReason.length > 0 && (
+                <ul className="list-disc pl-5 text-muted-foreground" data-testid="settlement-import-skipped">
+                  {settlementSkippedByReason.map(([reason, count]) => (
+                    <li key={reason}>
+                      {count}× {reason}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="flex flex-col gap-3 border-t pt-4" data-testid="yield-import">
           <div>

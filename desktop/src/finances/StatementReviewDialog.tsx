@@ -22,6 +22,7 @@ export type ProposedBankTransaction = {
   description: string;
   reference: string | null;
   porquinho: boolean;
+  broker?: boolean;
 };
 
 // Rendimento de renda fixa derivado da Movimentação da B3 (entrega 4): o bruto vem do

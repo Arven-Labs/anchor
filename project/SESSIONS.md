@@ -3444,3 +3444,13 @@ registrar tudo no `project/` dos dois. Só documentação e um recado entre sess
   bruta do rendimento de renda fixa (`fixed_income_io.rs`, vale para B3 e estimativa do porquinho) agora usam a categoria **Yield**. Lançamentos já gravados continuam sem categoria.
 - **Verificado**: `./dev.sh check` limpo; dois asserts novos em `flow_tests.rs` (conciliação e aprovação do rendimento) conferem a categoria. Testes completos no CI.
 - **Pendente**: os de antes (rodar a estimativa na conta real e conciliar pelo saldo; ver a tela a olho).
+
+
+### 2026-10-18 — Sessão 159
+
+**Conciliar a Liquidação da B3: caixa da conta Corretora.** O dono escolheu "caixa certo no patrimônio" com uma conta Corretora, baixou a Movimentação, a Negociação e o extrato de 2025 e confirmou o desenho. Plan mode; direto na `main`.
+- **Medição que mudou o plano** (detalhes na Entrega 12 do `PHASE.md`): a Liquidação é por ativo e por dia, liquida em D+2, bruta e sem taxa, e **não bate com nenhuma saída do banco**; o dinheiro vai em aportes soltos (`Transferência enviada/recebida`). O plano antigo (casar saída do banco com Liquidação) caiu.
+- **Feito**: `broker_settlement_io.rs` (lê a Liquidação para a fila de revisão, compra sai e venda entra), `statement_io.rs` (`broker` na linha, `stage_statement_with_broker`, aporte e saque como transferência para a Corretora), comando `stage_b3_settlements`, seletor "Brokerage account" e bloco de importação no painel. A Liquidação continua pulada na importação de negócios (a posição vem da Negociação).
+- **Verificado**: `./dev.sh check` limpo (compila os testes); 3 unitários do parser e 3 de fluxo (transferência sem Corretora segue despesa e receita; aporte, saque, compra e venda fecham os saldos e não duplicam ao reimportar; Corretora tem de ser outra conta). Testes e E2E no CI.
+- **Não verificado**: a tela a olho; sem spec E2E novo nesta sessão; rodar com a conta real.
+- **Pendente**: proventos no caixa da Corretora; saldo de abertura; investigar as liquidações sem negócio de abril.

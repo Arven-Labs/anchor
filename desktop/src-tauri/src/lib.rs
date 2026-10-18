@@ -108,6 +108,7 @@ pub fn run() {
             commands::portfolio_io::confirm_import_pending,
             commands::portfolio_io::discard_import_pending,
             commands::portfolio_io::class_tax_hint,
+            commands::broker_settlement_io::stage_b3_settlements,
             commands::fixed_income_io::stage_fixed_income_yield,
             commands::fixed_income_io::confirm_yield_pending,
             commands::statement_io::stage_statement,

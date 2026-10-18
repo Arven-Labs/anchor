@@ -3515,7 +3515,19 @@ de duplicata é ticker + data + tipo + quantidade + total.
   e as caixas de seleção quase invisíveis no tema escuro (caixa própria com borda).
 - **Pendente**: ver a tela a olho (agora há capturas no CI para isso); rodar a estimativa na conta real.
 
-**Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
-negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
+**Entrega 12 (feita, Sessão 159)**: caixa da conta Corretora, com aporte do banco e liquidação da B3.
+- **Medição (2025, só agregados)**: a Liquidação da Movimentação **não é 1:1** com os negócios: vem por ativo e por dia, com preço médio, e liquida **2 dias úteis depois**.
+  53 das 64 linhas com valor casam com a soma dos negócios do dia a até R$ 0,12, em valor **bruto, sem taxa** (então não dá para preencher `fee` por aqui). `Credito` é compra e `Debito` é
+  venda (56 de 56). 5 liquidações não têm valor (aluguel, só custódia). A saída do banco **não** bate com a liquidação (0 pares, de −3 a +5 dias): o dinheiro vai em aportes soltos, as
+  20 `Transferência enviada/recebida` do extrato. Compras liquidadas no ano ≈ 2× o que o banco mandou, a diferença vem de vendas e saldo anterior.
+- **Desenho**: o caixa das ações vive numa conta **Corretora**. O aporte do banco vira transferência para ela (`statement_io`: `Transferência enviada/recebida` com `broker = true`, só
+  quando o import recebe uma conta Corretora; sem ela, segue receita e despesa). Cada liquidação vira um lançamento da Corretora, na data da liquidação (`broker_settlement_io.rs`, mesma fila
+  de revisão do extrato, `source = b3_settlement`): compra sai, venda entra. A posição vem da Negociação, então o patrimônio fica certo **sem a marca `mirrored_in_portfolio`**.
+- **UI**: em Finances → Import bank statement, o seletor "Brokerage account" e o bloco "Brokerage cash (B3 settlements)".
+- **Limites**: proventos (dividendo, JCP) não entram no caixa da Corretora; o saldo de abertura da Corretora (o que já estava lá antes do primeiro arquivo) não vem de nenhum arquivo;
+  toda `Transferência enviada/recebida` do extrato vira candidata a aporte (descarte a que for para outra pessoa); as 11 liquidações sem negócio na Negociação (quase todas de abril) não foram investigadas.
+
+**Fora do escopo / pendente**: ~~conciliação de "Transferência - Liquidação" com os
+negócios~~ (Entrega 12); CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
 Inter; CDB/porquinho visto também como conta corrente sem contar o patrimônio duas vezes; IR do AUPO11; unificar a fila com
 `suggested_dividends`; IA como origem. *(A dúvida "o resgate do CDB na Movimentação é bruto ou líquido?" está resolvida desde a Sessão 142: é **bruto**; com IOF e IR de 22,5%, 19 de 23 resgates de 2025 fecham a até R$ 0,01.)*

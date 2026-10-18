@@ -48,6 +48,10 @@ pub struct ProposedBankTransaction {
     pub reference: Option<String>,
     /// Aplicação ou resgate do CDB Porquinho.
     pub porquinho: bool,
+    /// `Transferência enviada/recebida` do banco: candidata a aporte ou saque da conta Corretora. Só vira
+    /// transferência quando o import recebe uma conta Corretora; sem ela, segue como receita ou despesa.
+    #[serde(default)]
+    pub broker: bool,
 }
 
 pub type BankParsed = Vec<Result<ProposedBankTransaction, ParseIssue>>;
@@ -86,6 +90,11 @@ pub fn decode_text(bytes: &[u8]) -> String {
 fn is_porquinho(label: &str, text: &str) -> bool {
     let label = normalize_header(label);
     (label.starts_with("aplicacao") || label.starts_with("resgate")) && normalize_header(text).contains("porquinho")
+}
+
+fn is_broker_transfer(label: &str) -> bool {
+    let label = normalize_header(label);
+    label.starts_with("transferencia enviada") || label.starts_with("transferencia recebida")
 }
 
 /// Valor de uma tag do OFX/SGML: do `>` até o próximo `<` ou quebra de linha.
@@ -145,6 +154,7 @@ fn parse_ofx_block(line: usize, block: &str) -> Result<ProposedBankTransaction, 
     let label = if label.is_empty() { ofx_tag(block, "TRNTYPE").unwrap_or_default() } else { label };
     let description = if name.is_empty() { detail } else { name.clone() };
     let porquinho = is_porquinho(&label, &format!("{memo} {name}"));
+    let broker = is_broker_transfer(&label);
     Ok(ProposedBankTransaction {
         line,
         transaction_date,
@@ -153,6 +163,7 @@ fn parse_ofx_block(line: usize, block: &str) -> Result<ProposedBankTransaction, 
         description,
         reference: ofx_tag(block, "FITID"),
         porquinho,
+        broker,
     })
 }
 
@@ -215,7 +226,8 @@ pub fn parse_inter_csv(text: &str) -> ParsedStatement {
         };
         let (label, description) = (cell(1), cell(2));
         let porquinho = is_porquinho(&label, &description);
-        rows.push(Ok(ProposedBankTransaction { line, transaction_date, valor, label, description, reference: None, porquinho }));
+        let broker = is_broker_transfer(&label);
+        rows.push(Ok(ProposedBankTransaction { line, transaction_date, valor, label, description, reference: None, porquinho, broker }));
     }
     ParsedStatement { rows, account_ref }
 }
@@ -287,7 +299,29 @@ pub async fn stage_statement_parsed(
     source: &str,
     parsed: ParsedStatement,
 ) -> Result<StatementStageResult, AppError> {
+    stage_statement_with_broker(db, workspace_id, bank_account_id, porquinho_account_id, create_porquinho, None, source, parsed).await
+}
+
+/// Como `stage_statement_parsed`, com uma conta Corretora opcional: as `Transferência enviada/recebida`
+/// do extrato viram aporte ou saque dela (transferência entre as duas contas) em vez de despesa ou receita.
+#[allow(clippy::too_many_arguments)]
+pub async fn stage_statement_with_broker(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+    bank_account_id: i32,
+    porquinho_account_id: Option<i32>,
+    create_porquinho: bool,
+    broker_account_id: Option<i32>,
+    source: &str,
+    parsed: ParsedStatement,
+) -> Result<StatementStageResult, AppError> {
     let account = ensure_account_in_workspace(db, bank_account_id, workspace_id).await?;
+    if let Some(id) = broker_account_id {
+        if id == bank_account_id || Some(id) == porquinho_account_id {
+            return Err(AppError::InvalidInput("a conta Corretora tem de ser outra conta".to_string()));
+        }
+        ensure_account_in_workspace(db, id, workspace_id).await?;
+    }
     let mut counterpart = porquinho_account_id;
     if let Some(id) = counterpart {
         if id == bank_account_id {
@@ -340,7 +374,13 @@ pub async fn stage_statement_parsed(
         import_pending::ActiveModel {
             workspace_id: Set(workspace_id),
             bank_account_id: Set(Some(bank_account_id)),
-            counterpart_account_id: Set(if proposed.porquinho { counterpart } else { None }),
+            counterpart_account_id: Set(if proposed.porquinho {
+                counterpart
+            } else if proposed.broker {
+                broker_account_id
+            } else {
+                None
+            }),
             kind: Set(KIND_BANK.to_string()),
             source: Set(source.to_string()),
             payload: Set(payload),
@@ -362,11 +402,22 @@ pub async fn stage_statement_in(
     bank_account_id: i32,
     porquinho_account_id: Option<i32>,
     create_porquinho: bool,
+    broker_account_id: Option<i32>,
     path: &str,
     format: &str,
 ) -> Result<StatementStageResult, AppError> {
     let parsed = parse_statement_file(path, format)?;
-    stage_statement_parsed(db, workspace_id, bank_account_id, porquinho_account_id, create_porquinho, format, parsed).await
+    stage_statement_with_broker(
+        db,
+        workspace_id,
+        bank_account_id,
+        porquinho_account_id,
+        create_porquinho,
+        broker_account_id,
+        format,
+        parsed,
+    )
+    .await
 }
 
 #[derive(Serialize)]
@@ -457,6 +508,7 @@ pub async fn list_statement_pending_in(
                         description: format!("{} {}", p.instrument.to_uppercase(), p.code),
                         reference: None,
                         porquinho: false,
+                        broker: false,
                     },
                     suggested_type: "rendimento".to_string(),
                     fixed_income: Some(YieldDetail {
@@ -481,7 +533,7 @@ pub async fn list_statement_pending_in(
                 });
             }
             let payload: BankPayload = serde_json::from_str(&row.payload).ok()?;
-            let is_transfer = payload.proposed.porquinho && row.counterpart_account_id.is_some();
+            let is_transfer = (payload.proposed.porquinho || payload.proposed.broker) && row.counterpart_account_id.is_some();
             let suggested_type = if is_transfer {
                 "transferencia"
             } else if payload.proposed.valor < 0.0 {
@@ -559,16 +611,17 @@ pub async fn confirm_statement_pending_in(
     // Valor com sinal que vai pro ledger. Se a edição mudou data ou valor, o item
     // original do arquivo deixa de casar com o lançamento; a linha fica na fila como
     // `confirmed` só pra reimportar o mesmo extrato não trazê-lo de volta.
-    let edited_signed = match (payload.proposed.porquinho, row.counterpart_account_id) {
+    let is_pair = payload.proposed.porquinho || payload.proposed.broker;
+    let edited_signed = match (is_pair, row.counterpart_account_id) {
         (true, Some(_)) => edited.valor.copysign(payload.proposed.valor),
         _ => signed_valor(&edited.transaction_type, edited.valor),
     };
     let key_changed = dedup_key(&transaction_date, edited_signed)
         != dedup_key(&payload.proposed.transaction_date, payload.proposed.valor);
 
-    match (payload.proposed.porquinho, row.counterpart_account_id) {
+    match (is_pair, row.counterpart_account_id) {
         (true, Some(counterpart)) => {
-            // Saída da conta = aplicação (conta → porquinho); entrada = resgate.
+            // Saída da conta = aplicação (conta → porquinho) ou aporte (conta → corretora); entrada = resgate ou saque.
             let (from, to) =
                 if payload.proposed.valor < 0.0 { (bank_account_id, counterpart) } else { (counterpart, bank_account_id) };
             create_transfer_in(
@@ -585,8 +638,10 @@ pub async fn confirm_statement_pending_in(
             )
             .await?;
             finish_pending(db, row, key_changed).await?;
-            // A conta contraparte é o porquinho: liga a estimativa automática do rendimento dela.
-            enable_auto_yield_if_unset(db, counterpart).await?;
+            // Com o porquinho como contraparte, liga a estimativa automática do rendimento dela.
+            if payload.proposed.porquinho {
+                enable_auto_yield_if_unset(db, counterpart).await?;
+            }
         }
         _ => {
             let txn = db.begin().await?;
@@ -646,10 +701,12 @@ pub async fn stage_statement(
     bank_account_id: i32,
     porquinho_account_id: Option<i32>,
     create_porquinho: bool,
+    broker_account_id: Option<i32>,
     path: String,
     format: String,
 ) -> Result<StatementStageResult, AppError> {
-    stage_statement_in(db.inner(), workspace_id, bank_account_id, porquinho_account_id, create_porquinho, &path, &format).await
+    stage_statement_in(db.inner(), workspace_id, bank_account_id, porquinho_account_id, create_porquinho, broker_account_id, &path, &format)
+        .await
 }
 
 #[tauri::command]

@@ -3644,3 +3644,82 @@ async fn the_mirrored_flag_exists_with_a_false_default_and_travels_with_the_acco
     let views = list_bank_accounts_view(&db, ws.id).await.unwrap();
     assert!(views[0].mirrored_in_portfolio);
 }
+
+// ---------------------------------------------------------------------------
+// Caixa da conta Corretora: aporte do banco e liquidação da B3 (Fase 35, entrega 12)
+// ---------------------------------------------------------------------------
+
+const BROKER_STATEMENT_CSV: &str = "Extrato Conta Corrente\nConta ;111\n\nData Lançamento;Histórico;Descrição;Valor;Saldo\n\
+10/03/2025;Pix recebido;Pessoa A;2.000,00;0,00\n\
+11/03/2025;Transferência enviada;Titular;-1.000,00;0,00\n\
+20/03/2025;Transferência recebida;Titular;100,00;0,00\n";
+
+fn settlement_sheet() -> Vec<Vec<String>> {
+    let header = ["Entrada/Saída", "Data", "Movimentação", "Produto", "Instituição", "Quantidade", "Preço unitário", "Valor da Operação"];
+    let body: [[&str; 8]; 4] = [
+        ["Credito", "13/03/2025", "Transferência - Liquidação", "ABCD3 - EMPRESA S.A.", "CORRETORA", "100", "9", "900"],
+        ["Debito", "21/03/2025", "Transferência - Liquidação", "ABCD3 - EMPRESA S.A.", "CORRETORA", "40", "10", "400"],
+        ["Debito", "21/03/2025", "Transferência - Liquidação", "WXYZ4 - OUTRA S.A.", "CORRETORA", "5", "-", "-"],
+        ["Credito", "25/03/2025", "Dividendo", "ABCD3 - EMPRESA S.A.", "CORRETORA", "100", "0.1", "10"],
+    ];
+    std::iter::once(header.to_vec()).chain(body.iter().map(|r| r.to_vec())).map(|r| r.into_iter().map(String::from).collect()).collect()
+}
+
+#[tokio::test]
+async fn without_a_brokerage_account_the_bank_transfers_stay_income_and_expenses() {
+    use crate::commands::statement_io::{list_statement_pending_in, parse_inter_csv, stage_statement_parsed};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Plain").await;
+    let checking = crate::test_support::bank_account(&db, ws.id, "Checking").await;
+    let staged = stage_statement_parsed(&db, ws.id, checking.id, None, false, "inter_csv", parse_inter_csv(BROKER_STATEMENT_CSV)).await.unwrap();
+    assert_eq!(staged.staged, 3);
+    let kinds: Vec<String> = list_statement_pending_in(&db, ws.id).await.unwrap().iter().map(|p| p.suggested_type.clone()).collect();
+    assert_eq!(kinds, vec!["receita", "despesa", "receita"]);
+}
+
+#[tokio::test]
+async fn broker_transfers_and_b3_settlements_move_the_brokerage_cash_without_double_counting() {
+    use crate::commands::broker_settlement_io::parse_b3_settlements;
+    use crate::commands::statement_io::{list_statement_pending_in, parse_inter_csv, stage_statement_parsed, stage_statement_with_broker};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Broker").await;
+    let checking = crate::test_support::bank_account(&db, ws.id, "Checking").await;
+    let broker = crate::test_support::bank_account(&db, ws.id, "Brokerage").await;
+
+    // Com a conta Corretora, a transferência do banco vira aporte e saque dela.
+    let parsed = parse_inter_csv(BROKER_STATEMENT_CSV);
+    let staged = stage_statement_with_broker(&db, ws.id, checking.id, None, false, Some(broker.id), "inter_csv", parsed).await.unwrap();
+    assert_eq!(staged.staged, 3);
+    let pending = list_statement_pending_in(&db, ws.id).await.unwrap();
+    assert_eq!(pending.iter().map(|p| p.suggested_type.as_str()).collect::<Vec<_>>(), vec!["receita", "transferencia", "transferencia"]);
+    assert_eq!(pending[1].counterpart_account_id, Some(broker.id));
+
+    // A liquidação vira lançamento da Corretora: compra sai, venda entra, e a do aluguel (sem valor) fica de fora.
+    let rows = settlement_sheet();
+    let settlements = stage_statement_parsed(&db, ws.id, broker.id, None, false, "b3_settlement", parse_b3_settlements(&rows)).await.unwrap();
+    assert_eq!((settlements.staged, settlements.skipped.len()), (2, 1));
+    assert!(settlements.skipped[0].message.contains("sem valor"));
+    // Importar de novo não duplica.
+    let again = stage_statement_parsed(&db, ws.id, broker.id, None, false, "b3_settlement", parse_b3_settlements(&rows)).await.unwrap();
+    assert_eq!((again.staged, again.duplicates), (0, 2));
+
+    confirm_all_statement_items(&db, ws.id).await;
+    // Banco: +2.000 − 1.000 (aporte) + 100 (saque) = 1.100. Corretora: +1.000 − 100 − 900 (compra) + 400 (venda) = 400.
+    assert!(close(account_balance(&db, ws.id, checking.id).await, 1100.0));
+    assert!(close(account_balance(&db, ws.id, broker.id).await, 400.0));
+    let total: f64 = list_bank_accounts_view(&db, ws.id).await.unwrap().iter().map(|a| a.balance).sum();
+    assert!(close(total, 1500.0), "o aporte só muda o dinheiro de conta; compra e venda é que mexem no total");
+}
+
+#[tokio::test]
+async fn a_brokerage_account_has_to_be_another_account() {
+    use crate::commands::statement_io::{parse_inter_csv, stage_statement_with_broker};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Same").await;
+    let checking = crate::test_support::bank_account(&db, ws.id, "Checking").await;
+    let same = stage_statement_with_broker(&db, ws.id, checking.id, None, false, Some(checking.id), "inter_csv", parse_inter_csv(BROKER_STATEMENT_CSV)).await;
+    assert!(matches!(same, Err(e) if e.to_string().contains("outra conta")));
+}
