@@ -3226,8 +3226,14 @@ as sugestões de provento entram na tela única, e os cartões do Ledger e de Fi
   `DividendSuggestionsSection`, `PendingNotice` no Ledger e em Finances, e o contexto `useOpenPending` para "importar" levar à aba com a
   revisão aberta. Os testids das filas foram mantidos, então os specs só mudaram a navegação.
 - **Verificado**: `./dev.sh check` limpo. Teste de unidade da contagem (por tipo, por Workspace, descartado e confirmado não contam).
+- **CI** (direto na `main`): a primeira rodada (`c696d4d`) falhou em `Rust` e `E2E`, por erro meu em três pontos: o teste de contagem
+  semeava cinco sugestões com a mesma data e bateu na chave única de `suggested_dividends` (carteira, ativo, data, fonte); o aviso do
+  Ledger e de Finances abria o popup de revisão ao navegar, cobrindo os botões que `import-review` e `statement-review` clicam (agora o
+  aviso só leva à aba, e só o "importar" abre o popup); e o `settings.e2e` conferia a lista de abas sem a nova. Corrigido em `0db8903`:
+  `Private Files`, `Rust`, `Frontend` e `E2E` verdes, incluindo o `pending-tab.e2e.mjs`.
 - **Specs**: `import-review`, `statement-review` e `fixed-income-yield` agora vão por `nav-pending`; novo `pending-tab.e2e.mjs`
   (selo, confirmar com quantidade editada, descartar até zerar).
-- **Não verificado**: a tela a olho; os testes pesados (`cargo test`, E2E) só rodam no CI.
+- **Não verificado**: a tela a olho (selo, aba e avisos nunca foram vistos, só testados).
+- **Próximo passo sugerido**: abrir o app e olhar a aba Pending, os popups e a fila, que nunca foram vistos a olho.
 - **Pendente**: os de antes (aluguel e reembolso da Movimentação; rendimento do porquinho que a B3 não cobre; posição de carteira da
   renda fixa; alíquota de JCP de 17,5% em fonte primária) e ver a tela a olho.
