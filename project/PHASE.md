@@ -3431,7 +3431,7 @@ de duplicata é ticker + data + tipo + quantidade + total.
 - **Pendente**: confirmar se aluguel e reembolso são líquidos de IR; aluguel e reembolso somam na tela de proventos e no DY.
 - **Conferência das regras (Sessão 148)**: o JCP a 17,5% está **confirmado em fonte primária**: LC 224/2025, art. 8º, dá ao § 2º do art. 9º da
   Lei 9.249/1995 a alíquota de 17,5%, e o art. 14, III, a faz valer desde 1º/1/2026 (texto na Câmara; o Planalto não abriu). A nota de fonte
-  da regra em `finance_core/tax_rules.rs` ainda diz "secondary sources"; trocá-la exige mudar o seed da migration junto (há teste que cobra).
+  da regra foi trocada na Sessão 150 (`finance_core/tax_rules.rs` e a migration `m20261024`, que atualiza o texto nos bancos existentes).
   Sobre o aluguel, a IN RFB 1.585/2015 (arts. 73 a 75, lidos em trecho citado por busca; o texto oficial não abriu): a remuneração do
   emprestador é tributada **como renda fixa** (tabela regressiva, 22,5% até 180 dias; contratos de dias ou semanas caem aqui) e o valor
   **reembolsado** ao emprestador por proventos é **isento de IRRF** para ele. O tomador é quem arca com o imposto sobre o provento.

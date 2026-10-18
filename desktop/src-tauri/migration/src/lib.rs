@@ -79,6 +79,7 @@ mod m20261020_100000_rebuild_import_pending_by_workspace;
 mod m20261021_100000_seed_fixed_income_tax_rules;
 mod m20261022_100000_update_fixed_income_cdb_rule_description;
 mod m20261023_100000_add_mirrored_in_portfolio_to_bank_accounts;
+mod m20261024_100000_update_jcp_rule_source;
 
 pub struct Migrator;
 
@@ -165,6 +166,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261021_100000_seed_fixed_income_tax_rules::Migration),
             Box::new(m20261022_100000_update_fixed_income_cdb_rule_description::Migration),
             Box::new(m20261023_100000_add_mirrored_in_portfolio_to_bank_accounts::Migration),
+            Box::new(m20261024_100000_update_jcp_rule_source::Migration),
         ]
     }
 }

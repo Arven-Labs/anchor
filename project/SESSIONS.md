@@ -3297,3 +3297,14 @@ a custo (sem rendimento acumulado estimado) e a marca por conta, com o dinheiro 
 - **CI** (direto na `main`, `39f344f`): `Private Files`, `Rust`, `Frontend` e `E2E` verdes de primeira, incluindo o caso novo de `accounts.e2e.mjs` (selo e botão).
 - **Não verificado**: a tela a olho (a marca, a posição na carteira e o caixa no patrimônio).
 - **Pendente**: os de antes (rendimento do porquinho que a B3 não cobre; IR do aluguel líquido ou bruto; nota de fonte do JCP) e ver a tela a olho.
+
+
+### 2026-10-18 — Sessão 150
+
+**Nota de fonte do JCP.** Fatia pequena, sem plan mode; direto na `main`. O dono do projeto escolheu este item entre os que sobraram.
+- **Feito**: a fonte da regra `jcp_irrf_rate` de 2026 deixou de dizer "secondary sources; verify" e cita a LC 224/2025, art. 8º, vigência pelo art. 14, III
+  (conferidos na Sessão 148). Mudou na tabela embarcada (`finance_core/tax_rules.rs`) e numa migration nova (`m20261024`), que atualiza só o texto nos bancos
+  que já existem, como a `m20261022` fez com a descrição do CDB. O valor nunca muda, então a edição do usuário fica. O seed antigo não foi tocado: o teste
+  `embedded_rules_match_the_migration_seed` compara o banco já migrado.
+- **Verificado**: `./dev.sh check` limpo; `cargo test --lib` no Docker (669 passaram, 0 falharam).
+- **Pendente**: os de antes (rendimento do porquinho que a B3 não cobre; IR do aluguel líquido ou bruto) e ver a tela a olho.
