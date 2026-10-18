@@ -3056,8 +3056,10 @@ do `PHASE.md`.
   testes de fluxo novos (guardar só o novo, aprovar com edição, venda acima do saldo continua pendente, descartar e
   reimportar, aprovado vira duplicata, aviso fiscal) e 1 unitário; os guarda-corpos do arquivo de Workspace passam com a
   tabela nova; a planilha real lê as 15 linhas.
-- **Não verificado**: a tela a olho (popup e fila nunca foram vistos); o CI (não houve push); nenhum E2E novo, porque o
-  diálogo nativo de arquivo não é dirigível pelo WebDriver, então o caminho importar → popup → fila só está coberto no
-  backend.
+- **CI** (PR #1, branch `sessao-138-fila-pendentes`): `build` e `test` verdes de primeira. O `e2e` falhou na primeira
+  tentativa só no caso "Update now" de `settings.e2e.mjs` (timeout de 120 s; ele usa rede real e não toca no código desta
+  sessão) e passou ao reexecutar o job; a `main` já teve a mesma falha intermitente (`09fa8bb`). Não investiguei a causa.
+- **Não verificado**: a tela a olho (popup e fila nunca foram vistos); nenhum E2E novo, porque o diálogo nativo de arquivo
+  não é dirigível pelo WebDriver, então o caminho importar → popup → fila só está coberto no backend.
 - **Pendente**: ver "Fora do escopo" da Fase 35 (proventos da Movimentação, conciliação, CDB e extrato do Inter, CDB como
   conta corrente, IR do AUPO11).
