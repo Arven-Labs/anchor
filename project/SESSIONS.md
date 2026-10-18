@@ -3136,7 +3136,10 @@ por enquanto. Pediu também para **não usar branches** enquanto o app não esti
   depois de editar o bruto; as regras existem após as migrations. A amostra real (`#[ignore]`, `ANCHOR_B3_MOVIMENTACAO`) dá 9 propostas.
 - **Corrigido no caminho**: o teste da migration da fila supunha "a última migration é a de reconstrução"; agora acha a migration
   pelo nome.
-- **Não verificado**: o CI desta entrega (resultado abaixo); a tela a olho; o clique em "Import B3 Movimentação (yield)"
+- **CI** (push direto na `main`, commit `0b870ba`): os quatro workflows verdes de primeira (`CI Private Files`, `Rust`, `Frontend`
+  e `E2E`). O spec novo `fixed-income-yield.e2e.mjs` (6 casos: fila e extrato semeados, botão só liga com a conta, CDB com checagem
+  que bate e IR editado, LCI isenta com uma linha só, banco pagou menos que a B3 explica, saldo final) passou.
+- **Não verificado**: a tela a olho; o clique em "Import B3 Movimentação (yield)"
   (diálogo nativo). **A hipótese "valor da B3 = bruto" e a taxa de 22,5% não foram conferidas contra o extrato**, porque os períodos
   não se sobrepõem (extrato de 2025, Movimentação de setembro/2026): falta o dono do projeto exportar a Movimentação de 2025.
 - **Pendente**: validação com períodos sobrepostos; rendimento ainda não resgatado; posição de carteira da renda fixa com marca por
