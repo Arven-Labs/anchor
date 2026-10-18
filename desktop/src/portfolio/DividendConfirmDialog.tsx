@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import type { DividendSuggestionView, PaymentType } from "./types";
-import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS } from "./types";
+import { SUGGESTION_PAYMENT_TYPES, PAYMENT_TYPE_LABELS } from "./types";
 import Field from "../components/Field";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -103,7 +103,7 @@ function DividendConfirmForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PAYMENT_TYPES.map((key) => (
+              {SUGGESTION_PAYMENT_TYPES.map((key) => (
                 <SelectItem key={key} value={key}>
                   {PAYMENT_TYPE_LABELS[key]}
                 </SelectItem>

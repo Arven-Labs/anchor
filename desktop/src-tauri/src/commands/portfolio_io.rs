@@ -17,7 +17,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::currency::workspace_of_portfolio;
 use crate::commands::tax::load_rule_set;
-use crate::domain::proventos::jscp_gross_from_net;
+use crate::domain::proventos::{
+    jscp_gross_from_net, PAYMENT_TYPE_ALUGUEL, PAYMENT_TYPE_DIVIDENDO, PAYMENT_TYPE_REEMBOLSO,
+};
 use crate::domain::tax::rules::{RuleSet, JCP_IRRF_RATE};
 use crate::commands::transaction::{create_transaction_in, CreateTransactionRequest};
 use crate::entity::{assets, custodia, import_pending, transactions};
@@ -415,10 +417,13 @@ pub(crate) fn movimentacao_columns(header: &[String]) -> Option<MovimentacaoColu
 
 pub(crate) const MOVIMENTACAO_COLUMNS_MESSAGE: &str = "não parece a planilha 'Movimentação' da B3: faltam colunas (Entrada/Saída, Data, Movimentação, Produto, Instituição, Quantidade, Preço unitário, Valor da Operação)";
 
-/// Planilha "Movimentação" da Área do Investidor. Por ora só proventos em
-/// dinheiro (`Dividendo`, `Rendimento`, JCP) viram lançamento. O resto é pulado com o
-/// motivo, em vez de adivinhado: liquidação (repete os negócios da "Negociação"),
-/// aluguel, reembolso e CDB.
+/// Planilha "Movimentação" da Área do Investidor. Viram lançamento os proventos em
+/// dinheiro (`Dividendo`, `Rendimento`, JCP), o pagamento do aluguel de ações (`Empréstimo`
+/// com valor, tipo `aluguel`) e o `Reembolso` de provento do aluguel (tipo `reembolso`). O resto
+/// é pulado com o motivo, em vez de adivinhado: liquidação (repete os negócios da "Negociação"),
+/// o `Empréstimo` sem valor (só custódia) e CDB.
+///
+/// **Aluguel e reembolso**: a B3 não diz se o valor é bruto ou líquido de IR; entra como veio.
 ///
 /// **JCP**: na amostra real, o "Valor da Operação" é o **líquido** (o preço unitário é o
 /// bruto por ação, e valor ÷ (quantidade × preço) dá 0,85 em todas as linhas). O app guarda o
@@ -467,15 +472,16 @@ pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>], rules: &RuleSet) -> Pars
             )));
             continue;
         }
-        if movement.contains("emprestimo") {
-            out.push(Err(issue("aluguel de ações (Empréstimo) pulado: ainda não suportado".to_string())));
+        let is_rental = movement.contains("emprestimo");
+        let is_refund = movement.contains("reembolso");
+        // O aluguel tem duas linhas: a do contrato (sem valor, a B3 só move a custódia) e a do pagamento (com valor).
+        if is_rental && !matches!(parse_number(get(c_value)), Ok(Some(value)) if value > 0.0) {
+            out.push(Err(issue(
+                "movimento de custódia do aluguel (Empréstimo sem valor) pulado: a renda vem na linha com valor".to_string(),
+            )));
             continue;
         }
-        if movement.contains("reembolso") {
-            out.push(Err(issue("reembolso pulado: ainda não suportado".to_string())));
-            continue;
-        }
-        if movement != "dividendo" && movement != "rendimento" && !is_jcp {
+        if movement != "dividendo" && movement != "rendimento" && !is_jcp && !is_rental && !is_refund {
             out.push(Err(issue(format!("movimentação '{}' não suportada", get(c_move).trim()))));
             continue;
         }
@@ -522,9 +528,23 @@ pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>], rules: &RuleSet) -> Pars
                     continue;
                 }
             }
+        } else if is_rental {
+            (
+                total_value,
+                PAYMENT_TYPE_ALUGUEL,
+                "Importado da B3 (Movimentação); aluguel de ações, valor como pago pela B3".to_string(),
+            )
+        } else if is_refund {
+            (
+                total_value,
+                PAYMENT_TYPE_REEMBOLSO,
+                "Importado da B3 (Movimentação); reembolso de provento do aluguel, valor como pago pela B3".to_string(),
+            )
         } else {
-            (total_value, "dividendo", "Importado da B3 (Movimentação)".to_string())
+            (total_value, PAYMENT_TYPE_DIVIDENDO, "Importado da B3 (Movimentação)".to_string())
         };
+        // O reembolso vem com quantidade 0: não é por ação, então fica sem quantidade.
+        let quantity = if is_refund { None } else { quantity };
         out.push(Ok(ProposedTransaction {
             line,
             transaction_date,
@@ -1308,12 +1328,13 @@ mod tests {
             &["Credito", "27/09/2026", "Transferência - Liquidação", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "100", "9", "900"],
             &["Credito", "26/09/2026", "APLICAÇÃO", "CDB - CDB123", "BANCO", "1000", "0.01", "10"],
             &["Debito", "25/09/2026", "RESGATE ANTECIPADO/", "CDB - CDB123 - BANCO", "BANCO", "1000", "0.0101", "10.1"],
-            &["Credito", "24/09/2026", "Empréstimo", "ABCD3 - EMPRESA A S.A.      ", "CORRETORA", "0", "-", "1.5"],
+            &["Credito", "24/09/2026", "Empréstimo", "ABCD3 - EMPRESA A S.A.      ", "CORRETORA", "300", "-", "1.5"],
             &["Credito", "23/09/2026", "Reembolso", "ABCD3 - EMPRESA A S.A.      ", "CORRETORA", "0", "-", "2.5"],
             &["Credito", "22/09/2026", "Bonificação", "ABCD3 - EMPRESA A S.A.", "CORRETORA", "5", "-", "-"],
+            &["Credito", "21/09/2026", "Empréstimo", "ABCD3 - EMPRESA A S.A.      ", "CORRETORA", "300", "-", "-"],
         ]);
         let parsed = parse_b3_movimentacao_rows(&owned, &test_rule_set());
-        assert_eq!(parsed.len(), 9);
+        assert_eq!(parsed.len(), 10);
 
         let dividend = parsed[0].as_ref().unwrap();
         assert_eq!(dividend.transaction_type, "provento");
@@ -1329,12 +1350,22 @@ mod tests {
         assert_eq!((jcp.quantity, jcp.unit_price, jcp.total_value), (Some(100.0), Some(0.1), 12.12));
         assert!(jcp.notes.as_deref().unwrap().contains("líquido 10.00") && jcp.notes.as_deref().unwrap().contains("17.5%"));
 
-        let reasons: Vec<String> = parsed[3..].iter().map(|r| r.as_ref().unwrap_err().message.clone()).collect();
+        // Aluguel: a linha com valor é a renda (sem reconstituir bruto); o preço unitário vem vazio.
+        let rental = parsed[6].as_ref().unwrap();
+        assert_eq!(rental.transaction_type, "provento");
+        assert_eq!(rental.payment_type.as_deref(), Some("aluguel"));
+        assert_eq!((rental.quantity, rental.unit_price, rental.total_value), (Some(300.0), None, 1.5));
+        // Reembolso: só valor, a quantidade 0 da planilha não vira quantidade.
+        let refund = parsed[7].as_ref().unwrap();
+        assert_eq!(refund.payment_type.as_deref(), Some("reembolso"));
+        assert_eq!((refund.quantity, refund.total_value), (None, 2.5));
+
+        let reasons: Vec<String> =
+            [3, 4, 5, 8, 9].iter().map(|&i| parsed[i].as_ref().unwrap_err().message.clone()).collect();
         assert!(reasons[0].contains("liquidação") && reasons[0].contains("Negociação"));
         assert!(reasons[1].contains("CDB") && reasons[2].contains("CDB"));
-        assert!(reasons[3].contains("aluguel"));
-        assert!(reasons[4].contains("reembolso"));
-        assert!(reasons[5].contains("Bonificação") && reasons[5].contains("não suportada"));
+        assert!(reasons[3].contains("Bonificação") && reasons[3].contains("não suportada"));
+        assert!(reasons[4].contains("custódia") && reasons[4].contains("aluguel"));
     }
 
     #[test]
@@ -1434,6 +1465,10 @@ mod tests {
         let parsed = parse_b3_movimentacao_rows(&read_xlsx_rows(&path).expect("planilha abre"), &test_rule_set());
         let ok = parsed.iter().filter(|r| r.is_ok()).count();
         println!("linhas lidas: {} proventos, {} puladas", ok, parsed.len() - ok);
+        let by_type = |kind: &str| {
+            parsed.iter().filter_map(|r| r.as_ref().ok()).filter(|p| p.payment_type.as_deref() == Some(kind)).count()
+        };
+        println!("aluguel: {} linhas, reembolso: {} linhas", by_type("aluguel"), by_type("reembolso"));
         // JCP: o bruto reconstituído tem de ficar perto de quantidade × preço unitário (o preço é bruto por ação).
         let deviations: Vec<f64> = parsed
             .iter()

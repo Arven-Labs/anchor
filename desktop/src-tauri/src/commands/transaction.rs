@@ -11,7 +11,9 @@ use crate::commands::currency::{
 };
 use crate::domain::cost_basis::{self, EventKind};
 use crate::domain::position_pricing::{self, PricingResult};
-use crate::domain::proventos::{PAYMENT_TYPE_DIVIDENDO, PAYMENT_TYPE_JSCP};
+use crate::domain::proventos::{
+    PAYMENT_TYPE_ALUGUEL, PAYMENT_TYPE_DIVIDENDO, PAYMENT_TYPE_JSCP, PAYMENT_TYPE_REEMBOLSO,
+};
 use crate::domain::transaction_ledger::{self, LedgerEntry};
 use crate::entity::{asset_valuations, assets, custodia, stock_price_history, transactions};
 use crate::error::AppError;
@@ -174,9 +176,11 @@ fn validate(request: &CreateTransactionRequest) -> Result<(), AppError> {
                 ));
             }
             if let Some(payment_type) = &request.payment_type {
-                if payment_type != PAYMENT_TYPE_DIVIDENDO && payment_type != PAYMENT_TYPE_JSCP {
+                if ![PAYMENT_TYPE_DIVIDENDO, PAYMENT_TYPE_JSCP, PAYMENT_TYPE_ALUGUEL, PAYMENT_TYPE_REEMBOLSO]
+                    .contains(&payment_type.as_str())
+                {
                     return Err(AppError::InvalidGuard(format!(
-                        "payment_type '{payment_type}' inválido (esperado '{PAYMENT_TYPE_DIVIDENDO}' ou '{PAYMENT_TYPE_JSCP}')"
+                        "payment_type '{payment_type}' inválido (esperado '{PAYMENT_TYPE_DIVIDENDO}', '{PAYMENT_TYPE_JSCP}', '{PAYMENT_TYPE_ALUGUEL}' ou '{PAYMENT_TYPE_REEMBOLSO}')"
                     )));
                 }
             }

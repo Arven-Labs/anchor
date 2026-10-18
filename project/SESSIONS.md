@@ -3248,3 +3248,21 @@ os popups e os avisos no Ledger e em Finances.
   estão em inglês, sem português vazado (só comentários em português).
 - **Pendente**: os de antes (aluguel e reembolso da Movimentação; rendimento do porquinho que a B3 não cobre; posição de carteira da
   renda fixa; alíquota de JCP de 17,5% em fonte primária) e conferir os valores na tela com os dados reais.
+
+
+### 2026-10-18 — Sessão 147
+
+**Fase 35, entrega 7: aluguel de ativos e reembolso na Movimentação.** Plan mode, plano aprovado. O dono do projeto escolheu um
+`payment_type` próprio para o aluguel e o reembolso na mesma entrega. Direto na `main`.
+- **Formato lido na amostra real** (só estrutura): Empréstimo em duas linhas por contrato (abertura sem valor = custódia; pagamento com valor)
+  e Reembolso com quantidade 0 e só valor. Detalhes na entrega 7 de `PHASE.md`.
+- **Feito**: `PAYMENT_TYPE_ALUGUEL` e `PAYMENT_TYPE_REEMBOLSO` em `domain/proventos.rs`; o importador grava o pagamento do aluguel e o
+  reembolso como `provento` e pula o Empréstimo sem valor com o motivo; a validação de `transaction.rs` aceita os dois tipos; no front,
+  `PaymentType` ganha "Rental" e "Reimbursement" (lançamento manual) e `SUGGESTION_PAYMENT_TYPES` mantém só dividendo e JSCP no diálogo de
+  sugestões; rótulo do importador atualizado.
+- **Verificado**: `./dev.sh check` limpo; `cargo test --lib` no Docker (659 passaram, 0 falharam), com o teste do parser reescrito e o de
+  `net_total` novo. Amostra real (as duas planilhas): 5 aluguéis e 1 reembolso importados, 5 linhas de custódia puladas; proventos de 43 para 49.
+- **Não verificado**: a tela a olho (os tipos novos na tela de proventos); o CI da rodada; se aluguel e reembolso vêm líquidos de IR.
+- **Deslize**: um ajuste de teste foi feito por script Python no Bash, contra a regra de editar com Edit/Write; o diff foi conferido no `git diff`.
+- **Pendente**: os de antes (rendimento do porquinho que a B3 não cobre; posição de carteira da renda fixa; alíquota de JCP de 17,5% em
+  fonte primária) e ver a tela a olho.

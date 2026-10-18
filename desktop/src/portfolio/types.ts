@@ -269,11 +269,16 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
 // editável nos diálogos de Confirmar/Registrar provento futuro
 // (DividendSuggestionsSection.tsx) e no lançamento manual de "provento"
 // (TransactionSection.tsx).
-export type PaymentType = "dividendo" | "jscp";
-export const PAYMENT_TYPES: PaymentType[] = ["dividendo", "jscp"];
+export type PaymentType = "dividendo" | "jscp" | "aluguel" | "reembolso";
+// Lançamento manual: todos os tipos. Aluguel e reembolso nascem da importação da Movimentação (B3).
+export const PAYMENT_TYPES: PaymentType[] = ["dividendo", "jscp", "aluguel", "reembolso"];
+// Sugestões de provento (Yahoo) só distinguem dividendo e JSCP; o backend recusa o resto.
+export const SUGGESTION_PAYMENT_TYPES: PaymentType[] = ["dividendo", "jscp"];
 export const PAYMENT_TYPE_LABELS: Record<PaymentType, string> = {
   dividendo: "Dividend",
   jscp: "JSCP",
+  aluguel: "Rental",
+  reembolso: "Reimbursement",
 };
 
 export const FI_INDEXADORES = ["CDI", "IPCA", "SELIC", "PREFIXADO", "OUTRO"] as const;

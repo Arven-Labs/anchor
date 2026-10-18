@@ -9,6 +9,10 @@ use std::collections::HashMap;
 
 pub const PAYMENT_TYPE_DIVIDENDO: &str = "dividendo";
 pub const PAYMENT_TYPE_JSCP: &str = "jscp";
+/// Renda do aluguel de ações (linhas "Empréstimo" da Movimentação). Sem retenção no app: vale o que a B3 pagou.
+pub const PAYMENT_TYPE_ALUGUEL: &str = "aluguel";
+/// Compensação de provento pago enquanto as ações estavam emprestadas (linha "Reembolso"). Idem, sem retenção.
+pub const PAYMENT_TYPE_REEMBOLSO: &str = "reembolso";
 
 // `None`/qualquer valor != "jscp" cai no ramo sem retenção — cobre tanto
 // "dividendo" explícito quanto `transactions.payment_type = NULL`
@@ -107,6 +111,12 @@ mod tests {
     fn net_total_jscp_withholds_the_given_rate() {
         assert_eq!(net_total(100.0, Some("jscp"), 0.15), 85.0);
         assert_eq!(net_total(100.0, Some("jscp"), 0.175), 82.5);
+    }
+
+    #[test]
+    fn net_total_aluguel_and_reembolso_have_no_withholding() {
+        assert_eq!(net_total(100.0, Some(PAYMENT_TYPE_ALUGUEL), 0.175), 100.0);
+        assert_eq!(net_total(100.0, Some(PAYMENT_TYPE_REEMBOLSO), 0.175), 100.0);
     }
 
     #[test]

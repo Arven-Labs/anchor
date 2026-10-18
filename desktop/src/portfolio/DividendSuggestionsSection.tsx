@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import type { Asset, DividendSuggestionView, PaymentType } from "./types";
-import { PAYMENT_TYPES, PAYMENT_TYPE_LABELS } from "./types";
+import { SUGGESTION_PAYMENT_TYPES, PAYMENT_TYPE_LABELS } from "./types";
 import {
   Dialog,
   DialogContent,
@@ -368,7 +368,7 @@ export default function DividendSuggestionsSection({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {PAYMENT_TYPES.map((key) => (
+                    {SUGGESTION_PAYMENT_TYPES.map((key) => (
                       <SelectItem key={key} value={key}>
                         {PAYMENT_TYPE_LABELS[key]}
                       </SelectItem>

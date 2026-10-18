@@ -3419,6 +3419,17 @@ de duplicata é ticker + data + tipo + quantidade + total.
 - **Proventos**: o formulário de confirmar saiu de `DividendSuggestionsSection` para `DividendConfirmDialog`, usado pelas duas telas.
 - **Pendente**: ver a tela a olho; descartar em lote.
 
+**Entrega 7 (feita, Sessão 147)**: aluguel de ativos e reembolso na importação da Movimentação.
+- **Formato (amostra real)**: o "Empréstimo" vem em duas linhas por contrato: a da abertura, sem valor (a B3 só move a custódia, junto com
+  "Transferência"), e a do pagamento, dias ou semanas depois, com valor (≈ R$ 0,006 a 0,08 por ação). O "Reembolso" vem com quantidade 0
+  e só valor: o tomador compensa um provento pago enquanto as ações estavam emprestadas.
+- **Feito**: o pagamento do aluguel vira `provento` com `payment_type = aluguel` (quantidade em ações, sem preço unitário); o reembolso, com
+  `payment_type = reembolso` (sem quantidade); o Empréstimo sem valor segue pulado, agora com o motivo certo. Sem migration, e `net_total` já
+  não retém nada fora do JCP. A validação do lançamento aceita os dois tipos; as sugestões de provento continuam só dividendo e JSCP.
+- **Valor como veio**: a B3 não diz se aluguel e reembolso são brutos ou líquidos de IR, então entram como pagos, e a nota do lançamento diz isso.
+- **Resultado na amostra**: 5 aluguéis e 1 reembolso importados, 5 linhas de custódia puladas; os proventos foram de 43 para 49.
+- **Pendente**: confirmar se aluguel e reembolso são líquidos de IR; aluguel e reembolso somam na tela de proventos e no DY.
+
 **Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
 Inter; CDB/porquinho visto também como conta corrente sem contar o patrimônio duas vezes; IR do AUPO11; unificar a fila com
