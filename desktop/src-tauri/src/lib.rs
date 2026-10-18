@@ -200,6 +200,7 @@ pub fn run() {
             commands::proventos::get_proventos_summary,
             commands::profitability::get_portfolio_profitability,
             commands::profitability::get_profitability_comparison,
+            commands::backtest::run_backtest,
             commands::bank_account::list_bank_accounts,
             commands::bank_account::create_bank_account,
             commands::bank_account::update_bank_account,

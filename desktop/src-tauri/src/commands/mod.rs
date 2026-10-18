@@ -33,6 +33,7 @@ pub mod portfolio_io;
 pub mod statement_io;
 pub mod workspace_file;
 pub mod portfolio_summary;
+pub mod backtest;
 pub mod profitability;
 pub mod projected_ceiling;
 pub mod property;

@@ -3786,6 +3786,139 @@ async fn a_brokerage_account_has_to_be_another_account() {
 }
 
 // ---------------------------------------------------------------------------
+// Comando do backtest (Fase 22, fatia 3)
+// ---------------------------------------------------------------------------
+
+async fn seed_prices(db: &sea_orm::DatabaseConnection, ticker: &str, adjusted: bool, start: chrono::NaiveDate, prices: &[f64]) {
+    use crate::entity::{stock_adjusted_close, stock_price_history};
+    use sea_orm::{ActiveModelTrait, Set};
+    for (i, price) in prices.iter().enumerate() {
+        let date = (start + chrono::Duration::days(i as i64)).to_string();
+        if adjusted {
+            stock_adjusted_close::ActiveModel {
+                ticker: Set(ticker.to_string()),
+                price_date: Set(date),
+                adj_close_price: Set(*price),
+                fetched_at: Set("2026-01-01T00:00:00Z".to_string()),
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        } else {
+            stock_price_history::ActiveModel {
+                ticker: Set(ticker.to_string()),
+                price_date: Set(date),
+                close_price: Set(*price),
+                source: Set("test".to_string()),
+                fetched_at: Set("2026-01-01T00:00:00Z".to_string()),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+    }
+}
+
+async fn seed_macro(db: &sea_orm::DatabaseConnection, code: &str, months: &[(&str, f64)]) {
+    use sea_orm::{ActiveModelTrait, Set};
+    for (year_month, value) in months {
+        crate::entity::macro_index_monthly::ActiveModel {
+            index_code: Set(code.to_string()),
+            year_month: Set(year_month.to_string()),
+            value_pct: Set(*value),
+            source: Set("test".to_string()),
+            fetched_at: Set("2026-01-01T00:00:00Z".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn the_backtest_simulates_the_current_portfolio_and_says_what_it_left_out() {
+    use crate::commands::backtest::{run_backtest_in, BacktestRequest, WeightOverride};
+    use chrono::NaiveDate;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Quant").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let a = asset(&db, "AAAA3", "acao_br").await;
+    let b = asset(&db, "BBBB3", "acao_br").await;
+    let fixed = asset(&db, "CDBX", "renda_fixa").await;
+    let usd = asset_in(&db, "SPY", "etf_us", "USD").await;
+    for (id, qty, total) in [(a.id, 10.0, 1000.0), (b.id, 10.0, 1000.0), (fixed.id, 1.0, 500.0), (usd.id, 1.0, 100.0)] {
+        trade(&db, pf.id, id, "compra", qty, total, "2026-01-01").await;
+    }
+    let start = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+    // A sobe 1% ao dia e tem ajuste; B fica parado e só tem o fechamento simples (sem ajuste de dividendos).
+    let a_prices: Vec<f64> = (0..70).map(|i| 100.0 * 1.01_f64.powi(i)).collect();
+    seed_prices(&db, "AAAA3", true, start, &a_prices).await;
+    seed_prices(&db, "BBBB3", false, start, &vec![100.0; 70]).await;
+    seed_macro(&db, "cdi", &[("2026-02", 1.0), ("2026-03", 1.0)]).await;
+    seed_macro(&db, "ipca", &[("2026-02", 0.5)]).await;
+
+    let request = |weights: Vec<WeightOverride>, rebalance: &str| BacktestRequest {
+        portfolio_id: pf.id,
+        weights,
+        rebalance: rebalance.to_string(),
+        initial: 1000.0,
+        monthly_contribution: 0.0,
+        start_date: None,
+    };
+    let hold = run_backtest_in(&db, request(vec![], "never")).await.unwrap();
+    let monthly = run_backtest_in(&db, request(vec![], "monthly")).await.unwrap();
+
+    // Só os dois ativos de ação entram; a renda fixa e o ativo em USD saem com aviso, e o B avisa que é só preço.
+    assert_eq!(hold.assets.iter().map(|x| x.ticker.as_str()).collect::<Vec<_>>(), vec!["AAAA3", "BBBB3"]);
+    assert!(hold.warnings.iter().any(|w| w.starts_with("CDBX") && w.contains("no price history to simulate")), "{:?}", hold.warnings);
+    assert!(hold.warnings.iter().any(|w| w.starts_with("SPY") && w.contains("BRL")));
+    assert!(hold.warnings.iter().any(|w| w.starts_with("BBBB3") && w.contains("price only")));
+    assert!(hold.assets[1].price_only && !hold.assets[0].price_only);
+
+    // Pesos iguais (valor de mercado igual), sem rebalancear o A deriva; rebalanceando mensalmente volta perto de 50%.
+    assert!(close(hold.assets[0].target_weight, 0.5));
+    assert!(hold.assets[0].final_weight > 0.6 && monthly.assets[0].final_weight < hold.assets[0].final_weight);
+    assert_eq!((hold.metrics.rebalance_count, monthly.metrics.rebalance_count), (0, 2));
+    assert!(hold.metrics.twr_pct > monthly.metrics.twr_pct, "rebalancear contra uma tendência de alta rende menos");
+
+    // Curva mensal: início, fim de janeiro, de fevereiro e o dia 11/mar; CDI e IPCA encadeiam os meses publicados.
+    assert_eq!(hold.months.first().unwrap().date, "2026-01-01");
+    assert_eq!(hold.months.len(), 3, "início + fev + mar (janeiro é o mês do início)");
+    let february = &hold.months[1];
+    assert!(close(february.cdi_index.unwrap(), 1.01) && close(february.ipca_index.unwrap(), 1.005));
+    assert!(hold.months[2].ipca_index.is_none(), "IPCA de março não existe");
+    assert!(hold.months[2].ibov_index.is_none() && hold.benchmarks.iter().all(|x| x.code != "ibov"));
+    assert!(hold.benchmarks.iter().any(|x| x.code == "cdi" && close(x.total_return_pct, 2.01)));
+    assert!(hold.metrics.risk_free_pct > 0.0);
+
+    // Pesos escolhidos: só o A entra, e os outros ativos com posição viram aviso.
+    let only_a = run_backtest_in(&db, request(vec![WeightOverride { asset_id: a.id, weight: 1.0 }], "never")).await.unwrap();
+    assert_eq!(only_a.assets.len(), 1);
+    assert!(only_a.warnings.iter().any(|w| w.starts_with("BBBB3") && w.contains("no weight given")));
+
+    // Parâmetros inválidos.
+    assert!(run_backtest_in(&db, request(vec![], "daily")).await.is_err());
+    let mut broke = request(vec![], "never");
+    broke.initial = 0.0;
+    assert!(run_backtest_in(&db, broke).await.is_err());
+}
+
+#[tokio::test]
+async fn the_backtest_refuses_a_portfolio_with_nothing_to_simulate() {
+    use crate::commands::backtest::{run_backtest_in, BacktestRequest};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Empty").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let request = BacktestRequest { portfolio_id: pf.id, weights: vec![], rebalance: "never".to_string(), initial: 1000.0, monthly_contribution: 0.0, start_date: None };
+    let error = run_backtest_in(&db, request).await.err().expect("carteira vazia");
+    assert!(error.to_string().contains("no asset to simulate"));
+}
+
+// ---------------------------------------------------------------------------
 // Fechamento ajustado para o retorno total do backtest (Fase 22, fatia 1)
 // ---------------------------------------------------------------------------
 

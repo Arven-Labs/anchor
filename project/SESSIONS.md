@@ -3490,4 +3490,11 @@ com **retorno total**, pesos fixos com rebalanceamento, aportes mensais, benchma
   (nunca, mensal, trimestral, anual) depois dele, ambos no fim do dia para o aporte não virar retorno. Devolve a curva (patrimônio, aportado, índice TWR), TWR e CAGR, volatilidade anualizada (252 dias), drawdown máximo com a data,
   Sharpe contra uma taxa livre de risco (nulo com volatilidade zero), matriz de correlação dos retornos diários e os pesos finais. 8 testes unitários (preço seguido, drawdown, aporte sem efeito no retorno, rebalancear contra deriva,
   janela e dia faltante, correlação 1,0, Sharpe descontado, entradas inválidas). `./dev.sh check` limpo; avisos de código sem uso até a fatia 3 ligar o comando (o CI não nega avisos).
-- **Pendente**: fatias 3 (comando e aba Backtest) e 4 (custos e imposto). Cripto segue com 365 dias de histórico e sem ajuste.
+- **Fatia 3 (comando e aba)**: `commands/backtest.rs` (`run_backtest`) parte das posições abertas (`compute_positions`), pesos padrão = valor de mercado ou os digitados, lê o fechamento ajustado (cai no fechamento simples com aviso
+  "price only" quando o ajuste ainda não foi coletado), deixa de fora com aviso o que não simula (classe sem histórico, moeda que não é BRL, ativo sem peso ou sem preço) e recusa carteira sem nada simulável. Taxa livre de risco = CDI
+  anualizado na janela. Devolve uma linha por mês (patrimônio, aportado, índices do portfólio, CDI, IPCA e IBOV, `None` onde o benchmark não tem o mês), resumo dos benchmarks, métricas, pesos e correlação. Aba "Backtest" no Portfolio
+  (`BacktestSection.tsx`): rebalanceamento, capital inicial, aporte, data de início, pesos editáveis, gráfico de retorno acumulado contra os benchmarks, métricas, pesos no fim e matriz de correlação.
+- **Verificado**: `./dev.sh check` e `tsc` limpos; teste de fluxo (carteira com ação, renda fixa e USD: só as ações entram, os outros viram aviso; deriva sem rebalancear contra rebalanceamento mensal; CDI e IPCA encadeados; IBOV ausente some;
+  pesos escolhidos; entradas inválidas) e teste da carteira vazia; spec `backtest.e2e.mjs` (semeia carteira, preços e CDI, roda sem rebalancear com resultado conferido à mão: +49,50%, patrimônio 14.950,00) com capturas. Testes e E2E no CI.
+  Um erro meu achado antes de enviar: o `seed_macro` do teste não preenchia `source` (NOT NULL) e quebraria em tempo de execução.
+- **Pendente**: fatia 4 (custos e imposto). Cripto segue com 365 dias de histórico e sem ajuste.
