@@ -25,6 +25,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import ImportExportPanel from "./ImportExportPanel";
+import PendingItemsSection from "./PendingItemsSection";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -144,6 +145,7 @@ function LedgerSection({ portfolioId }: { portfolioId: number }) {
   const [period, setPeriod] = useState<PeriodKey>("12m");
   const [assetClassFilter, setAssetClassFilter] = useState<string>("all");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
 
   const queryClient = useQueryClient();
@@ -244,7 +246,12 @@ function LedgerSection({ portfolioId }: { portfolioId: number }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <ImportExportPanel portfolioId={portfolioId} />
+      <ImportExportPanel portfolioId={portfolioId} onStaged={() => setReviewOpen(true)} />
+      <PendingItemsSection
+        portfolioId={portfolioId}
+        reviewOpen={reviewOpen}
+        onReviewOpenChange={setReviewOpen}
+      />
       <Card>
         <CardHeader>
           <CardTitle>Monthly contributions</CardTitle>
