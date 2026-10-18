@@ -3523,4 +3523,8 @@ Plan mode; decisões do dono: DARF separado por código (4600) e 15% fixo sem co
   Testes e E2E no CI.
 - **Atenção**: as regras de cripto vêm de fontes secundárias (blogs e consultorias, achadas por busca); a fonte gravada em `tax_rules` diz "secondary sources; verify". Conferir na Receita (GCAP) antes de confiar no valor.
 - **Pendente**: exterior (Lei 14.754), tabela progressiva acima de R$ 5 mi, permuta cripto↔cripto, cripto no backtest e na simulação de venda.
+- **Backtest de cripto (explorado, nada implementado; o dono interrompeu para continuar depois)**: o histórico de cripto vem do CoinGecko (`finance_core/coingecko.rs`, `PRICE_HISTORY_DAYS = 365`, `days=365` no `market_chart`;
+  o plano gratuito não passa disso), em **USD**, gravado em `stock_price_history` por `finance_api/crypto.rs::collect_ticker`, sem série ajustada. O `CLASS_DEFAULTS` de `portfolio_io.rs` cria cripto em USD, e o
+  `run_backtest` só simula ativo em BRL, então cripto em USD hoje sai com aviso. Ideia a validar: buscar o histórico longo no Yahoo (`BTC-USD`/`BTC-BRL`, `range=10y`, que o `finance_core/yahoo.rs` já sabe ler com
+  `Instrument::global`), gravando em `stock_adjusted_close` (cripto não paga dividendo, o ajustado é o fechamento). Decisão aberta: simular em USD convertendo pelo câmbio da data, ou usar o par `-BRL` direto.
 - **Deslize meu**: troquei uma frase do `ROADMAP.md` com `sed` pelo Bash, contra a regra de usar Edit; conferi o resultado (1 linha mudada).
