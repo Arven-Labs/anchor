@@ -3509,4 +3509,4 @@ com **retorno total**, pesos fixos com rebalanceamento, aportes mensais, benchma
 - **Verificado**: `./dev.sh check` (compila os testes) e `tsc` limpos. Testes unitários novos (corretagem no valor e no TWR, uma ordem líquida por ativo com aporte e rebalanceamento no mesmo dia, DARF de ação acima da
   isenção debitado em 1/mar, imposto do último mês como pendente, isenção abaixo de R$ 20 mil, FII a 20% sem isenção, sem custo nada muda, entradas inválidas), teste de fluxo estendido e caso novo em
   `backtest.e2e.mjs` (corretagem de R$ 10 por ordem: patrimônio 14.920,10). Testes e E2E rodam no CI.
-- **Pendente**: nada da Fase 22 planejada. Ideias: IR de cripto, IRRF de swing (0,005%) estimado, custódia.
+- **Pendente**: nada da Fase 22 planejada. Ideias: IR de cripto, custódia. Erro meu: escrevi os testes de imposto esperando 1.875 (sem IRRF); o motor já abate o IRRF de 0,005% da venda (1.873,75) e o CI pegou.

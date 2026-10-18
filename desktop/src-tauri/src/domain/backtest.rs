@@ -559,17 +559,17 @@ mod tests {
     fn rebalancing_a_gain_above_the_exemption_pays_the_darf_the_next_month() {
         let result = doubling_with_tax("acao_br", "AAAA3", 100_000.0, 70).unwrap();
         // 1/fev: A vale 100 mil e B 50 mil; volta a 75/75 vendendo 125 cotas de A a 200 (25 mil, acima dos 20 mil).
-        // Ganho de 125 × 100 = 12.500; 15% = 1.875, debitados em 1/mar.
-        assert!(close(result.metrics.total_tax_paid, 1875.0), "{}", result.metrics.total_tax_paid);
+        // Ganho de 125 × 100 = 12.500; 15% = 1.875, menos o IRRF de 0,005% da venda (1,25) = 1.873,75, debitados em 1/mar.
+        assert!(close(result.metrics.total_tax_paid, 1873.75), "{}", result.metrics.total_tax_paid);
         assert!(close(result.metrics.tax_pending, 0.0));
-        assert!(close(result.metrics.final_value, 150_000.0 - 1875.0), "{}", result.metrics.final_value);
+        assert!(close(result.metrics.final_value, 150_000.0 - 1873.75), "{}", result.metrics.final_value);
     }
 
     #[test]
     fn the_tax_of_the_last_month_is_pending_not_paid() {
         let result = doubling_with_tax("acao_br", "AAAA3", 100_000.0, 40).unwrap();
         assert!(close(result.metrics.total_tax_paid, 0.0));
-        assert!(close(result.metrics.tax_pending, 1875.0), "{}", result.metrics.tax_pending);
+        assert!(close(result.metrics.tax_pending, 1873.75), "{}", result.metrics.tax_pending);
         assert!(close(result.metrics.final_value, 150_000.0));
     }
 
@@ -582,9 +582,9 @@ mod tests {
 
     #[test]
     fn a_fii_is_taxed_at_its_own_rate_with_no_exemption() {
-        // Mesma venda de 25 mil (ganho 12.500), mas FII: 20% = 2.500.
+        // Mesma venda de 25 mil (ganho 12.500), mas FII: 20% = 2.500, menos o IRRF de 1,25.
         let result = doubling_with_tax("fii", "HGLG11", 100_000.0, 70).unwrap();
-        assert!(close(result.metrics.total_tax_paid, 2500.0), "{}", result.metrics.total_tax_paid);
+        assert!(close(result.metrics.total_tax_paid, 2498.75),"{}", result.metrics.total_tax_paid);
         let small = doubling_with_tax("fii", "HGLG11", 40_000.0, 70).unwrap();
         assert!(small.metrics.total_tax_paid > 0.0, "FII não tem a isenção das ações");
     }
