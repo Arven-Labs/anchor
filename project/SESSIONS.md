@@ -3355,5 +3355,6 @@ decisão do dono por pergunta); direto na `main`.
 - **Motivo**: a importação de renda fixa (Sessão 149) pode gerar dezenas de itens, e parte deles (resgates sem a aplicação no arquivo) só serve para descartar.
 - **Verificado**: `./dev.sh check` limpo (tsc). Caso novo em `pending-tab.e2e.mjs` (seleciona duas, confirma em dois cliques, o selo cai, depois Select all);
   só roda no CI. A fila de extrato e a de carteira usam o mesmo código, mas só a de proventos tem E2E de lote.
+- **CI** (direto na `main`, `17c81e8`): `Private Files`, `Frontend` e `E2E` verdes de primeira, incluindo o caso novo de `pending-tab.e2e.mjs`; `Rust` não rodou (nenhum arquivo Rust mudou).
 - **Não verificado**: a tela a olho (as caixas, a barra e o texto de confirmação).
 - **Pendente**: os de antes (IR do aluguel líquido ou bruto; estimar o rendimento por resgate) e ver a tela a olho.
