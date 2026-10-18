@@ -84,10 +84,45 @@ type MonthAssessment = {
   sales: SaleResult[];
 };
 
+// Cripto tem apuração e DARF próprios (código 4600): `crypto_months` fica fora de `months`.
+type CryptoSale = {
+  tx_id: number;
+  portfolio_id: number;
+  asset_id: number;
+  ticker: string;
+  date: string;
+  quantity: number;
+  sale_value: number;
+  proceeds: number;
+  cost: number;
+  gain: number;
+  cost_unknown: boolean;
+};
+
+type CryptoMonth = {
+  period: string;
+  sales_total: number;
+  exempt: boolean;
+  gain: number;
+  rate: number;
+  tax: number;
+  carried_in: number;
+  due: number;
+  carried_out: number;
+  due_date: string;
+  darf_code: number;
+  sales: CryptoSale[];
+};
+
+type PaymentKind = "b3" | "crypto";
+
+// O que o diálogo do DARF precisa de um mês, venha da B3 ou da cripto.
+type DarfTarget = { kind: PaymentKind; period: string; due: number; due_date: string; darf_code: number };
+
 type TaxWarning =
   | { kind: "cost_unknown"; ticker: string; date: string }
-  | { kind: "crypto_sales_above_exemption"; period: string; sales_total: number; limit: number }
   | { kind: "crypto_sales_non_brl"; period: string }
+  | { kind: "crypto_gain_above_first_tier"; year: number }
   | { kind: "foreign_sales"; year: number }
   | { kind: "option_exercised"; ticker: string; date: string };
 
@@ -98,11 +133,17 @@ type TaxPayment = {
   amount: number;
   paid_date: string;
   general_transaction_id: number | null;
+  kind: PaymentKind;
   created_at: string;
 };
 
 type TaxAssessmentView = {
-  assessment: { months: MonthAssessment[]; warnings: TaxWarning[]; loss_balances: LossBalance[] };
+  assessment: {
+    months: MonthAssessment[];
+    crypto_months: CryptoMonth[];
+    warnings: TaxWarning[];
+    loss_balances: LossBalance[];
+  };
   payments: TaxPayment[];
 };
 
@@ -142,10 +183,10 @@ function warningText(w: TaxWarning): string {
   switch (w.kind) {
     case "cost_unknown":
       return `${w.ticker} sold on ${formatDate(w.date)} for more shares than your recorded purchases — only the part with a known cost was counted. Register the missing purchases to fix it.`;
-    case "crypto_sales_above_exemption":
-      return `Crypto sales in ${formatPeriod(w.period)} (${formatBrl(w.sales_total)}) are above the ${formatBrl(w.limit)} monthly exemption — tax is likely due (DARF code 4600). Not calculated by Anchor yet.`;
     case "crypto_sales_non_brl":
-      return `You sold crypto in ${formatPeriod(w.period)} in a foreign currency — check whether tax is due. Not calculated by Anchor yet.`;
+      return `You sold crypto in ${formatPeriod(w.period)} in a foreign currency (a foreign exchange) — that follows another rule and is not calculated by Anchor, so check whether tax is due.`;
+    case "crypto_gain_above_first_tier":
+      return `Your taxable crypto gain in ${w.year} passed the limit of the 15% bracket. Anchor still charges 15%, but the real rate is higher above it (17.5% to 22.5%) — the amount shown is too low.`;
     case "foreign_sales":
       return `You sold foreign assets in ${w.year}. Gains abroad are taxed yearly in the annual tax return (Law 14,754/2023) — not calculated by Anchor yet.`;
     case "option_exercised":
@@ -156,7 +197,7 @@ function warningText(w: TaxWarning): string {
 export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [darfMonth, setDarfMonth] = useState<MonthAssessment | null>(null);
+  const [darfMonth, setDarfMonth] = useState<DarfTarget | null>(null);
   const [bankAccountId, setBankAccountId] = useState("");
   const [paidDate, setPaidDate] = useState(todayIso());
   const [paidAmount, setPaidAmount] = useState("");
@@ -192,6 +233,7 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
           amount: Number(paidAmount),
           paid_date: paidDate,
           bank_account_id: Number(bankAccountId),
+          kind: darfMonth?.kind,
         },
       }),
     onSuccess: () => {
@@ -209,11 +251,17 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
   const warnings = assessmentQuery.data?.assessment.warnings ?? [];
   const lossBalances = assessmentQuery.data?.assessment.loss_balances ?? [];
   const totalTaxSaved = lossBalances.reduce((sum, l) => sum + l.tax_saved, 0);
+  const cryptoMonths = assessmentQuery.data?.assessment.crypto_months ?? [];
   const payments = assessmentQuery.data?.payments ?? [];
-  const paymentByPeriod = new Map(payments.map((p) => [p.period, p]));
+  // Um pagamento por mês e por tipo: a B3 e a cripto pagam DARFs diferentes.
+  const paymentByPeriod = new Map(payments.filter((p) => p.kind === "b3").map((p) => [p.period, p]));
+  const cryptoPaymentByPeriod = new Map(payments.filter((p) => p.kind === "crypto").map((p) => [p.period, p]));
   const today = todayIso();
 
-  const unpaid = months.filter((m) => m.due > 0 && !paymentByPeriod.has(m.period));
+  const unpaid = [
+    ...months.filter((m) => m.due > 0 && !paymentByPeriod.has(m.period)),
+    ...cryptoMonths.filter((m) => m.due > 0 && !cryptoPaymentByPeriod.has(m.period)),
+  ];
   const dueNow = unpaid.reduce((sum, m) => sum + m.due, 0);
   const nextDue = unpaid
     .map((m) => m.due_date)
@@ -225,14 +273,14 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
     .filter((p) => p.paid_date.startsWith(currentYear))
     .reduce((sum, p) => sum + p.amount, 0);
 
-  function openDarf(month: MonthAssessment) {
+  function openDarf(month: DarfTarget) {
     setDarfMonth(month);
     setPaidAmount(month.due.toFixed(2));
     setPaidDate(todayIso());
     setCopied(false);
   }
 
-  function darfText(month: MonthAssessment): string {
+  function darfText(month: DarfTarget): string {
     return [
       `Revenue code: ${month.darf_code}`,
       `Assessment period: ${lastDayOfPeriod(month.period)}`,
@@ -241,7 +289,7 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
     ].join("\n");
   }
 
-  async function copyDarf(month: MonthAssessment) {
+  async function copyDarf(month: DarfTarget) {
     await navigator.clipboard.writeText(darfText(month));
     setCopied(true);
   }
@@ -405,7 +453,7 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
                             {expanded === m.period ? "Hide" : "Details"}
                           </Button>
                           {m.due > 0 && !payment && (
-                            <Button size="sm" onClick={() => openDarf(m)}>
+                            <Button size="sm" onClick={() => openDarf({ ...m, kind: "b3" })}>
                               DARF
                             </Button>
                           )}
@@ -437,9 +485,95 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
         </Card>
       )}
 
-      {!assessmentQuery.isLoading && months.length === 0 && (
+      {cryptoMonths.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Crypto</CardTitle>
+            <CardDescription>
+              Gains on crypto sold in reais are exempt when the month's sales add up to the monthly limit
+              (all coins together); above it the whole month's gain pays 15%. Losses are not carried
+              forward. The DARF has its own revenue code (4600), separate from the stock exchange one. This
+              is an estimate based on secondary sources — confirm on the Receita's GCAP before paying.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table data-testid="crypto-tax-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Month</TableHead>
+                  <TableHead className="text-right">Sold</TableHead>
+                  <TableHead className="text-right">Gain</TableHead>
+                  <TableHead className="text-right">DARF</TableHead>
+                  <TableHead>Due date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...cryptoMonths].reverse().map((m) => {
+                  const payment = cryptoPaymentByPeriod.get(m.period);
+                  const isOverdue = !payment && m.due > 0 && m.due_date < today;
+                  return (
+                    <TableRow key={m.period}>
+                      <TableCell>{formatPeriod(m.period)}</TableCell>
+                      <TableCell className="text-right">
+                        {formatBrl(m.sales_total)}
+                        {m.exempt && (
+                          <Badge variant="secondary" className="ml-2">
+                            exempt
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">{formatBrl(m.gain)}</TableCell>
+                      <TableCell className="text-right font-medium" data-testid={`crypto-tax-due-${m.period}`}>
+                        {m.due > 0 ? formatBrl(m.due) : "—"}
+                        {m.carried_out > 0 && (
+                          <span className="block text-xs text-muted-foreground">
+                            {formatBrl(m.carried_out)} below minimum, rolls over
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>{m.due > 0 ? formatDate(m.due_date) : "—"}</TableCell>
+                      <TableCell>
+                        {payment ? (
+                          <Badge>Paid {formatDate(payment.paid_date)}</Badge>
+                        ) : isOverdue ? (
+                          <Badge variant="destructive">Overdue</Badge>
+                        ) : m.due > 0 ? (
+                          <Badge variant="outline">To pay</Badge>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Nothing due</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="flex justify-end gap-2">
+                        {m.due > 0 && !payment && (
+                          <Button size="sm" data-testid={`crypto-darf-${m.period}`} onClick={() => openDarf({ ...m, kind: "crypto" })}>
+                            DARF
+                          </Button>
+                        )}
+                        {payment && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={unmarkPaidMutation.isPending}
+                            onClick={() => unmarkPaidMutation.mutate(payment.id)}
+                          >
+                            Undo paid
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {!assessmentQuery.isLoading && months.length === 0 && cryptoMonths.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          No sales on B3 yet — nothing to assess.
+          No sales on B3 or of crypto yet — nothing to assess.
         </p>
       )}
 
@@ -450,7 +584,7 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
           </DialogHeader>
           {darfMonth && (
             <div className="flex flex-col gap-4">
-              <pre className="rounded-md bg-muted p-3 text-sm">{darfText(darfMonth)}</pre>
+              <pre className="rounded-md bg-muted p-3 text-sm" data-testid="darf-text">{darfText(darfMonth)}</pre>
               <p className="text-sm text-muted-foreground">
                 There's no official API to issue a DARF. Copy these fields and issue it at the
                 Receita (Sicalc or ReVar, inside "Meu Imposto de Renda"), then pay at your bank.

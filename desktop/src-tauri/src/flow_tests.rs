@@ -88,6 +88,9 @@ async fn tax_rules_are_seeded() {
     let db = memory_db().await;
     let rules = tax_rules::Entity::find().all(&db).await.unwrap();
     assert!(!rules.is_empty());
+    for key in ["crypto_exemption_monthly_sales", "crypto_rate", "crypto_first_tier_gain_limit", "darf_code_crypto"] {
+        assert!(rules.iter().any(|r| r.rule_key == key), "regra de cripto semeada: {key}");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1773,6 +1776,7 @@ async fn the_tax_is_only_paid_from_a_brl_account() {
         amount: 150.0,
         paid_date: "2026-10-10".to_string(),
         bank_account_id: account_id,
+        kind: "b3".to_string(),
     };
 
     let err = mark_tax_paid_in(&db, request(usd.id)).await.unwrap_err();
@@ -1790,6 +1794,60 @@ async fn the_tax_is_only_paid_from_a_brl_account() {
         .unwrap();
     assert_eq!(expense.transaction_type, "despesa");
     assert_eq!(expense.bank_account_id, brl.id);
+}
+
+#[tokio::test]
+async fn crypto_tax_is_assessed_apart_and_its_darf_is_paid_apart_from_the_exchange_one() {
+    use crate::commands::tax::{mark_tax_paid_in, MarkTaxPaidRequest};
+    use crate::entity::{general_transaction, tax_payments};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Family").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let account = bank_account(&db, ws.id, "Real account").await;
+    let btc = asset(&db, "BTC", "cripto").await;
+    let bova = asset(&db, "BOVA11", "etf_br").await;
+
+    // Fev: BTC vendido por 40 mil (acima dos 35 mil de isenção) com ganho de 30 mil: 15% = 4.500, DARF 4600.
+    trade(&db, pf.id, btc.id, "compra", 1.0, 10000.0, "2026-01-02").await;
+    trade(&db, pf.id, btc.id, "venda", 1.0, 40000.0, "2026-02-10").await;
+    // No mesmo mês, um ETF com lucro de 1.000 na B3: DARF 6015, que não se mistura com o da cripto.
+    trade(&db, pf.id, bova.id, "compra", 10.0, 1000.0, "2026-01-02").await;
+    trade(&db, pf.id, bova.id, "venda", 10.0, 2000.0, "2026-02-12").await;
+
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert_eq!(assessment.months.len(), 1);
+    assert_eq!(assessment.months[0].darf_code, 6015);
+    assert!(close(assessment.months[0].gross_tax, 150.0), "só o ETF: {}", assessment.months[0].gross_tax);
+    assert_eq!(assessment.crypto_months.len(), 1);
+    let crypto = &assessment.crypto_months[0];
+    assert_eq!((crypto.period.as_str(), crypto.darf_code), ("2026-02", 4600));
+    assert!(!crypto.exempt && close(crypto.due, 4500.0), "{}", crypto.due);
+
+    let pay = |kind: &str| MarkTaxPaidRequest {
+        workspace_id: ws.id,
+        period: "2026-02".to_string(),
+        amount: if kind == "crypto" { 4500.0 } else { 149.9 },
+        paid_date: "2026-03-31".to_string(),
+        bank_account_id: account.id,
+        kind: kind.to_string(),
+    };
+    let b3 = mark_tax_paid_in(&db, pay("b3")).await.unwrap();
+    let crypto_payment = mark_tax_paid_in(&db, pay("crypto")).await.unwrap();
+    assert_eq!((b3.kind.as_str(), crypto_payment.kind.as_str()), ("b3", "crypto"));
+    assert_eq!(tax_payments::Entity::find().all(&db).await.unwrap().len(), 2, "o mesmo mês aceita um pagamento de cada tipo");
+
+    // O mesmo tipo duas vezes no mesmo mês continua recusado, e um tipo desconhecido também.
+    assert!(mark_tax_paid_in(&db, pay("crypto")).await.is_err());
+    assert!(matches!(mark_tax_paid_in(&db, pay("fii")).await.unwrap_err(), crate::error::AppError::InvalidInput(_)));
+    assert_eq!(tax_payments::Entity::find().all(&db).await.unwrap().len(), 2);
+
+    let expense = general_transaction::Entity::find_by_id(crypto_payment.general_transaction_id.unwrap())
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(expense.notes.unwrap().contains("crypto"));
 }
 
 // ---------------------------------------------------------------------------

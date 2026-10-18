@@ -9,5 +9,6 @@
 pub mod assessment;
 pub mod calendar;
 pub mod classify;
+pub mod crypto;
 pub mod iof;
 pub mod rules;

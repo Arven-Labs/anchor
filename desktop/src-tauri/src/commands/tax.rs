@@ -442,6 +442,16 @@ pub struct MarkTaxPaidRequest {
     pub amount: f64,
     pub paid_date: String,
     pub bank_account_id: i32,
+    /// `b3` (padrão) ou `crypto`.
+    #[serde(default = "default_payment_kind")]
+    pub kind: String,
+}
+
+pub const PAYMENT_KIND_B3: &str = "b3";
+pub const PAYMENT_KIND_CRYPTO: &str = "crypto";
+
+fn default_payment_kind() -> String {
+    PAYMENT_KIND_B3.to_string()
 }
 
 #[tauri::command]
@@ -504,6 +514,11 @@ pub async fn mark_tax_paid_in(
     }
     parse_date(&request.paid_date)?;
     parse_date(&format!("{}-01", request.period))?;
+    let note_kind = match request.kind.as_str() {
+        PAYMENT_KIND_B3 => "stock exchange",
+        PAYMENT_KIND_CRYPTO => "crypto",
+        other => return Err(AppError::InvalidInput(format!("payment kind must be b3 or crypto, got '{other}'"))),
+    };
 
     let account = bank_account::Entity::find_by_id(request.bank_account_id)
         .one(db)
@@ -533,7 +548,7 @@ pub async fn mark_tax_paid_in(
         category_id: Set(Some(category_id)),
         valor: Set(request.amount),
         transaction_date: Set(request.paid_date.clone()),
-        notes: Set(Some(format!("DARF — capital gains tax (stock exchange), period {}", request.period))),
+        notes: Set(Some(format!("DARF — capital gains tax ({note_kind}), period {}", request.period))),
         created_at: Set(now.clone()),
         ..Default::default()
     }
@@ -545,6 +560,7 @@ pub async fn mark_tax_paid_in(
         period: Set(request.period),
         amount: Set(request.amount),
         paid_date: Set(request.paid_date),
+        kind: Set(request.kind),
         general_transaction_id: Set(Some(expense.id)),
         created_at: Set(now),
         ..Default::default()
@@ -611,26 +627,36 @@ pub(crate) async fn tax_cost_flows(
         }
         let assessment = assess_workspace(db, workspace_id).await?;
         for payment in payments {
-            let Some(month) = assessment.months.iter().find(|m| m.period == payment.period) else {
-                continue;
+            // Peso de cada venda do mês apurado: (carteira, ativo, ganho tributável). A B3 e a cripto têm DARF e
+            // apuração próprios, então cada pagamento só rateia entre as vendas do seu tipo.
+            let weights: Vec<(i32, i32, f64)> = if payment.kind == PAYMENT_KIND_CRYPTO {
+                let Some(month) = assessment.crypto_months.iter().find(|m| m.period == payment.period) else {
+                    continue;
+                };
+                month
+                    .sales
+                    .iter()
+                    .map(|s| (s.portfolio_id, s.asset_id, if month.exempt { 0.0 } else { s.gain.max(0.0) }))
+                    .collect()
+            } else {
+                let Some(month) = assessment.months.iter().find(|m| m.period == payment.period) else {
+                    continue;
+                };
+                month
+                    .sales
+                    .iter()
+                    .map(|s| (s.portfolio_id, s.asset_id, if s.exemption_eligible && month.stock_exempt { 0.0 } else { s.gain.max(0.0) }))
+                    .collect()
             };
-            let weight = |s: &assessment::SaleResult| {
-                if s.exemption_eligible && month.stock_exempt {
-                    0.0
-                } else {
-                    s.gain.max(0.0)
-                }
-            };
-            let total: f64 = month.sales.iter().map(weight).sum();
+            let total: f64 = weights.iter().map(|w| w.2).sum();
             if total <= EPS {
                 continue;
             }
-            let ours: f64 = month
-                .sales
+            let ours: f64 = weights
                 .iter()
-                .filter(|s| portfolio_ids.contains(&s.portfolio_id))
-                .filter(|s| asset_id.is_none_or(|a| s.asset_id == a))
-                .map(weight)
+                .filter(|(portfolio, _, _)| portfolio_ids.contains(portfolio))
+                .filter(|(_, asset, _)| asset_id.is_none_or(|a| *asset == a))
+                .map(|w| w.2)
                 .sum();
             if ours > EPS {
                 flows.push((parse_date(&payment.paid_date)?, payment.amount * ours / total));

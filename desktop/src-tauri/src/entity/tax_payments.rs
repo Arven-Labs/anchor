@@ -14,6 +14,8 @@ pub struct Model {
     pub amount: f64,
     pub paid_date: String,
     pub general_transaction_id: Option<i32>,
+    /// `b3` (DARF 6015) ou `crypto` (DARF 4600): um pagamento por mês e por tipo.
+    pub kind: String,
     pub created_at: String,
 }
 

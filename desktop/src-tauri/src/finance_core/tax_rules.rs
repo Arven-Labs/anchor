@@ -44,6 +44,9 @@ const RULES: &[(&str, f64, (i32, u32, u32), &str, &str)] = &[
     ("fixed_income_ir_cri", 0.0, (2005, 1, 1), "IR on CRI redemptions (exempt for individuals)", "Lei 11.033/2004, art. 3º (secondary sources; verify on planalto.gov.br)"),
     ("fixed_income_ir_cra", 0.0, (2005, 1, 1), "IR on CRA redemptions (exempt for individuals)", "Lei 11.033/2004, art. 3º (secondary sources; verify on planalto.gov.br)"),
     ("crypto_exemption_monthly_sales", 35000.0, (2019, 1, 1), "Monthly crypto sales up to this amount make crypto gains exempt (domestic exchanges)", "IN RFB 1.888/2019 (secondary sources; verify on gov.br)"),
+    ("crypto_rate", 0.15, (2019, 1, 1), "IR on crypto gains above the monthly exemption, as a flat 15% (the real table rises to 17.5%, 20% and 22.5% above R$ 5 million of gain in the year; Anchor only warns)", "Lei 8.981/1995, art. 21, with Lei 13.259/2016 (secondary sources; verify on gov.br)"),
+    ("crypto_first_tier_gain_limit", 5000000.0, (2019, 1, 1), "Yearly crypto gain up to which the 15% rate holds; above it Anchor warns that a higher bracket applies", "Lei 8.981/1995, art. 21, with Lei 13.259/2016 (secondary sources; verify on gov.br)"),
+    ("darf_code_crypto", 4600.0, (2019, 1, 1), "Revenue code of the DARF for capital gains on crypto (the stock exchange DARF is 6015)", "Receita Federal, GCAP (secondary sources; verify on gov.br)"),
 ];
 
 fn date(ymd: (i32, u32, u32)) -> NaiveDate {
@@ -79,7 +82,7 @@ mod tests {
         let rules = rules_br();
         let unique: HashSet<_> = rules.iter().map(|r| (r.key, r.effective_from)).collect();
         assert_eq!(unique.len(), rules.len());
-        assert_eq!(rules.len(), 16);
+        assert_eq!(rules.len(), 19);
     }
 
     #[test]

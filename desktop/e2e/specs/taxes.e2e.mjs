@@ -1,9 +1,12 @@
+import { expect } from "@wdio/globals";
 import {
   byId,
   enterWorkspace,
   seedLossScenario,
   simulateIvvbSale,
   snap,
+  sql,
+  textOf,
   waitForText,
 } from "./helpers.mjs";
 
@@ -61,5 +64,41 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
       (text) => text.includes("75,00"),
       "imposto de R$ 75,00 sobre os R$ 500,00 restantes",
     );
+  });
+
+  // IR de cripto: apuração e DARF próprios (código 4600), separados dos da B3.
+  it("apura o IR de uma venda de cripto acima da isenção e mostra o DARF 4600", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('BTC', 'Bitcoin', 'cripto', 'BRL', 'pais', 'BR', '2026-01-01T00:00:00Z')",
+    );
+    const btc = sql("SELECT id FROM assets WHERE ticker = 'BTC'");
+    const trade = (type, total, date) =>
+      sql(
+        "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+          `VALUES (${portfolio}, ${btc}, '${type}', 1, ${total}, ${total}, 0, '${date}', '${date}T00:00:00Z')`,
+      );
+    // Comprou por 10 mil e vendeu por 40 mil (acima dos 35 mil de isenção): ganho de 30 mil, 15% = 4.500.
+    trade("compra", 10000, "2026-01-02");
+    trade("venda", 40000, "2026-02-10");
+
+    // Sai e volta da aba para a apuração ser recarregada.
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await waitForText(
+      byId("crypto-tax-due-2026-02"),
+      (text) => text.includes("4.500,00"),
+      "o DARF de cripto de fevereiro deveria ser R$ 4.500,00",
+    );
+    await byId("crypto-tax-table").scrollIntoView({ block: "center" });
+    await snap("taxes-crypto");
+
+    await byId("crypto-darf-2026-02").click();
+    await waitForText(byId("darf-text"), (text) => text.includes("Revenue code: 4600"), "o código da receita da cripto é 4600");
+    expect(await textOf(byId("darf-text"))).toContain("4500,00");
+    await snap("taxes-crypto-darf");
   });
 });

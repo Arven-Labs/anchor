@@ -11,8 +11,8 @@ pub enum TaxTreatment {
     CommonNoExemption,
     /// FII/Fiagro: gaveta própria (sem distinção swing/day trade).
     Fii,
-    /// Cripto — não calculado nesta fatia, só aviso acima do limite.
-    CryptoWarning,
+    /// Cripto: apuração própria em `domain::tax::crypto` (DARF 4600, isenção mensal, sem compensação).
+    Crypto,
     /// Ativo no exterior (Lei 14.754/2023, apuração anual) — só aviso.
     ForeignWarning,
     /// Fora do escopo (renda fixa, imóvel, empresa não listada, `metal` —
@@ -34,7 +34,7 @@ pub fn treatment(asset_class: &str, ticker: &str) -> TaxTreatment {
         "acao_br" => TaxTreatment::StockExemptEligible,
         "etf_br" | "bdr" => TaxTreatment::CommonNoExemption,
         "fii" => TaxTreatment::Fii,
-        "cripto" => TaxTreatment::CryptoWarning,
+        "cripto" => TaxTreatment::Crypto,
         "acao_internacional" | "reit" | "etf_us" => TaxTreatment::ForeignWarning,
         // ETF de renda fixa (ex.: AUPO11): IR retido na fonte, fora da apuração mensal.
         "etf_renda_fixa" => TaxTreatment::Ignored,
@@ -63,7 +63,7 @@ mod tests {
 
     #[test]
     fn out_of_scope_classes() {
-        assert_eq!(treatment("cripto", "BTC"), TaxTreatment::CryptoWarning);
+        assert_eq!(treatment("cripto", "BTC"), TaxTreatment::Crypto);
         assert_eq!(treatment("reit", "O"), TaxTreatment::ForeignWarning);
         assert_eq!(treatment("metal", "XAU"), TaxTreatment::Ignored);
         assert_eq!(treatment("renda_fixa", "CDB"), TaxTreatment::Ignored);

@@ -3510,3 +3510,17 @@ com **retorno total**, pesos fixos com rebalanceamento, aportes mensais, benchma
   isenção debitado em 1/mar, imposto do último mês como pendente, isenção abaixo de R$ 20 mil, FII a 20% sem isenção, sem custo nada muda, entradas inválidas), teste de fluxo estendido e caso novo em
   `backtest.e2e.mjs` (corretagem de R$ 10 por ordem: patrimônio 14.920,10). Testes e E2E rodam no CI.
 - **Pendente**: nada da Fase 22 planejada. Ideias: IR de cripto, custódia. Erro meu: escrevi os testes de imposto esperando 1.875 (sem IRRF); o motor já abate o IRRF de 0,005% da venda (1.873,75) e o CI pegou.
+
+
+### 2026-10-18 — Sessão 167
+
+**IR de cripto na aba Taxes (Fase 24).** Sugeri "indicador de prejuízo a compensar" como próximo passo, mas ele já existia desde a Sessão 106 (li o começo da linha do roadmap e não o "Implementado" no fim); o dono escolheu o IR de cripto.
+Plan mode; decisões do dono: DARF separado por código (4600) e 15% fixo sem compensar prejuízo.
+- **Feito**: `domain/tax/crypto.rs` (apuração à parte, `Assessment.crypto_months`), `TaxTreatment::Crypto` (era `CryptoWarning`), três regras novas em `tax_rules` (migration `m20261027_100000` e tabela embarcada), `tax_payments.kind`
+  (migration `m20261027_110000`, chave única com o tipo), `MarkTaxPaidRequest.kind`, rateio do pagamento de cripto na rentabilidade líquida (`tax_cost_flows`), tabela "Crypto" e DARF 4600 na aba Taxes. Detalhes na Fase 24 do `PHASE.md`.
+- **Verificado**: `./dev.sh check` (compila os testes) e `tsc` limpos. Testes unitários novos em `crypto.rs` (isenção até R$ 35 mil e limite exato, mês inteiro tributado acima, soma de todas as moedas, perda sem compensar, custo médio,
+  mínimo de DARF, moeda estrangeira, 1ª faixa, sem regras de cripto quando não há cripto), teste de fluxo (B3 e cripto no mesmo mês com DARFs separados, os dois pagamentos convivem, repetir é recusado) e caso novo em `taxes.e2e.mjs`.
+  Testes e E2E no CI.
+- **Atenção**: as regras de cripto vêm de fontes secundárias (blogs e consultorias, achadas por busca); a fonte gravada em `tax_rules` diz "secondary sources; verify". Conferir na Receita (GCAP) antes de confiar no valor.
+- **Pendente**: exterior (Lei 14.754), tabela progressiva acima de R$ 5 mi, permuta cripto↔cripto, cripto no backtest e na simulação de venda.
+- **Deslize meu**: troquei uma frase do `ROADMAP.md` com `sed` pelo Bash, contra a regra de usar Edit; conferi o resultado (1 linha mudada).

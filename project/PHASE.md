@@ -2167,7 +2167,15 @@ vigência); `tsc --noEmit` limpo; migrations aplicadas no banco de dev (cópia a
 projeto); o banco de dev não tem nenhuma transação, então a apuração ainda não rodou contra
 dado real — sugestão: conferir o primeiro mês real contra o ReVar.
 
-**Fora desta fatia**: cálculo de cripto e exterior (hoje só aviso); eventos corporativos
+**IR de cripto (Sessão 167)**: a cripto deixou de ser só aviso. `domain/tax/crypto.rs` apura à parte da B3 (DARF próprio, código 4600, mínimo de R$ 10 e saldo acumulado próprios): vendas do mês
+somando até R$ 35 mil (todas as moedas) são isentas; acima disso o ganho do mês inteiro paga 15%; prejuízo dá imposto zero e não compensa nem carrega; custo médio por ativo; venda em moeda que não é BRL
+(exchange estrangeira) segue só com aviso, e ganho tributável no ano acima de R$ 5 milhões avisa que a faixa real é maior. `Assessment.crypto_months` fica fora de `months`. Regras novas em `tax_rules`
+(`crypto_rate`, `crypto_first_tier_gain_limit`, `darf_code_crypto`), na migration `m20261027_100000` e na tabela embarcada. `tax_payments` ganhou `kind` (`b3`|`crypto`) e a chave única passou a
+`(workspace, período, kind)` (`m20261027_110000`), então o mês pode ter os dois DARFs; o pagamento de cripto também entra na rentabilidade líquida, rateado pelas vendas de cripto. **As regras vêm de
+fontes secundárias** (blogs e consultorias; a MP 1303/2025, de 17,5% fixo, caducou): conferir na Receita antes de tratar como verificado. Fora do IR de cripto: tabela progressiva, exterior (Lei 14.754),
+permuta cripto↔cripto, compensação de prejuízo, cripto na simulação de venda e no backtest.
+
+**Fora desta fatia**: cálculo de exterior (cripto entrou na Sessão 167); eventos corporativos
 (desdobramento/bonificação não existem como tipo de transação — quem tiver vai ver custo
 distorcido); `metal` (COMEX, não ouro ativo financeiro B3) ignorado; IRRF real informado pela
 corretora (hoje estimado); declaração anual (IRPF).

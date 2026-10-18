@@ -1160,7 +1160,7 @@ pub fn class_tax_hint_text(asset_class: &str, ticker: &str) -> &'static str {
         TaxTreatment::StockExemptEligible => "Common stock: sales up to the monthly limit may be exempt",
         TaxTreatment::CommonNoExemption => "Taxed as common variable income, never exempt (unit, stock ETF or BDR)",
         TaxTreatment::Fii => "FII/Fiagro: its own tax bucket, no exemption",
-        TaxTreatment::CryptoWarning => "Crypto: only warned about above the exemption limit, not calculated",
+        TaxTreatment::Crypto => "Crypto: its own assessment (DARF 4600), sales up to the monthly limit are exempt",
         TaxTreatment::ForeignWarning => "Foreign asset: annual assessment, only warned about",
         TaxTreatment::Ignored => "Not included in the tax assessment",
     }

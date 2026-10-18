@@ -5,6 +5,7 @@ use serde::Serialize;
 
 use super::calendar::darf_due_date;
 use super::classify::{is_unit, treatment, TaxTreatment};
+use super::crypto::{assess_crypto, CryptoMonth};
 use super::rules::{self, RuleSet};
 use crate::domain::cost_basis::{take_from_position, Position, EPS};
 use crate::error::AppError;
@@ -133,8 +134,10 @@ pub struct MonthAssessment {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TaxWarning {
     CostUnknown { ticker: String, date: NaiveDate },
-    CryptoSalesAboveExemption { period: String, sales_total: f64, limit: f64 },
+    /// Venda de cripto em moeda que não é BRL (exchange estrangeira): outra regra, não apurada aqui.
     CryptoSalesNonBrl { period: String },
+    /// O ganho tributável de cripto no ano passou do teto da 1ª faixa: o app cobra 15%, mas a faixa real sobe.
+    CryptoGainAboveFirstTier { year: i32 },
     ForeignSales { year: i32 },
     /// Opção exercida: o resultado não é apurado aqui (o prêmio vai pro custo da ação).
     OptionExercised { ticker: String, date: NaiveDate },
@@ -154,6 +157,8 @@ pub struct LossBalance {
 #[derive(Clone, Debug, Serialize)]
 pub struct Assessment {
     pub months: Vec<MonthAssessment>,
+    /// Cripto: DARF próprio (código 4600), fora de `months`.
+    pub crypto_months: Vec<CryptoMonth>,
     pub warnings: Vec<TaxWarning>,
     /// Só gavetas com saldo de prejuízo > 0.
     pub loss_balances: Vec<LossBalance>,
@@ -189,7 +194,7 @@ pub fn assess_with_options(
     rules: &RuleSet,
 ) -> Result<Assessment, AppError> {
     let mut warnings = Vec::new();
-    collect_out_of_scope_warnings(trades, rules, &mut warnings)?;
+    collect_out_of_scope_warnings(trades, &mut warnings);
 
     let mut in_scope: Vec<&Trade> = trades
         .iter()
@@ -490,7 +495,10 @@ pub fn assess_with_options(
         }
     }
 
-    Ok(Assessment { months, warnings, loss_balances })
+    let (crypto_months, crypto_warnings) = assess_crypto(trades, rules)?;
+    warnings.extend(crypto_warnings);
+
+    Ok(Assessment { months, crypto_months, warnings, loss_balances })
 }
 
 /// `tx_id` reservado da venda hipotética (maior que qualquer id real, então
@@ -577,42 +585,17 @@ pub fn simulate_sale_with_options(
     })
 }
 
-fn collect_out_of_scope_warnings(
-    trades: &[Trade],
-    rules: &RuleSet,
-    warnings: &mut Vec<TaxWarning>,
-) -> Result<(), AppError> {
-    let mut crypto_sales: BTreeMap<String, (f64, bool)> = BTreeMap::new();
+/// Venda de ativo no exterior: apuração anual (Lei 14.754/2023), só avisa.
+fn collect_out_of_scope_warnings(trades: &[Trade], warnings: &mut Vec<TaxWarning>) {
     let mut foreign_years: BTreeSet<i32> = BTreeSet::new();
     for t in trades.iter().filter(|t| t.side == Side::Sell) {
-        match treatment(&t.asset_class, &t.ticker) {
-            TaxTreatment::CryptoWarning => {
-                let entry = crypto_sales.entry(period_of(t.date)).or_insert((0.0, false));
-                entry.0 += t.gross_value;
-                entry.1 |= t.currency != "BRL";
-            }
-            TaxTreatment::ForeignWarning => {
-                foreign_years.insert(t.date.year());
-            }
-            _ => {}
-        }
-    }
-    for (period, (total, non_brl)) in crypto_sales {
-        if non_brl {
-            warnings.push(TaxWarning::CryptoSalesNonBrl { period });
-            continue;
-        }
-        let first_day = NaiveDate::parse_from_str(&format!("{period}-01"), "%Y-%m-%d")
-            .map_err(|_| AppError::InvalidGuard(format!("invalid period {period}")))?;
-        let limit = rules.get(rules::CRYPTO_EXEMPTION_MONTHLY_SALES, first_day)?;
-        if total > limit + EPS {
-            warnings.push(TaxWarning::CryptoSalesAboveExemption { period, sales_total: total, limit });
+        if treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning {
+            foreign_years.insert(t.date.year());
         }
     }
     for year in foreign_years {
         warnings.push(TaxWarning::ForeignSales { year });
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -986,7 +969,7 @@ mod tests {
     }
 
     #[test]
-    fn crypto_and_foreign_only_warn() {
+    fn crypto_is_assessed_apart_from_the_exchange_and_foreign_only_warns() {
         let mut b = Builder::new()
             .buy(1, "BTC", "cripto", "2026-01-02", 1.0, 30000.0, 0.0)
             .sell(1, "BTC", "cripto", "2026-02-10", 1.0, 40000.0, 0.0)
@@ -996,8 +979,9 @@ mod tests {
         b.trades[3].currency = "USD".to_string();
         let a = b.assess();
 
-        assert!(a.months.is_empty());
-        assert!(a.warnings.iter().any(|w| matches!(w, TaxWarning::CryptoSalesAboveExemption { .. })));
+        assert!(a.months.is_empty(), "o DARF da B3 não leva a cripto");
+        assert_eq!(a.crypto_months.len(), 1);
+        assert!((a.crypto_months[0].tax - 1500.0).abs() < 1e-6, "15% de 10.000 de ganho, venda acima de R$ 35 mil");
         assert!(a.warnings.iter().any(|w| matches!(w, TaxWarning::ForeignSales { year: 2026 })));
     }
 
