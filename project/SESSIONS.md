@@ -3486,4 +3486,8 @@ com **retorno total**, pesos fixos com rebalanceamento, aportes mensais, benchma
   `yahoo.rs` lê `adjclose` (`adjusted_close_history_of`); `finance_api/adjusted_close.rs` grava com **sobrescrita** (o ajuste de pregões antigos muda a cada dividendo novo); o backfill de preços já grava o ajustado
   junto (melhor esforço) e há o comando `run_adjusted_close_backfill`.
 - **Verificado**: `./dev.sh check` limpo (compila os testes); teste unitário do parser (dia sem ajuste fica de fora, resposta sem `adjclose` dá série vazia) e teste de fluxo (regravar a série troca os valores, acrescenta o dia novo e não mexe em outro ticker). Testes no CI.
-- **Pendente**: fatias 2 (motor `domain/backtest.rs`), 3 (comando e aba Backtest) e 4 (custos e imposto). Cripto segue com 365 dias de histórico e sem ajuste.
+- **Fatia 2 (motor `domain/backtest.rs`)**: função pura `run(séries, params)`. Janela comum, calendário pela união das datas com o último preço repetido nos dias sem pregão, aporte no 1º dia de cada mês novo e rebalanceamento
+  (nunca, mensal, trimestral, anual) depois dele, ambos no fim do dia para o aporte não virar retorno. Devolve a curva (patrimônio, aportado, índice TWR), TWR e CAGR, volatilidade anualizada (252 dias), drawdown máximo com a data,
+  Sharpe contra uma taxa livre de risco (nulo com volatilidade zero), matriz de correlação dos retornos diários e os pesos finais. 8 testes unitários (preço seguido, drawdown, aporte sem efeito no retorno, rebalancear contra deriva,
+  janela e dia faltante, correlação 1,0, Sharpe descontado, entradas inválidas). `./dev.sh check` limpo; avisos de código sem uso até a fatia 3 ligar o comando (o CI não nega avisos).
+- **Pendente**: fatias 3 (comando e aba Backtest) e 4 (custos e imposto). Cripto segue com 365 dias de histórico e sem ajuste.

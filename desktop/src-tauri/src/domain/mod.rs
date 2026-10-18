@@ -1,5 +1,6 @@
 pub mod alert_check;
 pub mod banks;
+pub mod backtest;
 pub mod bazin;
 pub mod benchmark;
 pub mod calendar;
