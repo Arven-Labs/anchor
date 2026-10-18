@@ -3544,8 +3544,9 @@ de duplicata é ticker + data + tipo + quantidade + total.
   `treatment()` a devolve `Ignored` (fora da apuração, da simulação de venda e do aviso), e o desconto de caixa não a vê. Na revisão da importação aparece como "ETF (B3, fixed income)" com o
   aviso "IR is withheld at source". Sem migração (a coluna é texto).
 - **Não mudou**: o importador **não** sugere a classe sozinho pelo mercado "Renda Fixa" da Negociação; continua pedindo na revisão (decisão fiscal fica com o dono).
-- **Limites**: `mobile/` (enum Dart com `switch` exaustivos) não foi tocado: um ativo com a classe nova no arquivo de Workspace pode não abrir no app móvel até lá; o painel Research do ETF
+- **App móvel (Sessão 164)**: `AssetClass.etfRendaFixa` no enum Dart e no despachante de cotação (Yahoo `.SA`), BRL, fora de `isFixedIncome`, com teste; verificado só pelo `CI Mobile`.
+- **Limites**: o painel Research do ETF
   (`StockLookupPanel`) não tem ramo para a classe; o IR retido na fonte não é calculado nem mostrado, só deixado fora da apuração.
 
-**Fora do escopo / pendente**: unificar a fila com `suggested_dividends` (a aba Pending já unifica a tela; recomendei não fazer); IA como origem; o app móvel conhecer `etf_renda_fixa`.
+**Fora do escopo / pendente**: unificar a fila com `suggested_dividends` (a aba Pending já unifica a tela; recomendei não fazer); IA como origem.
 *(CDB, extrato do Inter, porquinho como conta corrente, conciliação da Liquidação e o IR do AUPO11 estão feitos; ver as entregas 4 a 13.)* *(A dúvida "o resgate do CDB na Movimentação é bruto ou líquido?" está resolvida desde a Sessão 142: é **bruto**; com IOF e IR de 22,5%, 19 de 23 resgates de 2025 fecham a até R$ 0,01.)*

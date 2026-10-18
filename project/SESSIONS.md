@@ -3474,3 +3474,5 @@ registrar tudo no `project/` dos dois. Só documentação e um recado entre sess
 - **Verificado**: `./dev.sh check` (compila os testes) e `tsc` limpos; teste unitário do `treatment`; teste de fluxo novo (ativo nasce em BRL, caixa marcado não cede ao ETF, aviso próprio, cotada); caso novo em `import-review.e2e.mjs` com captura. Testes e E2E no CI.
 - **Não verificado**: o app móvel (não tocado); a tela a olho (capturas do CI).
 - **Pendente**: `mobile/` conhecer a classe; unificar a fila com `suggested_dividends` (recomendei não); IA como origem.
+
+- **App móvel (Sessão 164)**: `AssetClass.etfRendaFixa` em `mobile/lib/models/asset.dart` (rótulo, ticker de exemplo AUPO11, BRL, cotado pelo Yahoo `.SA` em `quote_dispatcher.dart`, fora de `isFixedIncome`) e teste novo em `mobile/test/asset_test.dart`. Não compilo o Flutter local; a verificação é o `flutter analyze` e o `flutter test` do `CI Mobile`.

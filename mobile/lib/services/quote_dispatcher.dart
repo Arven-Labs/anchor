@@ -23,6 +23,7 @@ class QuoteDispatcher {
       case AssetClass.acaoBr:
       case AssetClass.fii:
       case AssetClass.etfBr:
+      case AssetClass.etfRendaFixa:
       case AssetClass.bdr:
         return _yahoo.fetchQuote(ticker);
       case AssetClass.acaoInternacional:

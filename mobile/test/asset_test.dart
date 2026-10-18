@@ -46,4 +46,14 @@ void main() {
   test('equityPercentual é null quando o total de cotas é zero', () {
     expect(asset(sharesOwned: 100, totalShares: 0).equityPercentual, isNull);
   });
+
+  test('etf_renda_fixa (ETF de renda fixa da B3) é cotado, em BRL e sem campos fi_*', () {
+    final etf = AssetClass.fromValue('etf_renda_fixa');
+
+    expect(etf, AssetClass.etfRendaFixa);
+    expect(etf.hasAutoQuote, isTrue);
+    expect(etf.defaultCurrency, 'BRL');
+    expect(etf.isFixedIncome, isFalse);
+    expect(etf.tickerHint, 'AUPO11');
+  });
 }

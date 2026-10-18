@@ -16,6 +16,7 @@ enum AssetClass {
   acaoBr('acao_br', 'Ação BR'),
   fii('fii', 'FII'),
   etfBr('etf_br', 'ETF BR'),
+  etfRendaFixa('etf_renda_fixa', 'ETF Renda Fixa BR'),
   bdr('bdr', 'BDR'),
   acaoInternacional('acao_internacional', 'Ação internacional'),
   reit('reit', 'REIT'),
@@ -48,6 +49,8 @@ extension AssetClassMeta on AssetClass {
         return 'HGLG11';
       case AssetClass.etfBr:
         return 'BOVA11';
+      case AssetClass.etfRendaFixa:
+        return 'AUPO11';
       case AssetClass.bdr:
         return 'AAPL34';
       case AssetClass.acaoInternacional:
@@ -76,6 +79,7 @@ extension AssetClassMeta on AssetClass {
       case AssetClass.acaoBr:
       case AssetClass.fii:
       case AssetClass.etfBr:
+      case AssetClass.etfRendaFixa:
       case AssetClass.bdr:
       case AssetClass.tesouroDireto:
       case AssetClass.rendaFixa:
@@ -92,9 +96,9 @@ extension AssetClassMeta on AssetClass {
   }
 
   /// Espelha `ASSET_CLASSES_WITH_AUTO_QUOTE`
-  /// (`desktop/src/portfolio/types.ts:116-126`) — só as 9 classes de
-  /// mercado têm fonte automática; renda fixa e os 2 cadastros manuais não
-  /// têm cotação nenhuma (nem no desktop).
+  /// (`desktop/src/portfolio/types.ts`) — só as 10 classes de mercado
+  /// (inclui `etfRendaFixa`, cotado como as da B3) têm fonte automática;
+  /// renda fixa e os 2 cadastros manuais não têm cotação nenhuma (nem no desktop).
   bool get hasAutoQuote {
     switch (this) {
       case AssetClass.tesouroDireto:
