@@ -32,5 +32,14 @@ contracts/out/
 contracts/cache/
 contracts/.env
 
+# private financial samples (B3 spreadsheets, bank statements): never commit
+negociacao-*
+movimentacao-*
+Extrato-*
+*.ofx
+*.qfx
+*.xls
+*.xlsx
+
 # OS/editor
 .DS_Store

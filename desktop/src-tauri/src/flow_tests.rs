@@ -2494,5 +2494,5 @@ fn the_tax_hint_follows_the_class_chosen_for_an_eleven_ticker() {
     use crate::commands::portfolio_io::class_tax_hint_text;
     assert_ne!(class_tax_hint_text("fii", "TAEE11"), class_tax_hint_text("acao_br", "TAEE11"));
     assert!(class_tax_hint_text("acao_br", "TAEE11").contains("never exempt"));
-    assert!(class_tax_hint_text("etf_br", "AUPO11").contains("never exempt"));
+    assert!(class_tax_hint_text("etf_br", "WXYZ11").contains("never exempt"));
 }

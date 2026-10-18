@@ -321,7 +321,7 @@ pub fn parse_b3_rows(rows: &[Vec<String>]) -> Parsed {
         let get = |i: usize| row.get(i).map(String::as_str).unwrap_or("");
         let issue = |message: String| ParseIssue { line, message };
         let market = normalize_header(get(c_market));
-        // "Renda Fixa" é como a B3 lista ETFs de renda fixa (ex.: AUPO11); a classe
+        // "Renda Fixa" é como a B3 lista ETFs de renda fixa; a classe
         // não dá pra deduzir do mercado, então segue sem classe e é escolhida na revisão.
         if !(market.contains("vista") || market.contains("fracion") || market.contains("renda fixa")) {
             out.push(Err(issue(format!(
@@ -374,7 +374,7 @@ pub fn parse_b3_rows(rows: &[Vec<String>]) -> Parsed {
     out
 }
 
-/// `MDIA3 - M.DIAS BRANCO S.A.` → `MDIA3`. `None` quando o que vem antes do
+/// `ABCD3 - EMPRESA A S.A.` → `ABCD3`. `None` quando o que vem antes do
 /// primeiro " - " não tem cara de ticker da B3 (ex.: `CDB - CDB926...`).
 fn product_ticker(product: &str) -> Option<String> {
     let head = product.split(" - ").next()?;
@@ -1209,11 +1209,11 @@ mod tests {
     fn a_renda_fixa_market_is_read_without_a_class() {
         let owned = rows(&[
             &B3_HEADER,
-            &["16/10/2026", "Compra", "Renda Fixa", "-", "XP", "AUPO11", "70", "112.11", "7847.7"],
+            &["16/10/2026", "Compra", "Renda Fixa", "-", "XP", "WXYZ11", "70", "112.11", "7847.7"],
         ]);
         let parsed = parse_b3_rows(&owned);
         let row = parsed[0].as_ref().unwrap();
-        assert_eq!(row.ticker, "AUPO11");
+        assert_eq!(row.ticker, "WXYZ11");
         assert_eq!(row.asset_class, None, "a classe é escolhida na revisão");
         assert_eq!(infer_class(&row.ticker), None);
     }
@@ -1272,7 +1272,7 @@ mod tests {
 
     #[test]
     fn product_ticker_reads_the_code_before_the_name() {
-        assert_eq!(product_ticker("MDIA3 - M.DIAS BRANCO").as_deref(), Some("MDIA3"));
+        assert_eq!(product_ticker("ABCD3 - EMPRESA A").as_deref(), Some("ABCD3"));
         assert_eq!(product_ticker("taee11 - TRANSMISSORA   ").as_deref(), Some("TAEE11"));
         assert_eq!(product_ticker("CDB - CDB926EMY03"), None);
         assert_eq!(product_ticker("Tesouro Selic 2029"), None);
