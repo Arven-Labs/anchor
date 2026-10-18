@@ -3106,8 +3106,13 @@ o extrato real nos dois formatos, pediu os dois, e alertou: "cuidado com os arqu
   para saldos e caixa total com o porquinho, OFX e CSV do mesmo período sem duplicar, lançamentos iguais no mesmo dia,
   edição/descarte/recusa, cascade ao apagar a conta e a migration com uma linha antiga; as amostras reais (testes `#[ignore]`,
   `ANCHOR_INTER_OFX`/`ANCHOR_INTER_CSV`) leem as 529 linhas nos dois formatos, 200 do porquinho, mesmo conjunto (data, valor).
-- **Não verificado**: a tela a olho; o clique em "Import OFX/CSV" (diálogo nativo de arquivo); o CI desta entrega até o
-  resultado abaixo; com o rendimento do porquinho fora, o saldo dessa conta não bate com o do app do banco.
+- **CI** (PR #3, branch `sessao-140-extrato-bancario`): `guard` (novo), `build`, `test` e `e2e` verdes. A primeira rodada do
+  `e2e` falhou por erro meu: a migration tornou `workspace_id` obrigatório e o spec antigo `import-review` semeava a fila sem
+  ele (`NOT NULL constraint failed`); corrigido no push seguinte. O spec novo `statement-review.e2e.mjs` (8 casos: fila
+  semeada, botão de importar só liga com a conta, aprovar com edição, transferência do porquinho com as duas pernas, pular,
+  descartar, fechar e voltar, saldos) passou de primeira.
+- **Não verificado**: a tela a olho; o clique em "Import OFX/CSV" (diálogo nativo de arquivo); com o rendimento do porquinho
+  fora, o saldo dessa conta não bate com o do app do banco.
 - **Pendente**: rendimento do porquinho; conciliar com os CDBs da Movimentação da B3 e evitar contar o CDB duas vezes no
   patrimônio (conta + carteira); tela global única de pendentes; categorias automáticas e IA; transferência entre contas próprias
   escolhida no popup.
