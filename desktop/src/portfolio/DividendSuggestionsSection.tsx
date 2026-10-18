@@ -12,6 +12,11 @@ import {
 } from "@/components/ui/dialog";
 import Field from "../components/Field";
 import CvmNoticesCard from "./CvmNoticesCard";
+import DividendConfirmDialog, {
+  formatDividendDate as formatDate,
+  formatDividendValue as formatValue,
+  invalidateDividendQueries,
+} from "./DividendConfirmDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,15 +73,6 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function formatDate(date: string): string {
-  const [y, m, d] = date.split("-");
-  return `${d}/${m}/${y}`;
-}
-
-function formatValue(value: number): string {
-  return value.toFixed(3).replace(/\.?0+$/, "");
-}
-
 export default function DividendSuggestionsSection({
   portfolioId,
 }: {
@@ -84,9 +80,6 @@ export default function DividendSuggestionsSection({
 }) {
   const [confirmingSuggestion, setConfirmingSuggestion] =
     useState<DividendSuggestionView | null>(null);
-  const [quantity, setQuantity] = useState("");
-  const [comDate, setComDate] = useState("");
-  const [paymentType, setPaymentType] = useState<PaymentType>("dividendo");
 
   const [expectingOpen, setExpectingOpen] = useState(false);
   const [expectingAssetId, setExpectingAssetId] = useState("");
@@ -112,9 +105,7 @@ export default function DividendSuggestionsSection({
   const suggestions = suggestionsQuery.data ?? [];
 
   function invalidate() {
-    queryClient.invalidateQueries({ queryKey: ["dividend_suggestions", portfolioId] });
-    queryClient.invalidateQueries({ queryKey: ["transactions", portfolioId] });
-    queryClient.invalidateQueries({ queryKey: ["positions", portfolioId] });
+    invalidateDividendQueries(queryClient, portfolioId);
   }
 
   const generateMutation = useMutation<{ generated: number }, AppError, void>({
@@ -147,42 +138,11 @@ export default function DividendSuggestionsSection({
     },
   });
 
-  const confirmMutation = useMutation<DividendSuggestionView, AppError, void>({
-    mutationFn: () =>
-      invoke("confirm_dividend_suggestion", {
-        request: {
-          suggestion_id: confirmingSuggestion?.id,
-          quantity: Number(quantity),
-          com_date: comDate === "" ? null : comDate,
-          payment_type: paymentType,
-        },
-      }),
-    onSuccess: () => {
-      invalidate();
-      setConfirmingSuggestion(null);
-      setQuantity("");
-      setComDate("");
-      setPaymentType("dividendo");
-    },
-  });
-
   const discardMutation = useMutation<void, AppError, number>({
     mutationFn: (suggestionId) =>
       invoke("discard_dividend_suggestion", { request: { suggestion_id: suggestionId } }),
     onSuccess: invalidate,
   });
-
-  function handleConfirmSubmit(event: FormEvent) {
-    event.preventDefault();
-    confirmMutation.mutate();
-  }
-
-  function handleConfirmClick(suggestion: DividendSuggestionView) {
-    setConfirmingSuggestion(suggestion);
-    setQuantity(formatValue(suggestion.quantity));
-    setComDate("");
-    setPaymentType((suggestion.payment_type as PaymentType) ?? "dividendo");
-  }
 
   function handleCreateExpectedSubmit(event: FormEvent) {
     event.preventDefault();
@@ -304,7 +264,7 @@ export default function DividendSuggestionsSection({
                         <div className="flex justify-end gap-2">
                           <Button
                             size="sm"
-                            onClick={() => handleConfirmClick(suggestion)}
+                            onClick={() => setConfirmingSuggestion(suggestion)}
                           >
                             Confirm
                           </Button>
@@ -333,93 +293,11 @@ export default function DividendSuggestionsSection({
         </p>
       )}
 
-      <Dialog open={confirmingSuggestion !== null} onOpenChange={(open) => {
-        if (!open) {
-          setConfirmingSuggestion(null);
-          setQuantity("");
-          setComDate("");
-          setPaymentType("dividendo");
-        }
-      }}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Confirm dividend</DialogTitle>
-          </DialogHeader>
-          {confirmingSuggestion && (
-            <form onSubmit={handleConfirmSubmit} className="flex flex-col gap-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label="Ticker" >
-                  <div className="pt-2 text-sm">{confirmingSuggestion.ticker}</div>
-                </Field>
-                <Field label="Payment date">
-                  <div className="pt-2 text-sm">
-                    {formatDate(confirmingSuggestion.payment_date)}
-                  </div>
-                </Field>
-                <Field label="Amount / share">
-                  <div className="pt-2 text-sm">{formatValue(confirmingSuggestion.amount)}</div>
-                </Field>
-                <Field label="Quantity">
-                  <Input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={quantity}
-                    onChange={(e) => setQuantity(e.target.value)}
-                    required
-                  />
-                </Field>
-                <Field label={`Data Com (com record date) — optional`}>
-                  <Input
-                    type="date"
-                    value={comDate}
-                    onChange={(e) => setComDate(e.target.value)}
-                  />
-                </Field>
-                <Field label="Payment type">
-                  <Select value={paymentType} onValueChange={(v) => setPaymentType(v as PaymentType)}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PAYMENT_TYPES.map((key) => (
-                        <SelectItem key={key} value={key}>
-                          {PAYMENT_TYPE_LABELS[key]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Total">
-                  <div className="pt-2 text-sm">
-                    {(Number(quantity || 0) * confirmingSuggestion.amount).toFixed(2)}
-                  </div>
-                </Field>
-              </div>
-              {confirmMutation.isError && (
-                <p className="text-sm text-red-600">{confirmMutation.error.message}</p>
-              )}
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setConfirmingSuggestion(null);
-                    setQuantity("");
-                    setComDate("");
-                    setPaymentType("dividendo");
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={confirmMutation.isPending || Number(quantity) <= 0}>
-                  {confirmMutation.isPending ? "Confirming…" : "Confirm"}
-                </Button>
-              </div>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
+      <DividendConfirmDialog
+        portfolioId={portfolioId}
+        suggestion={confirmingSuggestion}
+        onClose={() => setConfirmingSuggestion(null)}
+      />
 
       <Dialog open={expectingOpen} onOpenChange={(open) => {
         if (!open) {

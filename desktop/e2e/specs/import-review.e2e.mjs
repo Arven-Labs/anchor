@@ -54,10 +54,16 @@ describe("Anchor — revisão da importação e fila de pendentes", () => {
     seedPending(portfolio, proposed(3, "2026-02-05", "venda", "PETR4", 4, 35, "acao_br"));
     seedPending(portfolio, proposed(4, "2026-03-01", "compra", "VALE3", 2, 60, "acao_br"));
 
+    // A fila mora na aba Pending; o Ledger só avisa que há itens esperando.
     await byId("nav-portfolio").click();
-    // A fila mora na aba Ledger, junto do painel de importar/exportar.
     await byId("portfolio-tab-ledger").waitForDisplayed({ timeout: 30_000 });
     await byId("portfolio-tab-ledger").click();
+    await byId("pending-notice-portfolio").waitForDisplayed({ timeout: 30_000 });
+    expect(await textOf(byId("pending-notice-portfolio"))).toContain("4 item(s)");
+    await byId("pending-badge").waitForDisplayed({ timeout: 10_000 });
+    expect(await textOf(byId("pending-badge"))).toBe("4");
+
+    await byId("pending-notice-portfolio-open").click();
     await byId("pending-review").waitForDisplayed({ timeout: 30_000 });
     expect(await textOf(byId("pending-items"))).toContain("Pending review (4)");
     expect((await $$('[data-testid="pending-row"]')).length).toBe(4);
@@ -148,6 +154,7 @@ describe("Anchor — revisão da importação e fila de pendentes", () => {
 
   it("a posição reflete o que foi aprovado: 8 − 4 = 4 PETR4", async () => {
     await browser.keys("Escape");
+    await byId("nav-portfolio").click();
     await byId("portfolio-tab-positions").click();
     await waitForText(byId("position-qty-PETR4"), (t) => t === "4", "4 ações de PETR4 depois da venda");
   });

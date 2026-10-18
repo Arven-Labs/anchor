@@ -24,6 +24,7 @@ pub mod home_layout;
 pub mod liability;
 pub mod loan;
 pub mod net_worth;
+pub mod pending;
 pub mod portfolio;
 pub mod portfolio_io;
 pub mod statement_io;

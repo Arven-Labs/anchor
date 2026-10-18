@@ -75,6 +75,7 @@ function StatementImportPanel({ workspaceId, onStaged }: { workspaceId: number; 
       setResult(outcome);
       queryClient.invalidateQueries({ queryKey: [STATEMENT_PENDING_KEY, workspaceId] });
       queryClient.invalidateQueries({ queryKey: ["bank-accounts", workspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["pending-counts"] });
       if (outcome.staged > 0) onStaged();
     },
   });
@@ -88,6 +89,7 @@ function StatementImportPanel({ workspaceId, onStaged }: { workspaceId: number; 
     onSuccess: (outcome) => {
       setYieldResult(outcome);
       queryClient.invalidateQueries({ queryKey: [STATEMENT_PENDING_KEY, workspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["pending-counts"] });
       if (outcome.staged > 0) onStaged();
     },
   });

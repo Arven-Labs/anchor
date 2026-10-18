@@ -41,6 +41,7 @@ function StatementPendingSection({
     onSuccess: () => {
       setError(null);
       queryClient.invalidateQueries({ queryKey: [STATEMENT_PENDING_KEY, workspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["pending-counts"] });
     },
     onError: (err) => setError(err.message),
   });

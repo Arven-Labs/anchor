@@ -97,6 +97,7 @@ function ReviewForm({
 
   function refresh() {
     queryClient.invalidateQueries({ queryKey: [PENDING_QUERY_KEY, portfolioId] });
+    queryClient.invalidateQueries({ queryKey: ["pending-counts"] });
     for (const key of LEDGER_QUERY_KEYS) queryClient.invalidateQueries({ queryKey: [key] });
   }
 

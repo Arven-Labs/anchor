@@ -3410,6 +3410,15 @@ de duplicata é ticker + data + tipo + quantidade + total.
 - **Cuidado conhecido**: um JCP já confirmado pela tela de sugestões (Yahoo) com bruto diferente não é reconhecido como duplicata.
 - **Pendente**: confirmar a alíquota de 17,5% em fonte primária (o app a usa a partir de 2026); aluguel (Empréstimo) e reembolso.
 
+**Entrega 6 (feita, Sessão 145)**: aba única **Pending**, com selo de contagem, que reúne as filas de revisão.
+- **O que reúne**: lançamentos de carteira (um bloco por carteira), linhas de extrato e rendimentos (por Workspace) e sugestões de
+  provento acionáveis (`pending`, `matched`, `divergent`). Cada bloco é o mesmo componente de antes, com o mesmo popup de revisão;
+  só o lugar mudou. O selo vem de `count_pending(workspace_id)` e recarrega a cada troca de aba e a cada revisão.
+- **Ledger e Finances**: o cartão de pendentes saiu; ficou um aviso com a contagem e o link para a aba. Importar (botões continuam
+  onde estavam) leva à aba Pending com a revisão já aberta, por um contexto de navegação (`useOpenPending`).
+- **Proventos**: o formulário de confirmar saiu de `DividendSuggestionsSection` para `DividendConfirmDialog`, usado pelas duas telas.
+- **Pendente**: ver a tela a olho; descartar em lote.
+
 **Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
 Inter; CDB/porquinho visto também como conta corrente sem contar o patrimônio duas vezes; IR do AUPO11; unificar a fila com

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import HomeSection from "./home/HomeSection";
 import StockLookupPanel, { type ResearchView } from "./stock-lookup/StockLookupPanel";
 import AlertsPanel from "./alerts/AlertsPanel";
@@ -7,10 +9,13 @@ import FinancesPanel from "./finances/FinancesPanel";
 import WorkspaceGate from "./workspace/WorkspaceGate";
 import SettingsPage from "./settings/SettingsPage";
 import GlobalSearch from "./nav/GlobalSearch";
+import PendingPanel from "./pending/PendingPanel";
+import { PendingNavContext, type PendingFocus } from "./pending/PendingNav";
 import type { AssetClass } from "./portfolio/types";
 import { Button } from "@/components/ui/button";
 import {
   HomeIcon,
+  InboxIcon,
   SearchIcon,
   WalletIcon,
   LandmarkIcon,
@@ -45,6 +50,7 @@ const SECTIONS = {
   lookup: { label: "Research", icon: SearchIcon },
   portfolio: { label: "Portfolio", icon: WalletIcon },
   finances: { label: "General Finances", icon: LandmarkIcon },
+  pending: { label: "Pending", icon: InboxIcon },
   alerts: { label: "Alerts", icon: BellIcon },
 } as const;
 
@@ -62,6 +68,29 @@ function App() {
   const [assetClass, setAssetClass] = useState<AssetClass>("acao_br");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
   const [researchView, setResearchView] = useState<ResearchView>("asset");
+  // Revisão que a aba Pending abre na chegada (vem de um import); some ao trocar de aba à mão.
+  const [pendingFocus, setPendingFocus] = useState<PendingFocus | null>(null);
+
+  const queryClient = useQueryClient();
+  // Fase 35, entrega 6 — selo da aba Pending: soma das filas de revisão do Workspace.
+  const pendingCountsQuery = useQuery<{ total: number }, Error>({
+    queryKey: ["pending-counts", workspaceId],
+    queryFn: () => invoke("count_pending", { workspaceId }),
+    enabled: workspaceId !== null,
+  });
+  const pendingTotal = pendingCountsQuery.data?.total ?? 0;
+
+  function selectSection(next: SectionKey) {
+    setPendingFocus(null);
+    // Importações e coletores mexem nas filas por fora desta tela; trocar de aba reconta.
+    queryClient.invalidateQueries({ queryKey: ["pending-counts"] });
+    setSection(next);
+  }
+
+  function openPending(focus?: PendingFocus) {
+    setPendingFocus(focus ?? null);
+    setSection("pending");
+  }
 
   function handleGlobalSearch(nextAssetClass: AssetClass, ticker: string) {
     setAssetClass(nextAssetClass);
@@ -97,7 +126,7 @@ function App() {
   }
 
   return (
-    <>
+    <PendingNavContext.Provider value={openPending}>
       <header className="sticky top-0 z-10 border-b border-border/80 bg-background/85 backdrop-blur supports-backdrop-filter:bg-background/60">
         {/* grid-cols 1fr/2fr/1fr — os dois lados dividem o espaço em
             frações IGUAIS entre si (por isso a busca fica de verdade no
@@ -115,7 +144,7 @@ function App() {
         <div className="grid grid-cols-[minmax(max-content,1fr)_minmax(0,2fr)_minmax(max-content,1fr)] items-center gap-3 px-3 py-3">
           <Tabs
             value={section}
-            onValueChange={(value) => setSection(value as SectionKey)}
+            onValueChange={(value) => selectSection(value as SectionKey)}
             className="min-w-0 justify-self-start"
           >
             <TooltipProvider>
@@ -135,6 +164,14 @@ function App() {
                       >
                         <Icon />
                         <span className="hidden min-[1900px]:inline">{label}</span>
+                        {key === "pending" && pendingTotal > 0 && (
+                          <span
+                            data-testid="pending-badge"
+                            className="min-w-4 rounded-full bg-primary px-1 text-center text-[10px] leading-4 font-semibold text-primary-foreground"
+                          >
+                            {pendingTotal}
+                          </span>
+                        )}
                       </TabsTrigger>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="min-[1900px]:hidden">
@@ -177,7 +214,7 @@ function App() {
       <main className="px-4 py-6">
         <Tabs
           value={section}
-          onValueChange={(value) => setSection(value as SectionKey)}
+          onValueChange={(value) => selectSection(value as SectionKey)}
         >
           <TabsContent value="home">
             <HomeSection workspaceId={workspaceId} onOpenRates={openRates} />
@@ -202,12 +239,16 @@ function App() {
             <FinancesPanel workspaceId={workspaceId} />
           </TabsContent>
 
+          <TabsContent value="pending">
+            <PendingPanel workspaceId={workspaceId} initialFocus={pendingFocus} />
+          </TabsContent>
+
           <TabsContent value="alerts">
             <AlertsPanel />
           </TabsContent>
         </Tabs>
       </main>
-    </>
+    </PendingNavContext.Provider>
   );
 }
 

@@ -949,7 +949,7 @@ pub async fn preview_import_in(
 // Fila de pendentes (Fase 35)
 // ---------------------------------------------------------------------------
 
-const KIND_TRANSACTION: &str = "transaction";
+pub const KIND_TRANSACTION: &str = "transaction";
 pub(crate) const STATUS_PENDING: &str = "pending";
 pub(crate) const STATUS_DISCARDED: &str = "discarded";
 /// Aprovado com edição que mudou a chave de duplicata: a linha fica só pra reimportar

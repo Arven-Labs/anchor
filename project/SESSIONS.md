@@ -3215,3 +3215,19 @@ encerrou a sessão por falta de tokens antes de responder às duas perguntas de 
 - **Pendentes gerais**: tela única (acima); aluguel (Empréstimo) e reembolso da Movimentação; rendimento do porquinho que a B3 não cobre;
   posição de carteira da renda fixa com marca por conta contra a dupla contagem; alíquota de JCP de 17,5% desde 2026 em fonte primária;
   ver a tela a olho (popups e fila nunca foram vistos, só testados).
+
+
+### 2026-10-19 — Sessão 145
+
+**Fase 35, entrega 6: aba única de Pendentes.** Plan mode, plano aprovado. O dono do projeto respondeu às duas perguntas da Sessão 144:
+as sugestões de provento entram na tela única, e os cartões do Ledger e de Finances saem, ficando só um aviso com link. Direto na `main`.
+- **Feito**: `commands/pending.rs` (`count_pending`), aba `Pending` em `App.tsx` com selo (`pending-badge`), `pending/PendingPanel.tsx`
+  (extrato e rendimentos, e por carteira os lançamentos e as sugestões de provento), `DividendConfirmDialog` extraído de
+  `DividendSuggestionsSection`, `PendingNotice` no Ledger e em Finances, e o contexto `useOpenPending` para "importar" levar à aba com a
+  revisão aberta. Os testids das filas foram mantidos, então os specs só mudaram a navegação.
+- **Verificado**: `./dev.sh check` limpo. Teste de unidade da contagem (por tipo, por Workspace, descartado e confirmado não contam).
+- **Specs**: `import-review`, `statement-review` e `fixed-income-yield` agora vão por `nav-pending`; novo `pending-tab.e2e.mjs`
+  (selo, confirmar com quantidade editada, descartar até zerar).
+- **Não verificado**: a tela a olho; os testes pesados (`cargo test`, E2E) só rodam no CI.
+- **Pendente**: os de antes (aluguel e reembolso da Movimentação; rendimento do porquinho que a B3 não cobre; posição de carteira da
+  renda fixa; alíquota de JCP de 17,5% em fonte primária) e ver a tela a olho.

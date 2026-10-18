@@ -82,18 +82,24 @@ describe("Anchor — rendimento do porquinho pela Movimentação da B3", () => {
     });
     seedYield(workspace, pocket, { ...cdb, transaction_date: "2026-03-12", day_derived_total: 50.31 });
 
-    await byId("nav-finances").click();
-    await byId("finances-tab-transactions").waitForDisplayed({ timeout: 30_000 });
-    await byId("finances-tab-transactions").click();
+    await byId("nav-pending").click();
     await byId("statement-review-open").waitForDisplayed({ timeout: 30_000 });
     expect(await textOf(byId("statement-pending"))).toContain("Statement pending review (3)");
     expect(balance(pocket)).toBeCloseTo(-0.28, 2);
   });
 
   it("o botão de importar o rendimento só liga depois de escolher a conta", async () => {
+    // O painel de importar continua em Finances.
+    await byId("nav-finances").click();
+    await byId("finances-tab-transactions").waitForDisplayed({ timeout: 30_000 });
+    await byId("finances-tab-transactions").click();
+    await byId("yield-import-button").waitForDisplayed({ timeout: 30_000 });
     expect(await byId("yield-import-button").isEnabled()).toBe(false);
     await pickOption(byId("yield-account"), "Cdb Porquinho");
     expect(await byId("yield-import-button").isEnabled()).toBe(true);
+
+    await byId("nav-pending").click();
+    await byId("statement-review-open").waitForDisplayed({ timeout: 30_000 });
   });
 
   it("o CDB recente mostra o IOF e a checagem que bate, e editar o IR muda o líquido", async () => {

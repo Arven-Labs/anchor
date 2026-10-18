@@ -114,6 +114,7 @@ pub fn run() {
             commands::statement_io::list_statement_pending,
             commands::statement_io::confirm_statement_pending,
             commands::statement_io::discard_statement_pending,
+            commands::pending::count_pending,
             ingestion::get_fx_staleness,
             ingestion::list_ingestion_runs,
             ingestion::run_ingestion_now,

@@ -60,9 +60,16 @@ describe("Anchor — revisão do extrato bancário", () => {
     item(4, "2025-01-20", 50, "Resgate", "Cdb Porquinho Banco X", true);
     item(5, "2025-01-21", -20, "Pix enviado", "Loja C", false);
 
+    // A fila mora na aba Pending; Finances só avisa que há itens esperando.
     await byId("nav-finances").click();
     await byId("finances-tab-transactions").waitForDisplayed({ timeout: 30_000 });
     await byId("finances-tab-transactions").click();
+    await byId("pending-notice-statement").waitForDisplayed({ timeout: 30_000 });
+    expect(await textOf(byId("pending-notice-statement"))).toContain("5 item(s)");
+    await byId("pending-badge").waitForDisplayed({ timeout: 10_000 });
+    expect(await textOf(byId("pending-badge"))).toBe("5");
+
+    await byId("pending-notice-statement-open").click();
     await byId("statement-review-open").waitForDisplayed({ timeout: 30_000 });
     expect(await textOf(byId("statement-pending"))).toContain("Statement pending review (5)");
     expect((await $$('[data-testid="statement-pending-row"]')).length).toBe(5);
@@ -70,10 +77,17 @@ describe("Anchor — revisão do extrato bancário", () => {
   });
 
   it("o botão de importar só liga depois de escolher a conta", async () => {
+    // O painel de importar continua em Finances.
+    await byId("nav-finances").click();
+    await byId("finances-tab-transactions").click();
+    await byId("statement-account").waitForDisplayed({ timeout: 30_000 });
     expect(await byId("statement-import-inter_ofx").isEnabled()).toBe(false);
     await pickOption(byId("statement-account"), "Checking");
     expect(await byId("statement-import-inter_ofx").isEnabled()).toBe(true);
     expect(await byId("statement-import-inter_csv").isEnabled()).toBe(true);
+
+    await byId("nav-pending").click();
+    await byId("statement-review-open").waitForDisplayed({ timeout: 30_000 });
   });
 
   it("aprova o primeiro item com o valor editado", async () => {

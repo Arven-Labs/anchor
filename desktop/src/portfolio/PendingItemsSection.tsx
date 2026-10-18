@@ -39,6 +39,7 @@ function PendingItemsSection({
     onSuccess: () => {
       setError(null);
       queryClient.invalidateQueries({ queryKey: [PENDING_QUERY_KEY, portfolioId] });
+      queryClient.invalidateQueries({ queryKey: ["pending-counts"] });
     },
     onError: (err) => setError(err.message),
   });

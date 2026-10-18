@@ -71,7 +71,7 @@ function formatMoney(value: number): string {
 
 function refreshAfterReview(queryClient: QueryClient, workspaceId: number) {
   queryClient.invalidateQueries({ queryKey: [STATEMENT_PENDING_KEY, workspaceId] });
-  for (const key of ["general-transactions", "bank-accounts", "net-worth", "workspace-summary", "general-transaction-categories"]) {
+  for (const key of ["pending-counts", "general-transactions", "bank-accounts", "net-worth", "workspace-summary", "general-transaction-categories"]) {
     queryClient.invalidateQueries({ queryKey: [key] });
   }
 }

@@ -62,6 +62,7 @@ function ImportExportPanel({
     onSuccess: (outcome) => {
       setResult(outcome);
       queryClient.invalidateQueries({ queryKey: [PENDING_QUERY_KEY, portfolioId] });
+      queryClient.invalidateQueries({ queryKey: ["pending-counts"] });
       if (outcome.staged > 0) onStaged();
     },
   });
