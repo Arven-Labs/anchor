@@ -3417,7 +3417,11 @@ de duplicata é ticker + data + tipo + quantidade + total.
 - **Ledger e Finances**: o cartão de pendentes saiu; ficou um aviso com a contagem e o link para a aba. Importar (botões continuam
   onde estavam) leva à aba Pending com a revisão já aberta, por um contexto de navegação (`useOpenPending`).
 - **Proventos**: o formulário de confirmar saiu de `DividendSuggestionsSection` para `DividendConfirmDialog`, usado pelas duas telas.
-- **Pendente**: ver a tela a olho; descartar em lote.
+- **Descartar em lote (feito na Sessão 153)**: cada fila da aba ganhou uma caixa por linha, "Select all" e "Discard selected (N)", que pede
+  confirmação em dois cliques ("Confirm discarding N?", o mesmo padrão do Delete das contas). Usa os comandos de descarte que já existem, um
+  por vez, sem parar na primeira falha: o que falhar fica selecionado e a seção diz quantos não saíram e o motivo. Sem backend novo
+  (`pending/bulkDiscard.tsx`, usado pelas três seções). Descartar não é apagar: o item vira `discarded`, como no botão de cada linha.
+- **Pendente**: ver a tela a olho.
 
 **Entrega 7 (feita, Sessão 147)**: aluguel de ativos e reembolso na importação da Movimentação.
 - **Formato (amostra real)**: o "Empréstimo" vem em duas linhas por contrato: a da abertura, sem valor (a B3 só move a custódia, junto com

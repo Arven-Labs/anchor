@@ -3343,3 +3343,17 @@ decisão do dono por pergunta); direto na `main`.
 - **Não verificado**: a tela a olho; sem botão para a aba Taxes (a navegação para essa aba é estado interno do painel de carteira, e o widget só
   aponta o caminho no texto).
 - **Pendente**: os de antes (descartar em lote nas Pendentes; IR do aluguel líquido ou bruto; estimar o rendimento por resgate) e ver a tela a olho.
+
+
+### 2026-10-18 — Sessão 153
+
+**Descartar em lote na aba Pending.** Fatia pequena, só front e sem backend novo; sem plan mode; direto na `main`.
+- **Feito**: `pending/bulkDiscard.tsx` (hook de seleção, barra com "Select all" e "Discard selected (N)" com confirmação em dois cliques, caixa por
+  linha e o helper `discardMany`), ligado nas três filas: lançamentos de carteira (`PendingItemsSection`), extrato e rendimentos
+  (`StatementPendingSection`) e sugestões de provento (`DividendPendingSection`). Descarta um por vez com os comandos existentes, sem parar na primeira
+  falha; o que falhar fica selecionado e a seção mostra quantos não saíram e o motivo. Ids que saem da fila deixam de contar na seleção.
+- **Motivo**: a importação de renda fixa (Sessão 149) pode gerar dezenas de itens, e parte deles (resgates sem a aplicação no arquivo) só serve para descartar.
+- **Verificado**: `./dev.sh check` limpo (tsc). Caso novo em `pending-tab.e2e.mjs` (seleciona duas, confirma em dois cliques, o selo cai, depois Select all);
+  só roda no CI. A fila de extrato e a de carteira usam o mesmo código, mas só a de proventos tem E2E de lote.
+- **Não verificado**: a tela a olho (as caixas, a barra e o texto de confirmação).
+- **Pendente**: os de antes (IR do aluguel líquido ou bruto; estimar o rendimento por resgate) e ver a tela a olho.

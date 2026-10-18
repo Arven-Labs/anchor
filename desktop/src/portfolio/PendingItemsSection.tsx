@@ -3,6 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import ImportReviewDialog, { PENDING_QUERY_KEY, type PendingItem } from "./ImportReviewDialog";
+import {
+  BulkDiscardBar,
+  RowCheckbox,
+  bulkErrorMessage,
+  discardMany,
+  useBulkSelection,
+  type BulkResult,
+} from "../pending/bulkDiscard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -33,6 +41,7 @@ function PendingItemsSection({
     queryFn: () => invoke("list_import_pending", { portfolioId }),
   });
   const items = pendingQuery.data ?? [];
+  const selection = useBulkSelection(items.map((item) => item.id));
 
   const discardMutation = useMutation<void, AppError, number>({
     mutationFn: (id) => invoke("discard_import_pending", { portfolioId, id }),
@@ -43,6 +52,17 @@ function PendingItemsSection({
     },
     onError: (err) => setError(err.message),
   });
+
+  const bulkMutation = useMutation<BulkResult, AppError, number[]>({
+    mutationFn: (ids) => discardMany(ids, (id) => invoke("discard_import_pending", { portfolioId, id })),
+    onSuccess: (result, ids) => {
+      setError(bulkErrorMessage(result, ids.length));
+      selection.keepOnly(result.failed);
+      queryClient.invalidateQueries({ queryKey: [PENDING_QUERY_KEY, portfolioId] });
+      queryClient.invalidateQueries({ queryKey: ["pending-counts"] });
+    },
+  });
+  const busy = discardMutation.isPending || bulkMutation.isPending;
 
   return (
     <>
@@ -67,9 +87,17 @@ function PendingItemsSection({
                   Review {items.length} item(s)
                 </Button>
               </div>
+              <BulkDiscardBar
+                testIdPrefix="pending"
+                selection={selection}
+                total={items.length}
+                busy={busy}
+                onDiscard={() => bulkMutation.mutate([...selection.selected])}
+              />
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8" />
                     <TableHead>Kind</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Type</TableHead>
@@ -82,6 +110,9 @@ function PendingItemsSection({
                 <TableBody>
                   {items.map((item) => (
                     <TableRow key={item.id} data-testid="pending-row">
+                      <TableCell>
+                        <RowCheckbox testIdPrefix="pending" id={item.id} selection={selection} disabled={busy} />
+                      </TableCell>
                       <TableCell>{KIND_LABELS[item.kind] ?? item.kind}</TableCell>
                       <TableCell>{item.proposed.transaction_date}</TableCell>
                       <TableCell>{item.proposed.transaction_type}</TableCell>
@@ -92,7 +123,7 @@ function PendingItemsSection({
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={discardMutation.isPending}
+                          disabled={busy}
                           onClick={() => discardMutation.mutate(item.id)}
                         >
                           Discard

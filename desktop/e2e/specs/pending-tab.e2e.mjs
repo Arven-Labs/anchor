@@ -75,4 +75,46 @@ describe("Anchor — aba Pending com sugestões de provento", () => {
     expect(suggestionStatus(3)).toBe("discarded");
     expect(sql("SELECT count(*) FROM transactions WHERE transaction_type = 'provento'")).toBe("1");
   });
+
+  // Descarte em lote: seleção por linha, confirmação em dois cliques e "Select all".
+  it("descarta duas selecionadas de uma vez, com confirmação, e depois o resto por Select all", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main'");
+    const asset = sql("SELECT id FROM assets WHERE ticker = 'PETR4'");
+    for (const day of ["11", "12", "13", "14"]) seedSuggestion(portfolio, asset, "pending", `2026-06-${day}`, 0.5, 100);
+    const ids = sql("SELECT id FROM suggested_dividends WHERE status = 'pending' ORDER BY id").split("\n");
+    expect(ids.length).toBe(4);
+
+    // As sugestões entraram pelo banco: sair e voltar para a lista recarregar.
+    await byId("nav-home").click();
+    await byId("nav-pending").click();
+    await browser.waitUntil(async () => (await rows()) === 4, { timeout: 20_000, timeoutMsg: "as quatro novas aparecem" });
+
+    // Sem seleção o botão fica desligado.
+    expect(await byId("dividend-pending-discard-selected").isEnabled()).toBe(false);
+
+    await clickCentered(byId(`dividend-pending-select-${ids[0]}`));
+    await clickCentered(byId(`dividend-pending-select-${ids[1]}`));
+    await waitForText(byId("dividend-pending-discard-selected"), (t) => t === "Discard selected (2)", "dois selecionados");
+
+    // Primeiro clique só pede confirmação; nada é descartado ainda.
+    await clickCentered(byId("dividend-pending-discard-selected"));
+    await waitForText(byId("dividend-pending-discard-selected"), (t) => t === "Confirm discarding 2?", "pede confirmação");
+    expect(suggestionStatus(ids[0])).toBe("pending");
+
+    await clickCentered(byId("dividend-pending-discard-selected"));
+    await browser.waitUntil(async () => (await rows()) === 2, { timeout: 20_000, timeoutMsg: "duas saem da lista" });
+    expect(suggestionStatus(ids[0])).toBe("discarded");
+    expect(suggestionStatus(ids[1])).toBe("discarded");
+    expect(suggestionStatus(ids[2])).toBe("pending");
+    await waitForText(byId("pending-badge"), (t) => t === "2", "selo em 2");
+
+    // Select all pega o que sobrou.
+    await clickCentered(byId("dividend-pending-select-all"));
+    await waitForText(byId("dividend-pending-discard-selected"), (t) => t === "Discard selected (2)", "tudo selecionado");
+    await clickCentered(byId("dividend-pending-discard-selected"));
+    await clickCentered(byId("dividend-pending-discard-selected"));
+    await byId("dividend-pending-empty").waitForDisplayed({ timeout: 20_000 });
+    expect(suggestionStatus(ids[3])).toBe("discarded");
+    await byId("pending-badge").waitForDisplayed({ reverse: true, timeout: 10_000 });
+  });
 });
