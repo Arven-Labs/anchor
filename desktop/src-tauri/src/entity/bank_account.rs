@@ -3,7 +3,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "bank_accounts")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -15,6 +15,10 @@ pub struct Model {
     pub currency: String,
     // Fase 35, entrega 8 — o saldo já está na carteira (renda fixa importada): o patrimônio não o conta de novo no caixa.
     pub mirrored_in_portfolio: bool,
+    // Fase 35, entrega 11 — percentual do CDI com que o app estima sozinho o rendimento dos resgates desta conta
+    // (Porquinho) depois que o extrato é revisto. `None` = ainda não decidido (liga em 1,0 na primeira transferência
+    // de porquinho aprovada); `0` = desligado de propósito.
+    pub auto_yield_pct_of_cdi: Option<f64>,
     pub created_at: String,
 }
 

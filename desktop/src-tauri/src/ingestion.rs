@@ -34,7 +34,8 @@ const MIN_AGE_HOURS: i64 = 24;
 const PAUSE_BETWEEN_ITEMS: Duration = Duration::from_millis(500);
 /// Quantas mensagens de erro entram no resumo da rodada.
 const MAX_ERRORS_KEPT: usize = 5;
-const DISABLE_ENV: &str = "ANCHOR_DISABLE_INGESTION";
+/// Com esta variável definida, nada em segundo plano vai à rede (ingestão diária e estimativa automática do porquinho).
+pub(crate) const DISABLE_ENV: &str = "ANCHOR_DISABLE_INGESTION";
 
 pub const STATUS_RUNNING: &str = "running";
 pub const STATUS_OK: &str = "ok";

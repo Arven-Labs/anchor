@@ -262,6 +262,16 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
                               In Portfolio
                             </Badge>
                           )}
+                          {(account.auto_yield_pct_of_cdi ?? 0) > 0 && (
+                            <Badge
+                              variant="outline"
+                              className="ml-2"
+                              data-testid="account-auto-yield-badge"
+                              title="After you finish reviewing a statement, the yield of this account's redemptions is estimated for you."
+                            >
+                              Auto yield {Math.round((account.auto_yield_pct_of_cdi ?? 0) * 100)}% CDI
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="flex flex-wrap gap-2">
                           <Button size="sm" variant="outline" onClick={() => startEditing(account)}>

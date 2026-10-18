@@ -5,6 +5,12 @@ import { Button } from "@/components/ui/button";
 // cliques (mesmo padrão do Delete das contas) e um helper que descarta um por vez com os comandos que já
 // existem, sem parar na primeira falha. Usado pelas três seções (lançamentos, extrato e sugestões de provento).
 
+// Caixa de seleção própria: a nativa fica preta sobre o fundo escuro quando desmarcada (sem borda visível).
+const CHECKBOX_CLASS =
+  "grid size-4 shrink-0 cursor-pointer appearance-none place-content-center rounded-[4px] border border-muted-foreground/70 bg-transparent " +
+  "before:hidden before:text-[11px] before:font-bold before:leading-none before:text-primary-foreground before:content-['✓'] " +
+  "checked:border-primary checked:bg-primary checked:before:block disabled:cursor-not-allowed disabled:opacity-50";
+
 export type BulkSelection = {
   selected: Set<number>;
   allSelected: boolean;
@@ -78,7 +84,7 @@ export function BulkDiscardBar({
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
-          className="size-4 cursor-pointer accent-primary"
+          className={CHECKBOX_CLASS}
           data-testid={`${testIdPrefix}-select-all`}
           checked={selection.allSelected}
           disabled={total === 0 || busy}
@@ -122,7 +128,7 @@ export function RowCheckbox({
     <input
       type="checkbox"
       aria-label="Select item"
-      className="size-4 cursor-pointer accent-primary"
+      className={CHECKBOX_CLASS}
       data-testid={`${testIdPrefix}-select-${id}`}
       checked={selection.selected.has(id)}
       disabled={disabled}

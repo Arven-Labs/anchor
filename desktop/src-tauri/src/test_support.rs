@@ -10,6 +10,9 @@ use crate::entity::{assets, bank_account, general_transaction, portfolio, transa
 /// conexão do pool enxerga um banco vazio e diferente, e as tabelas criadas
 /// pela migration sumiriam nas consultas seguintes.
 pub async fn memory_db() -> DatabaseConnection {
+    // Nenhum teste vai à rede: a estimativa automática do porquinho (disparada ao fechar a revisão de um extrato)
+    // respeita esta variável e só lê a Selic gravada.
+    std::env::set_var(crate::ingestion::DISABLE_ENV, "1");
     let mut options = ConnectOptions::new("sqlite::memory:");
     options.max_connections(1).min_connections(1).sqlx_logging(false);
     let db = Database::connect(options).await.expect("connect to in-memory sqlite");

@@ -107,6 +107,11 @@ async fn upsert(
     Ok(())
 }
 
+/// Só o que já está gravado, sem ir ao BCB (para tarefas em segundo plano que não devem esperar a rede).
+pub async fn stored(db: &DatabaseConnection, slug: &str) -> Result<Vec<(NaiveDate, f64)>, AppError> {
+    Ok(read_stored(db, slug).await?.points)
+}
+
 pub async fn load(db: &DatabaseConnection, slug: &str) -> Result<SelicSeries, AppError> {
     let stored = read_stored(db, slug).await?;
     let now = Utc::now();

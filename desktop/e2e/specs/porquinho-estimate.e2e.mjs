@@ -60,8 +60,29 @@ describe("Anchor — estimativa do rendimento do porquinho", () => {
     expect(pendingYields()).toBe(1);
   });
 
-  it("o popup diz que é estimativa e a aprovação deixa o principal na conta", async () => {
+  // Entrega 11: a estimativa automática depois da revisão do extrato. Aqui a conta foi semeada direto no ledger, sem aprovar
+  // transferência de extrato, então começa "não decidida"; o spec liga, desliga e liga de novo pelo diálogo.
+  it("a estimativa automática começa não decidida e liga e desliga pelo diálogo", async () => {
+    await waitForText(byId("estimate-auto-state"), (t) => t.includes("not set yet"), "a conta semeada ainda não decidiu");
+
+    await byId("estimate-auto-toggle").click();
+    await waitForText(byId("estimate-auto-state"), (t) => t.includes("Automatic: on, at 100% of the CDI"), "ligou a 100%");
+    await snap("estimate-dialog-auto-on");
+
+    await byId("estimate-auto-toggle").click();
+    await waitForText(byId("estimate-auto-state"), (t) => t.includes("Automatic: off"), "desligou de propósito");
+
+    await byId("estimate-auto-toggle").click();
+    await waitForText(byId("estimate-auto-state"), (t) => t.includes("Automatic: on, at 100%"), "ligou de novo");
+    expect(Number(sql(`SELECT auto_yield_pct_of_cdi FROM bank_accounts WHERE id = ${pocket}`))).toBe(1);
+
     await browser.keys("Escape");
+    await byId("account-auto-yield-badge").waitForDisplayed({ timeout: 20_000 });
+    expect(await textOf(byId("account-auto-yield-badge"))).toContain("Auto yield 100% CDI");
+    await snap("accounts-auto-yield-badge");
+  });
+
+  it("o popup diz que é estimativa e a aprovação deixa o principal na conta", async () => {
     await byId("nav-pending").click();
     await clickCentered(byId("statement-review-open"));
 

@@ -5,11 +5,15 @@
 use std::collections::{BTreeMap, HashSet};
 
 use chrono::NaiveDate;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::commands::balance_reconciliation::RECONCILIATION_NOTE_PREFIX;
-use crate::commands::fixed_income_io::{stage_yield_parsed, ProposedYield, YieldPayload, KIND_YIELD};
+use crate::commands::fixed_income_io::{stage_yield_parsed, ProposedYield, YieldPayload, ESTIMATE_SOURCE, KIND_YIELD};
+use crate::commands::portfolio_io::STATUS_PENDING;
+use crate::commands::statement_io::KIND_BANK;
 use crate::commands::tax::load_rule_set;
 use crate::domain::porquinho_yield::{estimate_redemptions, Leg, LegKind};
 use crate::domain::tax::rules::fixed_income_ir_key;
@@ -17,7 +21,7 @@ use crate::entity::{bank_account, general_transaction, import_pending};
 use crate::error::AppError;
 use crate::finance_api::selic_store;
 
-const SOURCE: &str = "porquinho_estimate";
+const SOURCE: &str = ESTIMATE_SOURCE;
 /// Preço unitário de referência do porquinho na B3 (R$ 0,01 a cota): só para dar uma quantidade de cotas ao item.
 const NOTIONAL_UNIT_PRICE: f64 = 0.01;
 const MAX_PCT_OF_CDI: f64 = 2.0;
@@ -97,6 +101,65 @@ pub async fn stage_porquinho_yield_estimate_in(
     db: &DatabaseConnection,
     request: EstimateRequest,
 ) -> Result<EstimateResult, AppError> {
+    estimate_in(db, request, true).await
+}
+
+/// Liga a estimativa automática (100% do CDI) na conta que acabou de receber uma transferência de porquinho do extrato,
+/// se ela ainda não tinha percentual. É o sinal de que a conta é um porquinho: uma conta corrente com transferências
+/// entre contas próprias não pode ser estimada.
+pub async fn enable_auto_yield_if_unset<C: ConnectionTrait>(db: &C, account_id: i32) -> Result<(), AppError> {
+    let Some(account) = bank_account::Entity::find_by_id(account_id).one(db).await? else {
+        return Ok(());
+    };
+    if account.auto_yield_pct_of_cdi.is_none() {
+        let mut active: bank_account::ActiveModel = account.into();
+        active.auto_yield_pct_of_cdi = Set(Some(1.0));
+        active.update(db).await?;
+    }
+    Ok(())
+}
+
+/// Depois que o último item de extrato do Workspace é aprovado ou descartado, estima o rendimento das contas com a
+/// estimativa automática ligada. Melhor esforço: qualquer erro (Selic sem cobertura, sem rede) vai para o log e nunca
+/// falha a aprovação; o botão "Estimate yield" fica de reserva. Com `ANCHOR_DISABLE_INGESTION`, só usa a Selic gravada.
+pub async fn run_auto_estimates(db: &DatabaseConnection, workspace_id: i32) {
+    let result: Result<(), AppError> = async {
+        let waiting = import_pending::Entity::find()
+            .filter(import_pending::Column::WorkspaceId.eq(workspace_id))
+            .filter(import_pending::Column::Kind.eq(KIND_BANK))
+            .filter(import_pending::Column::Status.eq(STATUS_PENDING))
+            .count(db)
+            .await?;
+        if waiting > 0 {
+            // A revisão ainda não acabou: estimar com o extrato pela metade erraria os lotes.
+            return Ok(());
+        }
+        let accounts = bank_account::Entity::find()
+            .filter(bank_account::Column::WorkspaceId.eq(workspace_id))
+            .filter(bank_account::Column::AutoYieldPctOfCdi.is_not_null())
+            .all(db)
+            .await?;
+        let allow_network = std::env::var_os(crate::ingestion::DISABLE_ENV).is_none();
+        for account in accounts {
+            // 0 = desligada de propósito.
+            let Some(pct_of_cdi) = account.auto_yield_pct_of_cdi.filter(|pct| *pct > 0.0) else { continue };
+            if let Err(error) = estimate_in(db, EstimateRequest { bank_account_id: account.id, pct_of_cdi }, allow_network).await {
+                eprintln!("automatic yield estimate for account {} skipped: {error}", account.id);
+            }
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(error) = result {
+        eprintln!("automatic yield estimate skipped: {error}");
+    }
+}
+
+async fn estimate_in(
+    db: &DatabaseConnection,
+    request: EstimateRequest,
+    allow_network: bool,
+) -> Result<EstimateResult, AppError> {
     if !request.pct_of_cdi.is_finite() || request.pct_of_cdi <= 0.0 || request.pct_of_cdi > MAX_PCT_OF_CDI {
         return Err(AppError::InvalidInput(format!("the percentage of the CDI must be between 0 and {:.0}%", MAX_PCT_OF_CDI * 100.0)));
     }
@@ -112,7 +175,7 @@ pub async fn stage_porquinho_yield_estimate_in(
     }
 
     // Série inteira da Selic meta, ordenada: busca no BCB se faltar e serve a gravada se a fonte estiver fora do ar.
-    let mut selic = selic_store::load(db, "meta").await?.points;
+    let mut selic = if allow_network { selic_store::load(db, "meta").await?.points } else { selic_store::stored(db, "meta").await? };
     selic.sort_by_key(|(date, _)| *date);
 
     let rules = load_rule_set(db).await?;

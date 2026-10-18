@@ -1537,6 +1537,8 @@ async fn an_account_currency_only_changes_while_the_account_is_unused() {
         titular: "Me".to_string(),
         currency: Some(currency.to_string()),
         mirrored_in_portfolio: None,
+        auto_yield_pct_of_cdi: None,
+        clear_auto_yield: false,
     };
     assert_eq!(update_bank_account_in(&db, update("EUR")).await.unwrap().currency, "EUR");
     assert!(update_bank_account_in(&db, update("VND")).await.is_err());
@@ -3062,6 +3064,8 @@ async fn mark_mirrored(db: &sea_orm::DatabaseConnection, account: &crate::entity
             titular: account.titular.clone(),
             currency: None,
             mirrored_in_portfolio: Some(on),
+            auto_yield_pct_of_cdi: None,
+            clear_auto_yield: false,
         },
     )
     .await
@@ -3439,6 +3443,190 @@ async fn the_estimate_refuses_an_out_of_range_percentage_and_does_nothing_withou
     assert!(stage_porquinho_yield_estimate_in(&db, estimate_request(empty.id, 5.0)).await.is_err());
     let none = stage_porquinho_yield_estimate_in(&db, estimate_request(empty.id, 1.0)).await.unwrap();
     assert_eq!((none.redemptions, none.staged), (0, 0));
+}
+
+// ---------------------------------------------------------------------------
+// Estimativa automática do porquinho ao fechar a revisão do extrato (Fase 35, entrega 11)
+// ---------------------------------------------------------------------------
+
+async fn queued_yields(db: &sea_orm::DatabaseConnection) -> Vec<crate::entity::import_pending::Model> {
+    crate::entity::import_pending::Entity::find()
+        .filter(crate::entity::import_pending::Column::Kind.eq("fixed_income_yield"))
+        .all(db)
+        .await
+        .unwrap()
+}
+
+/// Uma proposta de rendimento como a da B3, só com o que os testes olham.
+fn b3_yield(date: &str, gross: f64) -> crate::commands::fixed_income_io::ProposedYield {
+    crate::commands::fixed_income_io::ProposedYield {
+        line: 1,
+        transaction_date: date.to_string(),
+        instrument: "cdb".to_string(),
+        code: "CDBAAA".to_string(),
+        quantity: 5000.0,
+        principal: 50.0,
+        gross_value: 50.0 + gross,
+        gross_yield: gross,
+        iof_amount: 0.0,
+        holding_days: Some(4),
+        iof_basis: "full".to_string(),
+        ir_rate: 0.225,
+        ir_amount: 0.0,
+        net_yield: gross,
+        base_unit_price: 0.01,
+        base_price_source: "application".to_string(),
+        day_derived_total: 50.0 + gross,
+        estimate_pct_of_cdi: None,
+    }
+}
+
+/// Importa o extrato de teste e aprova tudo menos o último item; devolve a conta Porquinho criada.
+async fn statement_reviewed_up_to_the_last_item(
+    db: &sea_orm::DatabaseConnection,
+    ws: i32,
+) -> (crate::entity::bank_account::Model, crate::commands::statement_io::StatementPendingView) {
+    use crate::commands::statement_io::{confirm_statement_pending_in, list_statement_pending_in, parse_inter_csv, stage_statement_parsed};
+    let checking = crate::test_support::bank_account(db, ws, "Checking").await;
+    stage_statement_parsed(db, ws, checking.id, None, true, "inter_csv", parse_inter_csv(STATEMENT_CSV)).await.unwrap();
+    let mut items = list_statement_pending_in(db, ws).await.unwrap();
+    let last = items.pop().unwrap();
+    for item in &items {
+        confirm_statement_pending_in(db, ws, item.id, edited_from(item)).await.unwrap();
+    }
+    let pocket = list_bank_accounts_view(db, ws).await.unwrap().into_iter().find(|a| a.nome == "Cdb Porquinho").unwrap();
+    let pocket = crate::entity::bank_account::Entity::find_by_id(pocket.id).one(db).await.unwrap().unwrap();
+    (pocket, last)
+}
+
+#[tokio::test]
+async fn finishing_the_statement_review_estimates_the_porquinho_yield_by_itself() {
+    use crate::commands::statement_io::confirm_statement_pending_in;
+    let db = memory_db().await;
+    let ws = workspace(&db, "Auto").await;
+    seed_selic_meta(&db, "2024-01-01").await;
+    let (pocket, last) = statement_reviewed_up_to_the_last_item(&db, ws.id).await;
+
+    // A primeira transferência de porquinho aprovada liga a estimativa automática a 100% do CDI.
+    assert_eq!(pocket.auto_yield_pct_of_cdi, Some(1.0));
+    // Com um item ainda na fila, nada é estimado: o extrato está pela metade.
+    assert!(queued_yields(&db).await.is_empty());
+
+    confirm_statement_pending_in(&db, ws.id, last.id, edited_from(&last)).await.unwrap();
+    let queued = queued_yields(&db).await;
+    assert_eq!(queued.len(), 1, "o resgate de 20/01 ganha uma estimativa");
+    assert_eq!(queued[0].source, "porquinho_estimate");
+    assert_eq!(queued[0].bank_account_id, Some(pocket.id));
+}
+
+#[tokio::test]
+async fn an_account_without_the_mark_is_not_estimated() {
+    use crate::commands::statement_io::confirm_statement_pending_in;
+    let db = memory_db().await;
+    let ws = workspace(&db, "Off").await;
+    seed_selic_meta(&db, "2024-01-01").await;
+    let (pocket, last) = statement_reviewed_up_to_the_last_item(&db, ws.id).await;
+
+    update_bank_account_in(
+        &db,
+        UpdateBankAccountRequest {
+            bank_account_id: pocket.id,
+            nome: pocket.nome.clone(),
+            titular: pocket.titular.clone(),
+            currency: None,
+            mirrored_in_portfolio: None,
+            auto_yield_pct_of_cdi: None,
+            clear_auto_yield: true,
+        },
+    )
+    .await
+    .unwrap();
+    confirm_statement_pending_in(&db, ws.id, last.id, edited_from(&last)).await.unwrap();
+    assert!(queued_yields(&db).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_failing_estimate_never_fails_the_approval() {
+    use crate::commands::statement_io::confirm_statement_pending_in;
+    let db = memory_db().await;
+    let ws = workspace(&db, "NoSelic").await;
+    // Sem Selic gravada, a estimativa não tem como rodar: a aprovação do último item segue valendo.
+    let (_, last) = statement_reviewed_up_to_the_last_item(&db, ws.id).await;
+    confirm_statement_pending_in(&db, ws.id, last.id, edited_from(&last)).await.unwrap();
+    assert!(queued_yields(&db).await.is_empty());
+    assert!(crate::commands::statement_io::list_statement_pending_in(&db, ws.id).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn the_b3_value_replaces_a_pending_estimate_of_the_same_day() {
+    use crate::commands::fixed_income_io::stage_yield_parsed;
+    use crate::commands::statement_io::confirm_statement_pending_in;
+    let db = memory_db().await;
+    let ws = workspace(&db, "B3 after").await;
+    seed_selic_meta(&db, "2024-01-01").await;
+    let (pocket, last) = statement_reviewed_up_to_the_last_item(&db, ws.id).await;
+    confirm_statement_pending_in(&db, ws.id, last.id, edited_from(&last)).await.unwrap();
+    assert_eq!(queued_yields(&db).await[0].source, "porquinho_estimate");
+
+    let result = stage_yield_parsed(&db, ws.id, pocket.id, "b3_fixed_income", vec![Ok(b3_yield("2025-01-20", 0.04))]).await.unwrap();
+    assert_eq!(result.staged, 1);
+    let queued = queued_yields(&db).await;
+    assert_eq!(queued.len(), 1, "a estimativa pendente saiu e ficou só a da B3");
+    assert_eq!(queued[0].source, "b3_fixed_income");
+}
+
+#[tokio::test]
+async fn the_b3_value_skips_a_day_whose_estimate_was_already_booked() {
+    use crate::commands::fixed_income_io::{confirm_yield_pending_in, stage_yield_parsed, EditedYield, YieldPayload};
+    use crate::commands::statement_io::confirm_statement_pending_in;
+    let db = memory_db().await;
+    let ws = workspace(&db, "B3 late").await;
+    seed_selic_meta(&db, "2024-01-01").await;
+    let (pocket, last) = statement_reviewed_up_to_the_last_item(&db, ws.id).await;
+    confirm_statement_pending_in(&db, ws.id, last.id, edited_from(&last)).await.unwrap();
+    let estimate = queued_yields(&db).await.remove(0);
+    let p = serde_json::from_str::<YieldPayload>(&estimate.payload).unwrap().proposed;
+    confirm_yield_pending_in(
+        &db,
+        ws.id,
+        estimate.id,
+        EditedYield {
+            transaction_date: p.transaction_date.clone(),
+            gross_yield: p.gross_yield,
+            iof_amount: p.iof_amount,
+            ir_amount: p.ir_amount,
+            notes: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Importar a B3 depois do dia já ter estimativa lançada não conta o rendimento duas vezes.
+    let result = stage_yield_parsed(&db, ws.id, pocket.id, "b3_fixed_income", vec![Ok(b3_yield("2025-01-20", 0.04))]).await.unwrap();
+    assert_eq!((result.staged, result.skipped.len()), (0, 1));
+    assert!(result.skipped[0].message.contains("estimado"), "{}", result.skipped[0].message);
+}
+
+#[tokio::test]
+async fn the_automatic_percentage_is_validated_and_can_be_cleared() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Pct").await;
+    let account = bank_account(&db, ws.id, "Porquinho").await;
+    let update = |pct: Option<f64>, clear: bool| UpdateBankAccountRequest {
+        bank_account_id: account.id,
+        nome: account.nome.clone(),
+        titular: account.titular.clone(),
+        currency: None,
+        mirrored_in_portfolio: None,
+        auto_yield_pct_of_cdi: pct,
+        clear_auto_yield: clear,
+    };
+    assert!(update_bank_account_in(&db, update(Some(5.0), false)).await.is_err());
+    assert!(update_bank_account_in(&db, update(Some(0.0), false)).await.is_err());
+    assert_eq!(update_bank_account_in(&db, update(Some(0.98), false)).await.unwrap().auto_yield_pct_of_cdi, Some(0.98));
+    // Omitido não muda; desligar grava 0 (e não nulo: nulo é "ainda não decidido").
+    assert_eq!(update_bank_account_in(&db, update(None, false)).await.unwrap().auto_yield_pct_of_cdi, Some(0.98));
+    assert_eq!(update_bank_account_in(&db, update(None, true)).await.unwrap().auto_yield_pct_of_cdi, Some(0.0));
 }
 
 #[tokio::test]

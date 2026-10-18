@@ -3497,6 +3497,23 @@ de duplicata é ticker + data + tipo + quantidade + total.
   dia misto (um resgate da B3 e outro não) é pulado inteiro, e a conciliação pelo saldo (entrega 9) fecha a diferença.
 - **Pendente**: ver a tela a olho; conferir o percentual do CDI de verdade contra o saldo do banco numa conciliação.
 
+**Entrega 11 (feita, Sessão 156)**: estimativa do porquinho automática, e telas conferidas por código.
+- **Pedido do dono**: "não gosto de fazer essas coisas manualmente". Duas frentes: estimar sozinho e olhar as telas sem abrir o app.
+- **Gatilho**: quando a **fila de extrato do Workspace esvazia** (aprovar ou descartar o último item), `run_auto_estimates` roda a estimativa nas contas com a
+  marca ligada. Não é "logo depois de importar" porque o extrato só entra no ledger quando aprovado, e estimar com ele pela metade erra os lotes (e o dia
+  ficaria coberto para sempre); também não é a ingestão diária, que é de dados de mercado. Melhor esforço: erro (Selic sem cobertura, sem rede) vai para o log e nunca
+  falha a aprovação; o botão "Estimate yield" continua de reserva. Com `ANCHOR_DISABLE_INGESTION` (testes e E2E) só lê a Selic gravada, sem rede.
+- **Marca por conta**: `bank_accounts.auto_yield_pct_of_cdi` (migration `m20261025`): **nulo = ainda não decidido** (liga em 100% na primeira transferência de porquinho aprovada
+  do extrato, o único sinal confiável de que a conta é um porquinho), **0 = desligada de propósito**, > 0 = ligada. Distinguir nulo de 0 veio de um defeito que o teste achou:
+  desligar gravando nulo era desfeito na transferência seguinte. O diálogo "Estimate yield" mostra o estado e liga/desliga; a conta ganha o selo "Auto yield N% CDI".
+- **Convivência com a B3**: o valor da B3 (exato) **substitui** as estimativas ainda pendentes do mesmo dia e **pula** o dia que já tem estimativa aprovada, para o rendimento não
+  contar duas vezes (reconhece a receita pela nota "Yield CDB Porquinho…"; se o dono editou a nota, a proteção não vê).
+- **Telas por código**: o E2E tira capturas das telas-chave (`snap()` em `e2e/specs/helpers.mjs`) e o CI sobe `e2e/artifacts` **sempre** (antes só em falha); baixar com
+  `gh run download <id> -n e2e-artifacts`. Olhar as capturas achou quatro defeitos que testes não pegavam: "BRL -0,00" na Home (zero negativo, corrigido em `formatMoney`),
+  a checagem do dia do popup dizendo "o que o arquivo da B3 explica" numa estimativa (agora "this estimate"), o contador "line 2 · porquinho_estimate" (agora "estimate"),
+  e as caixas de seleção quase invisíveis no tema escuro (caixa própria com borda).
+- **Pendente**: ver a tela a olho (agora há capturas no CI para isso); rodar a estimativa na conta real.
+
 **Fora do escopo / pendente**: conciliação de "Transferência - Liquidação" com os
 negócios; CDB (aplicação/resgate, rendimento por código, saldo de abertura quando o arquivo cobre só um período) e extrato do
 Inter; CDB/porquinho visto também como conta corrente sem contar o patrimônio duas vezes; IR do AUPO11; unificar a fila com

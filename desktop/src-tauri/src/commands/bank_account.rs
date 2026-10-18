@@ -41,6 +41,7 @@ pub async fn create_bank_account_in(
         titular: Set(request.titular),
         currency: Set(currency),
         mirrored_in_portfolio: Set(false),
+        auto_yield_pct_of_cdi: Set(None),
         created_at: Set(chrono::Utc::now().to_rfc3339()),
         ..Default::default()
     }
@@ -63,6 +64,12 @@ pub struct UpdateBankAccountRequest {
     /// Omitida = não muda.
     #[serde(default)]
     pub mirrored_in_portfolio: Option<bool>,
+    /// Fração do CDI para a estimativa automática do rendimento (1,0 = 100%); omitida = não muda.
+    #[serde(default)]
+    pub auto_yield_pct_of_cdi: Option<f64>,
+    /// Desliga a estimativa automática de propósito (grava 0; tem precedência sobre `auto_yield_pct_of_cdi`).
+    #[serde(default)]
+    pub clear_auto_yield: bool,
 }
 
 #[tauri::command]
@@ -99,6 +106,18 @@ pub async fn update_bank_account_in(
         titular: Set(request.titular),
         currency: Set(currency),
         mirrored_in_portfolio: Set(request.mirrored_in_portfolio.unwrap_or(existing.mirrored_in_portfolio)),
+        // Desligar grava 0 (e não nulo): nulo é "ainda não decidido" e o app o liga sozinho na primeira transferência de porquinho.
+        auto_yield_pct_of_cdi: Set(if request.clear_auto_yield {
+            Some(0.0)
+        } else {
+            match request.auto_yield_pct_of_cdi {
+                Some(pct) if pct.is_finite() && pct > 0.0 && pct <= 2.0 => Some(pct),
+                Some(_) => {
+                    return Err(AppError::InvalidInput("the percentage of the CDI must be between 0 and 200%".to_string()));
+                }
+                None => existing.auto_yield_pct_of_cdi,
+            }
+        }),
         ..Default::default()
     }
     .update(db)
@@ -182,6 +201,8 @@ pub struct BankAccountView {
     pub in_use: bool,
     /// O saldo já está na carteira (renda fixa importada): o patrimônio não o conta de novo no caixa.
     pub mirrored_in_portfolio: bool,
+    /// Percentual do CDI da estimativa automática do rendimento: `None` = ainda não decidido, `0` = desligada de propósito.
+    pub auto_yield_pct_of_cdi: Option<f64>,
 }
 
 /// Saldo é sempre derivado, nunca gravado — soma de `receita` menos soma de
@@ -317,6 +338,7 @@ pub async fn list_bank_accounts_view(
             created_at: account.created_at,
             currency: account.currency,
             mirrored_in_portfolio: account.mirrored_in_portfolio,
+            auto_yield_pct_of_cdi: account.auto_yield_pct_of_cdi,
         });
     }
     Ok(views)

@@ -23,6 +23,7 @@ use crate::commands::general_transaction::{
 };
 use crate::commands::fixed_income_io::{bank_totals_by_day, YieldPayload, KIND_YIELD};
 use crate::commands::loan::ensure_account_in_workspace;
+use crate::commands::porquinho_estimate::{enable_auto_yield_if_unset, run_auto_estimates};
 use crate::commands::portfolio_io::{
     normalize_header, parse_date, parse_number, ParseIssue, STATUS_CONFIRMED, STATUS_DISCARDED, STATUS_PENDING,
 };
@@ -584,6 +585,8 @@ pub async fn confirm_statement_pending_in(
             )
             .await?;
             finish_pending(db, row, key_changed).await?;
+            // A conta contraparte é o porquinho: liga a estimativa automática do rendimento dela.
+            enable_auto_yield_if_unset(db, counterpart).await?;
         }
         _ => {
             let txn = db.begin().await?;
@@ -604,6 +607,8 @@ pub async fn confirm_statement_pending_in(
             txn.commit().await?;
         }
     }
+    // Se foi o último item da revisão, estima o rendimento do porquinho sozinho (melhor esforço, nunca falha a aprovação).
+    run_auto_estimates(db, workspace_id).await;
     Ok(())
 }
 
@@ -625,6 +630,8 @@ pub async fn discard_statement_pending_in(db: &DatabaseConnection, workspace_id:
     let mut active: import_pending::ActiveModel = row.into();
     active.status = Set(STATUS_DISCARDED.to_string());
     active.update(db).await?;
+    // Descartar o último item também fecha a revisão.
+    run_auto_estimates(db, workspace_id).await;
     Ok(())
 }
 

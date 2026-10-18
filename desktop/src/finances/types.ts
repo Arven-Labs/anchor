@@ -13,6 +13,9 @@ export type BankAccountView = {
   in_use: boolean;
   // Fase 35, entrega 8 — o saldo já está na carteira (renda fixa importada): o patrimônio não o conta de novo no caixa.
   mirrored_in_portfolio: boolean;
+  // Fase 35, entrega 11 — fração do CDI da estimativa automática do rendimento (1 = 100%): `null` = ainda não decidido
+  // (liga sozinho na primeira transferência de porquinho aprovada do extrato), `0` = desligada de propósito.
+  auto_yield_pct_of_cdi: number | null;
 };
 
 export type GeneralTransactionCategory = {

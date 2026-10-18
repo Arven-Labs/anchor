@@ -3392,3 +3392,22 @@ decisão do dono por pergunta); direto na `main`.
 - **CI** (direto na `main`, `05ba8b5`): `Private Files`, `Rust`, `Frontend` e `E2E` verdes de primeira, incluindo o spec novo.
 - **Não verificado**: a tela a olho; o percentual real do CDI do porquinho contra o saldo do banco (a validação foi contra a B3, que é o que há de verdade nos dados).
 - **Pendente**: ver a tela a olho; rodar a estimativa na conta real e fechar a diferença com uma conciliação pelo saldo.
+
+
+### 2026-10-18 — Sessão 156
+
+**Automatizar: telas conferidas por código e estimativa do porquinho automática.** O dono do projeto disse que não gosta de fazer essas coisas manualmente e pediu as duas
+automações. Plan mode para a segunda; direto na `main`.
+- **Telas por código**: helper `snap()` e capturas das telas-chave nos specs (Pending, contas, Home, popups de rendimento e de estimativa, diálogos de conciliação e de estimativa);
+  o workflow `ci-desktop-e2e.yml` sobe `e2e/artifacts` sempre. Baixei o artefato com `gh run download` e olhei cada PNG (1280×800). **Achados que nenhum teste pegava** (e corrigidos):
+  "BRL -0,00" na Home (zero negativo; `formatMoney` e `formatCurrency` normalizam), checagem do dia do popup dizendo "o que o arquivo da B3 explica" numa estimativa,
+  contador "line 2 · porquinho_estimate", e caixas de seleção desmarcadas pretas sobre fundo escuro (agora caixa própria com borda e ✓). O widget de prejuízo ficou fora da primeira
+  captura (abaixo da dobra); o spec passou a centralizá-lo antes de fotografar, e a segunda captura o mostrou certo (BRL 1.000,00, economia de BRL 150,00 a 15%).
+- **Estimativa automática**: marca `bank_accounts.auto_yield_pct_of_cdi` (migration `m20261025`; nulo = não decidido, 0 = desligada, > 0 = ligada); liga em 100% na primeira transferência de
+  porquinho aprovada do extrato; `run_auto_estimates` roda quando a fila de extrato esvazia (aprovar ou descartar o último item), em melhor esforço e sem rede nos testes
+  (`ANCHOR_DISABLE_INGESTION`, que `memory_db()` define); a B3 substitui estimativa pendente do mesmo dia e pula dia com estimativa aprovada; diálogo e selo "Auto yield".
+- **Defeito achado pelo teste**: desligar a estimativa gravando nulo era desfeito na próxima transferência aprovada (nulo também era "não decidido"). Desligar passou a gravar 0.
+- **Verificado**: `./dev.sh check` limpo; `cargo test --lib` no Docker (702 passaram, 0 falharam; 6 novos de fluxo: estima ao fechar a revisão e liga a marca, conta desligada não estima, falha da
+  estimativa não falha a aprovação, B3 substitui estimativa pendente, B3 pula dia com estimativa aprovada, validação e desligar do percentual). Caso novo em `porquinho-estimate.e2e.mjs`.
+- **Não verificado**: as telas novas desta rodada a olho (as capturas do CI mostrarão o diálogo com o estado automático e o selo); rodar tudo na conta real.
+- **Pendente**: conferir as capturas da última rodada; rodar a estimativa na conta real e fechar a diferença com uma conciliação pelo saldo.

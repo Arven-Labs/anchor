@@ -450,6 +450,59 @@ async fn known_yield_keys(
     Ok(keys)
 }
 
+/// Origem (`import_pending.source`) das propostas da estimativa do porquinho (entrega 10).
+pub const ESTIMATE_SOURCE: &str = "porquinho_estimate";
+/// Começo da nota da receita que a aprovação de uma estimativa grava (`confirm_yield_pending_in`: "Yield {papel} (gross)").
+const ESTIMATE_BOOKED_NOTE_PREFIX: &str = "Yield CDB Porquinho";
+
+/// O valor da B3 é exato e a estimativa não: antes de enfileirar os da B3, apaga as estimativas **ainda pendentes** dos mesmos
+/// dias e pula o dia que já tem uma estimativa **aprovada** (receita já lançada), para o rendimento não contar duas vezes.
+async fn reconcile_with_estimates(
+    db: &DatabaseConnection,
+    pocket_account_id: i32,
+    parsed: YieldParsed,
+) -> Result<YieldParsed, AppError> {
+    let days: HashSet<String> = parsed.iter().flatten().map(|p| p.transaction_date.clone()).collect();
+    if days.is_empty() {
+        return Ok(parsed);
+    }
+    let pending_estimates = import_pending::Entity::find()
+        .filter(import_pending::Column::BankAccountId.eq(pocket_account_id))
+        .filter(import_pending::Column::Kind.eq(KIND_YIELD))
+        .filter(import_pending::Column::Source.eq(ESTIMATE_SOURCE))
+        .filter(import_pending::Column::Status.eq(STATUS_PENDING))
+        .all(db)
+        .await?;
+    for row in pending_estimates {
+        let Ok(payload) = serde_json::from_str::<YieldPayload>(&row.payload) else { continue };
+        if days.contains(&payload.proposed.transaction_date) {
+            import_pending::Entity::delete_by_id(row.id).exec(db).await?;
+        }
+    }
+    let booked: HashSet<String> = general_transaction::Entity::find()
+        .filter(general_transaction::Column::BankAccountId.eq(pocket_account_id))
+        .filter(general_transaction::Column::TransactionType.eq("receita"))
+        .all(db)
+        .await?
+        .into_iter()
+        .filter(|tx| tx.notes.as_deref().is_some_and(|n| n.starts_with(ESTIMATE_BOOKED_NOTE_PREFIX)))
+        .map(|tx| tx.transaction_date)
+        .collect();
+    Ok(parsed
+        .into_iter()
+        .map(|row| match row {
+            Ok(p) if booked.contains(&p.transaction_date) => Err(ParseIssue {
+                line: p.line,
+                message: format!(
+                    "o dia {} já tem um rendimento estimado lançado: edite esse lançamento se o valor da B3 for diferente",
+                    p.transaction_date
+                ),
+            }),
+            other => other,
+        })
+        .collect())
+}
+
 pub async fn stage_yield_parsed(
     db: &DatabaseConnection,
     workspace_id: i32,
@@ -458,6 +511,11 @@ pub async fn stage_yield_parsed(
     parsed: YieldParsed,
 ) -> Result<YieldStageResult, AppError> {
     ensure_account_in_workspace(db, pocket_account_id, workspace_id).await?;
+    let parsed = if source == ESTIMATE_SOURCE {
+        parsed
+    } else {
+        reconcile_with_estimates(db, pocket_account_id, parsed).await?
+    };
     let mut remaining = known_yield_keys(db, pocket_account_id).await?;
     let now = chrono::Utc::now().to_rfc3339();
     let txn = db.begin().await?;

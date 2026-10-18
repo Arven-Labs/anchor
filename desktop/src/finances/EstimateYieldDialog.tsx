@@ -21,7 +21,11 @@ function EstimateYieldDialog({
   workspaceId: number;
   onClose: () => void;
 }) {
-  const [pct, setPct] = useState("100");
+  const [pct, setPct] = useState(
+    account.auto_yield_pct_of_cdi && account.auto_yield_pct_of_cdi > 0 ? String(Math.round(account.auto_yield_pct_of_cdi * 100)) : "100",
+  );
+  // Estimativa automática depois da revisão do extrato: `null` = ainda não decidido, `0` = desligada, > 0 = ligada.
+  const [autoPct, setAutoPct] = useState<number | null>(account.auto_yield_pct_of_cdi);
   const queryClient = useQueryClient();
 
   const parsed = Number(pct);
@@ -40,6 +44,24 @@ function EstimateYieldDialog({
     },
   });
   const result = estimateMutation.data;
+
+  const autoMutation = useMutation<BankAccountView, AppError, { turnOn: boolean }>({
+    mutationFn: ({ turnOn }) =>
+      invoke("update_bank_account", {
+        request: {
+          bank_account_id: account.id,
+          nome: account.nome,
+          titular: account.titular,
+          currency: account.currency,
+          ...(turnOn ? { auto_yield_pct_of_cdi: parsed / 100 } : { clear_auto_yield: true }),
+        },
+      }),
+    onSuccess: (updated) => {
+      setAutoPct(updated.auto_yield_pct_of_cdi);
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts", workspaceId] });
+    },
+  });
+  const autoOn = (autoPct ?? 0) > 0;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -65,6 +87,28 @@ function EstimateYieldDialog({
               onChange={(e) => setPct(e.currentTarget.value)}
             />
           </Field>
+
+          <div className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm" data-testid="estimate-auto">
+            <p data-testid="estimate-auto-state">
+              {autoOn
+                ? `Automatic: on, at ${Math.round((autoPct ?? 0) * 100)}% of the CDI. Right after you finish reviewing a statement, the yield of the redemptions is estimated and sent to Pending.`
+                : autoPct === 0
+                  ? "Automatic: off. Estimates only run when you press Estimate."
+                  : "Automatic: not set yet. It turns on by itself the first time you approve a pocket transfer from a statement."}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="w-fit"
+              data-testid="estimate-auto-toggle"
+              disabled={autoMutation.isPending || (!autoOn && !valid)}
+              onClick={() => autoMutation.mutate({ turnOn: !autoOn })}
+            >
+              {autoOn ? "Turn off" : "Turn on"}
+            </Button>
+            {autoMutation.isError && <p className="text-red-600">{autoMutation.error.message}</p>}
+          </div>
 
           {estimateMutation.isError && (
             <p className="text-sm text-red-600" data-testid="estimate-error">
