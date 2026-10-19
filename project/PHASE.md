@@ -2044,11 +2044,14 @@ coleta porque o ajuste de pregões antigos muda a cada dividendo), coletada junt
 **Fatia 4 feita (Sessão 166)**: corretagem fixa por ordem e IR opcional. O fluxo do dia (aporte + rebalanceamento) vira uma ordem líquida por ativo (ordem abaixo de R$ 0,005 não paga corretagem); cada
 ordem debita a corretagem na hora. O IR reusa `assess_with_options` (isenção de R$ 20 mil em ações, compensação de prejuízo, FII a 20%, mínimo de DARF) sobre `Trade`s sintéticos, cada um numa "corretora"
 própria para compra e venda do mesmo dia não casarem como day trade; o DARF do mês é debitado no primeiro pregão do mês seguinte e o do último mês sai como "a pagar". Corretagem e imposto entram no TWR.
-Cripto, exterior e renda fixa não têm IR modelado aqui (aviso). Sem custódia nem spread.
+Exterior e renda fixa não têm IR modelado aqui (aviso); cripto passou a ter na Sessão 169 (abaixo). Sem custódia nem spread.
 **Cripto no backtest (Sessão 168)**: o histórico longo vem do par `-BRL` do Yahoo (`BTC-BRL`, mesmos 10 anos das ações), gravado em `stock_adjusted_close` sob o ticker do ativo (`BTC`; cripto não paga dividendo, o
 ajustado é o fechamento). `finance_api/adjusted_close.rs::collect_crypto_brl` coleta em melhor esforço junto de `collect_asset` (cripto) e por `run_adjusted_close_backfill` (`crypto: true`), que o botão "Update price history"
 da Profitability chama. No `run_backtest_in`, as posições vêm de `positions_in_base` (peso padrão em reais, não US$ contra R$), cripto passa pelo portão de moeda, e cripto **não** cai no fechamento simples (é o do
-CoinGecko, em USD): sem série em reais sai com aviso. IR de cripto não entra na simulação (aviso próprio). Pendente: conferir o símbolo `-BRL` de moedas menos comuns no Yahoo (sem par vira aviso).
+CoinGecko, em USD): sem série em reais sai com aviso. Pendente: conferir o símbolo `-BRL` de moedas menos comuns no Yahoo (sem par vira aviso).
+**IR de cripto na simulação (Sessão 169)**: com "IR" ligado, as vendas de cripto do rebalanceamento passam pelo `assess_crypto` da Fase 24 (isenção de R$ 35 mil de vendas no mês, 15% sobre o ganho do mês
+inteiro acima disso, sem IRRF, sem compensar prejuízo, DARF 4600 com mínimo próprio). O `Ledger` do motor já enviava as ordens de cripto como `Trade`; faltava ler `Assessment.crypto_months` em `take_due` e
+`pending`, que agora somam o DARF da B3 e o de cripto separados (cada um com o seu mínimo e saldo). O DARF é debitado no 1º pregão do mês seguinte, como o da B3.
 
 ### Fase 23 — Attestations cross-app via TruthID (provar fatos da carteira sem expor dados; ideia registrada na Sessão 100, não decidida)
 

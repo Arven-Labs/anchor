@@ -11,8 +11,9 @@
 //   pesos-alvo no primeiro dia do mês, trimestre ou ano seguinte ao do início, depois do aporte do mesmo dia.
 // - **Ordens**: o fluxo do dia (aporte + rebalanceamento) vira uma ordem líquida por ativo, e cada ordem paga a corretagem
 //   fixa na hora. Corretagem e imposto são custo, não aporte: entram no TWR.
-// - **Imposto** (opcional): as ordens viram `Trade`s para o motor de IR de renda variável, que apura mês a mês; o DARF do mês
-//   é debitado do patrimônio no primeiro pregão do mês seguinte. O do último mês fica como "a pagar".
+// - **Imposto** (opcional): as ordens viram `Trade`s para o motor de IR de renda variável, que apura mês a mês (B3 e cripto,
+//   cada um com o seu DARF); o DARF do mês é debitado do patrimônio no primeiro pregão do mês seguinte. O do último mês fica
+//   como "a pagar".
 // Rendimento passado não garante nada, a tela diz isso.
 use chrono::{Datelike, NaiveDate};
 
@@ -212,26 +213,29 @@ impl<'a> Ledger<'a> {
         fee_today
     }
 
-    /// DARF dos meses até `last_period` (inclusive) que ainda não foi debitado; marca como pago.
+    /// DARF dos meses até `last_period` (inclusive) que ainda não foi debitado, o da B3 e o de cripto (código 4600);
+    /// marca como pago.
     fn take_due(&mut self, last_period: &str) -> Result<f64, String> {
         let Some(model) = self.tax else { return Ok(0.0) };
         let assessment = assess_with_options(&self.trades, &[], &model.rules).map_err(|e| e.to_string())?;
-        let due = assessment
-            .months
-            .iter()
-            .filter(|m| m.period.as_str() > self.paid_through.as_str() && m.period.as_str() <= last_period)
-            .map(|m| m.due)
-            .sum();
+        let in_range = |period: &str| period > self.paid_through.as_str() && period <= last_period;
+        let b3: f64 = assessment.months.iter().filter(|m| in_range(&m.period)).map(|m| m.due).sum();
+        let crypto: f64 = assessment.crypto_months.iter().filter(|m| in_range(&m.period)).map(|m| m.due).sum();
         self.paid_through = last_period.to_string();
-        Ok(due)
+        Ok(b3 + crypto)
     }
 
-    /// IR devido no fim da janela e ainda não debitado (inclui o que ficou abaixo do mínimo de DARF).
+    /// IR devido no fim da janela e ainda não debitado (inclui o que ficou abaixo do mínimo de DARF). Cada DARF tem o
+    /// seu mínimo e o seu saldo acumulado, então o da B3 e o de cripto são somados separados.
     fn pending(&self) -> Result<f64, String> {
         let Some(model) = self.tax else { return Ok(0.0) };
         let assessment = assess_with_options(&self.trades, &[], &model.rules).map_err(|e| e.to_string())?;
-        let unpaid: Vec<_> = assessment.months.iter().filter(|m| m.period.as_str() > self.paid_through.as_str()).collect();
-        Ok(unpaid.iter().map(|m| m.due).sum::<f64>() + unpaid.last().map_or(0.0, |m| m.carried_out))
+        let b3: Vec<_> = assessment.months.iter().filter(|m| m.period.as_str() > self.paid_through.as_str()).collect();
+        let crypto: Vec<_> = assessment.crypto_months.iter().filter(|m| m.period.as_str() > self.paid_through.as_str()).collect();
+        Ok(b3.iter().map(|m| m.due).sum::<f64>()
+            + b3.last().map_or(0.0, |m| m.carried_out)
+            + crypto.iter().map(|m| m.due).sum::<f64>()
+            + crypto.last().map_or(0.0, |m| m.carried_out))
     }
 }
 
@@ -587,6 +591,53 @@ mod tests {
         assert!(close(result.metrics.total_tax_paid, 2498.75),"{}", result.metrics.total_tax_paid);
         let small = doubling_with_tax("fii", "HGLG11", 40_000.0, 70).unwrap();
         assert!(small.metrics.total_tax_paid > 0.0, "FII não tem a isenção das ações");
+    }
+
+    #[test]
+    fn crypto_sales_above_the_monthly_limit_pay_the_flat_rate_on_the_whole_gain() {
+        // Capital de 200 mil: em 1/fev a cripto vale 200 mil e volta a 150 mil, vendendo 50 mil (acima dos 35 mil).
+        // Ganho de 250 cotas × 100 = 25.000; 15% = 3.750, sem IRRF, debitados em 1/mar.
+        let result = doubling_with_tax("cripto", "BTC", 200_000.0, 70).unwrap();
+        assert!(close(result.metrics.total_tax_paid, 3750.0), "{}", result.metrics.total_tax_paid);
+        assert!(close(result.metrics.tax_pending, 0.0));
+        assert!(close(result.metrics.final_value, 300_000.0 - 3750.0), "{}", result.metrics.final_value);
+    }
+
+    #[test]
+    fn crypto_sales_under_the_monthly_limit_are_exempt() {
+        // Capital de 100 mil: a venda de 1/fev é de 25 mil, abaixo dos 35 mil (e da B3, de 20 mil, ela já passaria).
+        let result = doubling_with_tax("cripto", "BTC", 100_000.0, 70).unwrap();
+        assert!(close(result.metrics.total_tax_paid, 0.0) && close(result.metrics.tax_pending, 0.0));
+    }
+
+    #[test]
+    fn the_crypto_tax_of_the_last_month_is_pending_not_paid() {
+        let result = doubling_with_tax("cripto", "BTC", 200_000.0, 40).unwrap();
+        assert!(close(result.metrics.total_tax_paid, 0.0));
+        assert!(close(result.metrics.tax_pending, 3750.0), "{}", result.metrics.tax_pending);
+    }
+
+    #[test]
+    fn stock_and_crypto_sales_in_the_same_month_each_pay_their_own_darf() {
+        // Três ativos de 110 mil: a cripto e a ação dobram em 1/fev e o terceiro fica parado. Em 1/fev cada um dos dois vale
+        // 220 mil e volta a 183.333,33, vendendo 36.666,67 (acima de 35 mil na cripto e de 20 mil na ação), ganho de 18.333,33.
+        // Cripto: 15% = 2.750. Ação: 15% = 2.750 menos o IRRF de 0,005% da venda (1,83).
+        let doubled: Vec<f64> = (0..70).map(|i| if i < 31 { 100.0 } else { 200.0 }).collect();
+        let flat = vec![100.0; 70];
+        let mut p = params(&[1.0, 1.0, 1.0]);
+        p.rebalance = Rebalance::Monthly;
+        p.initial = 330_000.0;
+        p.tax = Some(TaxModel {
+            rules: crate::domain::tax::rules::test_rule_set(),
+            assets: vec![
+                ("cripto".to_string(), "BTC".to_string()),
+                ("acao_br".to_string(), "AAAA3".to_string()),
+                ("acao_br".to_string(), "BBBB3".to_string()),
+            ],
+        });
+        let result = run(&[series("BTC", 0, &doubled), series("A", 0, &doubled), series("B", 0, &flat)], &p).unwrap();
+        let expected = 2750.0 + (2750.0 - 36_666.666_666_67 * 0.000_05);
+        assert!((result.metrics.total_tax_paid - expected).abs() < 0.01, "{} contra {expected}", result.metrics.total_tax_paid);
     }
 
     #[test]

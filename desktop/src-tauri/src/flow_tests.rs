@@ -4035,7 +4035,7 @@ async fn the_backtest_simulates_crypto_from_the_brl_series_and_weighs_it_in_the_
     assert!(!result.assets[1].price_only);
     assert!(result.metrics.twr_pct > 0.0, "o BTC sobe na série em reais: {}", result.metrics.twr_pct);
     assert!(result.warnings.iter().any(|w| w.starts_with("ETH") && w.contains("no price history")), "{:?}", result.warnings);
-    assert!(result.warnings.iter().any(|w| w.starts_with("BTC") && w.contains("crypto tax")), "{:?}", result.warnings);
+    assert!(!result.warnings.iter().any(|w| w.starts_with("BTC") && w.contains("no tax modelled")), "cripto tem IR modelado: {:?}", result.warnings);
 }
 
 // ---------------------------------------------------------------------------

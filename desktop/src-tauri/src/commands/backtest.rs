@@ -228,9 +228,8 @@ pub async fn run_backtest_in(db: &DatabaseConnection, request: BacktestRequest) 
         if price_only {
             warnings.push(format!("{label}: no dividend-adjusted close yet, so its return counts the price only (run Update price history)"));
         }
-        if request.apply_tax && !matches!(treatment(&position.asset_class, &position.ticker), TaxTreatment::StockExemptEligible | TaxTreatment::CommonNoExemption | TaxTreatment::Fii) {
-            let reason = if position.asset_class == CRYPTO_CLASS { "crypto tax is not modelled in the backtest yet" } else { "no tax modelled for its class" };
-            warnings.push(format!("{label}: {reason}, so its sales are not taxed here"));
+        if request.apply_tax && !matches!(treatment(&position.asset_class, &position.ticker), TaxTreatment::StockExemptEligible | TaxTreatment::CommonNoExemption | TaxTreatment::Fii | TaxTreatment::Crypto) {
+            warnings.push(format!("{label}: no tax modelled for its class, so its sales are not taxed here"));
         }
         classes.push((position.asset_class.clone(), position.ticker.clone()));
         series.push(AssetSeries { name: position.ticker.clone(), points });

@@ -3542,4 +3542,16 @@ Plan mode; decisões do dono: DARF separado por código (4600) e 15% fixo sem co
 - **Não verificado**: a resposta real do Yahoo para `BTC-BRL` e para moedas menos comuns; a tela a olho; o E2E (sem caso novo de cripto em `backtest.e2e.mjs`).
 - **E2E**: caso novo de cripto em `backtest.e2e.mjs` (BTC em USD a R$ 5, série `-BRL` parada em 500: pesos 40/40/20 e patrimônio 13.960,00) com captura `backtest-crypto`. Passou no CI e conferi a captura: BTC com 20% de peso, 13.960,00, TWR de 39,60%, BTC na correlação. No 1º run o `statement-review.e2e.mjs` falhou (spec que não toquei,
   avisos de *stale element*); rerodando só o job passou, então tratei como instabilidade, sem causa investigada.
-- **Pendente**: IR de cripto dentro da simulação; mobile.
+- **Pendente**: IR de cripto dentro da simulação (feito na Sessão 169); mobile.
+
+
+### 2026-10-19 — Sessão 169
+
+**IR de cripto na simulação do backtest (Fase 22 e 24).** Plan mode. Achado antes de mexer: o `Ledger` já mandava as ordens de cripto como `Trade` e `assess_with_options` já devolvia `crypto_months`; o imposto era
+apurado e descartado porque `take_due` e `pending` só liam `months` (B3). A mudança ficou pequena.
+- **Feito**: `take_due` e `pending` em `domain/backtest.rs` somam o DARF de cripto ao da B3 (cada um com o seu mínimo e saldo); `commands/backtest.rs` trata `TaxTreatment::Crypto` como classe com IR modelado e tirou o
+  aviso próprio; comentário do módulo e `PHASE.md` (Fase 22) atualizados.
+- **Verificado**: `cargo test --lib backtest` no container, 24 testes: cripto acima do limite (capital de 200 mil: 3.750, patrimônio 296.250), abaixo do limite (isenta), imposto do último mês pendente, e B3 e cripto
+  vendendo no mesmo mês (2.750 + 2.748,17, cada DARF no seu). O teste de fluxo da Sessão 168 trocou a asserção do aviso. `./dev.sh check` e `tsc` e o CI vêm a seguir.
+- **Não verificado**: a tela (nada mudou no frontend); E2E com venda de cripto (o caso atual não tem venda).
+- **Pendente**: permuta cripto↔cripto, exterior (Lei 14.754), tabela acima de R$ 5 mi; cripto no app móvel.
