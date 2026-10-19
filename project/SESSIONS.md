@@ -3572,4 +3572,5 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   (só aviso `ForeignSales`, sem imposto). Quem importa ou cadastra cripto com o padrão fica com o IR de cripto sem calcular, mesmo comprando em exchange nacional. A decisão em aberto é de produto: perguntar a moeda
   na importação, inferir pela corretora/exchange de origem, ou apurar USD convertendo pelo câmbio da data. Não verificado quantos ativos reais caem nisso.
 - **CI da permuta**: Rust, Frontend e Private Files verdes em `195f156`. O E2E falhou só no caso novo de `taxes.e2e.mjs`: o caso anterior termina com o diálogo do DARF aberto, que interceptou o clique em `nav-home`
-  (erro meu no teste, não do app). Corrigido fechando o diálogo com Escape antes de navegar; resultado do E2E corrigido no CI abaixo.
+  (erro meu no teste, não do app). Corrigido fechando o diálogo com Escape antes de navegar (`d9e81ae`); o E2E passou e conferi as capturas: `swap-form` mostra o cartão "Swap crypto" com BTC → ETH e
+  `taxes-crypto-swap` mostra a venda de R$ 50.000,00, ganho de R$ 40.000,00 e DARF de R$ 6.000,00 em 10/2026 na tabela Crypto.
