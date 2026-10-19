@@ -87,7 +87,7 @@ mod tests {
         let rules = rules_br();
         let unique: HashSet<_> = rules.iter().map(|r| (r.key, r.effective_from)).collect();
         assert_eq!(unique.len(), rules.len());
-        assert_eq!(rules.len(), 19);
+        assert_eq!(rules.len(), 24);
     }
 
     #[test]
