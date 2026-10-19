@@ -97,4 +97,47 @@ describe("Anchor — backtest da carteira", () => {
     await waitForText(byId("backtest-warnings"), (t) => t.includes("BBBB3") && t.includes("no weight given"), "aviso do ativo sem peso");
     expect(await textOf(byId("backtest-assets"))).not.toContain("BBBB3");
   });
+
+  it("uma cripto em dólar entra pela série em reais e pesa pelo valor em reais", async () => {
+    // BTC comprado por US$ 100 com o dólar a R$ 5 (R$ 500), e a série do par BTC-BRL parada em 500: só o peso
+    // e a presença no resultado importam aqui, o retorno vem de A.
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' AND workspace_id = (SELECT id FROM workspace WHERE name = 'E2E Backtest')");
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('BTC', 'BTC', 'cripto', 'USD', 'pais', 'US', '2026-01-01T00:00:00Z')",
+    );
+    const asset = sql("SELECT id FROM assets WHERE ticker = 'BTC'");
+    sql(
+      "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+        `VALUES (${portfolio}, ${asset}, 'compra', 1, 100, 100, 0, '2026-01-02', '2026-01-02T00:00:00Z')`,
+    );
+    sql(
+      "INSERT INTO stock_price_history (ticker, price_date, close_price, source, fetched_at) " +
+        "VALUES ('USDBRL', '2026-10-16', 5.0, 'test', '2026-10-16T00:00:00Z')",
+    );
+    sql(
+      "INSERT INTO stock_adjusted_close (ticker, price_date, adj_close_price, fetched_at) " +
+        "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 99) " +
+        "SELECT 'BTC', date('2026-01-01', '+' || i || ' days'), 500, '2026-01-01T00:00:00Z' FROM n",
+    );
+
+    // Sai da aba e volta para a carteira reler as posições.
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-backtest").click();
+    await byId("backtest-weight-BTC").waitForDisplayed({ timeout: 30_000 });
+    // 1000 (A), 1000 (B) e 500 (BTC em reais): 40%, 40% e 20%, não 1000/1000/100 em dólar.
+    expect(await byId("backtest-weight-AAAA3").getValue()).toBe("40.0");
+    expect(await byId("backtest-weight-BTC").getValue()).toBe("20.0");
+
+    await pickOption(byId("backtest-rebalance"), "Never (buy and hold)");
+    await byId("backtest-initial").setValue("10000");
+    await byId("backtest-run").click();
+    await byId("backtest-result").waitForDisplayed({ timeout: 30_000 });
+    // 40% × 1,99 + 40% × 1 + 20% × 1 = 1,396.
+    await waitForText(byId("backtest-final-value"), (t) => t.includes("13.960,00"), "o BTC entra no resultado");
+    expect(await textOf(byId("backtest-assets"))).toContain("BTC");
+    await byId("backtest-assets").scrollIntoView({ block: "center" });
+    await snap("backtest-crypto");
+  });
 });
