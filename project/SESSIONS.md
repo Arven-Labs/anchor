@@ -3537,6 +3537,7 @@ Plan mode; decisões do dono: DARF separado por código (4600) e 15% fixo sem co
   `positions_in_base`, deixa cripto passar pelo portão de moeda e não cai no fechamento simples para ela; `BacktestSection.tsx` aceita cripto na lista elegível; o botão "Update price history" da
   `ProfitabilitySection.tsx` também coleta o histórico de cripto. Detalhes na Fase 22 do `PHASE.md`.
 - **Verificado**: `./dev.sh check` (compila os testes) e `tsc` limpos. Teste de fluxo novo (cripto em USD pesada em reais, série `-BRL` em vez do fechamento USD, ETH sem série vira aviso, aviso de IR de cripto).
-  Testes no CI.
+  O 1º envio quebrou o CI Rust por erro meu no teste: semeei o fechamento em USD do BTC em 1,0, que virou o preço atual (valor de mercado de R$ 5, não R$ 500). Rodei `cargo test --lib backtest` no
+  container (`docker compose run --rm --no-deps desktop sh -c "cd src-tauri && cargo test --lib backtest"`, funciona e leva ~1 min): 20 testes passam.
 - **Não verificado**: a resposta real do Yahoo para `BTC-BRL` e para moedas menos comuns; a tela a olho; o E2E (sem caso novo de cripto em `backtest.e2e.mjs`).
 - **Pendente**: caso de cripto no `backtest.e2e.mjs`; IR de cripto dentro da simulação; mobile.
