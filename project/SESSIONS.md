@@ -3568,3 +3568,8 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   lançamento. `tsc` limpo. Caso novo em `taxes.e2e.mjs` (permuta pela tela, DARF de R$ 6.000,00) com capturas; resultado no CI.
 - **Não verificado**: a tela a olho até o CI. Limites: valor em reais digitado, sem custódia, sem vínculo entre as pernas, ativo em USD só gera aviso.
 - **Pendente**: exterior (Lei 14.754), tabela acima de R$ 5 mi; sugerir o valor de mercado na data; cripto no app móvel.
+- **Para investigar na próxima sessão (pedido do dono: só deixar registrado)**: o `CLASS_DEFAULTS` de `portfolio_io.rs` cria cripto em **USD**, e `assess_crypto` trata moeda que não é BRL como exchange estrangeira
+  (só aviso `ForeignSales`, sem imposto). Quem importa ou cadastra cripto com o padrão fica com o IR de cripto sem calcular, mesmo comprando em exchange nacional. A decisão em aberto é de produto: perguntar a moeda
+  na importação, inferir pela corretora/exchange de origem, ou apurar USD convertendo pelo câmbio da data. Não verificado quantos ativos reais caem nisso.
+- **Estado do CI ao fim da sessão**: envio `195f156` (permuta) aguardando CI; o dono ficou esperando o resultado. Se o E2E falhar, conferir primeiro o caso novo de `taxes.e2e.mjs` (usa a data de hoje como mês da
+  permuta e `portfolio-tab-transactions`).
