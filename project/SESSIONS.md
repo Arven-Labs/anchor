@@ -3591,3 +3591,5 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Verificado**: `./dev.sh check` limpo (tsc e cargo). Três testes unitários novos em `crypto.rs` (ganho cruzando a 1ª faixa, acumulado do ano que recomeça no ano seguinte, excedente acima de R$ 30 mi); resultado no CI.
 - **Não verificado**: as faixas vêm de fontes secundárias (conferir na Receita/GCAP). Sem tela nova.
 - **Pendente**: exterior (Lei 14.754); sugerir o valor de mercado na permuta; cripto no app móvel.
+- **CI da Sessão 172**: o Rust falhou uma vez numa contagem fixa de regras embarcadas (19 → 24, `tax_rules.rs`), corrigida; verde depois. O E2E falhou uma vez em `statement-review.e2e.mjs` (espera de 10 s por
+  `statement-review-empty`, sem relação com IR) e passou ao rodar de novo, `taxes.e2e.mjs` incluído. Fica como instabilidade conhecida do spec de extrato; se repetir, subir esse timeout.
