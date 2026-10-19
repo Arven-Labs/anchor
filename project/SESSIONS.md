@@ -3574,3 +3574,12 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI da permuta**: Rust, Frontend e Private Files verdes em `195f156`. O E2E falhou só no caso novo de `taxes.e2e.mjs`: o caso anterior termina com o diálogo do DARF aberto, que interceptou o clique em `nav-home`
   (erro meu no teste, não do app). Corrigido fechando o diálogo com Escape antes de navegar (`d9e81ae`); o E2E passou e conferi as capturas: `swap-form` mostra o cartão "Swap crypto" com BTC → ETH e
   `taxes-crypto-swap` mostra a venda de R$ 50.000,00, ganho de R$ 40.000,00 e DARF de R$ 6.000,00 em 10/2026 na tabela Crypto.
+
+## Sessão 171 — IR de cripto em USD apurado em reais
+- **Achado**: trocar o padrão do importador para BRL (a ideia inicial) quebraria o preço: a cotação e o histórico do CoinGecko são em USD, e o ativo em BRL leria esse número como reais. O USD do `CLASS_DEFAULTS`
+  acompanha a fonte de preço, então a moeda do ativo ficou como está.
+- **Feito**: `load_trades` (`commands/tax.rs`) converte valor e taxa das operações de cripto em USD para BRL pelo USDBRL da data (`FxHistory::rate_on`) antes da apuração. Sem taxa para a data, a operação segue em USD
+  e `assess_crypto` só avisa, como antes.
+- **Verificado**: `./dev.sh check` limpo. Dois testes de fluxo novos em `flow_tests.rs` (compra a R$ 5 e venda a R$ 6 dão ganho de R$ 22 mil e DARF de R$ 3.300; sem câmbio só avisa); resultado no CI.
+- **Não verificado**: dados reais do dono; quantos ativos reais estão em USD.
+- **Limite**: o valor digitado numa operação de cripto em USD é lido em dólar. A permuta (`record_crypto_swap`) continua exigindo valor na moeda do ativo.

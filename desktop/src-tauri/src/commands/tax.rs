@@ -15,6 +15,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 
 use crate::commands::transaction::{split_ratio, BONUS, REVERSE_SPLIT, SPLIT};
+use crate::commands::currency::load_fx_history;
 use crate::domain::option_position as option_calc;
 use crate::domain::tax::assessment::{self, Assessment, OptionResult, Side, Trade};
 use crate::domain::tax::classify::{treatment, TaxTreatment};
@@ -122,7 +123,26 @@ async fn load_trades(db: &DatabaseConnection, workspace_id: i32) -> Result<Vec<T
         });
     }
 
+    convert_crypto_to_brl(db, &mut trades).await?;
     Ok(trades)
+}
+
+/// O IR de cripto é em reais, mas a cripto nasce em USD (a cotação do CoinGecko é em dólar). Converte valor e taxa de
+/// cada operação pelo USDBRL da data dela; sem taxa, a operação fica em USD e a apuração só avisa.
+async fn convert_crypto_to_brl(db: &DatabaseConnection, trades: &mut [Trade]) -> Result<(), AppError> {
+    let is_usd_crypto = |t: &Trade| treatment(&t.asset_class, &t.ticker) == TaxTreatment::Crypto && t.currency == "USD";
+    if !trades.iter().any(is_usd_crypto) {
+        return Ok(());
+    }
+    let fx = load_fx_history(db, "BRL", &HashSet::from(["USD".to_string()])).await?;
+    for trade in trades.iter_mut().filter(|t| is_usd_crypto(t)) {
+        if let Some(rate) = fx.rate_on("USD", "BRL", trade.date) {
+            trade.gross_value *= rate;
+            trade.fee *= rate;
+            trade.currency = "BRL".to_string();
+        }
+    }
+    Ok(())
 }
 
 /// Posições em opções **encerradas** das carteiras do Workspace (Fase 18), no

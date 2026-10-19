@@ -4061,6 +4061,37 @@ async fn a_small_crypto_swap_is_exempt_and_its_fee_lowers_the_gain() {
 }
 
 #[tokio::test]
+async fn crypto_created_in_usd_is_assessed_in_reais_at_the_rate_of_each_day() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Dólar").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let btc = asset_in(&db, "BTC", "cripto", "USD").await;
+    seed_price(&db, "USDBRL", "2026-01-02", 5.0).await;
+    seed_price(&db, "USDBRL", "2026-02-10", 6.0).await;
+    // Compra de US$ 10 mil a R$ 5 (R$ 50 mil) e venda de US$ 12 mil a R$ 6 (R$ 72 mil): ganho de R$ 22 mil, acima dos R$ 35 mil.
+    trade(&db, pf.id, btc.id, "compra", 1.0, 10000.0, "2026-01-02").await;
+    trade(&db, pf.id, btc.id, "venda", 1.0, 12000.0, "2026-02-10").await;
+
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    let february = &assessment.crypto_months[0];
+    assert!(!february.exempt && close(february.gain, 22000.0) && close(february.due, 3300.0), "{} / {}", february.gain, february.due);
+}
+
+#[tokio::test]
+async fn usd_crypto_without_an_exchange_rate_still_only_warns() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Dólar").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let btc = asset_in(&db, "BTC", "cripto", "USD").await;
+    trade(&db, pf.id, btc.id, "compra", 1.0, 10000.0, "2026-01-02").await;
+    trade(&db, pf.id, btc.id, "venda", 1.0, 90000.0, "2026-02-10").await;
+
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert!(assessment.crypto_months.is_empty());
+    assert!(assessment.warnings.iter().any(|w| matches!(w, crate::domain::tax::assessment::TaxWarning::CryptoSalesNonBrl { .. })));
+}
+
+#[tokio::test]
 async fn a_refused_crypto_swap_leaves_nothing_behind() {
     use crate::commands::transaction::record_crypto_swap_in;
     use crate::entity::transactions;
