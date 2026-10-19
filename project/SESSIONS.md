@@ -3528,3 +3528,15 @@ Plan mode; decisões do dono: DARF separado por código (4600) e 15% fixo sem co
   `run_backtest` só simula ativo em BRL, então cripto em USD hoje sai com aviso. Ideia a validar: buscar o histórico longo no Yahoo (`BTC-USD`/`BTC-BRL`, `range=10y`, que o `finance_core/yahoo.rs` já sabe ler com
   `Instrument::global`), gravando em `stock_adjusted_close` (cripto não paga dividendo, o ajustado é o fechamento). Decisão aberta: simular em USD convertendo pelo câmbio da data, ou usar o par `-BRL` direto.
 - **Deslize meu**: troquei uma frase do `ROADMAP.md` com `sed` pelo Bash, contra a regra de usar Edit; conferi o resultado (1 linha mudada).
+
+
+### 2026-10-19 — Sessão 168
+
+**Backtest de cripto (Fase 22).** Retomada da exploração da Sessão 167; plan mode. Decisão: par `-BRL` do Yahoo direto, sem converter USD pelo câmbio.
+- **Feito**: `collect_crypto_brl` em `finance_api/adjusted_close.rs` (grava sob o ticker do ativo), chamado por `collect_asset` (cripto) e por `run_adjusted_close_backfill` (`crypto`); `run_backtest_in` usa
+  `positions_in_base`, deixa cripto passar pelo portão de moeda e não cai no fechamento simples para ela; `BacktestSection.tsx` aceita cripto na lista elegível; o botão "Update price history" da
+  `ProfitabilitySection.tsx` também coleta o histórico de cripto. Detalhes na Fase 22 do `PHASE.md`.
+- **Verificado**: `./dev.sh check` (compila os testes) e `tsc` limpos. Teste de fluxo novo (cripto em USD pesada em reais, série `-BRL` em vez do fechamento USD, ETH sem série vira aviso, aviso de IR de cripto).
+  Testes no CI.
+- **Não verificado**: a resposta real do Yahoo para `BTC-BRL` e para moedas menos comuns; a tela a olho; o E2E (sem caso novo de cripto em `backtest.e2e.mjs`).
+- **Pendente**: caso de cripto no `backtest.e2e.mjs`; IR de cripto dentro da simulação; mobile.

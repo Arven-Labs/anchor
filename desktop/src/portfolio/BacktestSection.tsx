@@ -88,7 +88,7 @@ function BacktestSection({ portfolioId }: { portfolioId: number }) {
   const eligible = useMemo(
     () =>
       (positionsQuery.data ?? []).filter(
-        (p) => p.quantity > 0 && p.native_currency === "BRL" && (ASSET_CLASSES_WITH_AUTO_QUOTE as string[]).includes(p.asset_class),
+        (p) => p.quantity > 0 && (p.native_currency === "BRL" || p.asset_class === "cripto") && (ASSET_CLASSES_WITH_AUTO_QUOTE as string[]).includes(p.asset_class),
       ),
     [positionsQuery.data],
   );

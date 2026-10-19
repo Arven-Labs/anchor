@@ -32,6 +32,24 @@ pub async fn collect_adjusted_close(db: &DatabaseConnection, tickers: &[String],
     Ok(total)
 }
 
+/// Histórico longo de cripto em BRL para o backtest: o CoinGecko dá só 365 dias e em USD, então busca o par `-BRL`
+/// do Yahoo (`BTC-BRL`) e grava sob o ticker do ativo (`BTC`). Cripto não paga dividendo, o ajustado é o fechamento.
+/// Moeda sem par BRL no Yahoo é pulada; o backtest avisa que falta a série.
+pub async fn collect_crypto_brl(db: &DatabaseConnection, tickers: &[String]) -> Result<usize, AppError> {
+    let now = Utc::now().to_rfc3339();
+    let mut total = 0usize;
+    for ticker in tickers {
+        let instrument = Instrument::global(&format!("{ticker}-BRL"));
+        let history = match yahoo::adjusted_close_history(&instrument).await {
+            Ok(history) => history,
+            Err(AppError::NoData(_)) => continue,
+            Err(err) => return Err(err),
+        };
+        total += store(db, ticker, &history, &now).await?;
+    }
+    Ok(total)
+}
+
 /// Grava uma série já lida (separado da rede para o teste de fluxo semear sem sair do processo).
 pub async fn store(
     db: &DatabaseConnection,

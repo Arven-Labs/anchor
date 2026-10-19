@@ -3992,6 +3992,51 @@ async fn the_backtest_refuses_a_portfolio_with_nothing_to_simulate() {
     assert!(error.to_string().contains("no asset to simulate"));
 }
 
+#[tokio::test]
+async fn the_backtest_simulates_crypto_from_the_brl_series_and_weighs_it_in_the_base_currency() {
+    use crate::commands::backtest::{run_backtest_in, BacktestRequest};
+    use chrono::NaiveDate;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Crypto").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let stock = asset(&db, "AAAA3", "acao_br").await;
+    let btc = asset_in(&db, "BTC", "cripto", "USD").await;
+    let eth = asset_in(&db, "ETH", "cripto", "USD").await;
+    seed_fx_rate(&db, "USDBRL", 5.0).await;
+    // Sem cotação, o valor de mercado cai no custo: 1.000 reais da ação e US$ 100 (R$ 500) de cada cripto.
+    for (id, qty, total) in [(stock.id, 10.0, 1000.0), (btc.id, 1.0, 100.0), (eth.id, 1.0, 100.0)] {
+        trade(&db, pf.id, id, "compra", qty, total, "2026-01-01").await;
+    }
+    let start = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+    seed_prices(&db, "AAAA3", true, start, &vec![100.0; 40]).await;
+    // O BTC tem a série ajustada em reais (par `-BRL`); o fechamento em USD do CoinGecko não pode entrar no lugar dela.
+    seed_prices(&db, "BTC", true, start, &(0..40).map(|i| 100.0 + i as f64).collect::<Vec<_>>()).await;
+    seed_prices(&db, "BTC", false, start, &vec![1.0; 40]).await;
+    // O ETH só tem o fechamento em USD: sem a série em reais, sai com aviso em vez de usar o preço errado.
+    seed_prices(&db, "ETH", false, start, &vec![1.0; 40]).await;
+
+    let request = BacktestRequest {
+        portfolio_id: pf.id,
+        weights: vec![],
+        rebalance: "never".to_string(),
+        initial: 1000.0,
+        monthly_contribution: 0.0,
+        start_date: None,
+        brokerage_per_order: 0.0,
+        apply_tax: true,
+    };
+    let result = run_backtest_in(&db, request).await.unwrap();
+
+    assert_eq!(result.assets.iter().map(|x| x.ticker.as_str()).collect::<Vec<_>>(), vec!["AAAA3", "BTC"]);
+    // Pesos em reais: 1.000 contra 500, não 1.000 contra US$ 100.
+    assert!(close(result.assets[0].target_weight, 2.0 / 3.0) && close(result.assets[1].target_weight, 1.0 / 3.0));
+    assert!(!result.assets[1].price_only);
+    assert!(result.metrics.twr_pct > 0.0, "o BTC sobe na série em reais: {}", result.metrics.twr_pct);
+    assert!(result.warnings.iter().any(|w| w.starts_with("ETH") && w.contains("no price history")), "{:?}", result.warnings);
+    assert!(result.warnings.iter().any(|w| w.starts_with("BTC") && w.contains("crypto tax")), "{:?}", result.warnings);
+}
+
 // ---------------------------------------------------------------------------
 // Fechamento ajustado para o retorno total do backtest (Fase 22, fatia 1)
 // ---------------------------------------------------------------------------

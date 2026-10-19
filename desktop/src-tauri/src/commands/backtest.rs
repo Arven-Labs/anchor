@@ -11,7 +11,7 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOr
 use serde::{Deserialize, Serialize};
 
 use crate::commands::profitability::ASSET_CLASSES_WITH_AUTO_QUOTE;
-use crate::commands::transaction::compute_positions;
+use crate::commands::currency::positions_in_base;
 use crate::commands::tax::load_rule_set;
 use crate::domain::backtest::{self, AssetSeries, Params, Rebalance, TaxModel};
 use crate::domain::tax::classify::{treatment, TaxTreatment};
@@ -115,8 +115,11 @@ fn parse_day(raw: &str) -> Result<NaiveDate, AppError> {
     NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|_| AppError::InvalidInput(format!("invalid date: '{raw}'")))
 }
 
-/// Série diária do ativo: fechamento ajustado quando existe, senão o fechamento simples (`price_only`).
-async fn load_series(db: &DatabaseConnection, ticker: &str) -> Result<(Vec<(NaiveDate, f64)>, bool), AppError> {
+const CRYPTO_CLASS: &str = "cripto";
+
+/// Série diária do ativo: fechamento ajustado quando existe, senão o fechamento simples (`price_only`). Cripto não
+/// cai no fechamento simples: o do CoinGecko é em USD, e a série ajustada dela é o par `-BRL` do Yahoo.
+async fn load_series(db: &DatabaseConnection, ticker: &str, asset_class: &str) -> Result<(Vec<(NaiveDate, f64)>, bool), AppError> {
     let adjusted = stock_adjusted_close::Entity::find()
         .filter(stock_adjusted_close::Column::Ticker.eq(ticker))
         .order_by_asc(stock_adjusted_close::Column::PriceDate)
@@ -124,6 +127,9 @@ async fn load_series(db: &DatabaseConnection, ticker: &str) -> Result<(Vec<(Naiv
         .await?;
     if !adjusted.is_empty() {
         return Ok((adjusted.into_iter().filter_map(|r| Some((parse_day(&r.price_date).ok()?, r.adj_close_price))).collect(), false));
+    }
+    if asset_class == CRYPTO_CLASS {
+        return Ok((Vec::new(), false));
     }
     Ok((load_closes(db, ticker).await?, true))
 }
@@ -184,7 +190,8 @@ pub async fn run_backtest_in(db: &DatabaseConnection, request: BacktestRequest) 
     let mut picked: Vec<(i32, String, f64, bool)> = Vec::new(); // asset_id, ticker, peso, price_only
     let mut classes: Vec<(String, String)> = Vec::new(); // classe, ticker (para o IR), na ordem de `series`
 
-    for position in compute_positions(db, request.portfolio_id).await? {
+    // Valores na moeda base: o peso padrão de uma cripto em USD não pode ficar em dólar contra ações em reais.
+    for position in positions_in_base(db, request.portfolio_id).await?.0 {
         if position.quantity <= 0.0 {
             continue;
         }
@@ -193,7 +200,7 @@ pub async fn run_backtest_in(db: &DatabaseConnection, request: BacktestRequest) 
             warnings.push(format!("{label}: left out, its class has no price history to simulate"));
             continue;
         }
-        if position.native_currency != "BRL" {
+        if position.native_currency != "BRL" && position.asset_class != CRYPTO_CLASS {
             warnings.push(format!("{label}: left out, the simulation only handles BRL assets for now"));
             continue;
         }
@@ -210,7 +217,7 @@ pub async fn run_backtest_in(db: &DatabaseConnection, request: BacktestRequest) 
             }
             continue;
         }
-        let (mut points, price_only) = load_series(db, &position.ticker).await?;
+        let (mut points, price_only) = load_series(db, &position.ticker, &position.asset_class).await?;
         if let Some(cut) = start_cut {
             points.retain(|(date, _)| *date >= cut);
         }
@@ -222,7 +229,8 @@ pub async fn run_backtest_in(db: &DatabaseConnection, request: BacktestRequest) 
             warnings.push(format!("{label}: no dividend-adjusted close yet, so its return counts the price only (run Update price history)"));
         }
         if request.apply_tax && !matches!(treatment(&position.asset_class, &position.ticker), TaxTreatment::StockExemptEligible | TaxTreatment::CommonNoExemption | TaxTreatment::Fii) {
-            warnings.push(format!("{label}: no tax modelled for its class, so its sales are not taxed here"));
+            let reason = if position.asset_class == CRYPTO_CLASS { "crypto tax is not modelled in the backtest yet" } else { "no tax modelled for its class" };
+            warnings.push(format!("{label}: {reason}, so its sales are not taxed here"));
         }
         classes.push((position.asset_class.clone(), position.ticker.clone()));
         series.push(AssetSeries { name: position.ticker.clone(), points });

@@ -250,8 +250,20 @@ function ProfitabilitySection({ portfolioId }: { portfolioId: number }) {
     return [...new Set(tickers)];
   }, [positionsQuery.data]);
 
+  // Cripto não passa pelo backfill do Yahoo `.SA`: o histórico longo em BRL (par `-BRL`) alimenta só o backtest.
+  const cryptoTickers = useMemo(
+    () => [...new Set((positionsQuery.data ?? []).filter((p) => p.asset_class === "cripto").map((p) => p.ticker))],
+    [positionsQuery.data],
+  );
+
   const backfillMutation = useMutation<CollectorSummary, AppError, string[]>({
-    mutationFn: (tickers) => invoke("run_price_history_backfill", { tickers }),
+    mutationFn: async (tickers) => {
+      const summary = await invoke<CollectorSummary>("run_price_history_backfill", { tickers });
+      if (cryptoTickers.length > 0) {
+        await invoke("run_adjusted_close_backfill", { tickers: cryptoTickers, global: true, crypto: true });
+      }
+      return summary;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["profitability-comparison", portfolioId] });
     },
@@ -422,7 +434,7 @@ function ProfitabilitySection({ portfolioId }: { portfolioId: number }) {
               type="button"
               variant="outline"
               onClick={() => backfillMutation.mutate(autoQuoteTickers)}
-              disabled={backfillMutation.isPending || autoQuoteTickers.length === 0}
+              disabled={backfillMutation.isPending || (autoQuoteTickers.length === 0 && cryptoTickers.length === 0)}
             >
               {backfillMutation.isPending ? "Updating..." : "Update price history"}
             </Button>
