@@ -2176,10 +2176,12 @@ dado real — sugestão: conferir o primeiro mês real contra o ReVar.
 
 **IR de cripto (Sessão 167)**: a cripto deixou de ser só aviso. `domain/tax/crypto.rs` apura à parte da B3 (DARF próprio, código 4600, mínimo de R$ 10 e saldo acumulado próprios): vendas do mês
 somando até R$ 35 mil (todas as moedas) são isentas; acima disso o ganho do mês inteiro paga 15%; prejuízo dá imposto zero e não compensa nem carrega; custo médio por ativo; venda em moeda que não é BRL
-(exchange estrangeira) segue só com aviso, e ganho tributável no ano acima de R$ 5 milhões avisa que a faixa real é maior. `Assessment.crypto_months` fica fora de `months`. Regras novas em `tax_rules`
+(exchange estrangeira) segue só com aviso. **Sessão 172**: o imposto passou a seguir a tabela progressiva sobre o ganho tributável acumulado no ano (15% até R$ 5 mi, 17,5% até R$ 10 mi, 20% até
+R$ 30 mi, 22,5% acima, marginal por faixa; `rate` do mês é a alíquota efetiva; regras `crypto_second_tier_gain_limit` etc. na migration `m20261028_100000`), e o aviso de faixa saiu; a cripto em USD é
+apurada em reais pelo câmbio da data (Sessão 171). `Assessment.crypto_months` fica fora de `months`. Regras novas em `tax_rules`
 (`crypto_rate`, `crypto_first_tier_gain_limit`, `darf_code_crypto`), na migration `m20261027_100000` e na tabela embarcada. `tax_payments` ganhou `kind` (`b3`|`crypto`) e a chave única passou a
 `(workspace, período, kind)` (`m20261027_110000`), então o mês pode ter os dois DARFs; o pagamento de cripto também entra na rentabilidade líquida, rateado pelas vendas de cripto. **As regras vêm de
-fontes secundárias** (blogs e consultorias; a MP 1303/2025, de 17,5% fixo, caducou): conferir na Receita antes de tratar como verificado. Fora do IR de cripto: tabela progressiva, exterior (Lei 14.754),
+fontes secundárias** (blogs e consultorias; a MP 1303/2025, de 17,5% fixo, caducou): conferir na Receita antes de tratar como verificado. Fora do IR de cripto: exterior (Lei 14.754),
 compensação de prejuízo e cripto na simulação de venda (a permuta entrou na Sessão 170 e o backtest na 169, abaixo).
 
 **Permuta cripto↔cripto (Sessão 170)**: trocar uma moeda por outra é, para a Receita, a venda da moeda entregue pelo valor de mercado em reais. Sem tipo novo em `transactions`: o comando
