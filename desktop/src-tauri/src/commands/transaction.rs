@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{Datelike, NaiveDate};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 
@@ -264,6 +265,103 @@ pub async fn create_transaction_in<C: ConnectionTrait>(
     .await?;
 
     Ok(tx)
+}
+
+const CRYPTO_CLASS: &str = "cripto";
+
+// Permuta cripto↔cripto: para a Receita é a alienação da moeda entregue pelo valor de mercado, então vira uma venda
+// (conta nas vendas do mês e gera ganho sobre o custo médio) e uma compra da moeda recebida pelo mesmo valor.
+#[derive(Deserialize)]
+pub struct CryptoSwapRequest {
+    pub portfolio_id: i32,
+    pub from_asset_id: i32,
+    pub to_asset_id: i32,
+    pub custodia_id: Option<i32>,
+    pub transaction_date: String,
+    pub quantity_out: f64,
+    pub quantity_in: f64,
+    /// Valor de mercado da troca, na moeda dos ativos (em reais para o IR).
+    pub value: f64,
+    pub fee: Option<f64>,
+    pub notes: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct CryptoSwapResult {
+    pub sale: transactions::Model,
+    pub purchase: transactions::Model,
+}
+
+#[tauri::command]
+pub async fn record_crypto_swap(
+    db: tauri::State<'_, DatabaseConnection>,
+    request: CryptoSwapRequest,
+) -> Result<CryptoSwapResult, AppError> {
+    record_crypto_swap_in(db.inner(), request).await
+}
+
+/// Grava as duas pernas da permuta numa só transação do banco: se a venda for recusada (saldo insuficiente), a compra
+/// também não fica.
+pub async fn record_crypto_swap_in(
+    db: &DatabaseConnection,
+    request: CryptoSwapRequest,
+) -> Result<CryptoSwapResult, AppError> {
+    if request.from_asset_id == request.to_asset_id {
+        return Err(AppError::InvalidGuard("a permuta precisa de duas moedas diferentes".to_string()));
+    }
+    for (name, number) in [("quantity_out", request.quantity_out), ("quantity_in", request.quantity_in), ("value", request.value)] {
+        if !number.is_finite() || number <= 0.0 {
+            return Err(AppError::InvalidGuard(format!("{name} deve ser maior que zero")));
+        }
+    }
+    let mut legs = Vec::with_capacity(2);
+    for asset_id in [request.from_asset_id, request.to_asset_id] {
+        let asset = assets::Entity::find_by_id(asset_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("asset {asset_id}")))?;
+        if asset.asset_class != CRYPTO_CLASS {
+            return Err(AppError::InvalidGuard(format!("{} não é cripto; a permuta só vale entre criptomoedas", asset.ticker)));
+        }
+        legs.push(asset);
+    }
+    if legs[0].currency != legs[1].currency {
+        return Err(AppError::InvalidGuard(format!(
+            "{} ({}) e {} ({}) estão em moedas diferentes; o valor da troca é um só",
+            legs[0].ticker, legs[0].currency, legs[1].ticker, legs[1].currency
+        )));
+    }
+    let label = format!("Swap {} → {}", legs[0].ticker, legs[1].ticker);
+    let notes = match request.notes.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+        Some(extra) => format!("{label} — {extra}"),
+        None => label,
+    };
+    let leg = |asset_id: i32, kind: &str, quantity: f64, fee: Option<f64>| CreateTransactionRequest {
+        portfolio_id: request.portfolio_id,
+        asset_id: Some(asset_id),
+        custodia_id: request.custodia_id,
+        transfer_to_custodia_id: None,
+        transaction_type: kind.to_string(),
+        payment_type: None,
+        quantity: Some(quantity),
+        unit_price: Some(request.value / quantity),
+        total_value: request.value,
+        fee,
+        transaction_date: request.transaction_date.clone(),
+        notes: Some(notes.clone()),
+        fi_emissor: None,
+        fi_indexador: None,
+        fi_taxa_percentual: None,
+        fi_data_vencimento: None,
+        fi_liquidez: None,
+    };
+
+    let txn = db.begin().await?;
+    // A taxa fica na venda: reduz o ganho, como em `assess_crypto` (valor da venda menos a taxa).
+    let sale = create_transaction_in(&txn, leg(request.from_asset_id, SELL, request.quantity_out, request.fee)).await?;
+    let purchase = create_transaction_in(&txn, leg(request.to_asset_id, BUY, request.quantity_in, None)).await?;
+    txn.commit().await?;
+    Ok(CryptoSwapResult { sale, purchase })
 }
 
 /// Recusa a venda que deixaria o ativo com saldo negativo em algum ponto do

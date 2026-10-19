@@ -3992,6 +3992,104 @@ async fn the_backtest_refuses_a_portfolio_with_nothing_to_simulate() {
     assert!(error.to_string().contains("no asset to simulate"));
 }
 
+fn swap_request(portfolio_id: i32, from: i32, to: i32, date: &str, out: f64, into: f64, value: f64) -> crate::commands::transaction::CryptoSwapRequest {
+    crate::commands::transaction::CryptoSwapRequest {
+        portfolio_id,
+        from_asset_id: from,
+        to_asset_id: to,
+        custodia_id: None,
+        transaction_date: date.to_string(),
+        quantity_out: out,
+        quantity_in: into,
+        value,
+        fee: None,
+        notes: None,
+    }
+}
+
+#[tokio::test]
+async fn a_crypto_swap_is_a_sale_of_what_goes_out_and_a_purchase_of_what_comes_in() {
+    use crate::commands::transaction::record_crypto_swap_in;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Swap").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let btc = asset(&db, "BTC", "cripto").await;
+    let eth = asset(&db, "ETH", "cripto").await;
+    trade(&db, pf.id, btc.id, "compra", 1.0, 10000.0, "2026-01-02").await;
+
+    // Fev: 1 BTC (custo 10 mil) vira 20 ETH avaliados em 40 mil: venda acima dos 35 mil, ganho de 30 mil.
+    let swap = record_crypto_swap_in(&db, swap_request(pf.id, btc.id, eth.id, "2026-02-10", 1.0, 20.0, 40000.0)).await.unwrap();
+    assert_eq!((swap.sale.transaction_type.as_str(), swap.purchase.transaction_type.as_str()), ("venda", "compra"));
+    assert_eq!((swap.sale.asset_id, swap.purchase.asset_id), (Some(btc.id), Some(eth.id)));
+    assert!(close(swap.sale.total_value, 40000.0) && close(swap.purchase.total_value, 40000.0));
+    assert!(close(swap.purchase.unit_price.unwrap(), 2000.0));
+    assert_eq!(swap.sale.notes.as_deref(), Some("Swap BTC → ETH"));
+
+    // O ETH entra com custo de 40 mil: vender os 20 em março por 50 mil dá ganho de 10 mil, e não de 50 mil.
+    trade(&db, pf.id, eth.id, "venda", 20.0, 50000.0, "2026-03-10").await;
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert_eq!(assessment.crypto_months.len(), 2);
+    let (february, march) = (&assessment.crypto_months[0], &assessment.crypto_months[1]);
+    assert!(!february.exempt && close(february.gain, 30000.0) && close(february.due, 4500.0), "{} / {}", february.gain, february.due);
+    assert!(close(march.gain, 10000.0) && close(march.due, 1500.0), "{} / {}", march.gain, march.due);
+}
+
+#[tokio::test]
+async fn a_small_crypto_swap_is_exempt_and_its_fee_lowers_the_gain() {
+    use crate::commands::transaction::record_crypto_swap_in;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Swap").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let btc = asset(&db, "BTC", "cripto").await;
+    let eth = asset(&db, "ETH", "cripto").await;
+    trade(&db, pf.id, btc.id, "compra", 2.0, 20000.0, "2026-01-02").await;
+
+    // Venda de 10 mil, abaixo dos 35 mil: isenta mesmo com ganho.
+    record_crypto_swap_in(&db, swap_request(pf.id, btc.id, eth.id, "2026-02-10", 1.0, 5.0, 10000.0)).await.unwrap();
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert!(assessment.crypto_months[0].exempt && close(assessment.crypto_months[0].due, 0.0));
+
+    // Com taxa de 100 num swap grande (50 mil, custo de 10 mil), a taxa sai do ganho: 40.000 − 100 = 39.900 em vez de 40.000.
+    let mut big = swap_request(pf.id, btc.id, eth.id, "2026-03-10", 1.0, 25.0, 50000.0);
+    big.fee = Some(100.0);
+    record_crypto_swap_in(&db, big).await.unwrap();
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    let march = assessment.crypto_months.iter().find(|m| m.period == "2026-03").unwrap();
+    assert!(close(march.gain, 39900.0), "{}", march.gain);
+}
+
+#[tokio::test]
+async fn a_refused_crypto_swap_leaves_nothing_behind() {
+    use crate::commands::transaction::record_crypto_swap_in;
+    use crate::entity::transactions;
+    use sea_orm::EntityTrait;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Swap").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let btc = asset(&db, "BTC", "cripto").await;
+    let eth = asset(&db, "ETH", "cripto").await;
+    let stock = asset(&db, "PETR4", "acao_br").await;
+    let usd_coin = asset_in(&db, "SOL", "cripto", "USD").await;
+    trade(&db, pf.id, btc.id, "compra", 1.0, 10000.0, "2026-01-02").await;
+
+    // Vender mais do que há recusa a perna da venda, e a compra do ETH não pode ficar gravada.
+    assert!(record_crypto_swap_in(&db, swap_request(pf.id, btc.id, eth.id, "2026-02-10", 5.0, 20.0, 40000.0)).await.is_err());
+    assert_eq!(transactions::Entity::find().all(&db).await.unwrap().len(), 1, "só a compra inicial do BTC");
+
+    let refused = |request| async { record_crypto_swap_in(&db, request).await.is_err() };
+    assert!(refused(swap_request(pf.id, btc.id, btc.id, "2026-02-10", 1.0, 1.0, 100.0)).await, "mesma moeda");
+    assert!(refused(swap_request(pf.id, btc.id, stock.id, "2026-02-10", 1.0, 1.0, 100.0)).await, "não é cripto");
+    assert!(refused(swap_request(pf.id, btc.id, usd_coin.id, "2026-02-10", 1.0, 1.0, 100.0)).await, "moedas diferentes");
+    assert!(refused(swap_request(pf.id, btc.id, 9999, "2026-02-10", 1.0, 1.0, 100.0)).await, "ativo inexistente");
+    assert!(refused(swap_request(pf.id, btc.id, eth.id, "2026-02-10", 1.0, 1.0, 0.0)).await, "valor zero");
+    assert!(refused(swap_request(pf.id, btc.id, eth.id, "2026-02-10", -1.0, 1.0, 100.0)).await, "quantidade negativa");
+    assert!(refused(swap_request(pf.id, btc.id, eth.id, "10/02/2026", 1.0, 1.0, 100.0)).await, "data inválida");
+    assert_eq!(transactions::Entity::find().all(&db).await.unwrap().len(), 1, "nenhuma recusa deixou lançamento");
+}
+
 #[tokio::test]
 async fn the_backtest_simulates_crypto_from_the_brl_series_and_weighs_it_in_the_base_currency() {
     use crate::commands::backtest::{run_backtest_in, BacktestRequest};

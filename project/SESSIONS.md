@@ -3554,4 +3554,17 @@ apurado e descartado porque `take_due` e `pending` só liam `months` (B3). A mud
 - **Verificado**: `cargo test --lib backtest` no container, 24 testes: cripto acima do limite (capital de 200 mil: 3.750, patrimônio 296.250), abaixo do limite (isenta), imposto do último mês pendente, e B3 e cripto
   vendendo no mesmo mês (2.750 + 2.748,17, cada DARF no seu). O teste de fluxo da Sessão 168 trocou a asserção do aviso. `./dev.sh check` e `tsc` e o CI vêm a seguir.
 - **Não verificado**: a tela (nada mudou no frontend); E2E com venda de cripto (o caso atual não tem venda).
-- **Pendente**: permuta cripto↔cripto, exterior (Lei 14.754), tabela acima de R$ 5 mi; cripto no app móvel.
+- **Pendente**: permuta cripto↔cripto (feita na Sessão 170), exterior (Lei 14.754), tabela acima de R$ 5 mi; cripto no app móvel.
+
+
+### 2026-10-19 — Sessão 170
+
+**Permuta cripto↔cripto (Fase 24).** O dono escolheu a permuta entre as pendências do IR de cripto; plan mode. Achado: o motor já apura certo uma venda mais uma compra; faltava só um jeito seguro de registrar a
+troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pelo usuário). Descartei um tipo `permuta` novo (mexeria em uns 9 pontos).
+- **Feito**: `record_crypto_swap` em `commands/transaction.rs` (venda e compra numa transação do banco, reaproveitando `create_transaction_in`), registrado no `lib.rs`; `CryptoSwapCard.tsx` na aba Transactions;
+  `PHASE.md` (Fase 24) atualizado.
+- **Verificado**: `cargo test --lib swap` no container, 3 testes de fluxo novos: venda e compra com o mesmo valor, custo do ETH igual ao valor da troca (vender depois dá ganho de 10 mil, não de 50 mil), venda acima de
+  35 mil paga 15% do ganho, abaixo é isenta, taxa reduz o ganho, e recusas (mesma moeda, não cripto, moedas diferentes, ativo inexistente, valor zero, quantidade negativa, data inválida, falta de saldo) sem deixar
+  lançamento. `tsc` limpo. Caso novo em `taxes.e2e.mjs` (permuta pela tela, DARF de R$ 6.000,00) com capturas; resultado no CI.
+- **Não verificado**: a tela a olho até o CI. Limites: valor em reais digitado, sem custódia, sem vínculo entre as pernas, ativo em USD só gera aviso.
+- **Pendente**: exterior (Lei 14.754), tabela acima de R$ 5 mi; sugerir o valor de mercado na data; cripto no app móvel.

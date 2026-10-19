@@ -2180,7 +2180,13 @@ somando até R$ 35 mil (todas as moedas) são isentas; acima disso o ganho do m�
 (`crypto_rate`, `crypto_first_tier_gain_limit`, `darf_code_crypto`), na migration `m20261027_100000` e na tabela embarcada. `tax_payments` ganhou `kind` (`b3`|`crypto`) e a chave única passou a
 `(workspace, período, kind)` (`m20261027_110000`), então o mês pode ter os dois DARFs; o pagamento de cripto também entra na rentabilidade líquida, rateado pelas vendas de cripto. **As regras vêm de
 fontes secundárias** (blogs e consultorias; a MP 1303/2025, de 17,5% fixo, caducou): conferir na Receita antes de tratar como verificado. Fora do IR de cripto: tabela progressiva, exterior (Lei 14.754),
-permuta cripto↔cripto, compensação de prejuízo, cripto na simulação de venda e no backtest.
+compensação de prejuízo e cripto na simulação de venda (a permuta entrou na Sessão 170 e o backtest na 169, abaixo).
+
+**Permuta cripto↔cripto (Sessão 170)**: trocar uma moeda por outra é, para a Receita, a venda da moeda entregue pelo valor de mercado em reais. Sem tipo novo em `transactions`: o comando
+`record_crypto_swap` (`commands/transaction.rs`) grava **uma venda** da moeda que sai e **uma compra** da que entra, no mesmo valor e na mesma data, numa só transação do banco (se a venda for recusada por falta de
+saldo, a compra também não fica). A taxa fica na venda e reduz o ganho. Recusa mesma moeda, ativo que não é `cripto`, moedas diferentes entre os dois e valor ou quantidade não positivos. As duas pernas levam
+`Swap BTC → ETH` nas notas; não há coluna de vínculo, então apagar um lado não apaga o outro. Tela: cartão "Swap crypto" na aba Transactions (`CryptoSwapCard.tsx`, só aparece com 2+ criptos cadastradas). O valor em
+reais é digitado (sem sugestão de preço histórico) e a custódia não é escolhida (fica sem). Ativo de cripto em USD (padrão do `CLASS_DEFAULTS`) grava, mas a apuração só avisa de moeda estrangeira, como já era.
 
 **Fora desta fatia**: cálculo de exterior (cripto entrou na Sessão 167); eventos corporativos
 (desdobramento/bonificação não existem como tipo de transação — quem tiver vai ver custo

@@ -177,6 +177,7 @@ pub fn run() {
             commands::reit::get_reit_manual_indicators,
             commands::reit::save_reit_manual_indicators,
             commands::transaction::create_transaction,
+            commands::transaction::record_crypto_swap,
             commands::transaction::delete_transaction,
             commands::transaction::list_transactions,
             commands::transaction::get_portfolio_positions,

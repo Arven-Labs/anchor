@@ -17,6 +17,7 @@ import {
   type TransactionView,
 } from "./types";
 import Field from "../components/Field";
+import CryptoSwapCard from "./CryptoSwapCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -425,6 +426,8 @@ function TransactionSection({
           </form>
         </CardContent>
       </Card>
+
+      <CryptoSwapCard portfolioId={portfolioId} />
     </div>
   );
 }

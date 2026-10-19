@@ -3,6 +3,7 @@ import {
   byId,
   enterWorkspace,
   seedLossScenario,
+  pickOption,
   simulateIvvbSale,
   snap,
   sql,
@@ -100,5 +101,45 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await waitForText(byId("darf-text"), (text) => text.includes("Revenue code: 4600"), "o código da receita da cripto é 4600");
     expect(await textOf(byId("darf-text"))).toContain("4500,00");
     await snap("taxes-crypto-darf");
+  });
+
+  // Permuta cripto↔cripto: uma venda e uma compra gravadas juntas; a venda entra na apuração do mês (hoje, a data padrão).
+  it("registra uma permuta pela tela e ela vira venda na apuração de cripto", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('ETH', 'Ether', 'cripto', 'BRL', 'pais', 'BR', '2026-01-01T00:00:00Z')",
+    );
+    const btc = sql("SELECT id FROM assets WHERE ticker = 'BTC'");
+    // O BTC da venda de fevereiro já saiu; compra outro por 10 mil para entregar na troca.
+    sql(
+      "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+        `VALUES (${portfolio}, ${btc}, 'compra', 1, 10000, 10000, 0, '2026-02-15', '2026-02-15T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-transactions").click();
+    await byId("swap-card").waitForDisplayed({ timeout: 30_000 });
+    await pickOption(byId("swap-from"), "BTC — Bitcoin");
+    await pickOption(byId("swap-to"), "ETH — Ether");
+    await byId("swap-quantity-out").setValue("1");
+    await byId("swap-quantity-in").setValue("20");
+    await byId("swap-value").setValue("50000");
+    await byId("swap-card").scrollIntoView({ block: "center" });
+    await snap("swap-form");
+    await byId("swap-submit").click();
+    await byId("swap-done").waitForDisplayed({ timeout: 15_000 });
+
+    // Venda de 50 mil (acima dos 35 mil) com custo de 10 mil: ganho de 40 mil, 15% = 6.000, no mês da data de hoje.
+    const month = new Date().toISOString().slice(0, 7);
+    await byId("portfolio-tab-taxes").click();
+    await waitForText(
+      byId(`crypto-tax-due-${month}`),
+      (text) => text.includes("6.000,00"),
+      "o DARF de cripto do mês da permuta deveria ser R$ 6.000,00",
+    );
+    await byId("crypto-tax-table").scrollIntoView({ block: "center" });
+    await snap("taxes-crypto-swap");
   });
 });
