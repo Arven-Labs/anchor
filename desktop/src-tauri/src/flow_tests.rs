@@ -88,7 +88,7 @@ async fn tax_rules_are_seeded() {
     let db = memory_db().await;
     let rules = tax_rules::Entity::find().all(&db).await.unwrap();
     assert!(!rules.is_empty());
-    for key in ["crypto_exemption_monthly_sales", "crypto_rate", "crypto_first_tier_gain_limit", "darf_code_crypto"] {
+    for key in ["crypto_exemption_monthly_sales", "crypto_rate", "crypto_first_tier_gain_limit", "crypto_second_tier_gain_limit", "crypto_third_tier_gain_limit", "crypto_rate_second_tier", "crypto_rate_third_tier", "crypto_rate_fourth_tier", "darf_code_crypto"] {
         assert!(rules.iter().any(|r| r.rule_key == key), "regra de cripto semeada: {key}");
     }
 }

@@ -122,7 +122,6 @@ type DarfTarget = { kind: PaymentKind; period: string; due: number; due_date: st
 type TaxWarning =
   | { kind: "cost_unknown"; ticker: string; date: string }
   | { kind: "crypto_sales_non_brl"; period: string }
-  | { kind: "crypto_gain_above_first_tier"; year: number }
   | { kind: "foreign_sales"; year: number }
   | { kind: "option_exercised"; ticker: string; date: string };
 
@@ -185,8 +184,6 @@ function warningText(w: TaxWarning): string {
       return `${w.ticker} sold on ${formatDate(w.date)} for more shares than your recorded purchases — only the part with a known cost was counted. Register the missing purchases to fix it.`;
     case "crypto_sales_non_brl":
       return `You sold crypto in ${formatPeriod(w.period)} in a foreign currency (a foreign exchange) — that follows another rule and is not calculated by Anchor, so check whether tax is due.`;
-    case "crypto_gain_above_first_tier":
-      return `Your taxable crypto gain in ${w.year} passed the limit of the 15% bracket. Anchor still charges 15%, but the real rate is higher above it (17.5% to 22.5%) — the amount shown is too low.`;
     case "foreign_sales":
       return `You sold foreign assets in ${w.year}. Gains abroad are taxed yearly in the annual tax return (Law 14,754/2023) — not calculated by Anchor yet.`;
     case "option_exercised":

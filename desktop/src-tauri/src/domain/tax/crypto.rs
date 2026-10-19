@@ -130,22 +130,27 @@ pub fn assess_crypto(trades: &[Trade], rules: &RuleSet) -> Result<(Vec<CryptoMon
     let mut months = Vec::new();
     let mut carried = 0.0;
     let mut taxable_by_year: BTreeMap<i32, f64> = BTreeMap::new();
-    let mut above_first_tier: BTreeSet<i32> = BTreeSet::new();
     for (period, sales) in by_month {
         let first_day = first_day_of(&period)?;
         let limit = rules.get(rules::CRYPTO_EXEMPTION_MONTHLY_SALES, first_day)?;
-        let rate = rules.get(rules::CRYPTO_RATE, first_day)?;
         let sales_total: f64 = sales.iter().map(|s| s.sale_value).sum();
         let gain: f64 = sales.iter().map(|s| s.gain).sum();
         let exempt = sales_total <= limit + EPS;
         let taxable = if exempt { 0.0 } else { gain.max(0.0) };
-        let tax = taxable * rate;
 
+        // A tabela progressiva corre sobre o ganho tributável acumulado no ano: este mês ocupa as faixas a partir
+        // de onde os meses anteriores pararam.
         let year_total = taxable_by_year.entry(first_day.year()).or_insert(0.0);
+        let tiers = [
+            (rules.get(rules::CRYPTO_FIRST_TIER_GAIN_LIMIT, first_day)?, rules.get(rules::CRYPTO_RATE, first_day)?),
+            (rules.get(rules::CRYPTO_SECOND_TIER_GAIN_LIMIT, first_day)?, rules.get(rules::CRYPTO_RATE_SECOND_TIER, first_day)?),
+            (rules.get(rules::CRYPTO_THIRD_TIER_GAIN_LIMIT, first_day)?, rules.get(rules::CRYPTO_RATE_THIRD_TIER, first_day)?),
+            (f64::INFINITY, rules.get(rules::CRYPTO_RATE_FOURTH_TIER, first_day)?),
+        ];
+        let tax = tiered_tax(*year_total, taxable, &tiers);
         *year_total += taxable;
-        if taxable > 0.0 && *year_total > rules.get(rules::CRYPTO_FIRST_TIER_GAIN_LIMIT, first_day)? + EPS {
-            above_first_tier.insert(first_day.year());
-        }
+        // Alíquota efetiva do mês (a da 1ª faixa quando não há ganho tributável).
+        let rate = if taxable > EPS { tax / taxable } else { tiers[0].1 };
 
         let minimum = rules.get(rules::DARF_MINIMUM, first_day)?;
         let carried_in = carried;
@@ -172,10 +177,23 @@ pub fn assess_crypto(trades: &[Trade], rules: &RuleSet) -> Result<(Vec<CryptoMon
     for period in non_brl_periods {
         warnings.push(TaxWarning::CryptoSalesNonBrl { period });
     }
-    for year in above_first_tier {
-        warnings.push(TaxWarning::CryptoGainAboveFirstTier { year });
-    }
     Ok((months, warnings))
+}
+
+/// Imposto de `taxable` de ganho que começa em `before` (ganho tributável já acumulado no ano) sobre faixas
+/// `(teto acumulado, alíquota)`; a alíquota é marginal, cada faixa tributa só a parte que cabe nela.
+fn tiered_tax(before: f64, taxable: f64, tiers: &[(f64, f64)]) -> f64 {
+    let end = before + taxable;
+    let mut floor = 0.0;
+    let mut tax = 0.0;
+    for &(ceiling, rate) in tiers {
+        let (from, to) = (before.max(floor), end.min(ceiling));
+        if to > from {
+            tax += (to - from) * rate;
+        }
+        floor = ceiling;
+    }
+    tax
 }
 
 #[cfg(test)]
@@ -299,12 +317,42 @@ mod tests {
     }
 
     #[test]
-    fn a_taxable_gain_above_the_first_tier_in_a_year_warns() {
-        let (_, warnings) = run(&[
+    fn a_gain_straddling_the_first_tier_is_taxed_by_bracket() {
+        // Ganho de 5,5 mi: 5 mi a 15% (750 mil) e 500 mil a 17,5% (87,5 mil).
+        let (months, warnings) = run(&[
             trade(1, 1, "BTC", "2026-01-02", Side::Buy, 1.0, 1_000_000.0),
             trade(2, 1, "BTC", "2026-02-10", Side::Sell, 1.0, 6_500_000.0),
         ]);
-        assert!(warnings.iter().any(|w| matches!(w, TaxWarning::CryptoGainAboveFirstTier { year: 2026 })));
+        assert!(close(months[0].tax, 837_500.0), "{}", months[0].tax);
+        assert!(close(months[0].rate, 837_500.0 / 5_500_000.0));
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn the_brackets_follow_the_gain_accumulated_in_the_year_and_restart_each_year() {
+        let (months, _) = run(&[
+            trade(1, 1, "BTC", "2026-01-02", Side::Buy, 1.0, 1_000_000.0),
+            trade(2, 1, "BTC", "2026-02-10", Side::Sell, 0.5, 6_000_000.0),
+            trade(3, 1, "BTC", "2026-03-10", Side::Sell, 0.5, 6_000_000.0),
+            trade(4, 1, "BTC", "2027-01-05", Side::Buy, 1.0, 1_000_000.0),
+            trade(5, 1, "BTC", "2027-02-10", Side::Sell, 1.0, 2_000_000.0),
+        ]);
+        // Fev: ganho de 5,5 mi (5 mi a 15%, 500 mil a 17,5%). Mar: ganho de 5,5 mi já dentro da 2ª faixa (até 10 mi acumulados) e 1 mi na 3ª.
+        assert!(close(months[0].tax, 837_500.0), "{}", months[0].tax);
+        assert!(close(months[1].tax, 4_500_000.0 * 0.175 + 1_000_000.0 * 0.20), "{}", months[1].tax);
+        // Em 2027 o acumulado recomeça: ganho de 1 mi, só 15%.
+        assert!(close(months[2].tax, 150_000.0) && close(months[2].rate, 0.15), "{}", months[2].tax);
+    }
+
+    #[test]
+    fn above_thirty_million_the_top_rate_applies_to_the_excess() {
+        let (months, _) = run(&[
+            trade(1, 1, "BTC", "2026-01-02", Side::Buy, 1.0, 1_000_000.0),
+            trade(2, 1, "BTC", "2026-02-10", Side::Sell, 1.0, 36_000_000.0),
+        ]);
+        // Ganho de 35 mi: 5 mi a 15%, 5 mi a 17,5%, 20 mi a 20% e 5 mi a 22,5%.
+        let expected = 5e6 * 0.15 + 5e6 * 0.175 + 20e6 * 0.20 + 5e6 * 0.225;
+        assert!(close(months[0].tax, expected), "{}", months[0].tax);
     }
 
     #[test]

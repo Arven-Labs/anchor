@@ -136,8 +136,6 @@ pub enum TaxWarning {
     CostUnknown { ticker: String, date: NaiveDate },
     /// Venda de cripto em moeda que não é BRL (exchange estrangeira): outra regra, não apurada aqui.
     CryptoSalesNonBrl { period: String },
-    /// O ganho tributável de cripto no ano passou do teto da 1ª faixa: o app cobra 15%, mas a faixa real sobe.
-    CryptoGainAboveFirstTier { year: i32 },
     ForeignSales { year: i32 },
     /// Opção exercida: o resultado não é apurado aqui (o prêmio vai pro custo da ação).
     OptionExercised { ticker: String, date: NaiveDate },

@@ -3583,3 +3583,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Verificado**: `./dev.sh check` limpo. Dois testes de fluxo novos em `flow_tests.rs` (compra a R$ 5 e venda a R$ 6 dão ganho de R$ 22 mil e DARF de R$ 3.300; sem câmbio só avisa); resultado no CI.
 - **Não verificado**: dados reais do dono; quantos ativos reais estão em USD.
 - **Limite**: o valor digitado numa operação de cripto em USD é lido em dólar. A permuta (`record_crypto_swap`) continua exigindo valor na moeda do ativo.
+
+## Sessão 172 — tabela progressiva do IR de cripto
+- **Feito** (fatia pequena, sem plan mode): `assess_crypto` aplica as faixas sobre o ganho tributável acumulado no ano, com alíquota marginal (15% até R$ 5 mi, 17,5% até R$ 10 mi, 20% até R$ 30 mi,
+  22,5% acima); `rate` do mês virou a alíquota efetiva. Cinco regras novas (tetos e alíquotas) na tabela embarcada e na migration `m20261028_100000`, que também atualiza o texto das duas regras antigas
+  (nunca o valor editado). O aviso `CryptoGainAboveFirstTier` saiu (Rust e `TaxesSection.tsx`).
+- **Verificado**: `./dev.sh check` limpo (tsc e cargo). Três testes unitários novos em `crypto.rs` (ganho cruzando a 1ª faixa, acumulado do ano que recomeça no ano seguinte, excedente acima de R$ 30 mi); resultado no CI.
+- **Não verificado**: as faixas vêm de fontes secundárias (conferir na Receita/GCAP). Sem tela nova.
+- **Pendente**: exterior (Lei 14.754); sugerir o valor de mercado na permuta; cripto no app móvel.

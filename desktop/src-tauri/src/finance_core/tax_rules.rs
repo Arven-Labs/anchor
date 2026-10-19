@@ -44,8 +44,13 @@ const RULES: &[(&str, f64, (i32, u32, u32), &str, &str)] = &[
     ("fixed_income_ir_cri", 0.0, (2005, 1, 1), "IR on CRI redemptions (exempt for individuals)", "Lei 11.033/2004, art. 3º (secondary sources; verify on planalto.gov.br)"),
     ("fixed_income_ir_cra", 0.0, (2005, 1, 1), "IR on CRA redemptions (exempt for individuals)", "Lei 11.033/2004, art. 3º (secondary sources; verify on planalto.gov.br)"),
     ("crypto_exemption_monthly_sales", 35000.0, (2019, 1, 1), "Monthly crypto sales up to this amount make crypto gains exempt (domestic exchanges)", "IN RFB 1.888/2019 (secondary sources; verify on gov.br)"),
-    ("crypto_rate", 0.15, (2019, 1, 1), "IR on crypto gains above the monthly exemption, as a flat 15% (the real table rises to 17.5%, 20% and 22.5% above R$ 5 million of gain in the year; Anchor only warns)", "Lei 8.981/1995, art. 21, with Lei 13.259/2016 (secondary sources; verify on gov.br)"),
-    ("crypto_first_tier_gain_limit", 5000000.0, (2019, 1, 1), "Yearly crypto gain up to which the 15% rate holds; above it Anchor warns that a higher bracket applies", "Lei 8.981/1995, art. 21, with Lei 13.259/2016 (secondary sources; verify on gov.br)"),
+    ("crypto_rate", 0.15, (2019, 1, 1), "IR on crypto gains above the monthly exemption, first bracket (up to the first tier limit of taxable gain in the year; higher brackets follow the tier rules)", "Lei 8.981/1995, art. 21, with Lei 13.259/2016 (secondary sources; verify on gov.br)"),
+    ("crypto_first_tier_gain_limit", 5000000.0, (2019, 1, 1), "Yearly taxable crypto gain up to which the first bracket rate holds (15%)", "Lei 8.981/1995, art. 21, with Lei 13.259/2016 (secondary sources; verify on gov.br)"),
+    ("crypto_second_tier_gain_limit", 10000000.0, (2019, 1, 1), "Yearly taxable crypto gain up to which the second bracket rate (17.5%) holds", "Lei 8.981/1995, art. 21, with Lei 13.259/2016 (secondary sources; verify on gov.br)"),
+    ("crypto_third_tier_gain_limit", 30000000.0, (2019, 1, 1), "Yearly taxable crypto gain up to which the third bracket rate (20%) holds", "Lei 8.981/1995, art. 21, with Lei 13.259/2016 (secondary sources; verify on gov.br)"),
+    ("crypto_rate_second_tier", 0.175, (2019, 1, 1), "Rate on the part of the yearly taxable crypto gain between the first and second tier limits", "Lei 8.981/1995, art. 21, with Lei 13.259/2016 (secondary sources; verify on gov.br)"),
+    ("crypto_rate_third_tier", 0.20, (2019, 1, 1), "Rate on the part of the yearly taxable crypto gain between the second and third tier limits", "Lei 8.981/1995, art. 21, with Lei 13.259/2016 (secondary sources; verify on gov.br)"),
+    ("crypto_rate_fourth_tier", 0.225, (2019, 1, 1), "Rate on the part of the yearly taxable crypto gain above the third tier limit", "Lei 8.981/1995, art. 21, with Lei 13.259/2016 (secondary sources; verify on gov.br)"),
     ("darf_code_crypto", 4600.0, (2019, 1, 1), "Revenue code of the DARF for capital gains on crypto (the stock exchange DARF is 6015)", "Receita Federal, GCAP (secondary sources; verify on gov.br)"),
 ];
 

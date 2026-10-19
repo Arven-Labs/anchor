@@ -84,6 +84,7 @@ mod m20261025_100000_add_auto_yield_to_bank_accounts;
 mod m20261026_100000_create_stock_adjusted_close;
 mod m20261027_100000_seed_crypto_tax_rules;
 mod m20261027_110000_add_kind_to_tax_payments;
+mod m20261028_100000_seed_crypto_progressive_rules;
 
 pub struct Migrator;
 
@@ -175,6 +176,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261026_100000_create_stock_adjusted_close::Migration),
             Box::new(m20261027_100000_seed_crypto_tax_rules::Migration),
             Box::new(m20261027_110000_add_kind_to_tax_payments::Migration),
+            Box::new(m20261028_100000_seed_crypto_progressive_rules::Migration),
         ]
     }
 }

@@ -16,6 +16,11 @@ pub const JCP_IRRF_RATE: &str = "jcp_irrf_rate";
 pub const CRYPTO_EXEMPTION_MONTHLY_SALES: &str = "crypto_exemption_monthly_sales";
 pub const CRYPTO_RATE: &str = "crypto_rate";
 pub const CRYPTO_FIRST_TIER_GAIN_LIMIT: &str = "crypto_first_tier_gain_limit";
+pub const CRYPTO_SECOND_TIER_GAIN_LIMIT: &str = "crypto_second_tier_gain_limit";
+pub const CRYPTO_THIRD_TIER_GAIN_LIMIT: &str = "crypto_third_tier_gain_limit";
+pub const CRYPTO_RATE_SECOND_TIER: &str = "crypto_rate_second_tier";
+pub const CRYPTO_RATE_THIRD_TIER: &str = "crypto_rate_third_tier";
+pub const CRYPTO_RATE_FOURTH_TIER: &str = "crypto_rate_fourth_tier";
 pub const DARF_CODE_CRYPTO: &str = "darf_code_crypto";
 
 /// IR retido no resgate de renda fixa, uma taxa fixa por papel (a tabela
@@ -81,6 +86,11 @@ pub(crate) fn test_rule_set() -> RuleSet {
         rule(CRYPTO_EXEMPTION_MONTHLY_SALES, "2019-01-01", 35000.0),
         rule(CRYPTO_RATE, "2019-01-01", 0.15),
         rule(CRYPTO_FIRST_TIER_GAIN_LIMIT, "2019-01-01", 5_000_000.0),
+        rule(CRYPTO_SECOND_TIER_GAIN_LIMIT, "2019-01-01", 10_000_000.0),
+        rule(CRYPTO_THIRD_TIER_GAIN_LIMIT, "2019-01-01", 30_000_000.0),
+        rule(CRYPTO_RATE_SECOND_TIER, "2019-01-01", 0.175),
+        rule(CRYPTO_RATE_THIRD_TIER, "2019-01-01", 0.20),
+        rule(CRYPTO_RATE_FOURTH_TIER, "2019-01-01", 0.225),
         rule(DARF_CODE_CRYPTO, "2019-01-01", 4600.0),
     ])
 }
