@@ -1,4 +1,4 @@
-import { expect } from "@wdio/globals";
+import { browser, expect } from "@wdio/globals";
 import {
   byId,
   enterWorkspace,
@@ -116,6 +116,10 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
       "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
         `VALUES (${portfolio}, ${btc}, 'compra', 1, 10000, 10000, 0, '2026-02-15', '2026-02-15T00:00:00Z')`,
     );
+
+    // O caso anterior termina com o diálogo do DARF aberto, que cobre a navegação.
+    await browser.keys("Escape");
+    await byId("darf-text").waitForDisplayed({ reverse: true, timeout: 10_000 });
 
     await byId("nav-home").click();
     await byId("nav-portfolio").click();

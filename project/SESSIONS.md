@@ -3571,5 +3571,5 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Para investigar na próxima sessão (pedido do dono: só deixar registrado)**: o `CLASS_DEFAULTS` de `portfolio_io.rs` cria cripto em **USD**, e `assess_crypto` trata moeda que não é BRL como exchange estrangeira
   (só aviso `ForeignSales`, sem imposto). Quem importa ou cadastra cripto com o padrão fica com o IR de cripto sem calcular, mesmo comprando em exchange nacional. A decisão em aberto é de produto: perguntar a moeda
   na importação, inferir pela corretora/exchange de origem, ou apurar USD convertendo pelo câmbio da data. Não verificado quantos ativos reais caem nisso.
-- **Estado do CI ao fim da sessão**: envio `195f156` (permuta) aguardando CI; o dono ficou esperando o resultado. Se o E2E falhar, conferir primeiro o caso novo de `taxes.e2e.mjs` (usa a data de hoje como mês da
-  permuta e `portfolio-tab-transactions`).
+- **CI da permuta**: Rust, Frontend e Private Files verdes em `195f156`. O E2E falhou só no caso novo de `taxes.e2e.mjs`: o caso anterior termina com o diálogo do DARF aberto, que interceptou o clique em `nav-home`
+  (erro meu no teste, não do app). Corrigido fechando o diálogo com Escape antes de navegar; resultado do E2E corrigido no CI abaixo.
