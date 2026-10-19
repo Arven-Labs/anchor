@@ -3540,5 +3540,6 @@ Plan mode; decisões do dono: DARF separado por código (4600) e 15% fixo sem co
   O 1º envio quebrou o CI Rust por erro meu no teste: semeei o fechamento em USD do BTC em 1,0, que virou o preço atual (valor de mercado de R$ 5, não R$ 500). Rodei `cargo test --lib backtest` no
   container (`docker compose run --rm --no-deps desktop sh -c "cd src-tauri && cargo test --lib backtest"`, funciona e leva ~1 min): 20 testes passam.
 - **Não verificado**: a resposta real do Yahoo para `BTC-BRL` e para moedas menos comuns; a tela a olho; o E2E (sem caso novo de cripto em `backtest.e2e.mjs`).
-- **E2E**: caso novo de cripto em `backtest.e2e.mjs` (BTC em USD a R$ 5, série `-BRL` parada em 500: pesos 40/40/20 e patrimônio 13.960,00) com captura `backtest-crypto`. Resultado no CI abaixo.
+- **E2E**: caso novo de cripto em `backtest.e2e.mjs` (BTC em USD a R$ 5, série `-BRL` parada em 500: pesos 40/40/20 e patrimônio 13.960,00) com captura `backtest-crypto`. Passou no CI e conferi a captura: BTC com 20% de peso, 13.960,00, TWR de 39,60%, BTC na correlação. No 1º run o `statement-review.e2e.mjs` falhou (spec que não toquei,
+  avisos de *stale element*); rerodando só o job passou, então tratei como instabilidade, sem causa investigada.
 - **Pendente**: IR de cripto dentro da simulação; mobile.
