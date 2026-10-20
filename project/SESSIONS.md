@@ -3657,3 +3657,13 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não verificado**: a tela a olho; a atomicidade do `insertTransactions` no banco (sem teste, o repositório usa o banco real); o preço de mercado usa o de hoje, não o da data da troca (a tela avisa).
 - **Limites**: sem taxa; cripto em USD é recusada (a permuta é em reais); o saldo checado é o atual, não o da data (venda retroativa não é validada).
 - **Pendente**: etapa 2 (motor de IR) e etapa 3 (tela de impostos).
+
+## Sessão 180 — cripto no app móvel, etapa 6: motor de IR de cripto em Dart
+- **Feito (etapa 2 do plano, sem plan mode: o desenho já estava aprovado)**: `mobile/lib/domain/crypto_tax.dart` (`assessCryptoTax(assets, transactions)`, função pura) porta `domain/tax/crypto.rs` do desktop: custo médio
+  corrente por ativo, vendas do mês em BRL, isenção ≤ R$ 35 mil (acima, o ganho do mês inteiro), faixas marginais sobre o ganho tributável acumulado no ano (15% / 17,5% / 20% / 22,5%), prejuízo que não compensa,
+  mínimo de DARF R$ 10 com saldo carregado, código 4600. `mobile/lib/domain/darf_calendar.dart` porta `calendar.rs` (vencimento no último dia útil do mês seguinte: feriados fixos, Carnaval, Sexta-feira Santa,
+  Corpus Christi, 31/12), em UTC para a soma de dias não sofrer com horário de verão. Regras como constantes no código, por decisão do dono. Ativo fora de BRL só avisa; venda acima do custo conhecido é sinalizada.
+- **Verificado**: `crypto_tax_test.dart` (13 casos, portados do desktop mais custo médio corrente e ordem no mesmo dia) e `darf_calendar_test.dart` (Páscoa, exemplo da Receita, fim de semana, 31/12, virada de ano, feriados);
+  resultado no CI.
+- **Atenção**: as regras vêm de fontes secundárias (as mesmas do desktop); conferir na Receita (GCAP). Sem taxa (o mobile não guarda); sem IRRF. O motor ainda não aparece em nenhuma tela.
+- **Pendente**: etapa 3 (tela de impostos), com os meses, o DARF 4600 e os avisos.

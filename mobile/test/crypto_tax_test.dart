@@ -1,0 +1,236 @@
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:anchor_mobile/domain/crypto_tax.dart';
+import 'package:anchor_mobile/models/asset.dart';
+import 'package:anchor_mobile/models/portfolio_transaction.dart';
+
+void main() {
+  Asset coin(
+    int id,
+    String ticker, {
+    String currency = 'BRL',
+    AssetClass assetClass = AssetClass.cripto,
+  }) => Asset(
+    id: id,
+    ticker: ticker,
+    name: ticker,
+    assetClass: assetClass,
+    currency: currency,
+    createdAt: DateTime(2026, 1, 1),
+  );
+
+  final assets = [coin(1, 'BTC'), coin(2, 'ETH')];
+
+  var nextId = 0;
+  PortfolioTransaction trade(
+    int assetId,
+    String date,
+    TransactionType type,
+    double quantity,
+    double gross,
+  ) => PortfolioTransaction(
+    id: ++nextId,
+    assetId: assetId,
+    type: type,
+    quantity: quantity,
+    unitPrice: gross / quantity,
+    totalValue: gross,
+    date: DateTime.parse(date),
+    createdAt: DateTime(2026, 1, 1),
+  );
+
+  PortfolioTransaction buy(int asset, String date, double quantity, double gross) =>
+      trade(asset, date, TransactionType.compra, quantity, gross);
+  PortfolioTransaction sell(int asset, String date, double quantity, double gross) =>
+      trade(asset, date, TransactionType.venda, quantity, gross);
+
+  CryptoTaxAssessment run(List<PortfolioTransaction> transactions, {List<Asset>? withAssets}) =>
+      assessCryptoTax(withAssets ?? assets, transactions);
+
+  Matcher near(double expected) => closeTo(expected, 1e-6);
+
+  test('vendas do mês até o limite são isentas mesmo com ganho', () {
+    final result = run([
+      buy(1, '2026-01-02', 1, 10000),
+      sell(1, '2026-02-10', 1, 35000),
+    ]);
+    final month = result.months.single;
+
+    expect(month.exempt, isTrue);
+    expect(month.tax, 0);
+    expect(month.due, 0);
+    expect(month.gain, near(25000));
+    expect(month.salesTotal, near(35000), reason: 'o limite exato é isento');
+    expect(result.warnings, isEmpty);
+  });
+
+  test('acima do limite o ganho do mês inteiro é tributado a 15%', () {
+    final feb = run([
+      buy(1, '2026-01-02', 1, 10000),
+      sell(1, '2026-02-10', 1, 40000),
+    ]).months.single;
+
+    expect(feb.exempt, isFalse);
+    expect(feb.gain, near(30000));
+    expect(feb.tax, near(4500));
+    expect(feb.due, near(4500));
+    expect(feb.darfCode, 4600);
+    expect(feb.dueDate, DateTime.utc(2026, 3, 31));
+  });
+
+  test('o limite soma todas as moedas vendidas no mês', () {
+    final month = run([
+      buy(1, '2026-01-02', 1, 10000),
+      buy(2, '2026-01-02', 10, 10000),
+      sell(1, '2026-02-10', 1, 20000),
+      sell(2, '2026-02-12', 10, 20000),
+    ]).months.single;
+
+    expect(month.salesTotal, near(40000));
+    expect(month.exempt, isFalse);
+    expect(month.tax, near(0.15 * 20000));
+  });
+
+  test('mês de prejuízo não deve nada e a perda não compensa nem carrega', () {
+    final months = run([
+      buy(1, '2026-01-02', 2, 100000),
+      sell(1, '2026-02-10', 1, 40000),
+      sell(1, '2026-03-10', 1, 60000),
+    ]).months;
+
+    // Fev: vende 1 por 40 mil com custo 50 mil → perda de 10 mil. Mar: ganho de 10 mil, tributado inteiro.
+    expect(months[0].gain, near(-10000));
+    expect(months[0].tax, 0);
+    expect(months[1].gain, near(10000));
+    expect(months[1].tax, near(1500));
+  });
+
+  test('o custo é o médio por ativo', () {
+    final month = run([
+      buy(1, '2026-01-02', 1, 10000),
+      buy(1, '2026-01-20', 1, 30000),
+      sell(1, '2026-02-10', 1, 50000),
+    ]).months.single;
+
+    expect(month.sales.single.cost, near(20000));
+    expect(month.gain, near(30000));
+  });
+
+  test('o custo médio corrente baixa a cada venda', () {
+    // Compra 2 por 100 mil (médio 50 mil), vende 1 (custo 50 mil), compra 1 por 80 mil:
+    // sobra 2 com custo 130 mil (médio 65 mil), então a 2ª venda custa 65 mil.
+    final months = run([
+      buy(1, '2026-01-02', 2, 100000),
+      sell(1, '2026-02-10', 1, 60000),
+      buy(1, '2026-02-20', 1, 80000),
+      sell(1, '2026-03-10', 1, 100000),
+    ]).months;
+
+    expect(months[0].sales.single.cost, near(50000));
+    expect(months[1].sales.single.cost, near(65000));
+  });
+
+  test('imposto abaixo do mínimo do DARF acumula para o mês seguinte', () {
+    // Fev: ganho de 40 → imposto de 6 (abaixo de R$ 10); Mar: mais 6 → DARF de 12.
+    final months = run([
+      buy(1, '2026-01-02', 2, 80000),
+      sell(1, '2026-02-10', 1, 40040),
+      sell(1, '2026-03-10', 1, 40040),
+    ]).months;
+
+    expect(months[0].gain, near(40));
+    expect(months[0].due, 0);
+    expect(months[0].carriedOut, near(6));
+    expect(months[1].due, near(12));
+    expect(months[1].carriedOut, 0);
+  });
+
+  test('venda de ativo fora de BRL só avisa, e venda acima do custo conhecido é sinalizada', () {
+    final foreign = run(
+      [buy(1, '2026-01-02', 1, 10000), sell(1, '2026-02-10', 1, 50000)],
+      withAssets: [coin(1, 'BTC', currency: 'USD')],
+    );
+    expect(foreign.months, isEmpty);
+    expect(
+      foreign.warnings.single.kind,
+      CryptoTaxWarningKind.salesNonBrl,
+    );
+    expect(foreign.warnings.single.period, '2026-02');
+
+    final unknown = run([
+      buy(1, '2026-01-02', 1, 10000),
+      sell(1, '2026-02-10', 2, 80000),
+    ]);
+    final sale = unknown.months.single.sales.single;
+    expect(sale.costUnknown, isTrue);
+    expect(sale.quantity, near(1));
+    expect(sale.saleValue, near(40000), reason: 'só a parte com custo conhecido');
+    expect(unknown.warnings.single.kind, CryptoTaxWarningKind.costUnknown);
+    expect(unknown.warnings.single.ticker, 'BTC');
+  });
+
+  test('ganho que cruza a 1ª faixa é tributado por faixa', () {
+    // Ganho de 5,5 mi: 5 mi a 15% (750 mil) e 500 mil a 17,5% (87,5 mil).
+    final month = run([
+      buy(1, '2026-01-02', 1, 1000000),
+      sell(1, '2026-02-10', 1, 6500000),
+    ]).months.single;
+
+    expect(month.tax, near(837500));
+    expect(month.rate, near(837500 / 5500000));
+  });
+
+  test('as faixas seguem o ganho acumulado no ano e recomeçam a cada ano', () {
+    final months = run([
+      buy(1, '2026-01-02', 1, 1000000),
+      sell(1, '2026-02-10', 0.5, 6000000),
+      sell(1, '2026-03-10', 0.5, 6000000),
+      buy(1, '2027-01-05', 1, 1000000),
+      sell(1, '2027-02-10', 1, 2000000),
+    ]).months;
+
+    // Fev: ganho de 5,5 mi (5 mi a 15%, 500 mil a 17,5%). Mar: ganho de 5,5 mi já dentro da 2ª faixa
+    // (até 10 mi acumulados) e 1 mi na 3ª.
+    expect(months[0].tax, near(837500));
+    expect(months[1].tax, near(4500000 * 0.175 + 1000000 * 0.20));
+    // Em 2027 o acumulado recomeça: ganho de 1 mi, só 15%.
+    expect(months[2].tax, near(150000));
+    expect(months[2].rate, near(0.15));
+  });
+
+  test('acima de 30 milhões a alíquota máxima vale para o excedente', () {
+    final month = run([
+      buy(1, '2026-01-02', 1, 1000000),
+      sell(1, '2026-02-10', 1, 36000000),
+    ]).months.single;
+
+    // Ganho de 35 mi: 5 mi a 15%, 5 mi a 17,5%, 20 mi a 20% e 5 mi a 22,5%.
+    expect(month.tax, near(5e6 * 0.15 + 5e6 * 0.175 + 20e6 * 0.20 + 5e6 * 0.225));
+  });
+
+  test('outras classes, transferências e proventos não entram na apuração', () {
+    final stock = coin(3, 'PETR4', assetClass: AssetClass.acaoBr);
+    final result = assessCryptoTax(
+      [...assets, stock],
+      [
+        buy(3, '2026-01-02', 100, 3000),
+        sell(3, '2026-02-10', 100, 99000),
+        trade(1, '2026-01-02', TransactionType.provento, 1, 5),
+        trade(1, '2026-01-03', TransactionType.transferencia, 1, 5),
+      ],
+    );
+
+    expect(result.months, isEmpty);
+    expect(result.warnings, isEmpty);
+  });
+
+  test('no mesmo dia a compra vem antes da venda, qualquer que seja a ordem da lista', () {
+    final months = run([
+      sell(1, '2026-02-10', 1, 40000),
+      buy(1, '2026-02-10', 1, 10000),
+    ]).months;
+
+    expect(months.single.sales.single.costUnknown, isFalse);
+    expect(months.single.gain, near(30000));
+  });
+}
