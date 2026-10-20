@@ -8,6 +8,7 @@ import '../services/quote_dispatcher.dart';
 import '../services/quote_exceptions.dart';
 import 'add_asset_screen.dart';
 import 'add_transaction_screen.dart';
+import 'crypto_swap_screen.dart';
 import 'custodias_screen.dart';
 import 'manual_asset_details_screen.dart';
 import 'transaction_history_screen.dart';
@@ -151,6 +152,13 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     if (saved == true) _load();
   }
 
+  Future<void> _openCryptoSwap() async {
+    final saved = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => const CryptoSwapScreen()));
+    if (saved == true) _load();
+  }
+
   Future<void> _openHistory() async {
     await Navigator.of(
       context,
@@ -171,6 +179,18 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       appBar: AppBar(
         title: const Text('Portfolio'),
         actions: [
+          // Permuta só faz sentido com duas criptos cadastradas (como no desktop).
+          if (_rows
+                  .where(
+                    (r) => r.position.asset.assetClass == AssetClass.cripto,
+                  )
+                  .length >=
+              2)
+            IconButton(
+              icon: const Icon(Icons.swap_horiz),
+              tooltip: 'Trocar cripto',
+              onPressed: _openCryptoSwap,
+            ),
           IconButton(
             icon: const Icon(Icons.account_balance),
             tooltip: 'Custódias',

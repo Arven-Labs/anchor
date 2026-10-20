@@ -3646,3 +3646,14 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não verificado**: a resposta real do CoinGecko com `usd,brl`; a tela a olho; sem teste de widget do card.
 - **Limite**: o lucro (P&L) do card compara preço médio e atual na moeda do ativo; um ativo cripto antigo em USD com compras lançadas em reais ficaria distorcido, sem aviso.
 - **Pendente**: permuta e IR de cripto no mobile; converter cripto antiga de USD para BRL (exigiria câmbio).
+
+## Sessão 179 — cripto no app móvel, etapa 5: permuta cripto↔cripto
+- **Plano** (plan mode, 3 etapas): permuta → motor de IR em Dart → tela de impostos. Decisões do dono: ordem nessa sequência; regras do IR como constantes em Dart (com a fonte anotada). O mobile não tem taxa nas
+  transações (a permuta não leva taxa), o "preço médio" dele nunca baixa nas vendas (o IR vai precisar de custo médio corrente próprio) e não tinha guarda de saldo na venda.
+- **Feito (etapa 1)**: `models/crypto_swap.dart` (`buildCryptoSwap`, função pura: venda + compra no mesmo valor, data, custódia e `Swap BTC → ETH` nas notas; recusa mesma moeda, não cripto, ativo fora de BRL, valor ou
+  quantidade ≤ 0 e saldo insuficiente); `PortfolioRepository.insertTransactions` (tudo ou nada numa transação do banco); `screens/crypto_swap_screen.dart` com "Usar preço de mercado" (quantidade × preço de hoje em reais,
+  só preenche o campo); ação "Trocar cripto" no `AppBar` do Portfolio, visível com 2+ criptos.
+- **Verificado**: `crypto_swap_test.dart` (pernas, saldo exato, recusas); resultado no CI.
+- **Não verificado**: a tela a olho; a atomicidade do `insertTransactions` no banco (sem teste, o repositório usa o banco real); o preço de mercado usa o de hoje, não o da data da troca (a tela avisa).
+- **Limites**: sem taxa; cripto em USD é recusada (a permuta é em reais); o saldo checado é o atual, não o da data (venda retroativa não é validada).
+- **Pendente**: etapa 2 (motor de IR) e etapa 3 (tela de impostos).

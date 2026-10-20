@@ -248,6 +248,22 @@ class PortfolioRepository {
     return db.insert('portfolio_transactions', map);
   }
 
+  /// Grava várias transações numa só transação do banco: ou entram todas ou
+  /// nenhuma (a permuta de cripto grava uma venda e uma compra juntas).
+  Future<void> insertTransactions(
+    List<PortfolioTransaction> transactions,
+  ) async {
+    final db = await AppDatabase.instance();
+    await db.transaction((txn) async {
+      for (final transaction in transactions) {
+        await txn.insert(
+          'portfolio_transactions',
+          transaction.toMap()..remove('id'),
+        );
+      }
+    });
+  }
+
   Future<List<PortfolioTransaction>> listTransactionsForAsset(
     int assetId,
   ) async {
