@@ -2188,7 +2188,8 @@ compensação de prejuízo e cripto na simulação de venda (a permuta entrou na
 `record_crypto_swap` (`commands/transaction.rs`) grava **uma venda** da moeda que sai e **uma compra** da que entra, no mesmo valor e na mesma data, numa só transação do banco (se a venda for recusada por falta de
 saldo, a compra também não fica). A taxa fica na venda e reduz o ganho. Recusa mesma moeda, ativo que não é `cripto`, moedas diferentes entre os dois e valor ou quantidade não positivos. As duas pernas levam
 `Swap BTC → ETH` nas notas; não há coluna de vínculo, então apagar um lado não apaga o outro. Tela: cartão "Swap crypto" na aba Transactions (`CryptoSwapCard.tsx`, só aparece com 2+ criptos cadastradas). O valor em
-reais é digitado (sem sugestão de preço histórico) e a custódia não é escolhida (fica sem). Ativo de cripto em USD (padrão do `CLASS_DEFAULTS`) grava, mas a apuração só avisa de moeda estrangeira, como já era.
+reais é digitado, com o botão "Use market price" (Sessão 173) que o preenche: `suggest_crypto_swap_value` multiplica a quantidade que sai pelo último fechamento `-BRL` em `stock_adjusted_close` até a data
+(aceita até 5 dias antes; `None` para ativo que não é cripto, em USD ou sem fechamento recente, e a tela avisa para digitar). Só preenche o campo, o usuário confere. A custódia não é escolhida (fica sem). Ativo de cripto em USD (padrão do `CLASS_DEFAULTS`) grava, mas a apuração só avisa de moeda estrangeira, como já era.
 
 **Fora desta fatia**: cálculo de exterior (cripto entrou na Sessão 167); eventos corporativos
 (desdobramento/bonificação não existem como tipo de transação — quem tiver vai ver custo

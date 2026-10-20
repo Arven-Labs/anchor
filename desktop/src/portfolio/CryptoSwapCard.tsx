@@ -57,6 +57,15 @@ function CryptoSwapCard({ portfolioId }: { portfolioId: number }) {
     },
   });
 
+  // Sugere o valor pelo fechamento em reais da moeda entregue; só preenche o campo, o usuário confere e pode mudar.
+  const suggestMutation = useMutation<number | null, AppError, void>({
+    mutationFn: () =>
+      invoke("suggest_crypto_swap_value", { assetId: Number(fromId), date, quantity: Number(quantityOut) }),
+    onSuccess: (suggested) => {
+      if (suggested !== null) setValue(suggested.toFixed(2));
+    },
+  });
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     swapMutation.mutate({
@@ -128,6 +137,21 @@ function CryptoSwapCard({ portfolioId }: { portfolioId: number }) {
             </Field>
             <Field label="Market value of the swap (BRL)">
               <Input required type="number" step="0.01" min="0" data-testid="swap-value" value={value} onChange={(e) => setValue(e.currentTarget.value)} />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="swap-suggest"
+                disabled={fromId === "" || quantityOut === "" || suggestMutation.isPending}
+                onClick={() => suggestMutation.mutate()}
+              >
+                Use market price
+              </Button>
+              {suggestMutation.isSuccess && suggestMutation.data === null && (
+                <p className="text-sm text-muted-foreground" data-testid="swap-suggest-empty">
+                  No recent price in reais for this coin; type the value.
+                </p>
+              )}
             </Field>
             <Field label="Fee (optional)">
               <Input type="number" step="0.01" min="0" data-testid="swap-fee" value={fee} onChange={(e) => setFee(e.currentTarget.value)} />

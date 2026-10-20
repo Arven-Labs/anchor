@@ -3593,3 +3593,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Pendente**: exterior (Lei 14.754); sugerir o valor de mercado na permuta; cripto no app móvel.
 - **CI da Sessão 172**: o Rust falhou uma vez numa contagem fixa de regras embarcadas (19 → 24, `tax_rules.rs`), corrigida; verde depois. O E2E falhou uma vez em `statement-review.e2e.mjs` (espera de 10 s por
   `statement-review-empty`, sem relação com IR) e passou ao rodar de novo, `taxes.e2e.mjs` incluído. Fica como instabilidade conhecida do spec de extrato; se repetir, subir esse timeout.
+
+## Sessão 173 — valor de mercado sugerido na permuta
+- **Feito** (fatia pequena, sem plan mode): `suggest_crypto_swap_value` em `commands/transaction.rs` (registrado no `lib.rs`) devolve quantidade × último fechamento `-BRL` até a data, aceitando até 5 dias de defasagem;
+  `CryptoSwapCard.tsx` ganhou o botão "Use market price", que só preenche o campo do valor, e um aviso quando não há sugestão.
+- **Verificado**: `./dev.sh check` e `tsc` limpos; teste de fluxo novo (`cargo test --lib swap` no container, 9 passam): fechamento do dia, pregão anterior, série velha demais, antes da série, ativo em USD,
+  não cripto, quantidade zero, data inválida e ativo inexistente.
+- **Não verificado**: a tela a olho; sem caso novo no E2E (o `taxes.e2e.mjs` continua digitando o valor); dados reais do `-BRL` do Yahoo.
+- **Pendente**: exterior (Lei 14.754); cripto no app móvel; timeout do `statement-review.e2e.mjs` se a instabilidade repetir.

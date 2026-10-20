@@ -16,7 +16,7 @@ use crate::domain::proventos::{
     PAYMENT_TYPE_ALUGUEL, PAYMENT_TYPE_DIVIDENDO, PAYMENT_TYPE_JSCP, PAYMENT_TYPE_REEMBOLSO,
 };
 use crate::domain::transaction_ledger::{self, LedgerEntry};
-use crate::entity::{asset_valuations, assets, custodia, stock_price_history, transactions};
+use crate::entity::{asset_valuations, assets, custodia, stock_adjusted_close, stock_price_history, transactions};
 use crate::error::AppError;
 
 const BUY: &str = "compra";
@@ -362,6 +362,51 @@ pub async fn record_crypto_swap_in(
     let purchase = create_transaction_in(&txn, leg(request.to_asset_id, BUY, request.quantity_in, None)).await?;
     txn.commit().await?;
     Ok(CryptoSwapResult { sale, purchase })
+}
+
+/// Quantos dias antes da troca ainda vale o último fechamento (fim de semana e feriado não têm pregão).
+const SWAP_PRICE_MAX_AGE_DAYS: i64 = 5;
+
+#[tauri::command]
+pub async fn suggest_crypto_swap_value(
+    db: tauri::State<'_, DatabaseConnection>,
+    asset_id: i32,
+    date: String,
+    quantity: f64,
+) -> Result<Option<f64>, AppError> {
+    suggest_crypto_swap_value_in(db.inner(), asset_id, &date, quantity).await
+}
+
+/// Valor de mercado em reais de `quantity` da moeda na data, pelo fechamento `-BRL` já coletado (o mesmo que o
+/// backtest usa). `None` quando não há como sugerir: ativo que não é cripto ou não está em reais, sem fechamento
+/// recente, ou entrada inválida; o formulário então deixa o valor para o usuário digitar.
+pub async fn suggest_crypto_swap_value_in(
+    db: &DatabaseConnection,
+    asset_id: i32,
+    date: &str,
+    quantity: f64,
+) -> Result<Option<f64>, AppError> {
+    let Ok(day) = NaiveDate::parse_from_str(date, "%Y-%m-%d") else { return Ok(None) };
+    if !quantity.is_finite() || quantity <= 0.0 {
+        return Ok(None);
+    }
+    let asset = assets::Entity::find_by_id(asset_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("asset {asset_id}")))?;
+    if asset.asset_class != CRYPTO_CLASS || asset.currency != "BRL" {
+        return Ok(None);
+    }
+    let close = stock_adjusted_close::Entity::find()
+        .filter(stock_adjusted_close::Column::Ticker.eq(asset.ticker.as_str()))
+        .filter(stock_adjusted_close::Column::PriceDate.lte(date))
+        .order_by_desc(stock_adjusted_close::Column::PriceDate)
+        .one(db)
+        .await?;
+    let Some(close) = close else { return Ok(None) };
+    let fresh = NaiveDate::parse_from_str(&close.price_date, "%Y-%m-%d")
+        .is_ok_and(|priced| (day - priced).num_days() <= SWAP_PRICE_MAX_AGE_DAYS);
+    Ok(fresh.then(|| (quantity * close.adj_close_price * 100.0).round() / 100.0))
 }
 
 /// Recusa a venda que deixaria o ativo com saldo negativo em algum ponto do

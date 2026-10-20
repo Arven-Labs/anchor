@@ -4122,6 +4122,30 @@ async fn a_refused_crypto_swap_leaves_nothing_behind() {
 }
 
 #[tokio::test]
+async fn the_swap_value_is_suggested_from_the_brl_close_and_only_when_it_is_recent() {
+    use crate::commands::transaction::suggest_crypto_swap_value_in;
+
+    let db = memory_db().await;
+    let btc = asset(&db, "BTC", "cripto").await;
+    let usd_coin = asset_in(&db, "SOL", "cripto", "USD").await;
+    let stock = asset(&db, "PETR4", "acao_br").await;
+    let start = chrono::NaiveDate::from_ymd_opt(2026, 2, 1).unwrap();
+    seed_prices(&db, "BTC", true, start, &[100.0, 200.0, 300.0]).await; // 1, 2 e 3 de fevereiro
+    seed_prices(&db, "SOL", true, start, &[10.0]).await;
+
+    let suggest = |asset_id, date: &'static str, quantity| suggest_crypto_swap_value_in(&db, asset_id, date, quantity);
+    assert_eq!(suggest(btc.id, "2026-02-02", 1.5).await.unwrap(), Some(300.0), "fechamento do próprio dia");
+    assert_eq!(suggest(btc.id, "2026-02-06", 0.5).await.unwrap(), Some(150.0), "pregão anterior, dentro de 5 dias");
+    assert_eq!(suggest(btc.id, "2026-02-09", 1.0).await.unwrap(), None, "fechamento velho demais");
+    assert_eq!(suggest(btc.id, "2026-01-31", 1.0).await.unwrap(), None, "nada antes da série");
+    assert_eq!(suggest(usd_coin.id, "2026-02-01", 1.0).await.unwrap(), None, "ativo em dólar");
+    assert_eq!(suggest(stock.id, "2026-02-01", 1.0).await.unwrap(), None, "não é cripto");
+    assert_eq!(suggest(btc.id, "2026-02-01", 0.0).await.unwrap(), None, "quantidade zero");
+    assert_eq!(suggest(btc.id, "01/02/2026", 1.0).await.unwrap(), None, "data inválida");
+    assert!(suggest(9999, "2026-02-01", 1.0).await.is_err(), "ativo inexistente");
+}
+
+#[tokio::test]
 async fn the_backtest_simulates_crypto_from_the_brl_series_and_weighs_it_in_the_base_currency() {
     use crate::commands::backtest::{run_backtest_in, BacktestRequest};
     use chrono::NaiveDate;
