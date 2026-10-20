@@ -29,7 +29,7 @@ void main() {
       }
       return http.Response(
         jsonEncode({
-          'bitcoin': {'usd': 70000.0},
+          'bitcoin': {'usd': 70000.0, 'brl': 350000.0},
         }),
         200,
       );
@@ -37,29 +37,32 @@ void main() {
     dispatcher = QuoteDispatcher(coingecko: CoinGeckoQuoteService(client: client));
   });
 
-  Asset asset(AssetClass assetClass, {String ticker = 'BTC', String? externalId}) => Asset(
+  Asset asset(AssetClass assetClass, {String ticker = 'BTC', String? externalId, String currency = 'USD'}) => Asset(
     ticker: ticker,
     name: ticker,
     assetClass: assetClass,
-    currency: 'USD',
+    currency: currency,
     createdAt: DateTime(2026, 1, 1),
     externalId: externalId,
   );
 
-  test('cripto digitada ainda sem cadastro é resolvida por texto no CoinGecko', () async {
+  test('cripto digitada ainda sem cadastro é resolvida por texto e cotada em reais', () async {
     final quote = await dispatcher.fetchQuoteForTicker('BTC', AssetClass.cripto);
 
     expect(quote.externalId, 'bitcoin');
-    expect(quote.price, 70000.0);
+    expect(quote.price, 350000.0);
+    expect(quote.currency, 'BRL');
     expect(requests.map((r) => r.path.split('/').last), ['search', 'price']);
   });
 
-  test('cripto cadastrada usa o coin_id salvo e não busca por texto', () async {
-    final quote = await dispatcher.fetchQuoteForAsset(asset(AssetClass.cripto, externalId: 'bitcoin'));
+  test('cripto cadastrada usa o coin_id salvo, não busca por texto e cota na moeda do ativo', () async {
+    final inReais = await dispatcher.fetchQuoteForAsset(asset(AssetClass.cripto, externalId: 'bitcoin', currency: 'BRL'));
+    final inDollars = await dispatcher.fetchQuoteForAsset(asset(AssetClass.cripto, externalId: 'bitcoin'));
 
-    expect(quote.price, 70000.0);
-    expect(requests, hasLength(1));
-    expect(requests.single.queryParameters['ids'], 'bitcoin');
+    expect((inReais.price, inReais.currency), (350000.0, 'BRL'));
+    expect((inDollars.price, inDollars.currency), (70000.0, 'USD'));
+    expect(requests, hasLength(2), reason: 'uma chamada de preço por ativo, nenhuma busca por texto');
+    expect(requests.every((r) => r.queryParameters['ids'] == 'bitcoin'), isTrue);
   });
 
   test('cripto cadastrada sem coin_id cai na busca por texto', () async {

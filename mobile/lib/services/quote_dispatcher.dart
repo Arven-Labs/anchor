@@ -46,16 +46,22 @@ class QuoteDispatcher {
     }
   }
 
-  /// Preço (USD) de várias criptos já cadastradas numa só chamada, por
-  /// `coin_id` (`Asset.externalId`).
-  Future<Map<String, double>> fetchCryptoPrices(Iterable<String> coinIds) =>
-      _coingecko.fetchPrices(coinIds);
+  /// Preços (`usd` e `brl`) de várias criptos já cadastradas numa só
+  /// chamada, por `coin_id` (`Asset.externalId`); cada ativo lê o par da
+  /// própria moeda.
+  Future<Map<String, Map<String, double>>> fetchCryptoPrices(
+    Iterable<String> coinIds,
+  ) => _coingecko.fetchPrices(coinIds);
 
   /// Ativo já cadastrado — cripto usa o `coin_id` já resolvido e salvo em
   /// `Asset.externalId` em vez de rebuscar por texto.
   Future<Quote> fetchQuoteForAsset(Asset asset) {
     if (asset.assetClass == AssetClass.cripto) {
-      return _coingecko.fetchQuote(asset.ticker, coinId: asset.externalId);
+      return _coingecko.fetchQuote(
+        asset.ticker,
+        coinId: asset.externalId,
+        currency: asset.currency,
+      );
     }
     return fetchQuoteForTicker(asset.ticker, asset.assetClass);
   }

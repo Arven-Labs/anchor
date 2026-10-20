@@ -21,7 +21,7 @@ void main() {
   /// Cliente que responde `/search` e `/simple/price` e anota os caminhos.
   (CoinGeckoQuoteService, List<String>) service({
     Object search = searchEth,
-    Object price = const {'ethereum': {'usd': 3500.5}},
+    Object price = const {'ethereum': {'usd': 700.1, 'brl': 3500.5}},
     int searchStatus = 200,
     int priceStatus = 200,
   }) {
@@ -44,8 +44,23 @@ void main() {
     expect(quote.externalId, 'ethereum');
     expect(quote.ticker, 'ETH');
     expect(quote.name, 'Ethereum');
-    expect(quote.currency, 'USD');
+    expect(quote.currency, 'BRL');
     expect(quote.price, 3500.5);
+  });
+
+  test('cripto antiga em USD é cotada pelo par usd', () async {
+    final (coingecko, _) = service();
+
+    final quote = await coingecko.fetchQuote('ETH', coinId: 'ethereum', currency: 'USD');
+
+    expect(quote.currency, 'USD');
+    expect(quote.price, 700.1);
+  });
+
+  test('moeda pedida sem preço no corpo é não encontrado', () async {
+    final (onlyUsd, _) = service(price: const {'ethereum': {'usd': 700.1}});
+
+    expect(onlyUsd.fetchQuote('ETH', coinId: 'ethereum'), throwsA(isA<QuoteNotFoundException>()));
   });
 
   test('símbolo sem match exato é não encontrado (ETH não pega só ETHFI)', () async {
@@ -106,7 +121,7 @@ void main() {
       urls.add(request.url);
       return http.Response(
         jsonEncode({
-          'bitcoin': {'usd': 70000.0},
+          'bitcoin': {'usd': 70000.0, 'brl': 350000.0},
           'ethereum': {'usd': 3500},
         }),
         200,
@@ -116,8 +131,12 @@ void main() {
 
     final prices = await coingecko.fetchPrices(['bitcoin', 'ethereum', 'moeda-sumida', 'bitcoin']);
 
-    expect(prices, {'bitcoin': 70000.0, 'ethereum': 3500.0});
+    expect(prices, {
+      'bitcoin': {'usd': 70000.0, 'brl': 350000.0},
+      'ethereum': {'usd': 3500.0},
+    });
     expect(urls, hasLength(1));
+    expect(urls.single.queryParameters['vs_currencies'], 'usd,brl');
     expect(urls.single.queryParameters['ids'], 'bitcoin,ethereum,moeda-sumida');
   });
 

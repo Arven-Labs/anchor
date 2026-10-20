@@ -37,8 +37,15 @@ class _PositionRow {
 /// Texto do "Preço atual" do card: o número, "indisponível agora" quando a
 /// fonte falhou de forma passageira, ou "—" quando não há cotação.
 @visibleForTesting
-String livePriceLabel(double? price, {bool unavailable = false}) {
-  if (price != null) return price.toStringAsFixed(2);
+String livePriceLabel(
+  double? price, {
+  bool unavailable = false,
+  String? currency,
+}) {
+  if (price != null) {
+    final number = price.toStringAsFixed(2);
+    return currency == null ? number : '$currency $number';
+  }
   return unavailable ? 'indisponível agora' : '—';
 }
 
@@ -70,7 +77,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
             p.asset.externalId != null)
           p.asset.externalId!,
     };
-    var cryptoPrices = <String, double>{};
+    var cryptoPrices = <String, Map<String, double>>{};
     var cryptoUnavailable = false;
     try {
       cryptoPrices = await _dispatcher.fetchCryptoPrices(coinIds);
@@ -104,7 +111,8 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         if (assetClass == AssetClass.cripto && coinId != null) {
           return _PositionRow(
             position,
-            cryptoPrices[coinId],
+            // Cada ativo lê o par da própria moeda (BRL novo, USD antigo).
+            cryptoPrices[coinId]?[position.asset.currency.toLowerCase()],
             priceUnavailable: cryptoUnavailable,
           );
         }
@@ -243,6 +251,7 @@ class _PositionCard extends StatelessWidget {
     final quantity = position.netQuantity;
     final avgPrice = position.averageBuyPrice;
     final livePrice = row.livePrice;
+    final currency = position.asset.currency;
 
     final currentValue = livePrice != null ? quantity * livePrice : null;
     final costBasis = avgPrice != null ? quantity * avgPrice : null;
@@ -305,9 +314,11 @@ class _PositionCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Preço médio: ${avgPrice?.toStringAsFixed(2) ?? '—'}'),
                   Text(
-                    'Preço atual: ${livePriceLabel(livePrice, unavailable: row.priceUnavailable)}',
+                    'Preço médio: ${avgPrice != null ? '$currency ${avgPrice.toStringAsFixed(2)}' : '—'}',
+                  ),
+                  Text(
+                    'Preço atual: ${livePriceLabel(livePrice, unavailable: row.priceUnavailable, currency: currency)}',
                   ),
                 ],
               ),
@@ -315,7 +326,9 @@ class _PositionCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Valor: ${currentValue?.toStringAsFixed(2) ?? '—'}'),
+                  Text(
+                    'Valor: ${currentValue != null ? '$currency ${currentValue.toStringAsFixed(2)}' : '—'}',
+                  ),
                   if (pnl != null && pnlPercent != null)
                     Text(
                       '${pnl >= 0 ? '+' : ''}${pnl.toStringAsFixed(2)} '

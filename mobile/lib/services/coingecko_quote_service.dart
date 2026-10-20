@@ -61,17 +61,20 @@ class CoinGeckoQuoteService {
     return exactMatches.first;
   }
 
-  /// Preço em USD de várias moedas numa só chamada (`ids=a,b,c`) — o
-  /// Portfolio cota todas as criptos de uma vez em vez de um GET por ativo,
-  /// que estoura o limite do plano gratuito. Moeda que o CoinGecko não
-  /// devolve fica de fora do mapa (sem cotação), sem derrubar as outras.
-  Future<Map<String, double>> fetchPrices(Iterable<String> coinIds) async {
+  /// Preços (`usd` e `brl`, chaves minúsculas) de várias moedas numa só
+  /// chamada (`ids=a,b,c`) — o Portfolio cota todas as criptos de uma vez em
+  /// vez de um GET por ativo, que estoura o limite do plano gratuito. Moeda
+  /// que o CoinGecko não devolve fica de fora do mapa (sem cotação), sem
+  /// derrubar as outras; par ausente fica de fora do mapa da moeda.
+  Future<Map<String, Map<String, double>>> fetchPrices(
+    Iterable<String> coinIds,
+  ) async {
     final ids = coinIds.toSet();
     if (ids.isEmpty) return {};
 
-    final uri = Uri.parse(
-      '$_baseUrl/simple/price',
-    ).replace(queryParameters: {'ids': ids.join(','), 'vs_currencies': 'usd'});
+    final uri = Uri.parse('$_baseUrl/simple/price').replace(
+      queryParameters: {'ids': ids.join(','), 'vs_currencies': 'usd,brl'},
+    );
     final response = await _get(uri);
     if (response.statusCode != 200) {
       throw QuoteNotFoundException(ids.join(','));
@@ -79,18 +82,26 @@ class CoinGeckoQuoteService {
 
     try {
       final body = jsonDecode(response.body) as Map<String, dynamic>;
-      return {
-        for (final id in ids)
-          if ((body[id] as Map<String, dynamic>?)?['usd'] case final num usd)
-            id: usd.toDouble(),
-      };
+      final prices = <String, Map<String, double>>{};
+      for (final id in ids) {
+        final raw = body[id] as Map<String, dynamic>?;
+        if (raw == null) continue;
+        final byCurrency = {
+          for (final currency in _currencies)
+            if (raw[currency] case final num value) currency: value.toDouble(),
+        };
+        if (byCurrency.isNotEmpty) prices[id] = byCurrency;
+      }
+      return prices;
     } catch (_) {
       throw QuoteNotFoundException(ids.join(','));
     }
   }
 
-  Future<double> _fetchPriceById(String coinId) async {
-    final price = (await fetchPrices([coinId]))[coinId];
+  static const _currencies = ['usd', 'brl'];
+
+  Future<double> _fetchPriceById(String coinId, String currency) async {
+    final price = (await fetchPrices([coinId]))[coinId]?[currency.toLowerCase()];
     if (price == null) throw QuoteNotFoundException(coinId);
     return price;
   }
@@ -99,7 +110,14 @@ class CoinGeckoQuoteService {
   /// mais rápido e não gasta rate limit do free tier a cada refresh do
   /// Portfolio. Sem `coinId`, resolve pelo `symbol` primeiro (busca livre /
   /// cadastro novo).
-  Future<Quote> fetchQuote(String symbol, {String? coinId}) async {
+  ///
+  /// `currency` (`BRL` por padrão; `USD` para cripto cadastrada antes de a
+  /// cotação em reais existir) escolhe o par do preço e vai em `Quote.currency`.
+  Future<Quote> fetchQuote(
+    String symbol, {
+    String? coinId,
+    String currency = 'BRL',
+  }) async {
     String resolvedId;
     String? name;
 
@@ -112,12 +130,12 @@ class CoinGeckoQuoteService {
       name = resolved['name'] as String?;
     }
 
-    final price = await _fetchPriceById(resolvedId);
+    final price = await _fetchPriceById(resolvedId, currency);
     return Quote(
       ticker: symbol.toUpperCase(),
       price: price,
       name: name,
-      currency: 'USD',
+      currency: currency.toUpperCase(),
       externalId: resolvedId,
     );
   }

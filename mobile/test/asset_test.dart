@@ -56,4 +56,9 @@ void main() {
     expect(etf.isFixedIncome, isFalse);
     expect(etf.tickerHint, 'AUPO11');
   });
+
+  test('cripto nova nasce em BRL (cotada em reais), cotação automática', () {
+    expect(AssetClass.cripto.defaultCurrency, 'BRL');
+    expect(AssetClass.cripto.hasAutoQuote, isTrue);
+  });
 }

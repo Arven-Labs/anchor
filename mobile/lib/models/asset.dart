@@ -89,9 +89,12 @@ extension AssetClassMeta on AssetClass {
       case AssetClass.acaoInternacional:
       case AssetClass.reit:
       case AssetClass.etfUs:
-      case AssetClass.cripto:
       case AssetClass.metal:
         return 'USD';
+      case AssetClass.cripto:
+        // Cotada em reais direto no CoinGecko (`vs_currencies=brl`); cripto
+        // cadastrada antes disso segue em USD, na moeda do próprio ativo.
+        return 'BRL';
     }
   }
 

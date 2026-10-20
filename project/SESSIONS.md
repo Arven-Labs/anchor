@@ -3634,3 +3634,14 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Verificado**: `yahoo_quote_service_test.dart` (preço e sufixo `.SA`, 429/5xx e timeout/rede como indisponível, 404 e corpo vazio como não encontrado, metal); os testes do CoinGecko seguem cobrindo o helper. Resultado no CI.
 - **Não verificado**: as mensagens das duas telas a olho (sem teste de widget); a resposta real do Yahoo sob limite.
 - **Pendente**: cripto em reais; permuta e IR no mobile.
+
+## Sessão 178 — cripto no app móvel, etapa 4: cripto em reais
+- **Decisão** (plan mode): cripto nova no mobile nasce em BRL, cotada direto no CoinGecko (`vs_currencies=usd,brl`), sem câmbio no app (que não tem moeda base nem totais). Cripto já cadastrada em USD fica em USD, cotada pelo par `usd`;
+  não há conversão do que já existe. Alinha com o desktop, que apura cripto em reais (Sessões 168 e 171).
+- **Feito**: `fetchPrices` devolve `coinId → {usd, brl}` (ainda uma chamada só); `fetchQuote(..., currency = 'BRL')` escolhe o par e preenche `Quote.currency`; `AssetClass.cripto.defaultCurrency` virou `'BRL'`;
+  `QuoteDispatcher.fetchQuoteForAsset` cota na moeda do ativo; o Portfolio lê o par da moeda de cada ativo e o card passou a mostrar a moeda em "Preço médio", "Preço atual" e "Valor" para todas as classes
+  (antes os números saíam sem unidade).
+- **Verificado**: testes ajustados e novos (par `usd`/`brl`, default BRL, cripto antiga em USD, moeda ausente no corpo é não encontrado, dispatcher por moeda do ativo, `defaultCurrency`, rótulo com moeda). Resultado no CI.
+- **Não verificado**: a resposta real do CoinGecko com `usd,brl`; a tela a olho; sem teste de widget do card.
+- **Limite**: o lucro (P&L) do card compara preço médio e atual na moeda do ativo; um ativo cripto antigo em USD com compras lançadas em reais ficaria distorcido, sem aviso.
+- **Pendente**: permuta e IR de cripto no mobile; converter cripto antiga de USD para BRL (exigiria câmbio).
