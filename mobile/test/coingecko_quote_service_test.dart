@@ -111,8 +111,8 @@ void main() {
     final (empty, _) = service(price: const <String, Object>{});
     expect(empty.fetchQuote('X', coinId: 'x'), throwsA(isA<QuoteNotFoundException>()));
 
-    final (noUsd, _) = service(price: const {'x': {'brl': 10}});
-    expect(noUsd.fetchQuote('X', coinId: 'x'), throwsA(isA<QuoteNotFoundException>()));
+    final (otherCurrency, _) = service(price: const {'x': {'eur': 10}});
+    expect(otherCurrency.fetchQuote('X', coinId: 'x'), throwsA(isA<QuoteNotFoundException>()));
   });
 
   test('várias moedas saem numa só chamada e a que falta fica de fora', () async {

@@ -3641,7 +3641,8 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Feito**: `fetchPrices` devolve `coinId → {usd, brl}` (ainda uma chamada só); `fetchQuote(..., currency = 'BRL')` escolhe o par e preenche `Quote.currency`; `AssetClass.cripto.defaultCurrency` virou `'BRL'`;
   `QuoteDispatcher.fetchQuoteForAsset` cota na moeda do ativo; o Portfolio lê o par da moeda de cada ativo e o card passou a mostrar a moeda em "Preço médio", "Preço atual" e "Valor" para todas as classes
   (antes os números saíam sem unidade).
-- **Verificado**: testes ajustados e novos (par `usd`/`brl`, default BRL, cripto antiga em USD, moeda ausente no corpo é não encontrado, dispatcher por moeda do ativo, `defaultCurrency`, rótulo com moeda). Resultado no CI.
+- **Verificado**: testes ajustados e novos (par `usd`/`brl`, default BRL, cripto antiga em USD, moeda ausente no corpo é não encontrado, dispatcher por moeda do ativo, `defaultCurrency`, rótulo com moeda).
+  O 1º envio falhou em 1 de 36: o caso antigo "corpo sem `usd`" usava `{'brl': 10}`, que com BRL como padrão passou a cotar de verdade; troquei o corpo por uma moeda que o app não pede (`eur`).
 - **Não verificado**: a resposta real do CoinGecko com `usd,brl`; a tela a olho; sem teste de widget do card.
 - **Limite**: o lucro (P&L) do card compara preço médio e atual na moeda do ativo; um ativo cripto antigo em USD com compras lançadas em reais ficaria distorcido, sem aviso.
 - **Pendente**: permuta e IR de cripto no mobile; converter cripto antiga de USD para BRL (exigiria câmbio).
