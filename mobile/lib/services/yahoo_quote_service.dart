@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/quote.dart';
 import 'quote_exceptions.dart';
+import 'quote_http.dart';
 
 /// Cliente Dart do mesmo endpoint não-oficial do Yahoo Finance já usado (e
 /// confirmado contra a API real) pelo `data-collector` em
@@ -12,6 +13,10 @@ import 'quote_exceptions.dart';
 /// Yahoo (mesma usada por baixo dos panos pela lib `yfinance`).
 class YahooQuoteService {
   static const _chartUrl = 'https://query1.finance.yahoo.com/v8/finance/chart';
+
+  final http.Client _client;
+
+  YahooQuoteService({http.Client? client}) : _client = client ?? http.Client();
 
   /// Mapeamento ticker→símbolo do contrato futuro COMEX/NYMEX, espelhando
   /// `data-collector/sources/metais_yahoo.py::TICKER_TO_YAHOO_SYMBOL`.
@@ -37,9 +42,12 @@ class YahooQuoteService {
       '$_chartUrl/$ticker$suffix',
     ).replace(queryParameters: {'range': '5d', 'interval': '1d'});
 
-    final response = await http
-        .get(uri, headers: {'User-Agent': 'Mozilla/5.0'})
-        .timeout(const Duration(seconds: 15));
+    final response = await quoteGet(
+      _client,
+      uri,
+      source: 'yahoo',
+      headers: {'User-Agent': 'Mozilla/5.0'},
+    );
 
     if (response.statusCode != 200) {
       throw QuoteNotFoundException(ticker);

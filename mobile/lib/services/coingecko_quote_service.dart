@@ -1,11 +1,10 @@
-import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
 import '../models/quote.dart';
 import 'quote_exceptions.dart';
+import 'quote_http.dart';
 
 /// Cliente Dart dos mesmos endpoints públicos (sem chave) já confirmados
 /// contra a API real por `data-collector/sources/cripto_coingecko.py`.
@@ -20,26 +19,8 @@ class CoinGeckoQuoteService {
   CoinGeckoQuoteService({http.Client? client})
     : _client = client ?? http.Client();
 
-  /// GET que separa "fonte indisponível" de "ativo não existe": 429 (limite
-  /// do plano gratuito), 5xx, timeout e rede fora viram
-  /// `QuoteUnavailableException`; os demais status voltam pro chamador, que
-  /// decide (404 e afins = não encontrado).
-  Future<http.Response> _get(Uri uri) async {
-    final http.Response response;
-    try {
-      response = await _client.get(uri).timeout(const Duration(seconds: 15));
-    } on TimeoutException {
-      throw QuoteUnavailableException('coingecko');
-    } on SocketException {
-      throw QuoteUnavailableException('coingecko');
-    } on http.ClientException {
-      throw QuoteUnavailableException('coingecko');
-    }
-    if (response.statusCode == 429 || response.statusCode >= 500) {
-      throw QuoteUnavailableException('coingecko');
-    }
-    return response;
-  }
+  Future<http.Response> _get(Uri uri) =>
+      quoteGet(_client, uri, source: 'coingecko');
 
   /// Resolve um símbolo livre (`ETH`) pro `coin_id` canônico do CoinGecko.
   ///

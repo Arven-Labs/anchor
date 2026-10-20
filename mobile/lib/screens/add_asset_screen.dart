@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/asset.dart';
 import '../services/portfolio_repository.dart';
 import '../services/quote_dispatcher.dart';
+import '../services/quote_exceptions.dart';
 
 class AddAssetScreen extends StatefulWidget {
   const AddAssetScreen({super.key});
@@ -64,6 +65,11 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
         _currency = quote.currency ?? _assetClass.defaultCurrency;
         _externalId = quote.externalId;
       });
+    } on QuoteUnavailableException {
+      setState(
+        () => _error =
+            'Fonte de cotação indisponível agora (limite ou rede) — tente de novo em instantes.',
+      );
     } catch (_) {
       setState(
         () => _error =

@@ -3626,3 +3626,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Verificado**: dois testes novos em `coingecko_quote_service_test.dart` (lote em 1 request com duplicado e moeda sumida; lista vazia sem rede e 429 em lote); os de preço individual seguem valendo. Resultado no CI.
 - **Não verificado**: o limite real do CoinGecko com muitas moedas na mesma URL; a tela a olho; o `_load` sem teste de widget.
 - **Pendente**: o Yahoo lançar `QuoteUnavailableException`; cripto em reais; permuta e IR no mobile.
+
+## Sessão 177 — mobile: o Yahoo também separa "fonte indisponível" de "ticker inexistente"
+- **Feito** (fatia pequena, sem plan mode): o GET que classifica 429/5xx/timeout/rede saiu do `CoinGeckoQuoteService` para `services/quote_http.dart` (`quoteGet`) e o `YahooQuoteService` passou a usá-lo, com `http.Client` injetável.
+  As telas de busca de cotação e de cadastro de ativo mostram "Fonte de cotação indisponível agora" nesse caso, em vez de "confira o ticker" (que enganava quando a fonte é que estava fora). O Portfolio já
+  tratava a exceção na Sessão 175, e agora vale para todas as classes.
+- **Verificado**: `yahoo_quote_service_test.dart` (preço e sufixo `.SA`, 429/5xx e timeout/rede como indisponível, 404 e corpo vazio como não encontrado, metal); os testes do CoinGecko seguem cobrindo o helper. Resultado no CI.
+- **Não verificado**: as mensagens das duas telas a olho (sem teste de widget); a resposta real do Yahoo sob limite.
+- **Pendente**: cripto em reais; permuta e IR no mobile.

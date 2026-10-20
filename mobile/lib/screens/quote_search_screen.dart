@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/asset.dart';
 import '../models/quote.dart';
 import '../services/quote_dispatcher.dart';
+import '../services/quote_exceptions.dart';
 
 class QuoteSearchScreen extends StatefulWidget {
   const QuoteSearchScreen({super.key});
@@ -33,6 +34,11 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
     try {
       final quote = await _dispatcher.fetchQuoteForTicker(ticker, _assetClass);
       setState(() => _quote = quote);
+    } on QuoteUnavailableException {
+      setState(
+        () => _error =
+            'Fonte de cotação indisponível agora (limite ou rede) — tente de novo em instantes.',
+      );
     } catch (_) {
       setState(
         () => _error =
