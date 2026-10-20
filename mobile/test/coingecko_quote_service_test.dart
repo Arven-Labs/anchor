@@ -100,6 +100,40 @@ void main() {
     expect(noUsd.fetchQuote('X', coinId: 'x'), throwsA(isA<QuoteNotFoundException>()));
   });
 
+  test('várias moedas saem numa só chamada e a que falta fica de fora', () async {
+    final urls = <Uri>[];
+    final client = MockClient((request) async {
+      urls.add(request.url);
+      return http.Response(
+        jsonEncode({
+          'bitcoin': {'usd': 70000.0},
+          'ethereum': {'usd': 3500},
+        }),
+        200,
+      );
+    });
+    final coingecko = CoinGeckoQuoteService(client: client);
+
+    final prices = await coingecko.fetchPrices(['bitcoin', 'ethereum', 'moeda-sumida', 'bitcoin']);
+
+    expect(prices, {'bitcoin': 70000.0, 'ethereum': 3500.0});
+    expect(urls, hasLength(1));
+    expect(urls.single.queryParameters['ids'], 'bitcoin,ethereum,moeda-sumida');
+  });
+
+  test('lista vazia não chama a rede e 429 na chamada em lote é indisponível', () async {
+    var calls = 0;
+    final client = MockClient((_) async {
+      calls++;
+      return http.Response('{}', 429);
+    });
+    final coingecko = CoinGeckoQuoteService(client: client);
+
+    expect(await coingecko.fetchPrices(const []), isEmpty);
+    expect(calls, 0);
+    expect(coingecko.fetchPrices(['bitcoin']), throwsA(isA<QuoteUnavailableException>()));
+  });
+
   test('busca com status de erro comum ou corpo malformado é não encontrado', () async {
     final (badStatus, _) = service(searchStatus: 404);
     expect(badStatus.fetchQuote('ETH'), throwsA(isA<QuoteNotFoundException>()));

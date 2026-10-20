@@ -61,6 +61,23 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
 
     final positions = await _repository.getPositions();
     final custodias = await _repository.listCustodias();
+
+    // Todas as criptos já cadastradas (com `coin_id`) numa chamada só; se a
+    // fonte falhar, todas ficam "indisponível agora" juntas.
+    final coinIds = {
+      for (final p in positions)
+        if (p.asset.assetClass == AssetClass.cripto &&
+            p.asset.externalId != null)
+          p.asset.externalId!,
+    };
+    var cryptoPrices = <String, double>{};
+    var cryptoUnavailable = false;
+    try {
+      cryptoPrices = await _dispatcher.fetchCryptoPrices(coinIds);
+    } on QuoteUnavailableException {
+      cryptoUnavailable = true;
+    } catch (_) {}
+
     final rows = await Future.wait(
       positions.map((position) async {
         final assetClass = position.asset.assetClass;
@@ -81,6 +98,15 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         // separada no card.
         if (assetClass == AssetClass.empresaNaoListada) {
           return _PositionRow(position, null);
+        }
+
+        final coinId = position.asset.externalId;
+        if (assetClass == AssetClass.cripto && coinId != null) {
+          return _PositionRow(
+            position,
+            cryptoPrices[coinId],
+            priceUnavailable: cryptoUnavailable,
+          );
         }
 
         try {

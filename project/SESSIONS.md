@@ -3618,3 +3618,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Verificado**: `portfolio_screen_test.dart` (rótulo com preço, sem preço, indisponível e preço com a flag); resultado no CI.
 - **Não verificado**: a tela a olho; o card inteiro não tem teste de widget (o `PortfolioScreen` cria o `QuoteDispatcher` sozinho e o repositório usa o banco real).
 - **Pendente**: o Yahoo lançar `QuoteUnavailableException` também; uma só chamada `simple/price?ids=a,b,c`; cripto em reais; permuta e IR no mobile.
+
+## Sessão 176 — cripto no app móvel, etapa 3: uma só chamada para todas as criptos
+- **Feito** (fatia pequena, sem plan mode): `CoinGeckoQuoteService.fetchPrices` cota vários `coin_id` numa chamada (`simple/price?ids=a,b,c`; moeda que não volta fica fora do mapa), `QuoteDispatcher.fetchCryptoPrices` repassa,
+  e o `_load` do Portfolio busca todas as criptos com `externalId` de uma vez (antes era um GET por ativo a cada abertura). Se a fonte falha, todas as criptos ficam "indisponível agora" juntas. Cripto sem `externalId`
+  continua pelo caminho individual (resolve por texto). `_fetchPriceById` passou a usar o lote.
+- **Verificado**: dois testes novos em `coingecko_quote_service_test.dart` (lote em 1 request com duplicado e moeda sumida; lista vazia sem rede e 429 em lote); os de preço individual seguem valendo. Resultado no CI.
+- **Não verificado**: o limite real do CoinGecko com muitas moedas na mesma URL; a tela a olho; o `_load` sem teste de widget.
+- **Pendente**: o Yahoo lançar `QuoteUnavailableException`; cripto em reais; permuta e IR no mobile.

@@ -80,19 +80,38 @@ class CoinGeckoQuoteService {
     return exactMatches.first;
   }
 
-  Future<double> _fetchPriceById(String coinId) async {
+  /// Preço em USD de várias moedas numa só chamada (`ids=a,b,c`) — o
+  /// Portfolio cota todas as criptos de uma vez em vez de um GET por ativo,
+  /// que estoura o limite do plano gratuito. Moeda que o CoinGecko não
+  /// devolve fica de fora do mapa (sem cotação), sem derrubar as outras.
+  Future<Map<String, double>> fetchPrices(Iterable<String> coinIds) async {
+    final ids = coinIds.toSet();
+    if (ids.isEmpty) return {};
+
     final uri = Uri.parse(
       '$_baseUrl/simple/price',
-    ).replace(queryParameters: {'ids': coinId, 'vs_currencies': 'usd'});
+    ).replace(queryParameters: {'ids': ids.join(','), 'vs_currencies': 'usd'});
     final response = await _get(uri);
-    if (response.statusCode != 200) throw QuoteNotFoundException(coinId);
+    if (response.statusCode != 200) {
+      throw QuoteNotFoundException(ids.join(','));
+    }
 
     try {
       final body = jsonDecode(response.body) as Map<String, dynamic>;
-      return ((body[coinId] as Map<String, dynamic>)['usd'] as num).toDouble();
+      return {
+        for (final id in ids)
+          if ((body[id] as Map<String, dynamic>?)?['usd'] case final num usd)
+            id: usd.toDouble(),
+      };
     } catch (_) {
-      throw QuoteNotFoundException(coinId);
+      throw QuoteNotFoundException(ids.join(','));
     }
+  }
+
+  Future<double> _fetchPriceById(String coinId) async {
+    final price = (await fetchPrices([coinId]))[coinId];
+    if (price == null) throw QuoteNotFoundException(coinId);
+    return price;
   }
 
   /// `coinId` já resolvido (ativo já cadastrado) pula a busca por texto —
