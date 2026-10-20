@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -13,6 +15,32 @@ import 'quote_exceptions.dart';
 class CoinGeckoQuoteService {
   static const _baseUrl = 'https://api.coingecko.com/api/v3';
 
+  final http.Client _client;
+
+  CoinGeckoQuoteService({http.Client? client})
+    : _client = client ?? http.Client();
+
+  /// GET que separa "fonte indisponível" de "ativo não existe": 429 (limite
+  /// do plano gratuito), 5xx, timeout e rede fora viram
+  /// `QuoteUnavailableException`; os demais status voltam pro chamador, que
+  /// decide (404 e afins = não encontrado).
+  Future<http.Response> _get(Uri uri) async {
+    final http.Response response;
+    try {
+      response = await _client.get(uri).timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      throw QuoteUnavailableException('coingecko');
+    } on SocketException {
+      throw QuoteUnavailableException('coingecko');
+    } on http.ClientException {
+      throw QuoteUnavailableException('coingecko');
+    }
+    if (response.statusCode == 429 || response.statusCode >= 500) {
+      throw QuoteUnavailableException('coingecko');
+    }
+    return response;
+  }
+
   /// Resolve um símbolo livre (`ETH`) pro `coin_id` canônico do CoinGecko.
   ///
   /// Espelha `resolve_coin_id` do Python: `GET /search?query=X` devolve
@@ -24,12 +52,17 @@ class CoinGeckoQuoteService {
     final uri = Uri.parse(
       '$_baseUrl/search',
     ).replace(queryParameters: {'query': symbol});
-    final response = await http.get(uri).timeout(const Duration(seconds: 15));
+    final response = await _get(uri);
     if (response.statusCode != 200) return null;
 
-    final coins =
-        ((jsonDecode(response.body) as Map<String, dynamic>)['coins'] as List)
-            .cast<Map<String, dynamic>>();
+    final List<Map<String, dynamic>> coins;
+    try {
+      coins =
+          ((jsonDecode(response.body) as Map<String, dynamic>)['coins'] as List)
+              .cast<Map<String, dynamic>>();
+    } catch (_) {
+      return null;
+    }
     final exactMatches = coins
         .where(
           (c) =>
@@ -51,7 +84,7 @@ class CoinGeckoQuoteService {
     final uri = Uri.parse(
       '$_baseUrl/simple/price',
     ).replace(queryParameters: {'ids': coinId, 'vs_currencies': 'usd'});
-    final response = await http.get(uri).timeout(const Duration(seconds: 15));
+    final response = await _get(uri);
     if (response.statusCode != 200) throw QuoteNotFoundException(coinId);
 
     try {

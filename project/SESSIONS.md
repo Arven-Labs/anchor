@@ -3601,3 +3601,12 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   não cripto, quantidade zero, data inválida e ativo inexistente.
 - **Não verificado**: a tela a olho; sem caso novo no E2E (o `taxes.e2e.mjs` continua digitando o valor); dados reais do `-BRL` do Yahoo.
 - **Pendente**: exterior (Lei 14.754); cripto no app móvel; timeout do `statement-review.e2e.mjs` se a instabilidade repetir.
+
+## Sessão 174 — cripto no app móvel, etapa 1: blindar a cotação do CoinGecko
+- **Achado**: o "cripto no app móvel" já existia desde a Sessão 70 (`AssetClass.cripto`, `CoinGeckoQuoteService`, roteamento no `QuoteDispatcher`), mas sem nenhum teste, e qualquer resposta que não fosse 200
+  (inclusive 429 do plano gratuito) virava `QuoteNotFoundException`, igual a um símbolo inventado. O mobile é standalone (SQLite próprio, sem sync, sem tela de impostos). Plan mode; o dono escolheu começar blindando o que existe.
+- **Feito**: `QuoteUnavailableException` (`quote_exceptions.dart`); `CoinGeckoQuoteService` aceita `http.Client` e separa 429/5xx/timeout/rede (indisponível) de 404/corpo sem preço (não encontrado); corpo malformado na busca
+  vira não encontrado. Testes novos com `MockClient` (`coingecko_quote_service_test.dart`, `quote_dispatcher_test.dart`).
+- **Verificado**: só no CI (`ci-mobile.yml`); não há imagem do Flutter no Docker local. Resultado abaixo.
+- **Não verificado**: a API real do CoinGecko; o app em celular.
+- **Pendente (próximas fatias)**: o Portfolio ainda engole o erro (`catch (_)` → preço `null`) e não usa a exceção nova; uma só chamada `simple/price?ids=a,b,c` para várias criptos; cripto em reais; permuta e IR no mobile.
