@@ -3607,6 +3607,7 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   (inclusive 429 do plano gratuito) virava `QuoteNotFoundException`, igual a um símbolo inventado. O mobile é standalone (SQLite próprio, sem sync, sem tela de impostos). Plan mode; o dono escolheu começar blindando o que existe.
 - **Feito**: `QuoteUnavailableException` (`quote_exceptions.dart`); `CoinGeckoQuoteService` aceita `http.Client` e separa 429/5xx/timeout/rede (indisponível) de 404/corpo sem preço (não encontrado); corpo malformado na busca
   vira não encontrado. Testes novos com `MockClient` (`coingecko_quote_service_test.dart`, `quote_dispatcher_test.dart`).
-- **Verificado**: só no CI (`ci-mobile.yml`); não há imagem do Flutter no Docker local. Resultado abaixo.
+- **Verificado**: só no CI (`ci-mobile.yml`); não há imagem do Flutter no Docker local. O 1º envio passou no `flutter analyze` e falhou em 1 de 24 testes, erro meu no teste: para as classes sem fonte
+  automática o `fetchQuoteForTicker` lança na hora (não é `async`), e o `expect` recebia a chamada já estourada; corrigido passando um closure.
 - **Não verificado**: a API real do CoinGecko; o app em celular.
 - **Pendente (próximas fatias)**: o Portfolio ainda engole o erro (`catch (_)` → preço `null`) e não usa a exceção nova; uma só chamada `simple/price?ids=a,b,c` para várias criptos; cripto em reais; permuta e IR no mobile.

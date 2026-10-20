@@ -77,7 +77,8 @@ void main() {
       AssetClass.empresaNaoListada,
     ]) {
       expect(
-        dispatcher.fetchQuoteForTicker('X', assetClass),
+        // Closure: nessas classes o dispatcher lança na hora, sem devolver um Future.
+        () => dispatcher.fetchQuoteForTicker('X', assetClass),
         throwsA(isA<QuoteNotFoundException>()),
         reason: assetClass.name,
       );
