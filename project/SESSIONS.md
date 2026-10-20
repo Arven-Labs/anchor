@@ -3611,3 +3611,10 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   automática o `fetchQuoteForTicker` lança na hora (não é `async`), e o `expect` recebia a chamada já estourada; corrigido passando um closure.
 - **Não verificado**: a API real do CoinGecko; o app em celular.
 - **Pendente (próximas fatias)**: o Portfolio ainda engole o erro (`catch (_)` → preço `null`) e não usa a exceção nova; uma só chamada `simple/price?ids=a,b,c` para várias criptos; cripto em reais; permuta e IR no mobile.
+
+## Sessão 175 — cripto no app móvel, etapa 2: Portfolio mostra "preço indisponível agora"
+- **Feito** (fatia pequena, sem plan mode): `portfolio_screen.dart` captura `QuoteUnavailableException` à parte e marca a linha com `priceUnavailable`; o card mostra "Preço atual: indisponível agora" em vez de "—"
+  (que continua para "sem cotação"). O texto sai de `livePriceLabel`, função pura. Só o CoinGecko lança a exceção nova por enquanto; falhas do Yahoo seguem como "—".
+- **Verificado**: `portfolio_screen_test.dart` (rótulo com preço, sem preço, indisponível e preço com a flag); resultado no CI.
+- **Não verificado**: a tela a olho; o card inteiro não tem teste de widget (o `PortfolioScreen` cria o `QuoteDispatcher` sozinho e o repositório usa o banco real).
+- **Pendente**: o Yahoo lançar `QuoteUnavailableException` também; uma só chamada `simple/price?ids=a,b,c`; cripto em reais; permuta e IR no mobile.

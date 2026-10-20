@@ -5,6 +5,7 @@ import '../models/custodia.dart';
 import '../models/position.dart';
 import '../services/portfolio_repository.dart';
 import '../services/quote_dispatcher.dart';
+import '../services/quote_exceptions.dart';
 import 'add_asset_screen.dart';
 import 'add_transaction_screen.dart';
 import 'custodias_screen.dart';
@@ -22,7 +23,23 @@ class _PositionRow {
   final Position position;
   final double? livePrice;
 
-  const _PositionRow(this.position, this.livePrice);
+  /// A fonte de cotação não respondeu agora (limite de requisições, rede
+  /// fora) — diferente de `livePrice == null` sem isto, que é "sem cotação".
+  final bool priceUnavailable;
+
+  const _PositionRow(
+    this.position,
+    this.livePrice, {
+    this.priceUnavailable = false,
+  });
+}
+
+/// Texto do "Preço atual" do card: o número, "indisponível agora" quando a
+/// fonte falhou de forma passageira, ou "—" quando não há cotação.
+@visibleForTesting
+String livePriceLabel(double? price, {bool unavailable = false}) {
+  if (price != null) return price.toStringAsFixed(2);
+  return unavailable ? 'indisponível agora' : '—';
 }
 
 class _PortfolioScreenState extends State<PortfolioScreen> {
@@ -69,6 +86,8 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         try {
           final quote = await _dispatcher.fetchQuoteForAsset(position.asset);
           return _PositionRow(position, quote.price);
+        } on QuoteUnavailableException {
+          return _PositionRow(position, null, priceUnavailable: true);
         } catch (_) {
           return _PositionRow(position, null);
         }
@@ -261,7 +280,9 @@ class _PositionCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Preço médio: ${avgPrice?.toStringAsFixed(2) ?? '—'}'),
-                  Text('Preço atual: ${livePrice?.toStringAsFixed(2) ?? '—'}'),
+                  Text(
+                    'Preço atual: ${livePriceLabel(livePrice, unavailable: row.priceUnavailable)}',
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
