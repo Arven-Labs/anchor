@@ -2202,8 +2202,9 @@ reais é digitado, com o botão "Use market price" (Sessão 173) que o preenche:
   (`USDBRL=X` do Yahoo, `fx_history.dart`). Tela de IR (`CryptoTaxScreen`), somente leitura (o mobile não guarda pagamento de DARF).
 - **Limites**: sem IRRF; permuta só em BRL e com saldo atual (não o da data); o "preço médio" das posições não leva taxa; migration v6→v7, resposta real do `USDBRL=X` e telas a olho não verificadas (sem Flutter local, só CI).
 - **Exterior no mobile (Sessão 185)**: `domain/foreign_tax.dart` porta o motor anual do desktop (abaixo), com `CostPosition` (`domain/cost_basis.dart`) compartilhado com a cripto, retenção no exterior no lançamento de provento
-  (banco v8) e `ForeignTaxScreen` ("IR de exterior" no Portfolio). Só USD; câmbio de mercado, não PTAX; verificado só pelo CI Mobile.
-- **Pendente**: moedas além de USD no exterior do mobile; PTAX.
+  (banco v8) e `ForeignTaxScreen` ("IR de exterior" no Portfolio). Câmbio de mercado, não PTAX; verificado só pelo CI Mobile. Outras moedas (Sessão 186): uma série `<MOEDA>BRL=X` do Yahoo por moeda dos ativos,
+  em vez de só o USD.
+- **Pendente**: PTAX; cotação cruzada para pares que o Yahoo não tem direto.
 
 **Exterior no desktop (feito, Sessão 184)**: IR anual de ações, ETFs e REITs do exterior (Lei 14.754/2023).
 - **Motor**: `domain/tax/foreign.rs` (`assess_foreign`) apura por ano-calendário, a partir de 2024: cada compra, venda e provento vira reais pelo dólar do próprio dia (`FxHistory::rate_on`), o custo médio nasce em

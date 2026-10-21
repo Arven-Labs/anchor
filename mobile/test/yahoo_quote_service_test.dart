@@ -109,6 +109,24 @@ void main() {
       expect(fx.rateOn(DateTime(2026, 1, 3)), 5.0, reason: 'o dia 03 não tem fechamento, vale o 02');
     });
 
+    test('outra moeda pede o par dela com o real', () async {
+      late Uri url;
+      final yahoo = YahooQuoteService(
+        client: MockClient((request) async {
+          url = request.url;
+          return http.Response(jsonEncode(fxChart([jan2], [6.2])), 200);
+        }),
+      );
+
+      final fx = await yahoo.fetchFxHistory(
+        from: DateTime(2026, 1, 2),
+        currency: ' eur ',
+      );
+
+      expect(url.path, endsWith('/EURBRL=X'));
+      expect(fx.rateOn(DateTime(2026, 1, 2)), 6.2);
+    });
+
     test('429 é indisponível; 404, série vazia e corpo estranho são não encontrado', () async {
       Future<void> fetch(YahooQuoteService yahoo) => yahoo.fetchFxHistory(from: DateTime(2026, 1, 2));
 

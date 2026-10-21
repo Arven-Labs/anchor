@@ -65,12 +65,16 @@ class YahooQuoteService {
     }
   }
 
-  /// Série diária do dólar em reais (`USDBRL=X`) desde `from` (menos uma
-  /// semana de folga pro dia mais próximo achar vizinho) até hoje — o IR de
-  /// cripto em USD converte cada operação pelo câmbio da data dela. Datas em
-  /// UTC; fechamento nulo (dia sem pregão) é descartado.
-  Future<FxHistory> fetchFxHistory({required DateTime from}) async {
-    const symbol = 'USDBRL=X';
+  /// Série diária de `currency` em reais (`USDBRL=X`, `EURBRL=X`…) desde
+  /// `from` (menos uma semana de folga pro dia mais próximo achar vizinho)
+  /// até hoje — o IR de cripto em USD e o de exterior convertem cada operação
+  /// pelo câmbio da data dela. Datas em UTC; fechamento nulo (dia sem
+  /// pregão) é descartado. Moeda que o Yahoo não conhece é não encontrada.
+  Future<FxHistory> fetchFxHistory({
+    required DateTime from,
+    String currency = 'USD',
+  }) async {
+    final symbol = '${currency.trim().toUpperCase()}BRL=X';
     final start = DateTime.utc(
       from.year,
       from.month,

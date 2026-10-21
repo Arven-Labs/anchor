@@ -63,11 +63,11 @@ void main() {
   ForeignTaxAssessment run(
     List<PortfolioTransaction> transactions, {
     List<Asset>? withAssets,
-    FxHistory? usdBrl,
+    Map<String, FxHistory>? fx,
   }) => assessForeignTax(
     withAssets ?? assets,
     transactions,
-    usdBrl: usdBrl ?? yearlyRates(),
+    fx: fx ?? {'USD': yearlyRates()},
   );
 
   Matcher near(double expected) => closeTo(expected, 1e-6);
@@ -159,7 +159,10 @@ void main() {
   });
 
   test('sem câmbio na data o item fica de fora e o ano avisa', () {
-    final result = run([dividend(1, '2027-05-15', 100)], usdBrl: FxHistory([]));
+    final result = run(
+      [dividend(1, '2027-05-15', 100)],
+      fx: {'USD': FxHistory([])},
+    );
 
     expect(result.years, isEmpty);
     expect(result.warnings.single.kind, ForeignTaxWarningKind.fxMissing);
@@ -209,27 +212,89 @@ void main() {
     expect(sale.gain, near(700));
   });
 
-  test('ativo em BRL vale 1 e outras classes e moedas não entram', () {
+  test('ativo em BRL vale 1 e outras classes não entram', () {
     final reit = stock(3, 'O', assetClass: AssetClass.reit, currency: 'BRL');
     final brStock = stock(4, 'PETR4', assetClass: AssetClass.acaoBr, currency: 'BRL');
-    final eur = stock(5, 'SAP', currency: 'EUR');
     final result = run(
       [
         buy(3, '2025-01-15', 1, 100),
         sell(3, '2025-06-15', 1, 150),
         buy(4, '2025-01-15', 1, 100),
         sell(4, '2025-06-15', 1, 150),
-        buy(5, '2025-01-15', 1, 100),
-        sell(5, '2025-06-15', 1, 150),
       ],
-      withAssets: [reit, brStock, eur],
+      withAssets: [reit, brStock],
     );
 
-    // só o REIT em BRL (câmbio 1) é apurado; o EUR sai com aviso de câmbio
     expect(result.years.single.capitalGain, near(50));
     expect(result.years.single.sales.single.ticker, 'O');
-    expect(result.warnings.single.kind, ForeignTaxWarningKind.fxMissing);
-    expect(result.warnings.single.year, 2025);
+    expect(result.warnings, isEmpty);
+  });
+
+  group('outras moedas', () {
+    final sap = stock(5, 'SAP', currency: 'EUR');
+
+    // Euro a R$ 7 em 2024 e R$ 8 em 2025.
+    FxHistory euroRates() => FxHistory([
+      for (var m = 1; m <= 12; m++) (DateTime.utc(2024, m, 15), 7.0),
+      for (var m = 1; m <= 12; m++) (DateTime.utc(2025, m, 15), 8.0),
+    ]);
+
+    test('cada moeda converte pela própria série', () {
+      // AAPL em USD (5 → 6) e SAP em EUR (7 → 8), cada uma com seu câmbio
+      final result = run(
+        [
+          buy(1, '2024-03-15', 1, 100),
+          sell(1, '2025-03-15', 1, 120),
+          buy(5, '2024-03-15', 1, 100),
+          sell(5, '2025-03-15', 1, 120),
+        ],
+        withAssets: [...assets, sap],
+        fx: {'USD': yearlyRates(), 'EUR': euroRates()},
+      );
+      final year = result.years.single;
+
+      // USD: 120 × 6 − 100 × 5 = 220; EUR: 120 × 8 − 100 × 7 = 260
+      expect(result.warnings, isEmpty);
+      expect(year.capitalGain, near(480));
+      expect(year.sales.map((s) => (s.ticker, s.currency, s.fxRate)), [
+        ('AAPL', 'USD', 6.0),
+        ('SAP', 'EUR', 8.0),
+      ]);
+    });
+
+    test('moeda sem série fica de fora com aviso e as outras seguem', () {
+      final result = run(
+        [
+          buy(1, '2024-03-15', 1, 100),
+          sell(1, '2025-03-15', 1, 120),
+          buy(5, '2025-01-15', 1, 100),
+          sell(5, '2025-06-15', 1, 150),
+        ],
+        withAssets: [...assets, sap],
+      );
+
+      expect(result.years.single.sales.single.ticker, 'AAPL');
+      expect(result.warnings.single.kind, ForeignTaxWarningKind.fxMissing);
+      expect(result.warnings.single.year, 2025);
+    });
+
+    test('dividendo em euro soma à base e a retenção vira crédito', () {
+      // € 100 a R$ 8 = 800, retido € 10 = 80; imposto 120, crédito 80
+      final result = run(
+        [
+          tx(5, '2025-05-15', TransactionType.provento, 1, 100, withheld: 10),
+        ],
+        withAssets: [...assets, sap],
+        fx: {'EUR': euroRates()},
+      );
+      final year = result.years.single;
+
+      expect(year.dividends, near(800));
+      expect(year.withheld, near(80));
+      expect(year.taxBeforeCredit, near(120));
+      expect(year.creditUsed, near(80));
+      expect(year.taxDue, near(40));
+    });
   });
 
   test('transferência, aporte e retirada não mexem na apuração', () {

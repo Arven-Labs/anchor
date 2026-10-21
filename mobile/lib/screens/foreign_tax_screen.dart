@@ -10,15 +10,16 @@ import 'crypto_tax_screen.dart' show formatBrl, formatDay;
 @visibleForTesting
 const foreignIntroNote =
     'Calculado só com as transações lançadas neste app, a custo médio, com a '
-    'taxa de cada operação e em reais pelo dólar do dia de cada fato. Vai na '
-    'declaração anual, sem DARF mensal. O câmbio é o de mercado (Yahoo, '
-    'USDBRL=X), não a PTAX da Receita, então o valor é aproximado. As regras '
-    'vêm de fontes secundárias: confira na Receita antes de pagar.';
+    'taxa de cada operação e em reais pelo câmbio do dia de cada fato. Vai na '
+    'declaração anual, sem DARF mensal. O câmbio é o de mercado (Yahoo, par da '
+    'moeda com o real, como USDBRL=X), não a PTAX da Receita, então o valor é '
+    'aproximado. As regras vêm de fontes secundárias: confira na Receita '
+    'antes de pagar.';
 
 @visibleForTesting
 const foreignFxUnavailableNote =
-    'Câmbio indisponível agora: as operações em USD ficaram de fora. '
-    'Tente de novo em instantes.';
+    'Câmbio indisponível agora para alguma moeda: as operações nela ficaram '
+    'de fora. Tente de novo em instantes.';
 
 /// Situação do ano numa frase: imposto estimado, coberto pelo crédito, sem
 /// imposto por prejuízo ou sem imposto por ficar abaixo do que já foi retido.
@@ -48,7 +49,7 @@ String foreignWarningText(ForeignTaxWarning warning) {
           'conhecido. Lance as compras que faltam.';
     case ForeignTaxWarningKind.fxMissing:
       return 'Operações ou proventos de ${warning.year} sem câmbio para a '
-          'data (ou em moeda que não é USD): ficaram de fora da apuração.';
+          'data: ficaram de fora da apuração.';
   }
 }
 
@@ -79,29 +80,39 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
     final assets = await _repository.listAssets();
     final transactions = await _repository.listAllTransactions();
 
-    // O custo médio nasce em reais, então o câmbio vale desde a 1ª compra de
-    // um ativo do exterior em USD (não só desde a 1ª venda ou provento).
-    final usdIds = {
+    // O custo médio nasce em reais, então o câmbio de cada moeda vale desde a
+    // 1ª compra de um ativo do exterior nela (não só desde a 1ª venda ou
+    // provento). Uma chamada por moeda que não é BRL.
+    final currencyById = {
       for (final a in assets)
         if (foreignAssetClasses.contains(a.assetClass) &&
-            a.currency == 'USD' &&
+            a.currency != 'BRL' &&
             a.id != null)
-          a.id!,
+          a.id!: a.currency,
     };
-    final usdDates = [
-      for (final t in transactions)
-        if (usdIds.contains(t.assetId) &&
-            (t.type == TransactionType.compra ||
-                t.type == TransactionType.venda ||
-                t.type == TransactionType.provento))
-          t.date,
-    ]..sort();
+    final firstDateOf = <String, DateTime>{};
+    for (final t in transactions) {
+      final currency = currencyById[t.assetId];
+      if (currency == null ||
+          (t.type != TransactionType.compra &&
+              t.type != TransactionType.venda &&
+              t.type != TransactionType.provento)) {
+        continue;
+      }
+      final first = firstDateOf[currency];
+      if (first == null || t.date.isBefore(first)) {
+        firstDateOf[currency] = t.date;
+      }
+    }
 
-    FxHistory? usdBrl;
+    final fx = <String, FxHistory>{};
     var fxUnavailable = false;
-    if (usdDates.isNotEmpty) {
+    for (final entry in firstDateOf.entries) {
       try {
-        usdBrl = await _yahoo.fetchFxHistory(from: usdDates.first);
+        fx[entry.key] = await _yahoo.fetchFxHistory(
+          from: entry.value,
+          currency: entry.key,
+        );
       } catch (_) {
         fxUnavailable = true;
       }
@@ -109,7 +120,7 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
 
     if (!mounted) return;
     setState(() {
-      _assessment = assessForeignTax(assets, transactions, usdBrl: usdBrl);
+      _assessment = assessForeignTax(assets, transactions, fx: fx);
       _fxUnavailable = fxUnavailable;
       _loading = false;
     });
