@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anchor_mobile/domain/foreign_tax.dart';
+import 'package:anchor_mobile/domain/ptax_series.dart';
 import 'package:anchor_mobile/screens/foreign_tax_screen.dart';
 
 void main() {
@@ -70,8 +71,24 @@ void main() {
     );
   });
 
-  test('a nota avisa que o câmbio é de mercado e não a PTAX', () {
-    expect(foreignIntroNote, contains('não a PTAX'));
+  test('o aviso de câmbio aproximado fala do ano e da PTAX', () {
+    final text = foreignWarningText(
+      const ForeignTaxWarning.fxApproximate(year: 2025),
+    );
+
+    expect(text, contains('2025'));
+    expect(text, contains('PTAX do Banco Central'));
+    expect(text, contains('aproximados'));
+  });
+
+  test('a nota diz que a conversão é pela PTAX, com o mercado de reserva', () {
+    expect(foreignIntroNote, contains('PTAX do Banco Central'));
+    expect(foreignIntroNote, contains('câmbio de mercado'));
     expect(foreignIntroNote, contains('sem DARF mensal'));
+  });
+
+  test('a taxa de cada fato diz de onde veio', () {
+    expect(foreignRateLabel(6.2086, RateSource.ptax), 'Câmbio 6,2086 (PTAX)');
+    expect(foreignRateLabel(6, RateSource.market), 'Câmbio 6,0000 (mercado)');
   });
 }

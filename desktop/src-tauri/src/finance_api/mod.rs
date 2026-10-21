@@ -9,6 +9,7 @@ pub mod crypto;
 pub mod fii;
 pub mod fx;
 pub mod metals;
+pub mod ptax_store;
 pub mod reit;
 pub mod selic_store;
 pub mod stocks;

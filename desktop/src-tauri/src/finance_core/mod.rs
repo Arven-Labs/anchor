@@ -35,6 +35,7 @@ pub mod api_keys;
 pub mod b3_index_stats;
 pub mod b3_options;
 pub mod b3_taxa_swap;
+pub mod bcb_ptax;
 pub mod bcb_sgs;
 pub mod black_scholes;
 pub mod bolsai;

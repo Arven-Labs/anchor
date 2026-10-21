@@ -7,16 +7,18 @@
 // - Vale para fatos a partir de 2024. Venda de antes disso não é apurada, mas
 //   as compras de antes de 2024 ainda formam o custo médio.
 // - Cada operação e cada provento é convertido para reais pelo câmbio do
-//   próprio dia (`fx`, uma série por moeda); o custo médio já nasce em reais.
-//   Ativo em BRL vale 1. Moeda sem série, ou sem câmbio na data, deixa o item
-//   de fora e avisa o ano.
+//   próprio dia; o custo médio já nasce em reais. A lei (art. 15) manda a PTAX
+//   de fechamento para venda (`ptax`, uma série por moeda); o imposto retido no
+//   exterior usa a de compra. Sem PTAX, vale o câmbio de mercado (`fx`) e o
+//   ano avisa que é aproximado. Ativo em BRL vale 1. Sem nenhum dos dois, o
+//   item fica de fora e o ano avisa.
 // - Ganhos e perdas do ano se compensam e os proventos brutos somam ao
 //   resultado. Resultado negativo vira prejuízo que abate a base dos anos
 //   seguintes. Não há isenção de R$ 35 mil nem DARF mensal.
 // - Imposto = base × 15%. O imposto retido no exterior abate o devido, até o
 //   limite dele.
-// - A Receita usa a PTAX; aqui vale o câmbio de mercado do `FxHistory`
-//   (Yahoo), então o valor é aproximado.
+// - Dia sem PTAX (fim de semana, feriado) usa a última anterior, até 10 dias
+//   (`PtaxSeries`).
 //
 // ATENÇÃO: os valores vêm de fontes secundárias, as mesmas do desktop;
 // conferir na Receita antes de confiar. O mobile não tem desdobramento nem
@@ -26,6 +28,7 @@ import '../models/asset.dart';
 import '../models/portfolio_transaction.dart';
 import 'cost_basis.dart';
 import 'fx_history.dart';
+import 'ptax_series.dart';
 
 const foreignTaxRate = 0.15;
 
@@ -52,6 +55,9 @@ class ForeignSale {
   /// Câmbio do dia da venda (1 para ativo em BRL).
   final double fxRate;
 
+  /// PTAX ou câmbio de mercado (de reserva).
+  final RateSource fxSource;
+
   /// Valor de venda bruto, em BRL (só da parte com custo conhecido).
   final double saleValue;
 
@@ -72,6 +78,7 @@ class ForeignSale {
     required this.date,
     required this.quantity,
     required this.fxRate,
+    required this.fxSource,
     required this.saleValue,
     required this.proceeds,
     required this.cost,
@@ -86,7 +93,10 @@ class ForeignDividendItem {
   final String ticker;
   final String currency;
   final DateTime date;
+
+  /// Câmbio do dia do provento (venda).
   final double fxRate;
+  final RateSource fxSource;
 
   /// Bruto, em BRL.
   final double gross;
@@ -101,6 +111,7 @@ class ForeignDividendItem {
     required this.currency,
     required this.date,
     required this.fxRate,
+    required this.fxSource,
     required this.gross,
     required this.withheld,
   });
@@ -149,6 +160,10 @@ enum ForeignTaxWarningKind {
   /// Operação ou provento do ano (`year`) sem câmbio na data (ou em moeda sem
   /// série): ficou de fora da apuração.
   fxMissing,
+
+  /// Operação ou provento do ano (`year`) convertido pelo câmbio de mercado
+  /// porque a PTAX faltava: o valor do ano é aproximado.
+  fxApproximate,
 }
 
 class ForeignTaxWarning {
@@ -167,6 +182,11 @@ class ForeignTaxWarning {
     : kind = ForeignTaxWarningKind.fxMissing,
       ticker = null,
       date = null;
+
+  const ForeignTaxWarning.fxApproximate({required int this.year})
+    : kind = ForeignTaxWarningKind.fxApproximate,
+      ticker = null,
+      date = null;
 }
 
 class ForeignTaxAssessment {
@@ -176,12 +196,24 @@ class ForeignTaxAssessment {
   const ForeignTaxAssessment({required this.years, required this.warnings});
 }
 
-/// Câmbio para BRL do dia: 1 para BRL, a série da moeda em `fx` para as
-/// outras, `null` sem cotação (série ausente ou vazia).
-double? _rateToBrl(String currency, DateTime date, Map<String, FxHistory> fx) {
-  if (currency == 'BRL') return 1.0;
-  final rate = fx[currency]?.rateOn(date);
-  return rate != null && rate.isFinite && rate > 0 ? rate : null;
+/// Câmbio para BRL do dia e de onde veio: 1 para BRL (exato, conta como PTAX
+/// para não marcar o ano como aproximado); a PTAX da moeda em `ptax` quando
+/// houver; senão a série de mercado em `fx`; `null` sem nenhuma das duas.
+(double, RateSource)? _rateToBrl(
+  String currency,
+  DateTime date,
+  RateKind kind,
+  Map<String, PtaxSeries> ptax,
+  Map<String, FxHistory> fx,
+) {
+  if (currency == 'BRL') return (1.0, RateSource.ptax);
+  final official = ptax[currency]?.rate(date, kind);
+  if (official != null) return (official, RateSource.ptax);
+  final market = fx[currency]?.rateOn(date);
+  if (market != null && market.isFinite && market > 0) {
+    return (market, RateSource.market);
+  }
+  return null;
 }
 
 DateTime _day(DateTime date) => DateTime(date.year, date.month, date.day);
@@ -192,10 +224,12 @@ DateTime _day(DateTime date) => DateTime(date.year, date.month, date.day);
 ForeignTaxAssessment assessForeignTax(
   List<Asset> assets,
   List<PortfolioTransaction> transactions, {
+  Map<String, PtaxSeries> ptax = const {},
   Map<String, FxHistory> fx = const {},
 }) {
   final warnings = <ForeignTaxWarning>[];
   final fxMissingYears = <int>{};
+  final fxApproximateYears = <int>{};
   final foreignById = {
     for (final asset in assets)
       if (foreignAssetClasses.contains(asset.assetClass) && asset.id != null)
@@ -237,11 +271,19 @@ ForeignTaxAssessment assessForeignTax(
   for (final (_, tx) in trades) {
     final asset = foreignById[tx.assetId]!;
     final id = asset.id!;
-    final rate = _rateToBrl(asset.currency, tx.date, fx);
-    if (rate == null) {
+    final converted = _rateToBrl(
+      asset.currency,
+      tx.date,
+      RateKind.sell,
+      ptax,
+      fx,
+    );
+    if (converted == null) {
       fxMissingYears.add(tx.date.year);
       continue;
     }
+    final (rate, source) = converted;
+    if (source == RateSource.market) fxApproximateYears.add(tx.date.year);
     final quantity = tx.quantity ?? 0;
     final position = positions.putIfAbsent(id, CostPosition.new);
     if (tx.type == TransactionType.compra) {
@@ -271,6 +313,7 @@ ForeignTaxAssessment assessForeignTax(
             date: tx.date,
             quantity: covered,
             fxRate: rate,
+            fxSource: source,
             saleValue: tx.totalValue * rate * share,
             proceeds: proceeds,
             cost: cost,
@@ -283,10 +326,26 @@ ForeignTaxAssessment assessForeignTax(
   final dividendsByYear = <int, List<ForeignDividendItem>>{};
   for (final tx in dividendTxs.where((t) => t.date.year >= foreignFirstYear)) {
     final asset = foreignById[tx.assetId]!;
-    final rate = _rateToBrl(asset.currency, tx.date, fx);
-    if (rate == null) {
+    final converted = _rateToBrl(
+      asset.currency,
+      tx.date,
+      RateKind.sell,
+      ptax,
+      fx,
+    );
+    if (converted == null) {
       fxMissingYears.add(tx.date.year);
       continue;
+    }
+    final (rate, source) = converted;
+    // O imposto retido usa a cotação para compra; sem ela, a de venda do mesmo dia.
+    final (withheldRate, withheldSource) =
+        _rateToBrl(asset.currency, tx.date, RateKind.buy, ptax, fx) ??
+        converted;
+    if (source == RateSource.market ||
+        ((tx.foreignTaxWithheld ?? 0) > 0 &&
+            withheldSource == RateSource.market)) {
+      fxApproximateYears.add(tx.date.year);
     }
     dividendsByYear
         .putIfAbsent(tx.date.year, () => [])
@@ -298,8 +357,9 @@ ForeignTaxAssessment assessForeignTax(
             currency: asset.currency,
             date: tx.date,
             fxRate: rate,
+            fxSource: source,
             gross: tx.totalValue * rate,
-            withheld: (tx.foreignTaxWithheld ?? 0) * rate,
+            withheld: (tx.foreignTaxWithheld ?? 0) * withheldRate,
           ),
         );
   }
@@ -359,6 +419,9 @@ ForeignTaxAssessment assessForeignTax(
     );
   }
 
+  for (final year in fxApproximateYears.toList()..sort()) {
+    warnings.add(ForeignTaxWarning.fxApproximate(year: year));
+  }
   for (final year in fxMissingYears.toList()..sort()) {
     warnings.add(ForeignTaxWarning.fxMissing(year: year));
   }

@@ -141,6 +141,8 @@ pub enum TaxWarning {
     ForeignSales { year: i32 },
     /// Operação ou provento no exterior sem cotação do câmbio na data: ficou de fora da apuração anual.
     ForeignFxMissing { year: i32 },
+    /// Operação ou provento no exterior convertido pelo câmbio de mercado (a PTAX do dia faltava): o valor do ano é aproximado.
+    ForeignFxApproximate { year: i32 },
     /// Opção exercida: o resultado não é apurado aqui (o prêmio vai pro custo da ação).
     OptionExercised { ticker: String, date: NaiveDate },
 }

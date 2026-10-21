@@ -33,6 +33,7 @@ pub mod macro_index_monthly;
 pub mod option_position;
 pub mod portfolio;
 pub mod projected_ceiling_inputs;
+pub mod ptax_daily;
 pub mod reit_fundamentals;
 pub mod reit_manual_indicators;
 pub mod rim_inputs;

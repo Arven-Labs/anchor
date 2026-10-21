@@ -19,6 +19,7 @@ use crate::commands::currency::load_fx_history;
 use crate::domain::option_position as option_calc;
 use crate::domain::tax::assessment::{self, Assessment, OptionResult, Side, Trade};
 use crate::domain::tax::classify::{treatment, TaxTreatment};
+use crate::domain::ptax::{RateKind, RateSource};
 use crate::domain::tax::foreign;
 use crate::domain::tax::rules::{self, Rule, RuleSet};
 use crate::entity::{
@@ -26,7 +27,7 @@ use crate::entity::{
     portfolio, tax_payments, tax_rules, transactions,
 };
 use crate::error::AppError;
-use crate::finance_api::client;
+use crate::finance_api::{client, ptax_store};
 
 const BUY: &str = "compra";
 const SELL: &str = "venda";
@@ -209,12 +210,50 @@ pub(crate) async fn assess_workspace(
         .chain(dividends.iter().map(|d| d.currency.clone()))
         .filter(|c| c != "BRL")
         .collect();
+    // A lei manda a PTAX do Banco Central (gravada por `refresh_ptax`); onde ela falta, vale o câmbio de mercado.
+    let ptax = ptax_store::stored(db, &currencies).await?;
     let fx = load_fx_history(db, "BRL", &currencies).await?;
-    let (years, warnings) =
-        foreign::assess_foreign(&trades, &dividends, &rules, &|currency, date| fx.rate_on(currency, "BRL", date))?;
+    let rate = |currency: &str, date: NaiveDate, kind: RateKind| {
+        ptax.rate(currency, date, kind)
+            .map(|rate| (rate, RateSource::Ptax))
+            .or_else(|| fx.rate_on(currency, "BRL", date).map(|rate| (rate, RateSource::Market)))
+    };
+    let (years, warnings) = foreign::assess_foreign(&trades, &dividends, &rules, &rate)?;
     assessment.foreign_years = years;
     assessment.warnings.extend(warnings);
     Ok(assessment)
+}
+
+/// Completa a PTAX gravada (`ptax_daily`) para as moedas dos ativos do exterior, do primeiro ao último fato de cada
+/// uma (as compras antigas formam o custo médio). Vai ao BCB só com `allow_network`; falha vai para o log e nunca
+/// derruba quem chama: a apuração segue com a PTAX gravada e o câmbio de mercado de reserva.
+async fn refresh_ptax(db: &DatabaseConnection, workspace_id: i32, allow_network: bool) {
+    if !allow_network {
+        return;
+    }
+    let result: Result<(), AppError> = async {
+        let trades = load_trades(db, workspace_id).await?;
+        let dividends = load_foreign_dividends(db, workspace_id).await?;
+        let mut span: HashMap<String, (NaiveDate, NaiveDate)> = HashMap::new();
+        let facts = trades
+            .iter()
+            .filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning)
+            .map(|t| (t.currency.clone(), t.date))
+            .chain(dividends.iter().map(|d| (d.currency.clone(), d.date)));
+        for (currency, date) in facts.filter(|(currency, _)| currency != "BRL") {
+            let entry = span.entry(currency).or_insert((date, date));
+            entry.0 = entry.0.min(date);
+            entry.1 = entry.1.max(date);
+        }
+        for (currency, (since, until)) in span {
+            ptax_store::refresh(db, &currency, since, until).await?;
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(err) = result {
+        eprintln!("PTAX: using what is stored after a refresh failure: {err}");
+    }
 }
 
 /// Proventos dos ativos do exterior de todas as carteiras do Workspace, na moeda do ativo, com a retenção lá fora.
@@ -511,6 +550,7 @@ pub async fn get_tax_assessment(
     workspace_id: i32,
 ) -> Result<TaxAssessmentView, AppError> {
     let db = db.inner();
+    refresh_ptax(db, workspace_id, std::env::var_os(crate::ingestion::DISABLE_ENV).is_none()).await;
     let assessment = assess_workspace(db, workspace_id).await?;
     let payments = tax_payments::Entity::find()
         .filter(tax_payments::Column::WorkspaceId.eq(workspace_id))

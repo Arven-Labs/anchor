@@ -20,6 +20,7 @@ pub mod porquinho_yield;
 pub mod position_pricing;
 pub mod projected_ceiling;
 pub mod proventos;
+pub mod ptax;
 pub mod rates;
 pub mod rim;
 pub mod rnav;

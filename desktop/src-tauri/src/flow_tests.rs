@@ -4121,6 +4121,84 @@ async fn foreign_assets_are_assessed_yearly_in_reais_with_the_foreign_withholdin
         !assessment.warnings.iter().any(|w| matches!(w, crate::domain::tax::assessment::TaxWarning::ForeignSales { .. })),
         "de 2024 em diante não há mais o aviso antigo"
     );
+    // Sem PTAX gravada a conversão cai no câmbio de mercado, e o ano avisa que é aproximado.
+    assert!(assessment.warnings.iter().any(
+        |w| matches!(w, crate::domain::tax::assessment::TaxWarning::ForeignFxApproximate { year: 2025 })
+    ));
+    assert_eq!(y.sales[0].fx_source, crate::domain::ptax::RateSource::Market);
+}
+
+async fn seed_ptax(db: &sea_orm::DatabaseConnection, currency: &str, date: &str, buy: f64, sell: f64) {
+    use sea_orm::{ActiveModelTrait, Set};
+    crate::entity::ptax_daily::ActiveModel {
+        currency: Set(currency.to_string()),
+        reference_date: Set(date.to_string()),
+        buy: Set(buy),
+        sell: Set(sell),
+        source: Set("test".to_string()),
+        fetched_at: Set("2026-10-21T00:00:00Z".to_string()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .expect("insert ptax");
+}
+
+#[tokio::test]
+async fn the_stored_ptax_decides_the_foreign_assessment_and_the_withholding_uses_the_buy_quote() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "PTAX").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    // O câmbio de mercado diz 5 e 6, mas a PTAX gravada manda: compra a 5,5 e venda a 6,5.
+    seed_price(&db, "USDBRL", "2025-01-10", 5.0).await;
+    seed_price(&db, "USDBRL", "2025-06-10", 6.0).await;
+    seed_price(&db, "USDBRL", "2025-09-10", 6.0).await;
+    seed_ptax(&db, "USD", "2025-01-10", 5.49, 5.5).await;
+    seed_ptax(&db, "USD", "2025-06-10", 6.49, 6.5).await;
+    seed_ptax(&db, "USD", "2025-09-10", 6.4, 6.5).await;
+    trade(&db, pf.id, aapl.id, "compra", 10.0, 1000.0, "2025-01-10").await;
+    trade(&db, pf.id, aapl.id, "venda", 10.0, 1200.0, "2025-06-10").await;
+    let mut dividend = tx_request(pf.id, aapl.id, "provento", 1.0, 100.0, "2025-09-10", 0.0);
+    dividend.payment_type = Some("dividendo".to_string());
+    dividend.foreign_tax_withheld = Some(10.0);
+    add(&db, dividend).await;
+
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    let y = &assessment.foreign_years[0];
+    // custo 1.000 × 5,5 = 5.500; venda 1.200 × 6,5 = 7.800 → ganho 2.300; provento 650; retido 10 × 6,4 (compra) = 64
+    assert!(close(y.capital_gain, 2300.0) && close(y.dividends, 650.0) && close(y.withheld, 64.0), "{y:?}");
+    // base 2.950 × 15% = 442,50; crédito 64
+    assert!(close(y.tax_before_credit, 442.5) && close(y.tax_due, 378.5), "{y:?}");
+    assert_eq!(y.sales[0].fx_source, crate::domain::ptax::RateSource::Ptax);
+    assert!(!assessment.warnings.iter().any(|w| matches!(
+        w,
+        crate::domain::tax::assessment::TaxWarning::ForeignFxApproximate { .. }
+    )));
+}
+
+#[tokio::test]
+async fn a_weekend_fact_uses_the_last_ptax_before_it_and_a_long_gap_falls_back_to_the_market() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "PTAX").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    seed_price(&db, "USDBRL", "2025-03-01", 5.0).await;
+    seed_price(&db, "USDBRL", "2025-06-01", 5.0).await;
+    // PTAX só na sexta 28/02/2025 e nada depois: o sábado 01/03 usa a sexta; 01/06 está a mais de 10 dias dela.
+    seed_ptax(&db, "USD", "2025-02-28", 5.9, 6.0).await;
+    trade(&db, pf.id, aapl.id, "compra", 1.0, 100.0, "2025-03-01").await;
+    trade(&db, pf.id, aapl.id, "venda", 1.0, 100.0, "2025-06-01").await;
+
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    let sale = &assessment.foreign_years[0].sales[0];
+    // custo 100 × 6,0 (PTAX da sexta); venda 100 × 5,0 (mercado) → perda de 100
+    assert!(close(sale.cost, 600.0) && close(sale.sale_value, 500.0), "{sale:?}");
+    assert_eq!(sale.fx_source, crate::domain::ptax::RateSource::Market);
+    assert!(assessment.warnings.iter().any(|w| matches!(
+        w,
+        crate::domain::tax::assessment::TaxWarning::ForeignFxApproximate { year: 2025 }
+    )));
 }
 
 #[tokio::test]

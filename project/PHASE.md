@@ -2204,7 +2204,9 @@ reais é digitado, com o botão "Use market price" (Sessão 173) que o preenche:
 - **Exterior no mobile (Sessão 185)**: `domain/foreign_tax.dart` porta o motor anual do desktop (abaixo), com `CostPosition` (`domain/cost_basis.dart`) compartilhado com a cripto, retenção no exterior no lançamento de provento
   (banco v8) e `ForeignTaxScreen` ("IR de exterior" no Portfolio). Câmbio de mercado, não PTAX; verificado só pelo CI Mobile. Outras moedas (Sessão 186): uma série `<MOEDA>BRL=X` do Yahoo por moeda dos ativos,
   em vez de só o USD.
-- **Pendente**: PTAX; cotação cruzada para pares que o Yahoo não tem direto.
+- **PTAX (Sessão 187)**: o exterior passa a converter pela PTAX do Banco Central (Olinda; fechamento para venda, compra no imposto retido, última anterior em dia sem cotação), no desktop (`bcb_ptax.rs`, `ptax_daily`, `ptax_store.rs`)
+  e no mobile (`bcb_ptax_service.dart`), com o câmbio de mercado de reserva e aviso de ano aproximado. Regra do dia sem cotação a conferir na Receita.
+- **Pendente**: informe de Bens e Direitos (PTAX de 31/12); cotação cruzada para pares que o Yahoo não tem direto.
 
 **Exterior no desktop (feito, Sessão 184)**: IR anual de ações, ETFs e REITs do exterior (Lei 14.754/2023).
 - **Motor**: `domain/tax/foreign.rs` (`assess_foreign`) apura por ano-calendário, a partir de 2024: cada compra, venda e provento vira reais pelo dólar do próprio dia (`FxHistory::rate_on`), o custo médio nasce em

@@ -3732,3 +3732,15 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Verificado**: CI Mobile (commit `175e28f`): `flutter analyze` e `flutter test` passaram, incluindo os testes novos (cada moeda pela própria série, moeda sem série com aviso, dividendo em euro com retenção, `fetchFxHistory` com `currency`).
 - **Não verificado**: a resposta real do Yahoo para pares como `EURBRL=X` e para moedas exóticas (o par pode não existir direto: aparece como câmbio indisponível); a tela a olho.
 - **Pendente**: PTAX; "Bens e Direitos" para a DAA; entidades offshore e come-cotas; cotação cruzada para pares que o Yahoo não tem direto.
+
+## Sessão 187 — PTAX do Banco Central no IR de exterior (desktop e mobile)
+- **A regra** (lida no texto da Lei 14.754 do site da Câmara): art. 15, a conversão usa a cotação de **fechamento para venda** do Banco Central na data do fato gerador; o imposto pago no exterior (crédito) usa a de **compra** do dia do
+  pagamento. Dia sem PTAX (fim de semana, feriado) usa a última anterior, até 10 dias: prática usual, **não lida na lei**, conferir na Receita. O informe de Bens e Direitos usa a PTAX de 31/12 e segue fora.
+- **A fonte** (testada ao vivo): Olinda do BCB, datas `'MM-DD-YYYY'`. Dólar: `CotacaoDolarPeriodo`, uma linha por dia útil. Outras moedas: `CotacaoMoedaPeriodo` com todos os boletins do dia, vale o `Fechamento`. Cotadas: AUD, CAD, CHF, DKK, EUR, GBP, JPY, NOK, SEK, USD.
+- **Desktop**: `finance_core/bcb_ptax.rs` (parse, janelas de 1 ano, retry no padrão do SGS), tabela própria `ptax_daily` (migration `m20261030`; não `stock_price_history`, para não mexer nos outros leitores de câmbio), `finance_api/ptax_store.rs`
+  (só busca o trecho que falta, sem TTL porque PTAX passada não muda, e 10 minutos de espera depois de falha do BCB), `domain/ptax.rs` (`PtaxSeries`, `RateKind`, `RateSource`). `foreign.rs` converte pela PTAX venda e a retenção pela compra, cai no câmbio de mercado e
+  marca o item (`fx_source`) e o ano (`ForeignFxApproximate`). `get_tax_assessment` chama `refresh_ptax` (rede só sem `ANCHOR_DISABLE_INGESTION`; falha vai para o log); `assess_workspace` continua só de banco, então a rentabilidade não dispara rede. Cartão do exterior mostra PTAX ou mercado por linha.
+- **Mobile**: `domain/ptax_series.dart`, `services/bcb_ptax_service.dart` (mesma regra de parse, `quoteGet` com timeout de 45 s), `assessForeignTax(ptax:, fx:)`; a tela busca a PTAX por moeda e só vai ao Yahoo para a moeda cuja PTAX falhar ou não existir. `foreignRateLabel` mostra a origem.
+- **Verificado**: `./dev.sh check` (tsc + `cargo check --all-targets`) e `dart analyze` de `lib/domain` e `lib/models`; testes escritos e **ainda não rodados**: resultado nos CIs.
+- **Não verificado**: PTAX real no app (os fixtures copiam respostas reais, amostradas com curl); lentidão do BCB na primeira busca de anos de histórico; telas a olho.
+- **Pendente**: informe de Bens e Direitos (PTAX de 31/12); data exata do pagamento do imposto no exterior (usa a do provento); PTAX na cripto e nas telas de câmbio; cotação cruzada para pares que o Yahoo não tem.

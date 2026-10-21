@@ -115,6 +115,9 @@ type CryptoMonth = {
 };
 
 // Exterior (Lei 14.754/2023): apuração anual em reais, sem DARF mensal, então não há pagamento a marcar.
+// `fx_source`: a PTAX do Banco Central ou, de reserva, o câmbio de mercado.
+type FxSource = "ptax" | "market";
+
 type ForeignSale = {
   tx_id: number;
   ticker: string;
@@ -122,6 +125,7 @@ type ForeignSale = {
   date: string;
   quantity: number;
   fx_rate: number;
+  fx_source: FxSource;
   sale_value: number;
   proceeds: number;
   cost: number;
@@ -135,6 +139,7 @@ type ForeignDividendItem = {
   currency: string;
   date: string;
   fx_rate: number;
+  fx_source: FxSource;
   gross: number;
   withheld: number;
 };
@@ -165,6 +170,7 @@ type TaxWarning =
   | { kind: "crypto_sales_non_brl"; period: string }
   | { kind: "foreign_sales"; year: number }
   | { kind: "foreign_fx_missing"; year: number }
+  | { kind: "foreign_fx_approximate"; year: number }
   | { kind: "option_exercised"; ticker: string; date: string };
 
 type TaxPayment = {
@@ -230,7 +236,9 @@ function warningText(w: TaxWarning): string {
     case "foreign_sales":
       return `You sold foreign assets in ${w.year}, before Law 14,754/2023 took effect (2024) — that year follows the old rules and is not calculated by Anchor.`;
     case "foreign_fx_missing":
-      return `Some foreign trades or dividends from ${w.year} have no USD/BRL rate for their date, so they were left out of the yearly foreign assessment. Collect the exchange-rate history and open this tab again.`;
+      return `Some foreign trades or dividends from ${w.year} have no exchange rate (neither PTAX nor market) for their date, so they were left out of the yearly foreign assessment. Collect the exchange-rate history and open this tab again.`;
+    case "foreign_fx_approximate":
+      return `Some foreign trades or dividends from ${w.year} were converted at the market exchange rate because the Central Bank's PTAX was not available for them (offline, a currency the PTAX does not quote, or a long gap), so that year's values are approximate.`;
     case "option_exercised":
       return `Option ${w.ticker} was exercised on ${formatDate(w.date)}. Its premium goes into the cost of the stock bought or sold by the exercise, so it is not taxed here — update that stock's cost yourself.`;
   }
@@ -622,9 +630,11 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
               Stocks, ETFs and REITs held abroad are taxed once a year, at a flat rate on the year's gains
               plus dividends, in reais. Each trade and dividend is converted at the exchange rate of its own
               day; losses offset gains and carry into later years; tax withheld abroad is a credit up to the
-              tax due. It goes in the annual tax return, not a monthly DARF. The rate here is the market
-              dollar, not the Receita's PTAX, so treat it as an estimate based on secondary sources and
-              confirm in the return.
+              tax due. It goes in the annual tax return, not a monthly DARF. The rate is the Central Bank's
+              PTAX closing quote (selling rate; the buying rate for tax withheld abroad), and on a day with
+              no quote the last one before it. Where the PTAX is missing the market rate is used instead and
+              the year is flagged as approximate. This is an estimate based on secondary sources — confirm
+              in the return.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -817,7 +827,10 @@ function ForeignDetails({ year }: { year: ForeignYear }) {
                   )}
                 </TableCell>
                 <TableCell className="text-right">{s.quantity}</TableCell>
-                <TableCell className="text-right">{s.fx_rate.toFixed(4)}</TableCell>
+                <TableCell className="text-right" data-testid={`foreign-sale-fx-${s.tx_id}`}>
+                  {s.fx_rate.toFixed(4)}
+                  <span className="block text-xs text-muted-foreground">{s.fx_source === "ptax" ? "PTAX" : "market"}</span>
+                </TableCell>
                 <TableCell className="text-right">{formatBrl(s.sale_value)}</TableCell>
                 <TableCell className="text-right">{formatBrl(s.cost)}</TableCell>
                 <TableCell className="text-right">{formatBrl(s.gain)}</TableCell>
@@ -842,7 +855,10 @@ function ForeignDetails({ year }: { year: ForeignYear }) {
               <TableRow key={i.tx_id}>
                 <TableCell>{formatDate(i.date)}</TableCell>
                 <TableCell>{i.ticker}</TableCell>
-                <TableCell className="text-right">{i.fx_rate.toFixed(4)}</TableCell>
+                <TableCell className="text-right">
+                  {i.fx_rate.toFixed(4)}
+                  <span className="block text-xs text-muted-foreground">{i.fx_source === "ptax" ? "PTAX" : "market"}</span>
+                </TableCell>
                 <TableCell className="text-right">{formatBrl(i.gross)}</TableCell>
                 <TableCell className="text-right">{i.withheld > 0 ? formatBrl(i.withheld) : "—"}</TableCell>
               </TableRow>

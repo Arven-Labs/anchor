@@ -189,4 +189,48 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await byId("foreign-tax-table").scrollIntoView({ block: "center" });
     await snap("taxes-foreign");
   });
+
+  // PTAX do Banco Central: a gravada em `ptax_daily` manda (venda; fechamento) e a tela diz de onde veio a taxa.
+  it("converte pela PTAX gravada e marca a origem da taxa", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('MSFT', 'Microsoft', 'acao_internacional', 'USD', 'pais', 'US', '2026-01-01T00:00:00Z')",
+    );
+    const msft = sql("SELECT id FROM assets WHERE ticker = 'MSFT'");
+    const ptax = (date, buy, sell) =>
+      sql(
+        "INSERT INTO ptax_daily (currency, reference_date, buy, sell, source, fetched_at) " +
+          `VALUES ('USD', '${date}', ${buy}, ${sell}, 'test', '${date}T00:00:00Z')`,
+      );
+    ptax("2026-01-15", 4.99, 5);
+    ptax("2026-06-15", 5.99, 6);
+    const row = (type, quantity, total, date) =>
+      sql(
+        "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+          `VALUES (${portfolio}, ${msft}, '${type}', ${quantity}, ${total / quantity}, ${total}, 0, '${date}', '${date}T00:00:00Z')`,
+      );
+    // Compra de US$ 1.000 a R$ 5,00 (custo R$ 5.000) e venda de US$ 1.400 a R$ 6,00 (R$ 8.400): ganho de R$ 3.400, 15% = R$ 510,00.
+    row("compra", 10, 1000, "2026-01-15");
+    row("venda", 10, 1400, "2026-06-15");
+    const saleId = sql("SELECT id FROM transactions WHERE asset_id = " + msft + " AND transaction_type = 'venda'");
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await waitForText(
+      byId("foreign-tax-due-2026"),
+      (text) => text.includes("510,00"),
+      "o imposto estimado do exterior em 2026, pela PTAX, deveria ser R$ 510,00",
+    );
+    await byId("foreign-details-2026").click();
+    await waitForText(
+      byId(`foreign-sale-fx-${saleId}`),
+      (text) => text.includes("6.0000") && text.includes("PTAX"),
+      "a venda deveria mostrar o dólar de 6,0000 vindo da PTAX",
+    );
+    await byId("foreign-tax-table").scrollIntoView({ block: "center" });
+    await snap("taxes-foreign-ptax");
+  });
 });

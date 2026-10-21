@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../domain/foreign_tax.dart';
 import '../domain/fx_history.dart';
+import '../domain/ptax_series.dart';
 import '../models/portfolio_transaction.dart';
+import '../services/bcb_ptax_service.dart';
 import '../services/portfolio_repository.dart';
 import '../services/yahoo_quote_service.dart';
 import 'crypto_tax_screen.dart' show formatBrl, formatDay;
@@ -10,16 +12,22 @@ import 'crypto_tax_screen.dart' show formatBrl, formatDay;
 @visibleForTesting
 const foreignIntroNote =
     'Calculado só com as transações lançadas neste app, a custo médio, com a '
-    'taxa de cada operação e em reais pelo câmbio do dia de cada fato. Vai na '
-    'declaração anual, sem DARF mensal. O câmbio é o de mercado (Yahoo, par da '
-    'moeda com o real, como USDBRL=X), não a PTAX da Receita, então o valor é '
-    'aproximado. As regras vêm de fontes secundárias: confira na Receita '
-    'antes de pagar.';
+    'taxa de cada operação e em reais pela PTAX do Banco Central (fechamento, '
+    'venda; compra no imposto retido no exterior), e no dia sem cotação pela '
+    'última anterior. Onde a PTAX falta, vale o câmbio de mercado (Yahoo) e o '
+    'ano avisa que é aproximado. Vai na declaração anual, sem DARF mensal. As '
+    'regras vêm de fontes secundárias: confira na Receita antes de pagar.';
 
 @visibleForTesting
 const foreignFxUnavailableNote =
-    'Câmbio indisponível agora para alguma moeda: as operações nela ficaram '
-    'de fora. Tente de novo em instantes.';
+    'Câmbio indisponível agora para alguma moeda (nem PTAX nem de mercado): '
+    'as operações nela ficaram de fora. Tente de novo em instantes.';
+
+/// Câmbio de um fato e de onde veio: `Câmbio 6,0000 (PTAX)` ou `(mercado)`.
+@visibleForTesting
+String foreignRateLabel(double rate, RateSource source) =>
+    'Câmbio ${rate.toStringAsFixed(4).replaceAll('.', ',')} '
+    '(${source == RateSource.ptax ? 'PTAX' : 'mercado'})';
 
 /// Situação do ano numa frase: imposto estimado, coberto pelo crédito, sem
 /// imposto por prejuízo ou sem imposto por ficar abaixo do que já foi retido.
@@ -48,8 +56,13 @@ String foreignWarningText(ForeignTaxWarning warning) {
           'que as compras lançadas: o ganho considera só a parte com custo '
           'conhecido. Lance as compras que faltam.';
     case ForeignTaxWarningKind.fxMissing:
-      return 'Operações ou proventos de ${warning.year} sem câmbio para a '
-          'data: ficaram de fora da apuração.';
+      return 'Operações ou proventos de ${warning.year} sem câmbio (nem PTAX '
+          'nem de mercado) para a data: ficaram de fora da apuração.';
+    case ForeignTaxWarningKind.fxApproximate:
+      return 'Operações ou proventos de ${warning.year} foram convertidos pelo '
+          'câmbio de mercado porque a PTAX do Banco Central não estava '
+          'disponível para eles (sem rede, moeda que a PTAX não cota ou '
+          'buraco longo): os valores do ano são aproximados.';
   }
 }
 
@@ -65,6 +78,7 @@ class ForeignTaxScreen extends StatefulWidget {
 class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
   final _repository = PortfolioRepository();
   final _yahoo = YahooQuoteService();
+  final _bcb = BcbPtaxService();
 
   bool _loading = true;
   bool _fxUnavailable = false;
@@ -105,9 +119,21 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
       }
     }
 
+    // A lei manda a PTAX do Banco Central. O câmbio de mercado (Yahoo) só é
+    // buscado, para aquela moeda, quando a PTAX falha ou não cota a moeda.
+    final ptax = <String, PtaxSeries>{};
     final fx = <String, FxHistory>{};
     var fxUnavailable = false;
     for (final entry in firstDateOf.entries) {
+      try {
+        ptax[entry.key] = await _bcb.fetchPtax(
+          currency: entry.key,
+          from: entry.value,
+        );
+        continue;
+      } catch (_) {
+        // Segue para o câmbio de mercado.
+      }
       try {
         fx[entry.key] = await _yahoo.fetchFxHistory(
           from: entry.value,
@@ -120,7 +146,12 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
 
     if (!mounted) return;
     setState(() {
-      _assessment = assessForeignTax(assets, transactions, fx: fx);
+      _assessment = assessForeignTax(
+        assets,
+        transactions,
+        ptax: ptax,
+        fx: fx,
+      );
       _fxUnavailable = fxUnavailable;
       _loading = false;
     });
@@ -243,7 +274,7 @@ class _YearCard extends StatelessWidget {
                       contentPadding: EdgeInsets.zero,
                       title: Text('${sale.ticker} — ${formatDay(sale.date)}'),
                       subtitle: Text(
-                        'Dólar ${sale.fxRate.toStringAsFixed(4)}'
+                        '${foreignRateLabel(sale.fxRate, sale.fxSource)}'
                         ' · venda ${formatBrl(sale.saleValue)}'
                         ' · custo ${formatBrl(sale.cost)}'
                         ' · ganho ${formatBrl(sale.gain)}',
@@ -265,7 +296,7 @@ class _YearCard extends StatelessWidget {
                       contentPadding: EdgeInsets.zero,
                       title: Text('${item.ticker} — ${formatDay(item.date)}'),
                       subtitle: Text(
-                        'Dólar ${item.fxRate.toStringAsFixed(4)}'
+                        '${foreignRateLabel(item.fxRate, item.fxSource)}'
                         ' · ${formatBrl(item.gross)}'
                         '${item.withheld > 0 ? ' · retido ${formatBrl(item.withheld)}' : ''}',
                       ),

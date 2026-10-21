@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anchor_mobile/domain/foreign_tax.dart';
 import 'package:anchor_mobile/domain/fx_history.dart';
+import 'package:anchor_mobile/domain/ptax_series.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/portfolio_transaction.dart';
 
@@ -51,23 +52,36 @@ void main() {
   PortfolioTransaction dividend(int asset, String date, double gross, {double? withheld}) =>
       tx(asset, date, TransactionType.provento, 1, gross, withheld: withheld);
 
-  // Dólar a R$ 5 em 2024, R$ 6 em 2025 e R$ 4 em 2026, com um ponto por mês
-  // (o dia mais próximo vale, então a série precisa cobrir os dias testados;
-  // 2023 e 2027 ficam sem cotação).
-  FxHistory yearlyRates() => FxHistory([
-    for (var m = 1; m <= 12; m++) (DateTime.utc(2024, m, 15), 5.0),
-    for (var m = 1; m <= 12; m++) (DateTime.utc(2025, m, 15), 6.0),
-    for (var m = 1; m <= 12; m++) (DateTime.utc(2026, m, 15), 4.0),
+  // PTAX do dólar a R$ 5 em 2024, R$ 6 em 2025 e R$ 4 em 2026, com um ponto
+  // por mês e dia 15 (um fato mais de 10 dias depois do último ponto, ou antes
+  // do primeiro, fica sem PTAX; compra e venda iguais, salvo em `spread`).
+  PtaxSeries yearlyPtax({double spread = 0}) => PtaxSeries([
+    // dezembro de 2023, para as compras de antes da lei formarem custo
+    (DateTime.utc(2023, 12, 15), PtaxQuote(buy: 5.0 - spread, sell: 5.0)),
+    for (final (year, rate) in [(2024, 5.0), (2025, 6.0), (2026, 4.0)])
+      for (var m = 1; m <= 12; m++)
+        (
+          DateTime.utc(year, m, 15),
+          PtaxQuote(buy: rate - spread, sell: rate),
+        ),
+  ]);
+
+  // Câmbio de mercado com os mesmos valores, para provar a reserva.
+  FxHistory marketRates() => FxHistory([
+    for (final (year, rate) in [(2024, 5.0), (2025, 6.0), (2026, 4.0)])
+      for (var m = 1; m <= 12; m++) (DateTime.utc(year, m, 15), rate),
   ]);
 
   ForeignTaxAssessment run(
     List<PortfolioTransaction> transactions, {
     List<Asset>? withAssets,
+    Map<String, PtaxSeries>? ptax,
     Map<String, FxHistory>? fx,
   }) => assessForeignTax(
     withAssets ?? assets,
     transactions,
-    fx: fx ?? {'USD': yearlyRates()},
+    ptax: ptax ?? {'USD': yearlyPtax()},
+    fx: fx ?? const {},
   );
 
   Matcher near(double expected) => closeTo(expected, 1e-6);
@@ -161,7 +175,7 @@ void main() {
   test('sem câmbio na data o item fica de fora e o ano avisa', () {
     final result = run(
       [dividend(1, '2027-05-15', 100)],
-      fx: {'USD': FxHistory([])},
+      ptax: {'USD': PtaxSeries([])},
     );
 
     expect(result.years, isEmpty);
@@ -233,10 +247,14 @@ void main() {
   group('outras moedas', () {
     final sap = stock(5, 'SAP', currency: 'EUR');
 
-    // Euro a R$ 7 em 2024 e R$ 8 em 2025.
-    FxHistory euroRates() => FxHistory([
-      for (var m = 1; m <= 12; m++) (DateTime.utc(2024, m, 15), 7.0),
-      for (var m = 1; m <= 12; m++) (DateTime.utc(2025, m, 15), 8.0),
+    // PTAX do euro a R$ 7 em 2024 e R$ 8 em 2025.
+    PtaxSeries euroPtax() => PtaxSeries([
+      for (final (year, rate) in [(2024, 7.0), (2025, 8.0)])
+        for (var m = 1; m <= 12; m++)
+          (
+            DateTime.utc(year, m, 15),
+            PtaxQuote(buy: rate, sell: rate),
+          ),
     ]);
 
     test('cada moeda converte pela própria série', () {
@@ -249,7 +267,7 @@ void main() {
           sell(5, '2025-03-15', 1, 120),
         ],
         withAssets: [...assets, sap],
-        fx: {'USD': yearlyRates(), 'EUR': euroRates()},
+        ptax: {'USD': yearlyPtax(), 'EUR': euroPtax()},
       );
       final year = result.years.single;
 
@@ -285,7 +303,7 @@ void main() {
           tx(5, '2025-05-15', TransactionType.provento, 1, 100, withheld: 10),
         ],
         withAssets: [...assets, sap],
-        fx: {'EUR': euroRates()},
+        ptax: {'EUR': euroPtax()},
       );
       final year = result.years.single;
 
@@ -294,6 +312,103 @@ void main() {
       expect(year.taxBeforeCredit, near(120));
       expect(year.creditUsed, near(80));
       expect(year.taxDue, near(40));
+    });
+  });
+
+  group('PTAX e câmbio de mercado', () {
+    test('o imposto retido usa a compra e o resto usa a venda', () {
+      // venda 6,00 e compra 5,90 em 2025: provento US$ 100 → 600; retido US$ 10 → 59
+      final result = run(
+        [dividend(1, '2025-05-15', 100, withheld: 10)],
+        ptax: {'USD': yearlyPtax(spread: 0.1)},
+      );
+      final year = result.years.single;
+
+      expect(year.dividends, near(600));
+      expect(year.withheld, near(59));
+      expect(year.dividendItems.single.fxRate, 6.0);
+      expect(year.dividendItems.single.fxSource, RateSource.ptax);
+      expect(result.warnings, isEmpty);
+    });
+
+    test('dia sem cotação vale a última PTAX antes dele, até 10 dias', () {
+      // a série só tem o dia 15 de cada mês: 25/03 usa o dia 15, a 10 dias
+      final year = run([
+        buy(1, '2025-03-15', 1, 100),
+        sell(1, '2025-03-25', 1, 120),
+      ]).years.single;
+
+      expect(year.sales.single.fxRate, 6.0);
+      expect(year.sales.single.fxSource, RateSource.ptax);
+      expect(year.capitalGain, near(120 * 6.0 - 100 * 6.0));
+    });
+
+    test('sem PTAX cai no câmbio de mercado e o ano avisa que é aproximado', () {
+      final result = run(
+        [
+          buy(1, '2024-03-15', 10, 1000),
+          sell(1, '2025-03-15', 10, 1200),
+        ],
+        ptax: {'USD': PtaxSeries([])},
+        fx: {'USD': marketRates()},
+      );
+      final year = result.years.single;
+
+      // o resultado é o mesmo da PTAX, mas marcado como de mercado
+      expect(year.capitalGain, near(2200));
+      expect(year.sales.single.fxSource, RateSource.market);
+      final approximate = result.warnings
+          .where((w) => w.kind == ForeignTaxWarningKind.fxApproximate)
+          .map((w) => w.year)
+          .toList();
+      expect(approximate, [2024, 2025]);
+    });
+
+    test('um buraco longo na PTAX também cai no mercado só naquele fato', () {
+      // PTAX só em março de 2025; a venda de 20/06 está a mais de 10 dias dela
+      final onlyMarch = PtaxSeries([
+        (DateTime.utc(2025, 3, 15), const PtaxQuote(buy: 6.0, sell: 6.0)),
+      ]);
+      final result = run(
+        [
+          buy(1, '2025-03-15', 1, 100),
+          sell(1, '2025-06-20', 1, 120),
+        ],
+        ptax: {'USD': onlyMarch},
+        fx: {'USD': marketRates()},
+      );
+
+      final sale = result.years.single.sales.single;
+      expect(sale.fxSource, RateSource.market);
+      expect(
+        result.warnings.single.kind,
+        ForeignTaxWarningKind.fxApproximate,
+      );
+    });
+
+    test('a PTAX vence o mercado quando as duas existem', () {
+      final differentMarket = FxHistory([
+        for (var m = 1; m <= 12; m++) (DateTime.utc(2025, m, 15), 9.0),
+      ]);
+      final result = run(
+        [dividend(1, '2025-05-15', 100)],
+        fx: {'USD': differentMarket},
+      );
+
+      expect(result.years.single.dividends, near(600));
+      expect(result.warnings, isEmpty);
+    });
+
+    test('ativo em BRL não passa por câmbio nem marca aproximação', () {
+      final reit = stock(3, 'O', assetClass: AssetClass.reit, currency: 'BRL');
+      final result = run(
+        [buy(3, '2025-01-15', 1, 100), sell(3, '2025-06-15', 1, 150)],
+        withAssets: [reit],
+        ptax: const {},
+      );
+
+      expect(result.years.single.capitalGain, near(50));
+      expect(result.warnings, isEmpty);
     });
   });
 
