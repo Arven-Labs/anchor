@@ -6,6 +6,7 @@ use serde::Serialize;
 use super::calendar::darf_due_date;
 use super::classify::{is_unit, treatment, TaxTreatment};
 use super::crypto::{assess_crypto, CryptoMonth};
+use super::foreign::{self, ForeignYear};
 use super::rules::{self, RuleSet};
 use crate::domain::cost_basis::{take_from_position, Position, EPS};
 use crate::error::AppError;
@@ -136,7 +137,10 @@ pub enum TaxWarning {
     CostUnknown { ticker: String, date: NaiveDate },
     /// Venda de cripto em moeda que não é BRL (exchange estrangeira): outra regra, não apurada aqui.
     CryptoSalesNonBrl { period: String },
+    /// Venda no exterior de antes da Lei 14.754 (2024): não apurada.
     ForeignSales { year: i32 },
+    /// Operação ou provento no exterior sem cotação do câmbio na data: ficou de fora da apuração anual.
+    ForeignFxMissing { year: i32 },
     /// Opção exercida: o resultado não é apurado aqui (o prêmio vai pro custo da ação).
     OptionExercised { ticker: String, date: NaiveDate },
 }
@@ -157,6 +161,8 @@ pub struct Assessment {
     pub months: Vec<MonthAssessment>,
     /// Cripto: DARF próprio (código 4600), fora de `months`.
     pub crypto_months: Vec<CryptoMonth>,
+    /// Exterior (Lei 14.754): apuração anual, preenchida pelo comando (precisa de câmbio); vazia na apuração pura.
+    pub foreign_years: Vec<ForeignYear>,
     pub warnings: Vec<TaxWarning>,
     /// Só gavetas com saldo de prejuízo > 0.
     pub loss_balances: Vec<LossBalance>,
@@ -496,7 +502,7 @@ pub fn assess_with_options(
     let (crypto_months, crypto_warnings) = assess_crypto(trades, rules)?;
     warnings.extend(crypto_warnings);
 
-    Ok(Assessment { months, crypto_months, warnings, loss_balances })
+    Ok(Assessment { months, crypto_months, foreign_years: Vec::new(), warnings, loss_balances })
 }
 
 /// `tx_id` reservado da venda hipotética (maior que qualquer id real, então
@@ -583,10 +589,11 @@ pub fn simulate_sale_with_options(
     })
 }
 
-/// Venda de ativo no exterior: apuração anual (Lei 14.754/2023), só avisa.
+/// Venda de ativo no exterior antes da Lei 14.754/2023: só avisa. De 2024 em diante a apuração anual é de
+/// `domain::tax::foreign`.
 fn collect_out_of_scope_warnings(trades: &[Trade], warnings: &mut Vec<TaxWarning>) {
     let mut foreign_years: BTreeSet<i32> = BTreeSet::new();
-    for t in trades.iter().filter(|t| t.side == Side::Sell) {
+    for t in trades.iter().filter(|t| t.side == Side::Sell && t.date.year() < foreign::FIRST_YEAR) {
         if treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning {
             foreign_years.insert(t.date.year());
         }
@@ -971,8 +978,8 @@ mod tests {
         let mut b = Builder::new()
             .buy(1, "BTC", "cripto", "2026-01-02", 1.0, 30000.0, 0.0)
             .sell(1, "BTC", "cripto", "2026-02-10", 1.0, 40000.0, 0.0)
-            .buy(2, "AAPL", "acao_internacional", "2026-01-02", 1.0, 1000.0, 0.0)
-            .sell(2, "AAPL", "acao_internacional", "2026-02-10", 1.0, 1200.0, 0.0);
+            .buy(2, "AAPL", "acao_internacional", "2023-01-02", 1.0, 1000.0, 0.0)
+            .sell(2, "AAPL", "acao_internacional", "2023-02-10", 1.0, 1200.0, 0.0);
         b.trades[2].currency = "USD".to_string();
         b.trades[3].currency = "USD".to_string();
         let a = b.assess();
@@ -980,7 +987,16 @@ mod tests {
         assert!(a.months.is_empty(), "o DARF da B3 não leva a cripto");
         assert_eq!(a.crypto_months.len(), 1);
         assert!((a.crypto_months[0].tax - 1500.0).abs() < 1e-6, "15% de 10.000 de ganho, venda acima de R$ 35 mil");
-        assert!(a.warnings.iter().any(|w| matches!(w, TaxWarning::ForeignSales { year: 2026 })));
+        assert!(a.warnings.iter().any(|w| matches!(w, TaxWarning::ForeignSales { year: 2023 })));
+    }
+
+    #[test]
+    fn a_foreign_sale_from_2024_on_is_left_to_the_annual_assessment() {
+        let a = Builder::new()
+            .buy(1, "AAPL", "acao_internacional", "2025-01-02", 1.0, 1000.0, 0.0)
+            .sell(1, "AAPL", "acao_internacional", "2025-02-10", 1.0, 1200.0, 0.0)
+            .assess();
+        assert!(!a.warnings.iter().any(|w| matches!(w, TaxWarning::ForeignSales { .. })));
     }
 
     // -- Opções (Fase 18) --------------------------------------------------

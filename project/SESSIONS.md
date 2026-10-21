@@ -3700,3 +3700,14 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não verificado**: a resposta real do Yahoo para `USDBRL=X` no app (o desktop lê o mesmo par; os timestamps são UTC e o dia mais próximo absorve uma diferença de um dia); a tela a olho; o tamanho da resposta para históricos longos.
 - **Fora desta fatia**: a permuta segue só em BRL (o desktop também); o card das posições segue na moeda do ativo; sem cache do câmbio.
 - **Pendente**: exterior (Lei 14.754); timeout do `statement-review.e2e.mjs` se a instabilidade voltar.
+
+## Sessão 184 — IR de ativos no exterior (Lei 14.754), desktop
+- **Decisões** (plan mode): só desktop; coluna nova para a retenção na fonte; câmbio com o USDBRL que já existe (sem PTAX); cartão anual somente leitura.
+- **Feito**: `domain/tax/foreign.rs` apura ano a ano (a partir de 2024) ganho de capital + proventos em reais, com o dólar de cada dia e custo médio em reais, compensação de perda dentro do ano e entre anos, e crédito do imposto
+  retido lá fora até o limite do devido. Regra `foreign_rate` (15%) em `tax_rules` (seed `m20261029_110000` e tabela embarcada, 24 → 25 regras). Coluna `transactions.foreign_tax_withheld` (`m20261029_100000`), validada em
+  `create_transaction_in` (≥ 0 e só em `provento`) e preenchida no formulário de provento de ativo fora de BRL. `assess_workspace` preenche `Assessment.foreign_years`; `ForeignSales` só vale para anos < 2024 e
+  `ForeignFxMissing` avisa de item sem câmbio. Cartão "Foreign assets" em `TaxesSection.tsx` com detalhes por ano.
+- **Verificado**: `./dev.sh check` (tsc + `cargo check --all-targets`) passa. Testes novos escritos mas **ainda não rodados**: unitários de `foreign.rs`, dois de fluxo em `flow_tests.rs`, um E2E em `taxes.e2e.mjs`; resultado no CI.
+- **Não verificado**: a tela a olho (há captura `taxes-foreign` no CI); a migration num banco real.
+- **Atenção**: regras de fontes secundárias, conferir na Receita; câmbio de mercado, não PTAX; o campo de retenção só existe no formulário de lançamento (não na importação nem na edição).
+- **Pendente**: exterior no mobile; PTAX; "Bens e Direitos" para a DAA; entidades offshore e come-cotas.

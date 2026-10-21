@@ -1874,6 +1874,7 @@ fn tx_request(
         unit_price: Some(unit_price),
         total_value: quantity * unit_price,
         fee: (fee > 0.0).then_some(fee),
+        foreign_tax_withheld: None,
         transaction_date: date.to_string(),
         notes: None,
         fi_emissor: None,
@@ -4089,6 +4090,58 @@ async fn usd_crypto_without_an_exchange_rate_still_only_warns() {
     let assessment = assess_workspace(&db, ws.id).await.unwrap();
     assert!(assessment.crypto_months.is_empty());
     assert!(assessment.warnings.iter().any(|w| matches!(w, crate::domain::tax::assessment::TaxWarning::CryptoSalesNonBrl { .. })));
+}
+
+#[tokio::test]
+async fn foreign_assets_are_assessed_yearly_in_reais_with_the_foreign_withholding_as_credit() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Exterior").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    seed_price(&db, "USDBRL", "2025-01-10", 5.0).await;
+    seed_price(&db, "USDBRL", "2025-06-10", 6.0).await;
+    seed_price(&db, "USDBRL", "2025-09-10", 6.0).await;
+    // Compra de US$ 1.000 a R$ 5 (custo R$ 5.000) e venda de US$ 1.200 a R$ 6 (R$ 7.200): ganho de R$ 2.200.
+    trade(&db, pf.id, aapl.id, "compra", 10.0, 1000.0, "2025-01-10").await;
+    trade(&db, pf.id, aapl.id, "venda", 10.0, 1200.0, "2025-06-10").await;
+    // Provento de US$ 100 (R$ 600) com US$ 10 retidos lá fora (R$ 60): base 2.800, imposto 420, crédito 60.
+    let mut dividend = tx_request(pf.id, aapl.id, "provento", 1.0, 100.0, "2025-09-10", 0.0);
+    dividend.payment_type = Some("dividendo".to_string());
+    dividend.foreign_tax_withheld = Some(10.0);
+    add(&db, dividend).await;
+
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert_eq!(assessment.foreign_years.len(), 1);
+    let y = &assessment.foreign_years[0];
+    assert_eq!(y.year, 2025);
+    assert!(close(y.capital_gain, 2200.0) && close(y.dividends, 600.0) && close(y.withheld, 60.0), "{y:?}");
+    assert!(close(y.taxable_base, 2800.0) && close(y.tax_before_credit, 420.0), "{y:?}");
+    assert!(close(y.credit_used, 60.0) && close(y.tax_due, 360.0), "{y:?}");
+    assert!(
+        !assessment.warnings.iter().any(|w| matches!(w, crate::domain::tax::assessment::TaxWarning::ForeignSales { .. })),
+        "de 2024 em diante não há mais o aviso antigo"
+    );
+}
+
+#[tokio::test]
+async fn the_foreign_rule_is_seeded_and_a_withholding_outside_a_dividend_is_refused() {
+    use crate::commands::tax::load_rule_set;
+    use crate::domain::tax::rules::FOREIGN_RATE;
+
+    let db = memory_db().await;
+    let rules = load_rule_set(&db).await.unwrap();
+    let on = chrono::NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+    assert!(close(rules.get(FOREIGN_RATE, on).unwrap(), 0.15));
+
+    let ws = workspace(&db, "Exterior").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    let mut purchase = tx_request(pf.id, aapl.id, "compra", 1.0, 100.0, "2025-01-10", 0.0);
+    purchase.foreign_tax_withheld = Some(1.0);
+    assert!(crate::commands::transaction::create_transaction_in(&db, purchase).await.is_err());
+    let mut negative = tx_request(pf.id, aapl.id, "provento", 1.0, 100.0, "2025-01-10", 0.0);
+    negative.foreign_tax_withheld = Some(-1.0);
+    assert!(crate::commands::transaction::create_transaction_in(&db, negative).await.is_err());
 }
 
 #[tokio::test]

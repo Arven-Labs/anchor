@@ -87,6 +87,8 @@ pub struct CreateTransactionRequest {
     pub unit_price: Option<f64>,
     pub total_value: f64,
     pub fee: Option<f64>,
+    /// Imposto retido no exterior sobre o provento, na moeda do ativo (crédito da Lei 14.754). Só em `provento`.
+    pub foreign_tax_withheld: Option<f64>,
     pub transaction_date: String,
     pub notes: Option<String>,
     pub fi_emissor: Option<String>,
@@ -123,6 +125,14 @@ fn validate(request: &CreateTransactionRequest) -> Result<(), AppError> {
     }
     if request.fee.is_some_and(|fee| !fee.is_finite() || fee < 0.0) {
         return Err(AppError::InvalidGuard("fee não pode ser negativa".to_string()));
+    }
+    if let Some(withheld) = request.foreign_tax_withheld {
+        if !withheld.is_finite() || withheld < 0.0 {
+            return Err(AppError::InvalidGuard("foreign_tax_withheld não pode ser negativo".to_string()));
+        }
+        if request.transaction_type != DIVIDEND {
+            return Err(AppError::InvalidGuard("foreign_tax_withheld só vale para 'provento'".to_string()));
+        }
     }
     if request.quantity.is_some_and(|qty| !qty.is_finite() || qty <= 0.0) {
         return Err(AppError::InvalidGuard("quantity deve ser maior que zero".to_string()));
@@ -251,6 +261,7 @@ pub async fn create_transaction_in<C: ConnectionTrait>(
         unit_price: Set(request.unit_price),
         total_value: Set(request.total_value),
         fee: Set(request.fee),
+        foreign_tax_withheld: Set(request.foreign_tax_withheld),
         transaction_date: Set(request.transaction_date),
         notes: Set(request.notes),
         fi_emissor: Set(request.fi_emissor),
@@ -347,6 +358,7 @@ pub async fn record_crypto_swap_in(
         unit_price: Some(request.value / quantity),
         total_value: request.value,
         fee,
+        foreign_tax_withheld: None,
         transaction_date: request.transaction_date.clone(),
         notes: Some(notes.clone()),
         fi_emissor: None,
@@ -486,6 +498,7 @@ pub struct TransactionView {
     pub unit_price: Option<f64>,
     pub total_value: f64,
     pub fee: Option<f64>,
+    pub foreign_tax_withheld: Option<f64>,
     pub transaction_date: String,
     pub notes: Option<String>,
     pub fi_emissor: Option<String>,
@@ -599,6 +612,7 @@ pub async fn list_transactions_in(
             unit_price: tx.unit_price,
             total_value: tx.total_value,
             fee: tx.fee,
+            foreign_tax_withheld: tx.foreign_tax_withheld,
             transaction_date: tx.transaction_date,
             notes: tx.notes,
             fi_emissor: tx.fi_emissor,

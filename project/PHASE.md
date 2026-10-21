@@ -2201,7 +2201,16 @@ reais é digitado, com o botão "Use market price" (Sessão 173) que o preenche:
   `darf_calendar.dart`; taxa da compra soma ao custo, a da venda reduz o ganho); regras como constantes no código, de **fontes secundárias, conferir na Receita (GCAP)**. Cripto em USD é convertida pelo dólar da data
   (`USDBRL=X` do Yahoo, `fx_history.dart`). Tela de IR (`CryptoTaxScreen`), somente leitura (o mobile não guarda pagamento de DARF).
 - **Limites**: sem IRRF; permuta só em BRL e com saldo atual (não o da data); o "preço médio" das posições não leva taxa; migration v6→v7, resposta real do `USDBRL=X` e telas a olho não verificadas (sem Flutter local, só CI).
-- **Pendente**: exterior (Lei 14.754), no desktop e no mobile.
+- **Pendente**: exterior (Lei 14.754) no mobile (o desktop entrou na Sessão 184, abaixo).
+
+**Exterior no desktop (feito, Sessão 184)**: IR anual de ações, ETFs e REITs do exterior (Lei 14.754/2023).
+- **Motor**: `domain/tax/foreign.rs` (`assess_foreign`) apura por ano-calendário, a partir de 2024: cada compra, venda e provento vira reais pelo dólar do próprio dia (`FxHistory::rate_on`), o custo médio nasce em
+  reais (`take_from_position`), ganhos e perdas do ano se compensam, os proventos brutos somam, o prejuízo líquido passa para os anos seguintes, e o imposto retido lá fora vira crédito até o limite do imposto devido.
+  Alíquota `foreign_rate` (15%, vigência 2024-01-01) em `tax_rules` (migration `m20261029_110000` e tabela embarcada). Antes de 2024 a venda só gera o aviso `ForeignSales`; sem câmbio na data o item sai e
+  `ForeignFxMissing` avisa.
+- **Retenção**: coluna `transactions.foreign_tax_withheld` (migration `m20261029_100000`), preenchida no formulário de provento quando o ativo não é BRL.
+- **Tela**: cartão "Foreign assets (Law 14,754/2023)" na aba Taxes, um ano por linha com os detalhes (vendas e proventos com o câmbio de cada dia). Somente leitura: não há DARF mensal nem "marcar como pago".
+- **Atenção**: regras de fontes secundárias, conferir na Receita. O câmbio é o de mercado (Yahoo/Frankfurter), não a PTAX. Fora: mobile, PTAX, "Bens e Direitos", entidades offshore e come-cotas.
 
 **Fora desta fatia**: cálculo de exterior (cripto entrou na Sessão 167); eventos corporativos
 (desdobramento/bonificação não existem como tipo de transação — quem tiver vai ver custo

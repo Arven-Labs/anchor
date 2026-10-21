@@ -45,6 +45,7 @@ type CreateTransactionRequest = {
   unit_price: number | null;
   total_value: number;
   fee: number | null;
+  foreign_tax_withheld: number | null;
   transaction_date: string;
   notes: string | null;
   fi_emissor: string | null;
@@ -111,6 +112,7 @@ function TransactionSection({
   const [unitPrice, setUnitPrice] = useState("");
   const [totalValue, setTotalValue] = useState("");
   const [fee, setFee] = useState("");
+  const [foreignTaxWithheld, setForeignTaxWithheld] = useState("");
   const [transactionDate, setTransactionDate] = useState(todayIso());
   const [notes, setNotes] = useState("");
   const [fiEmissor, setFiEmissor] = useState("");
@@ -136,6 +138,9 @@ function TransactionSection({
     transactionType === "compra" &&
     selectedAsset !== undefined &&
     (FIXED_INCOME_CLASSES as string[]).includes(selectedAsset.asset_class);
+  // Imposto retido lá fora só faz sentido num provento de ativo que paga em outra moeda.
+  const showForeignWithholding =
+    transactionType === "provento" && selectedAsset !== undefined && selectedAsset.currency !== "BRL";
 
   function invalidateAfterWrite() {
     queryClient.invalidateQueries({ queryKey: ["transactions", portfolioId] });
@@ -150,6 +155,7 @@ function TransactionSection({
       setUnitPrice("");
       setTotalValue("");
       setFee("");
+      setForeignTaxWithheld("");
       setNotes("");
       setFiTaxaPercentual("");
       setFiDataVencimento("");
@@ -173,6 +179,7 @@ function TransactionSection({
       unit_price: needsUnitPrice(transactionType) && unitPrice !== "" ? Number(unitPrice) : null,
       total_value: needsTotalValue(transactionType) ? Number(totalValue) : 0,
       fee: fee !== "" ? Number(fee) : null,
+      foreign_tax_withheld: showForeignWithholding && foreignTaxWithheld !== "" ? Number(foreignTaxWithheld) : null,
       transaction_date: transactionDate,
       notes: notes.trim() === "" ? null : notes,
       fi_emissor: showFixedIncomeFields && fiEmissor.trim() !== "" ? fiEmissor : null,
@@ -302,6 +309,18 @@ function TransactionSection({
                   onChange={(e) => setFee(e.currentTarget.value)}
                 />
               </Field>
+              {showForeignWithholding && (
+                <Field label={`Tax withheld abroad (${selectedAsset?.currency}, optional)`}>
+                  <Input
+                    type="number"
+                    step="any"
+                    min="0"
+                    data-testid="tx-foreign-tax-withheld"
+                    value={foreignTaxWithheld}
+                    onChange={(e) => setForeignTaxWithheld(e.currentTarget.value)}
+                  />
+                </Field>
+              )}
               {needsPaymentType(transactionType) && (
                 <Field label="Payment type">
                   <Select value={paymentType} onValueChange={(v) => setPaymentType(v as PaymentType)}>

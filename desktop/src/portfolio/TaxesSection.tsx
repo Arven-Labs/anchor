@@ -114,6 +114,47 @@ type CryptoMonth = {
   sales: CryptoSale[];
 };
 
+// Exterior (Lei 14.754/2023): apuração anual em reais, sem DARF mensal, então não há pagamento a marcar.
+type ForeignSale = {
+  tx_id: number;
+  ticker: string;
+  currency: string;
+  date: string;
+  quantity: number;
+  fx_rate: number;
+  sale_value: number;
+  proceeds: number;
+  cost: number;
+  gain: number;
+  cost_unknown: boolean;
+};
+
+type ForeignDividendItem = {
+  tx_id: number;
+  ticker: string;
+  currency: string;
+  date: string;
+  fx_rate: number;
+  gross: number;
+  withheld: number;
+};
+
+type ForeignYear = {
+  year: number;
+  capital_gain: number;
+  dividends: number;
+  withheld: number;
+  loss_carried_in: number;
+  taxable_base: number;
+  rate: number;
+  tax_before_credit: number;
+  credit_used: number;
+  tax_due: number;
+  loss_carried_out: number;
+  sales: ForeignSale[];
+  dividend_items: ForeignDividendItem[];
+};
+
 type PaymentKind = "b3" | "crypto";
 
 // O que o diálogo do DARF precisa de um mês, venha da B3 ou da cripto.
@@ -123,6 +164,7 @@ type TaxWarning =
   | { kind: "cost_unknown"; ticker: string; date: string }
   | { kind: "crypto_sales_non_brl"; period: string }
   | { kind: "foreign_sales"; year: number }
+  | { kind: "foreign_fx_missing"; year: number }
   | { kind: "option_exercised"; ticker: string; date: string };
 
 type TaxPayment = {
@@ -140,6 +182,7 @@ type TaxAssessmentView = {
   assessment: {
     months: MonthAssessment[];
     crypto_months: CryptoMonth[];
+    foreign_years: ForeignYear[];
     warnings: TaxWarning[];
     loss_balances: LossBalance[];
   };
@@ -185,7 +228,9 @@ function warningText(w: TaxWarning): string {
     case "crypto_sales_non_brl":
       return `You sold crypto in ${formatPeriod(w.period)} in a foreign currency (a foreign exchange) — that follows another rule and is not calculated by Anchor, so check whether tax is due.`;
     case "foreign_sales":
-      return `You sold foreign assets in ${w.year}. Gains abroad are taxed yearly in the annual tax return (Law 14,754/2023) — not calculated by Anchor yet.`;
+      return `You sold foreign assets in ${w.year}, before Law 14,754/2023 took effect (2024) — that year follows the old rules and is not calculated by Anchor.`;
+    case "foreign_fx_missing":
+      return `Some foreign trades or dividends from ${w.year} have no USD/BRL rate for their date, so they were left out of the yearly foreign assessment. Collect the exchange-rate history and open this tab again.`;
     case "option_exercised":
       return `Option ${w.ticker} was exercised on ${formatDate(w.date)}. Its premium goes into the cost of the stock bought or sold by the exercise, so it is not taxed here — update that stock's cost yourself.`;
   }
@@ -249,6 +294,7 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
   const lossBalances = assessmentQuery.data?.assessment.loss_balances ?? [];
   const totalTaxSaved = lossBalances.reduce((sum, l) => sum + l.tax_saved, 0);
   const cryptoMonths = assessmentQuery.data?.assessment.crypto_months ?? [];
+  const foreignYears = assessmentQuery.data?.assessment.foreign_years ?? [];
   const payments = assessmentQuery.data?.payments ?? [];
   // Um pagamento por mês e por tipo: a B3 e a cripto pagam DARFs diferentes.
   const paymentByPeriod = new Map(payments.filter((p) => p.kind === "b3").map((p) => [p.period, p]));
@@ -568,9 +614,87 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
         </Card>
       )}
 
-      {!assessmentQuery.isLoading && months.length === 0 && cryptoMonths.length === 0 && (
+      {foreignYears.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Foreign assets (Law 14,754/2023)</CardTitle>
+            <CardDescription>
+              Stocks, ETFs and REITs held abroad are taxed once a year, at a flat rate on the year's gains
+              plus dividends, in reais. Each trade and dividend is converted at the exchange rate of its own
+              day; losses offset gains and carry into later years; tax withheld abroad is a credit up to the
+              tax due. It goes in the annual tax return, not a monthly DARF. The rate here is the market
+              dollar, not the Receita's PTAX, so treat it as an estimate based on secondary sources and
+              confirm in the return.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table data-testid="foreign-tax-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Year</TableHead>
+                  <TableHead className="text-right">Capital gain</TableHead>
+                  <TableHead className="text-right">Dividends</TableHead>
+                  <TableHead className="text-right">Loss used</TableHead>
+                  <TableHead className="text-right">Taxable base</TableHead>
+                  <TableHead className="text-right">Credit</TableHead>
+                  <TableHead className="text-right">Estimated tax</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...foreignYears].reverse().map((y) => {
+                  const key = `foreign-${y.year}`;
+                  const isOpen = expanded === key;
+                  return (
+                    <Fragment key={y.year}>
+                      <TableRow>
+                        <TableCell>{y.year}</TableCell>
+                        <TableCell className="text-right">{formatBrl(y.capital_gain)}</TableCell>
+                        <TableCell className="text-right">{formatBrl(y.dividends)}</TableCell>
+                        <TableCell className="text-right">
+                          {y.loss_carried_in > 0 ? formatBrl(y.loss_carried_in - y.loss_carried_out) : "—"}
+                          {y.loss_carried_out > 0 && (
+                            <span className="block text-xs text-muted-foreground">
+                              {formatBrl(y.loss_carried_out)} carries to next year
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">{formatBrl(y.taxable_base)}</TableCell>
+                        <TableCell className="text-right">{y.credit_used > 0 ? formatBrl(y.credit_used) : "—"}</TableCell>
+                        <TableCell className="text-right font-medium" data-testid={`foreign-tax-due-${y.year}`}>
+                          {formatBrl(y.tax_due)}
+                          <span className="block text-xs text-muted-foreground">at {(y.rate * 100).toFixed(1)}%</span>
+                        </TableCell>
+                        <TableCell className="flex justify-end">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            data-testid={`foreign-details-${y.year}`}
+                            onClick={() => setExpanded(isOpen ? null : key)}
+                          >
+                            {isOpen ? "Hide" : "Details"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      {isOpen && (
+                        <TableRow>
+                          <TableCell colSpan={8} className="bg-muted/30">
+                            <ForeignDetails year={y} />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {!assessmentQuery.isLoading && months.length === 0 && cryptoMonths.length === 0 && foreignYears.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          No sales on B3 or of crypto yet — nothing to assess.
+          No sales on B3, of crypto or of foreign assets yet — nothing to assess.
         </p>
       )}
 
@@ -659,6 +783,77 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// Vendas e proventos do ano, já em reais, com o câmbio de cada dia.
+function ForeignDetails({ year }: { year: ForeignYear }) {
+  return (
+    <div className="flex flex-col gap-4 p-2" data-testid={`foreign-details-panel-${year.year}`}>
+      {year.sales.length > 0 && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Asset</TableHead>
+              <TableHead className="text-right">Qty</TableHead>
+              <TableHead className="text-right">Rate</TableHead>
+              <TableHead className="text-right">Sale</TableHead>
+              <TableHead className="text-right">Cost</TableHead>
+              <TableHead className="text-right">Gain</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {year.sales.map((s) => (
+              <TableRow key={s.tx_id}>
+                <TableCell>{formatDate(s.date)}</TableCell>
+                <TableCell>
+                  {s.ticker}
+                  {s.cost_unknown && (
+                    <Badge variant="outline" className="ml-2">
+                      cost unknown
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">{s.quantity}</TableCell>
+                <TableCell className="text-right">{s.fx_rate.toFixed(4)}</TableCell>
+                <TableCell className="text-right">{formatBrl(s.sale_value)}</TableCell>
+                <TableCell className="text-right">{formatBrl(s.cost)}</TableCell>
+                <TableCell className="text-right">{formatBrl(s.gain)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      {year.dividend_items.length > 0 && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Asset</TableHead>
+              <TableHead className="text-right">Rate</TableHead>
+              <TableHead className="text-right">Dividend</TableHead>
+              <TableHead className="text-right">Withheld abroad</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {year.dividend_items.map((i) => (
+              <TableRow key={i.tx_id}>
+                <TableCell>{formatDate(i.date)}</TableCell>
+                <TableCell>{i.ticker}</TableCell>
+                <TableCell className="text-right">{i.fx_rate.toFixed(4)}</TableCell>
+                <TableCell className="text-right">{formatBrl(i.gross)}</TableCell>
+                <TableCell className="text-right">{i.withheld > 0 ? formatBrl(i.withheld) : "—"}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Tax before credit {formatBrl(year.tax_before_credit)}; credit for tax withheld abroad{" "}
+        {formatBrl(year.credit_used)} (of {formatBrl(year.withheld)} withheld).
+      </p>
     </div>
   );
 }

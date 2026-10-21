@@ -146,4 +146,47 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await byId("crypto-tax-table").scrollIntoView({ block: "center" });
     await snap("taxes-crypto-swap");
   });
+
+  // Exterior (Lei 14.754): apuração anual em reais, com o dólar de cada dia e a retenção lá fora como crédito.
+  it("apura o IR anual de uma ação do exterior com dólar da data e crédito da retenção", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('AAPL', 'Apple', 'acao_internacional', 'USD', 'pais', 'US', '2025-01-01T00:00:00Z')",
+    );
+    const aapl = sql("SELECT id FROM assets WHERE ticker = 'AAPL'");
+    const rate = (date, close) =>
+      sql(
+        "INSERT INTO stock_price_history (ticker, price_date, close_price, source, fetched_at) " +
+          `VALUES ('USDBRL', '${date}', ${close}, 'test', '${date}T00:00:00Z')`,
+      );
+    rate("2025-01-10", 5);
+    rate("2025-06-10", 6);
+    rate("2025-09-10", 6);
+    const row = (type, quantity, total, date, extra = "") =>
+      sql(
+        "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, payment_type, quantity, unit_price, total_value, fee, foreign_tax_withheld, transaction_date, created_at) " +
+          `VALUES (${portfolio}, ${aapl}, '${type}', ${extra || "NULL"}, ${quantity}, ${total / quantity}, ${total}, 0, ${type === "provento" ? 10 : "NULL"}, '${date}', '${date}T00:00:00Z')`,
+      );
+    // Compra de US$ 1.000 a R$ 5 e venda de US$ 1.200 a R$ 6: ganho de R$ 2.200; provento de US$ 100 (R$ 600) com US$ 10 retidos
+    // (R$ 60). Base 2.800, imposto 420, crédito 60: R$ 360,00.
+    row("compra", 10, 1000, "2025-01-10");
+    row("venda", 10, 1200, "2025-06-10");
+    row("provento", 1, 100, "2025-09-10", "'dividendo'");
+
+    await browser.keys("Escape");
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await waitForText(
+      byId("foreign-tax-due-2025"),
+      (text) => text.includes("360,00"),
+      "o imposto estimado do exterior em 2025 deveria ser R$ 360,00",
+    );
+    await byId("foreign-details-2025").click();
+    await byId("foreign-details-panel-2025").waitForDisplayed({ timeout: 10_000 });
+    await byId("foreign-tax-table").scrollIntoView({ block: "center" });
+    await snap("taxes-foreign");
+  });
 });

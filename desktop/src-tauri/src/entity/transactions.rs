@@ -22,6 +22,8 @@ pub struct Model {
     pub total_value: f64,
     #[sea_orm(column_type = "Double", nullable)]
     pub fee: Option<f64>,
+    #[sea_orm(column_type = "Double", nullable)]
+    pub foreign_tax_withheld: Option<f64>,
     pub transaction_date: String,
     pub notes: Option<String>,
     pub fi_emissor: Option<String>,

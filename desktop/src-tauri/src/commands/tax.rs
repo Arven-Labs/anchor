@@ -19,6 +19,7 @@ use crate::commands::currency::load_fx_history;
 use crate::domain::option_position as option_calc;
 use crate::domain::tax::assessment::{self, Assessment, OptionResult, Side, Trade};
 use crate::domain::tax::classify::{treatment, TaxTreatment};
+use crate::domain::tax::foreign;
 use crate::domain::tax::rules::{self, Rule, RuleSet};
 use crate::entity::{
     assets, bank_account, general_transaction, general_transaction_category, option_position,
@@ -29,6 +30,7 @@ use crate::finance_api::client;
 
 const BUY: &str = "compra";
 const SELL: &str = "venda";
+const DIVIDEND: &str = "provento";
 const DESPESA: &str = "despesa";
 const TAXES_CATEGORY: &str = "Taxes";
 const YIELD_CATEGORY: &str = "Yield";
@@ -197,7 +199,70 @@ pub(crate) async fn assess_workspace(
     let rules = load_rule_set(db).await?;
     let trades = load_trades(db, workspace_id).await?;
     let options = load_option_results(db, workspace_id).await?;
-    assessment::assess_with_options(&trades, &options, &rules)
+    let mut assessment = assessment::assess_with_options(&trades, &options, &rules)?;
+
+    let dividends = load_foreign_dividends(db, workspace_id).await?;
+    let currencies: HashSet<String> = trades
+        .iter()
+        .filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning)
+        .map(|t| t.currency.clone())
+        .chain(dividends.iter().map(|d| d.currency.clone()))
+        .filter(|c| c != "BRL")
+        .collect();
+    let fx = load_fx_history(db, "BRL", &currencies).await?;
+    let (years, warnings) =
+        foreign::assess_foreign(&trades, &dividends, &rules, &|currency, date| fx.rate_on(currency, "BRL", date))?;
+    assessment.foreign_years = years;
+    assessment.warnings.extend(warnings);
+    Ok(assessment)
+}
+
+/// Proventos dos ativos do exterior de todas as carteiras do Workspace, na moeda do ativo, com a retenção lá fora.
+async fn load_foreign_dividends(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+) -> Result<Vec<foreign::ForeignDividend>, AppError> {
+    let portfolio_ids = workspace_portfolio_ids(db, workspace_id).await?;
+    if portfolio_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let txs = transactions::Entity::find()
+        .filter(transactions::Column::PortfolioId.is_in(portfolio_ids))
+        .filter(transactions::Column::TransactionType.eq(DIVIDEND))
+        .filter(transactions::Column::AssetId.is_not_null())
+        .all(db)
+        .await?;
+    let asset_ids: Vec<i32> = txs.iter().filter_map(|t| t.asset_id).collect::<HashSet<_>>().into_iter().collect();
+    if asset_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let assets_map: HashMap<i32, assets::Model> = assets::Entity::find()
+        .filter(assets::Column::Id.is_in(asset_ids))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|a| (a.id, a))
+        .collect();
+
+    let mut dividends = Vec::new();
+    for tx in &txs {
+        let Some(asset) = tx.asset_id.and_then(|id| assets_map.get(&id)) else {
+            continue;
+        };
+        if treatment(&asset.asset_class, &asset.ticker) != TaxTreatment::ForeignWarning {
+            continue;
+        }
+        dividends.push(foreign::ForeignDividend {
+            tx_id: tx.id,
+            asset_id: asset.id,
+            ticker: asset.ticker.clone(),
+            currency: asset.currency.clone(),
+            date: parse_date(&tx.transaction_date)?,
+            gross_value: tx.total_value,
+            withheld: tx.foreign_tax_withheld.unwrap_or(0.0),
+        });
+    }
+    Ok(dividends)
 }
 
 #[derive(Deserialize)]

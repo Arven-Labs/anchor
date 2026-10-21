@@ -13,7 +13,7 @@ pub enum TaxTreatment {
     Fii,
     /// Cripto: apuração própria em `domain::tax::crypto` (DARF 4600, isenção mensal, sem compensação).
     Crypto,
-    /// Ativo no exterior (Lei 14.754/2023, apuração anual) — só aviso.
+    /// Ativo no exterior (Lei 14.754/2023, apuração anual): apurado em `domain::tax::foreign`.
     ForeignWarning,
     /// Fora do escopo (renda fixa, imóvel, empresa não listada, `metal` —
     /// cotação COMEX, não ouro ativo financeiro da B3).
