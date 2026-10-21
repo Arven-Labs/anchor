@@ -3719,7 +3719,7 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   retido lá fora até o limite do devido. `PortfolioTransaction.foreignTaxWithheld` (banco v7 → v8, `ALTER TABLE` no `onUpgrade`), campo "Imposto retido no exterior" no lançamento de provento de ativo fora de BRL (e no
   histórico). `ForeignTaxScreen` (um cartão por ano, vendas e proventos expansíveis) aberta pela ação "IR de exterior" do Portfolio, visível com ao menos um ativo `acao_internacional`/`reit`/`etf_us`. `formatBrl`/`formatDay`
   perderam o `@visibleForTesting` por serem usados também pela tela nova.
-- **Verificado**: `dart analyze` sem problemas em `lib/domain` e `lib/models`. Testes novos escritos (`foreign_tax_test`, `cost_basis_test`, `foreign_tax_screen_test`, caso novo em `portfolio_transaction_test`), **ainda não rodados**: resultado no CI Mobile (`flutter analyze` e `flutter test`).
+- **Verificado**: CI Mobile (commit `31bee85`): `flutter analyze` e `flutter test` passaram, incluindo os testes novos (`foreign_tax_test`, `cost_basis_test`, `foreign_tax_screen_test`, caso novo em `portfolio_transaction_test`) e os da cripto, que provam a refatoração do custo médio.
 - **Não verificado**: a migration v7 → v8 num banco real; a tela a olho; a resposta real do `USDBRL=X` para históricos longos (a série vai da primeira compra).
 - **Atenção**: regras de fontes secundárias, conferir na Receita; câmbio de mercado, não PTAX; sem desdobramento nem bonificação no mobile.
 - **Pendente**: moedas além de USD; PTAX; "Bens e Direitos" para a DAA; entidades offshore e come-cotas; sync com o desktop (Fase 8).
