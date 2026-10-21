@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../domain/fx_history.dart';
 import '../models/quote.dart';
 import 'quote_exceptions.dart';
 import 'quote_http.dart';
@@ -61,6 +62,64 @@ class YahooQuoteService {
       return Quote.fromYahooMeta(ticker, meta);
     } catch (_) {
       throw QuoteNotFoundException(ticker);
+    }
+  }
+
+  /// Série diária do dólar em reais (`USDBRL=X`) desde `from` (menos uma
+  /// semana de folga pro dia mais próximo achar vizinho) até hoje — o IR de
+  /// cripto em USD converte cada operação pelo câmbio da data dela. Datas em
+  /// UTC; fechamento nulo (dia sem pregão) é descartado.
+  Future<FxHistory> fetchFxHistory({required DateTime from}) async {
+    const symbol = 'USDBRL=X';
+    final start = DateTime.utc(
+      from.year,
+      from.month,
+      from.day,
+    ).subtract(const Duration(days: 7));
+    final end = DateTime.now().toUtc().add(const Duration(days: 1));
+    final uri = Uri.parse('$_chartUrl/$symbol').replace(
+      queryParameters: {
+        'period1': '${start.millisecondsSinceEpoch ~/ 1000}',
+        'period2': '${end.millisecondsSinceEpoch ~/ 1000}',
+        'interval': '1d',
+      },
+    );
+
+    final response = await quoteGet(
+      _client,
+      uri,
+      source: 'yahoo',
+      headers: {'User-Agent': 'Mozilla/5.0'},
+    );
+    if (response.statusCode != 200) throw QuoteNotFoundException(symbol);
+
+    try {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final result =
+          (body['chart']['result'] as List).first as Map<String, dynamic>;
+      final timestamps = (result['timestamp'] as List).cast<num>();
+      final closes =
+          ((result['indicators']['quote'] as List).first
+                  as Map<String, dynamic>)['close']
+              as List;
+      final series = <(DateTime, double)>[];
+      for (var i = 0; i < timestamps.length && i < closes.length; i++) {
+        final close = closes[i];
+        if (close is! num) continue;
+        series.add((
+          DateTime.fromMillisecondsSinceEpoch(
+            timestamps[i].toInt() * 1000,
+            isUtc: true,
+          ),
+          close.toDouble(),
+        ));
+      }
+      if (series.isEmpty) throw QuoteNotFoundException(symbol);
+      return FxHistory(series);
+    } on QuoteNotFoundException {
+      rethrow;
+    } catch (_) {
+      throw QuoteNotFoundException(symbol);
     }
   }
 

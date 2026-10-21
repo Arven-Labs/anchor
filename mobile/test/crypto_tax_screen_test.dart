@@ -70,5 +70,14 @@ void main() {
       cryptoWarningText(const CryptoTaxWarning.salesNonBrl(period: '2026-02')),
       contains('02/2026'),
     );
+    expect(
+      cryptoWarningText(const CryptoTaxWarning.fxMissing(period: '2026-02')),
+      allOf(contains('USD'), contains('02/2026'), contains('câmbio')),
+    );
+  });
+
+  test('as notas de câmbio dizem de onde vem o dólar e o que ficou de fora', () {
+    expect(usdConversionNote, contains('USDBRL=X'));
+    expect(fxUnavailableNote, contains('ficaram de fora'));
   });
 }

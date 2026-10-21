@@ -1,7 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../domain/crypto_tax.dart';
+import '../domain/fx_history.dart';
+import '../models/asset.dart';
+import '../models/portfolio_transaction.dart';
 import '../services/portfolio_repository.dart';
+import '../services/yahoo_quote_service.dart';
+
+@visibleForTesting
+const usdConversionNote =
+    'Operações em USD convertidas pelo dólar da data (Yahoo, USDBRL=X).';
+
+@visibleForTesting
+const fxUnavailableNote =
+    'Câmbio indisponível agora: as operações em USD ficaram de fora. '
+    'Tente de novo em instantes.';
 
 /// Reais no formato brasileiro (`R$ 1.234,56`), sem depender de `intl`.
 @visibleForTesting
@@ -54,6 +67,9 @@ String cryptoWarningText(CryptoTaxWarning warning) {
     case CryptoTaxWarningKind.salesNonBrl:
       return 'Vendas de cripto fora de BRL em ${formatPeriod(warning.period!)} '
           'não são apuradas aqui (regra de exterior).';
+    case CryptoTaxWarningKind.fxMissing:
+      return 'Venda de cripto em USD em ${formatPeriod(warning.period!)} sem '
+          'câmbio para converter: ficou de fora da apuração.';
   }
 }
 
@@ -69,7 +85,10 @@ class CryptoTaxScreen extends StatefulWidget {
 class _CryptoTaxScreenState extends State<CryptoTaxScreen> {
   final _repository = PortfolioRepository();
 
+  final _yahoo = YahooQuoteService();
+
   bool _loading = true;
+  bool _fxUnavailable = false;
   CryptoTaxAssessment? _assessment;
 
   @override
@@ -81,9 +100,38 @@ class _CryptoTaxScreenState extends State<CryptoTaxScreen> {
   Future<void> _load() async {
     final assets = await _repository.listAssets();
     final transactions = await _repository.listAllTransactions();
+
+    // Cripto antiga em USD só é apurada convertida pelo dólar da data: busca
+    // o câmbio desde a 1ª operação em USD, e só se houver alguma.
+    final usdIds = {
+      for (final a in assets)
+        if (a.assetClass == AssetClass.cripto &&
+            a.currency == 'USD' &&
+            a.id != null)
+          a.id!,
+    };
+    final usdDates = [
+      for (final t in transactions)
+        if (usdIds.contains(t.assetId) &&
+            (t.type == TransactionType.compra ||
+                t.type == TransactionType.venda))
+          t.date,
+    ]..sort();
+
+    FxHistory? usdBrl;
+    var fxUnavailable = false;
+    if (usdDates.isNotEmpty) {
+      try {
+        usdBrl = await _yahoo.fetchFxHistory(from: usdDates.first);
+      } catch (_) {
+        fxUnavailable = true;
+      }
+    }
+
     if (!mounted) return;
     setState(() {
-      _assessment = assessCryptoTax(assets, transactions);
+      _assessment = assessCryptoTax(assets, transactions, usdBrl: usdBrl);
+      _fxUnavailable = fxUnavailable;
       _loading = false;
     });
   }
@@ -100,10 +148,25 @@ class _CryptoTaxScreenState extends State<CryptoTaxScreen> {
               children: [
                 Text(
                   'Calculado só com as transações lançadas neste app, a custo '
-                  'médio, sem taxas. As regras vêm de fontes secundárias: '
-                  'confira na Receita (GCAP) antes de pagar.',
+                  'médio e com a taxa informada em cada operação. As regras '
+                  'vêm de fontes secundárias: confira na Receita (GCAP) antes '
+                  'de pagar.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                if (assessment.usdConverted) ...[
+                  const SizedBox(height: 8),
+                  Text(usdConversionNote,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+                if (_fxUnavailable) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    fxUnavailableNote,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 for (final warning in assessment.warnings)
                   Padding(

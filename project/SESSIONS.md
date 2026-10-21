@@ -3687,3 +3687,16 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não verificado**: a migration v6 → v7 num banco real (sem teste, o `AppDatabase` é um singleton de arquivo) e as telas a olho.
 - **Fora desta fatia**: o "preço médio" das posições (`computePositions`) segue sem taxa (é só exibição, não entra no IR).
 - **Pendente**: cripto antiga em USD; exterior (Lei 14.754); timeout do `statement-review.e2e.mjs` se a instabilidade voltar.
+
+## Sessão 183 — cripto no app móvel, etapa 9: cripto antiga em USD entra no IR, convertida pelo dólar da data
+- **Decisão** (plan mode): converter pelo câmbio, igual ao desktop (Sessão 171), em vez de recadastrar o ativo ou só avisar. O mobile não tinha fonte de câmbio: buscamos `USDBRL=X` no Yahoo sob demanda, só quando a tela de IR
+  acha operação de cripto em USD, sem guardar em banco (uma chamada por abertura da tela).
+- **Feito**: `domain/fx_history.dart` (`FxHistory.rateOn`: dia mais próximo, empate pega o anterior, como o `nearest` do desktop); `YahooQuoteService.fetchFxHistory` (lê `timestamp[]` e `close[]`, descarta fechamento nulo,
+  429/5xx/rede → indisponível, série vazia → não encontrado); `assessCryptoTax(..., usdBrl:)` converte valor e taxa de cada operação em USD pelo dólar da data (`CryptoTaxAssessment.usdConverted`); sem câmbio a operação fica de
+  fora e a venda avisa `fxMissing` (o `salesNonBrl` ficou só para outras moedas, como EUR). A tela de IR busca o câmbio, mostra "Operações em USD convertidas pelo dólar da data" ou "Câmbio indisponível agora". De passagem, o
+  texto de abertura da tela dizia "sem taxas" (errado desde a Sessão 182) e foi corrigido.
+- **Verificado**: testes novos (`fx_history_test.dart`; `fetchFxHistory`; no motor, o caso da Sessão 171 do desktop: US$ 10 mil a R$ 5 e US$ 12 mil a R$ 6 dão ganho de R$ 22 mil e DARF de R$ 3.300, taxa convertida, sem câmbio
+  fora com aviso, USD somando no limite com BRL, `usdConverted`); resultado no CI.
+- **Não verificado**: a resposta real do Yahoo para `USDBRL=X` no app (o desktop lê o mesmo par; os timestamps são UTC e o dia mais próximo absorve uma diferença de um dia); a tela a olho; o tamanho da resposta para históricos longos.
+- **Fora desta fatia**: a permuta segue só em BRL (o desktop também); o card das posições segue na moeda do ativo; sem cache do câmbio.
+- **Pendente**: exterior (Lei 14.754); timeout do `statement-review.e2e.mjs` se a instabilidade voltar.

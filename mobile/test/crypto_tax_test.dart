@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anchor_mobile/domain/crypto_tax.dart';
+import 'package:anchor_mobile/domain/fx_history.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/portfolio_transaction.dart';
 
@@ -46,8 +47,11 @@ void main() {
   PortfolioTransaction sell(int asset, String date, double quantity, double gross, {double? fee}) =>
       trade(asset, date, TransactionType.venda, quantity, gross, fee: fee);
 
-  CryptoTaxAssessment run(List<PortfolioTransaction> transactions, {List<Asset>? withAssets}) =>
-      assessCryptoTax(withAssets ?? assets, transactions);
+  CryptoTaxAssessment run(
+    List<PortfolioTransaction> transactions, {
+    List<Asset>? withAssets,
+    FxHistory? usdBrl,
+  }) => assessCryptoTax(withAssets ?? assets, transactions, usdBrl: usdBrl);
 
   Matcher near(double expected) => closeTo(expected, 1e-6);
 
@@ -150,7 +154,7 @@ void main() {
   test('venda de ativo fora de BRL só avisa, e venda acima do custo conhecido é sinalizada', () {
     final foreign = run(
       [buy(1, '2026-01-02', 1, 10000), sell(1, '2026-02-10', 1, 50000)],
-      withAssets: [coin(1, 'BTC', currency: 'USD')],
+      withAssets: [coin(1, 'BTC', currency: 'EUR')],
     );
     expect(foreign.months, isEmpty);
     expect(
@@ -267,6 +271,91 @@ void main() {
     expect(sale.saleValue, near(40000));
     expect(sale.proceeds, near(39600));
     expect(sale.gain, near(29600));
+  });
+
+  group('cripto em USD', () {
+    final usdBtc = [coin(1, 'BTC', currency: 'USD')];
+    // Dólar a R$ 5 em janeiro e a R$ 6 em fevereiro.
+    FxHistory dollar() => FxHistory([
+      (DateTime.utc(2026, 1, 2), 5.0),
+      (DateTime.utc(2026, 2, 10), 6.0),
+    ]);
+
+    test('é convertida pelo dólar da data de cada operação (caso da Sessão 171 do desktop)', () {
+      // Compra de US$ 10 mil a R$ 5 (custo R$ 50 mil) e venda de US$ 12 mil a R$ 6 (R$ 72 mil):
+      // ganho de R$ 22 mil, acima do limite, 15% = R$ 3.300.
+      final result = run(
+        [buy(1, '2026-01-02', 1, 10000), sell(1, '2026-02-10', 1, 12000)],
+        withAssets: usdBtc,
+        usdBrl: dollar(),
+      );
+      final month = result.months.single;
+
+      expect(result.usdConverted, isTrue);
+      expect(month.salesTotal, near(72000));
+      expect(month.gain, near(22000));
+      expect(month.tax, near(3300));
+      expect(result.warnings, isEmpty);
+    });
+
+    test('a taxa também é convertida', () {
+      final month = run(
+        [
+          buy(1, '2026-01-02', 1, 10000, fee: 20),
+          sell(1, '2026-02-10', 1, 12000, fee: 50),
+        ],
+        withAssets: usdBtc,
+        usdBrl: dollar(),
+      ).months.single;
+
+      // Custo (10.000 + 20) × 5 = 50.100; líquido (12.000 − 50) × 6 = 71.700.
+      expect(month.sales.single.cost, near(50100));
+      expect(month.sales.single.proceeds, near(71700));
+      expect(month.gain, near(21600));
+    });
+
+    test('sem câmbio, a operação em USD fica de fora e a venda avisa', () {
+      for (final fx in [null, FxHistory(const [])]) {
+        final result = run(
+          [buy(1, '2026-01-02', 1, 10000), sell(1, '2026-02-10', 1, 12000)],
+          withAssets: usdBtc,
+          usdBrl: fx,
+        );
+
+        expect(result.months, isEmpty);
+        expect(result.usdConverted, isFalse);
+        expect(result.warnings.single.kind, CryptoTaxWarningKind.fxMissing);
+        expect(result.warnings.single.period, '2026-02');
+      }
+    });
+
+    test('a venda em USD soma no limite do mês com a venda em reais', () {
+      // BTC em USD vende R$ 24 mil (US$ 4 mil a R$ 6) e ETH em reais vende R$ 20 mil: R$ 44 mil, acima do limite.
+      final month = run(
+        [
+          buy(1, '2026-01-02', 1, 1000),
+          buy(2, '2026-01-02', 1, 10000),
+          sell(1, '2026-02-10', 1, 4000),
+          sell(2, '2026-02-10', 1, 20000),
+        ],
+        withAssets: [coin(1, 'BTC', currency: 'USD'), coin(2, 'ETH')],
+        usdBrl: dollar(),
+      ).months.single;
+
+      expect(month.salesTotal, near(44000));
+      expect(month.exempt, isFalse);
+      // BTC: 24.000 − 5.000 = 19.000; ETH: 20.000 − 10.000 = 10.000.
+      expect(month.gain, near(29000));
+    });
+
+    test('usdConverted é falso quando não há operação em USD', () {
+      final result = run([
+        buy(1, '2026-01-02', 1, 10000),
+        sell(1, '2026-02-10', 1, 40000),
+      ], usdBrl: dollar());
+
+      expect(result.usdConverted, isFalse);
+    });
   });
 
   test('no mesmo dia a compra vem antes da venda, qualquer que seja a ordem da lista', () {

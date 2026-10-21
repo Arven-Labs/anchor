@@ -14,8 +14,10 @@
 //   tela de posições não baixa, por isso o cálculo é próprio). A taxa da
 //   compra soma ao custo; a da venda reduz o ganho (valor − taxa), mas não o
 //   total que conta para o limite de isenção, que é o valor bruto.
-// - Ativo que não está em BRL (exchange estrangeira) segue outra regra
-//   (Lei 14.754) e só avisa.
+// - Ativo em USD (cadastrado antes de a cotação em reais existir) é convertido
+//   operação a operação pelo dólar da data, como no desktop; sem câmbio a
+//   operação fica de fora e avisa. Outra moeda (exchange estrangeira) segue
+//   outra regra (Lei 14.754) e só avisa.
 //
 // ATENÇÃO: os valores vêm de fontes secundárias (blogs e consultorias), as
 // mesmas do desktop; conferir na Receita (GCAP) antes de confiar.
@@ -23,6 +25,7 @@
 import '../models/asset.dart';
 import '../models/portfolio_transaction.dart';
 import 'darf_calendar.dart';
+import 'fx_history.dart';
 
 const cryptoMonthlyExemption = 35000.0;
 const darfMinimum = 10.0;
@@ -124,6 +127,10 @@ enum CryptoTaxWarningKind {
 
   /// Venda de cripto fora de BRL no mês (`period`): não é apurada aqui.
   salesNonBrl,
+
+  /// Venda de cripto em USD no mês (`period`) sem câmbio pra converter: a
+  /// operação ficou de fora da apuração.
+  fxMissing,
 }
 
 class CryptoTaxWarning {
@@ -142,13 +149,42 @@ class CryptoTaxWarning {
     : kind = CryptoTaxWarningKind.salesNonBrl,
       ticker = null,
       date = null;
+
+  const CryptoTaxWarning.fxMissing({required String this.period})
+    : kind = CryptoTaxWarningKind.fxMissing,
+      ticker = null,
+      date = null;
 }
 
 class CryptoTaxAssessment {
   final List<CryptoMonth> months;
   final List<CryptoTaxWarning> warnings;
 
-  const CryptoTaxAssessment({required this.months, required this.warnings});
+  /// Houve operação em USD convertida pelo dólar da data.
+  final bool usdConverted;
+
+  const CryptoTaxAssessment({
+    required this.months,
+    required this.warnings,
+    this.usdConverted = false,
+  });
+}
+
+/// Operação em USD passada pra reais: valor, preço unitário e taxa × câmbio.
+PortfolioTransaction _inBrl(PortfolioTransaction tx, double rate) {
+  return PortfolioTransaction(
+    id: tx.id,
+    assetId: tx.assetId,
+    type: tx.type,
+    quantity: tx.quantity,
+    unitPrice: tx.unitPrice == null ? null : tx.unitPrice! * rate,
+    totalValue: tx.totalValue * rate,
+    fee: tx.fee == null ? null : tx.fee! * rate,
+    custodiaId: tx.custodiaId,
+    date: tx.date,
+    notes: tx.notes,
+    createdAt: tx.createdAt,
+  );
 }
 
 String _periodOf(DateTime date) =>
@@ -172,12 +208,20 @@ double _tieredTax(double before, double taxable) {
 /// Apura mês a mês o IR das vendas de cripto em BRL. As transações podem vir
 /// em qualquer ordem e misturar outras classes e tipos (são ignorados:
 /// transferência, aporte, retirada e provento não mexem em custo nem em venda).
+///
+/// Cripto em USD (cadastrada antes de a cotação em reais existir) é convertida
+/// operação a operação pelo dólar **da data dela** (`usdBrl`), como no
+/// desktop; sem `usdBrl` (ou com a série vazia) a operação fica de fora e a
+/// venda avisa `fxMissing`. Outras moedas só avisam `salesNonBrl`.
 CryptoTaxAssessment assessCryptoTax(
   List<Asset> assets,
-  List<PortfolioTransaction> transactions,
-) {
+  List<PortfolioTransaction> transactions, {
+  FxHistory? usdBrl,
+}) {
   final warnings = <CryptoTaxWarning>[];
   final nonBrlPeriods = <String>{};
+  final fxMissingPeriods = <String>{};
+  var usdConverted = false;
   final cryptoById = {
     for (final asset in assets)
       if (asset.assetClass == AssetClass.cripto && asset.id != null)
@@ -186,12 +230,25 @@ CryptoTaxAssessment assessCryptoTax(
 
   final trades = <(int, PortfolioTransaction)>[];
   var index = 0;
-  for (final tx in transactions) {
-    final asset = cryptoById[tx.assetId];
+  for (final original in transactions) {
+    final asset = cryptoById[original.assetId];
     final isTrade =
-        tx.type == TransactionType.compra || tx.type == TransactionType.venda;
+        original.type == TransactionType.compra ||
+        original.type == TransactionType.venda;
     if (asset == null || !isTrade) continue;
-    if (asset.currency != 'BRL') {
+
+    var tx = original;
+    if (asset.currency == 'USD') {
+      final rate = usdBrl?.rateOn(tx.date);
+      if (rate == null) {
+        if (tx.type == TransactionType.venda) {
+          fxMissingPeriods.add(_periodOf(tx.date));
+        }
+        continue;
+      }
+      tx = _inBrl(tx, rate);
+      usdConverted = true;
+    } else if (asset.currency != 'BRL') {
       if (tx.type == TransactionType.venda) {
         nonBrlPeriods.add(_periodOf(tx.date));
       }
@@ -318,5 +375,12 @@ CryptoTaxAssessment assessCryptoTax(
   for (final period in nonBrlPeriods.toList()..sort()) {
     warnings.add(CryptoTaxWarning.salesNonBrl(period: period));
   }
-  return CryptoTaxAssessment(months: months, warnings: warnings);
+  for (final period in fxMissingPeriods.toList()..sort()) {
+    warnings.add(CryptoTaxWarning.fxMissing(period: period));
+  }
+  return CryptoTaxAssessment(
+    months: months,
+    warnings: warnings,
+    usdConverted: usdConverted,
+  );
 }
