@@ -60,6 +60,10 @@ class PortfolioTransaction {
   final double? unitPrice;
   final double totalValue;
 
+  /// Taxa da corretora/exchange — só em `compra`/`venda`, `null` = sem taxa.
+  /// Na compra soma ao custo; na venda reduz o ganho (como no desktop).
+  final double? fee;
+
   /// Custódia da transação — opcional em todos os tipos. Pra
   /// `transferencia` é a origem.
   final int? custodiaId;
@@ -86,6 +90,7 @@ class PortfolioTransaction {
     this.quantity,
     this.unitPrice,
     required this.totalValue,
+    this.fee,
     this.custodiaId,
     this.transferToCustodiaId,
     required this.date,
@@ -106,6 +111,7 @@ class PortfolioTransaction {
       'quantity': quantity,
       'unit_price': unitPrice,
       'total_value': totalValue,
+      'fee': fee,
       'custodia_id': custodiaId,
       'transfer_to_custodia_id': transferToCustodiaId,
       'transaction_date': date.toIso8601String(),
@@ -127,6 +133,7 @@ class PortfolioTransaction {
       quantity: map['quantity'] as double?,
       unitPrice: map['unit_price'] as double?,
       totalValue: map['total_value'] as double,
+      fee: map['fee'] as double?,
       custodiaId: map['custodia_id'] as int?,
       transferToCustodiaId: map['transfer_to_custodia_id'] as int?,
       date: DateTime.parse(map['transaction_date'] as String),

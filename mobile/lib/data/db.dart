@@ -26,7 +26,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -67,7 +67,8 @@ class AppDatabase {
             fi_indexador TEXT,
             fi_taxa_percentual REAL,
             fi_data_vencimento TEXT,
-            fi_liquidez TEXT
+            fi_liquidez TEXT,
+            fee REAL
           )
         ''');
         await db.execute('''
@@ -193,6 +194,12 @@ class AppDatabase {
               created_at TEXT NOT NULL
             )
           ''');
+        }
+        if (oldVersion < 7) {
+          // Taxa da compra/venda; linhas antigas ficam sem taxa (nula).
+          await db.execute(
+            'ALTER TABLE portfolio_transactions ADD COLUMN fee REAL',
+          );
         }
       },
     );

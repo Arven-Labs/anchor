@@ -25,6 +25,7 @@ void main() {
     double quantityIn = 20,
     double value = 40000,
     double available = 1,
+    double? fee,
     int? custodiaId,
   }) => buildCryptoSwap(
     from: from ?? btc,
@@ -34,6 +35,7 @@ void main() {
     valueBrl: value,
     date: date,
     available: available,
+    fee: fee,
     custodiaId: custodiaId,
     now: DateTime(2026, 2, 10, 12),
   );
@@ -53,6 +55,20 @@ void main() {
     expect((result.sale.custodiaId, result.purchase.custodiaId), (7, 7));
     expect(result.sale.notes, 'Swap BTC → ETH');
     expect(result.purchase.notes, 'Swap BTC → ETH');
+  });
+
+  test('a taxa vai só na perna da venda', () {
+    final result = swap(fee: 150);
+
+    expect(result.sale.fee, 150);
+    expect(result.purchase.fee, isNull);
+    expect(swap().sale.fee, isNull, reason: 'sem taxa informada');
+  });
+
+  test('taxa negativa ou inválida é recusada', () {
+    expect(() => swap(fee: -1), throwsA(isA<CryptoSwapException>()));
+    expect(() => swap(fee: double.nan), throwsA(isA<CryptoSwapException>()));
+    expect(() => swap(fee: 0), returnsNormally);
   });
 
   test('entregar exatamente o saldo é permitido', () {

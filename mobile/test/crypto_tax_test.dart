@@ -27,22 +27,24 @@ void main() {
     String date,
     TransactionType type,
     double quantity,
-    double gross,
-  ) => PortfolioTransaction(
+    double gross, {
+    double? fee,
+  }) => PortfolioTransaction(
     id: ++nextId,
     assetId: assetId,
     type: type,
     quantity: quantity,
     unitPrice: gross / quantity,
     totalValue: gross,
+    fee: fee,
     date: DateTime.parse(date),
     createdAt: DateTime(2026, 1, 1),
   );
 
-  PortfolioTransaction buy(int asset, String date, double quantity, double gross) =>
-      trade(asset, date, TransactionType.compra, quantity, gross);
-  PortfolioTransaction sell(int asset, String date, double quantity, double gross) =>
-      trade(asset, date, TransactionType.venda, quantity, gross);
+  PortfolioTransaction buy(int asset, String date, double quantity, double gross, {double? fee}) =>
+      trade(asset, date, TransactionType.compra, quantity, gross, fee: fee);
+  PortfolioTransaction sell(int asset, String date, double quantity, double gross, {double? fee}) =>
+      trade(asset, date, TransactionType.venda, quantity, gross, fee: fee);
 
   CryptoTaxAssessment run(List<PortfolioTransaction> transactions, {List<Asset>? withAssets}) =>
       assessCryptoTax(withAssets ?? assets, transactions);
@@ -222,6 +224,49 @@ void main() {
 
     expect(result.months, isEmpty);
     expect(result.warnings, isEmpty);
+  });
+
+  test('a taxa da compra sobe o custo e a da venda baixa o ganho, sem mexer no limite de isenção', () {
+    final month = run([
+      buy(1, '2026-01-02', 1, 10000, fee: 100),
+      sell(1, '2026-02-10', 1, 40000, fee: 400),
+    ]).months.single;
+    final sale = month.sales.single;
+
+    expect(sale.cost, near(10100));
+    expect(sale.saleValue, near(40000), reason: 'o limite conta o valor bruto');
+    expect(sale.proceeds, near(39600));
+    expect(sale.gain, near(29500));
+    expect(month.salesTotal, near(40000));
+    expect(month.tax, near(0.15 * 29500));
+  });
+
+  test('a taxa pode transformar a venda em prejuízo e a taxa sozinha não acende o limite', () {
+    final month = run([
+      buy(1, '2026-01-02', 1, 10000),
+      sell(1, '2026-02-10', 1, 10100, fee: 200),
+    ]).months.single;
+
+    expect(month.gain, near(-100));
+    expect(month.tax, 0);
+    // Vendas de 34.800 + 200 de taxa não passam o limite por causa da taxa: conta o bruto.
+    final edge = run([
+      buy(1, '2026-01-02', 1, 10000),
+      sell(1, '2026-02-10', 1, 35000, fee: 500),
+    ]).months.single;
+    expect(edge.exempt, isTrue);
+  });
+
+  test('venda acima do custo conhecido leva só a parte proporcional da taxa', () {
+    // Compra 1, vende 2 por 80 mil com taxa de 800: cobre metade → valor 40 mil, líquido (80 mil − 800) / 2.
+    final sale = run([
+      buy(1, '2026-01-02', 1, 10000),
+      sell(1, '2026-02-10', 2, 80000, fee: 800),
+    ]).months.single.sales.single;
+
+    expect(sale.saleValue, near(40000));
+    expect(sale.proceeds, near(39600));
+    expect(sale.gain, near(29600));
   });
 
   test('no mesmo dia a compra vem antes da venda, qualquer que seja a ordem da lista', () {

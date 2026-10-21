@@ -183,8 +183,9 @@ class _MonthCard extends StatelessWidget {
                       '${sale.ticker} — ${formatDay(sale.date)}',
                     ),
                     subtitle: Text(
-                      'Venda ${formatBrl(sale.saleValue)} · custo '
-                      '${formatBrl(sale.cost)} · ganho ${formatBrl(sale.gain)}',
+                      'Venda ${formatBrl(sale.saleValue)}'
+                      '${sale.saleValue - sale.proceeds > 0.005 ? ' (taxa ${formatBrl(sale.saleValue - sale.proceeds)})' : ''}'
+                      ' · custo ${formatBrl(sale.cost)} · ganho ${formatBrl(sale.gain)}',
                     ),
                   ),
               ],

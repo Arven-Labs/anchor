@@ -11,8 +11,9 @@
 //   R$ 5 mi, 17,5% até R$ 10 mi, 20% até R$ 30 mi, 22,5% acima.
 // - Prejuízo do mês dá imposto zero e não compensa nem carrega.
 // - Custo médio corrente por ativo (a venda baixa o custo; o "preço médio" da
-//   tela de posições não baixa, por isso o cálculo é próprio). Sem taxa: o
-//   mobile não guarda taxa nas transações.
+//   tela de posições não baixa, por isso o cálculo é próprio). A taxa da
+//   compra soma ao custo; a da venda reduz o ganho (valor − taxa), mas não o
+//   total que conta para o limite de isenção, que é o valor bruto.
 // - Ativo que não está em BRL (exchange estrangeira) segue outra regra
 //   (Lei 14.754) e só avisa.
 //
@@ -50,6 +51,9 @@ class CryptoSale {
 
   /// Valor de venda (base do limite de isenção), só da parte com custo conhecido.
   final double saleValue;
+
+  /// Valor de venda − taxa (proporcional à parte coberta): a base do ganho.
+  final double proceeds;
   final double cost;
   final double gain;
 
@@ -64,6 +68,7 @@ class CryptoSale {
     required this.date,
     required this.quantity,
     required this.saleValue,
+    required this.proceeds,
     required this.cost,
     required this.gain,
     required this.costUnknown,
@@ -222,7 +227,7 @@ CryptoTaxAssessment assessCryptoTax(
     final quantity = tx.quantity ?? 0;
     if (tx.type == TransactionType.compra) {
       quantityOf[id] = (quantityOf[id] ?? 0) + quantity;
-      costOf[id] = (costOf[id] ?? 0) + tx.totalValue;
+      costOf[id] = (costOf[id] ?? 0) + tx.totalValue + (tx.fee ?? 0);
       continue;
     }
 
@@ -247,6 +252,7 @@ CryptoTaxAssessment assessCryptoTax(
       );
     }
     final saleValue = tx.totalValue * share;
+    final proceeds = (tx.totalValue - (tx.fee ?? 0)) * share;
     byMonth
         .putIfAbsent(_periodOf(tx.date), () => [])
         .add(
@@ -257,8 +263,9 @@ CryptoTaxAssessment assessCryptoTax(
             date: tx.date,
             quantity: covered,
             saleValue: saleValue,
+            proceeds: proceeds,
             cost: cost,
-            gain: saleValue - cost,
+            gain: proceeds - cost,
             costUnknown: costUnknown,
           ),
         );

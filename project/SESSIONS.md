@@ -3676,3 +3676,14 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não verificado**: a tela a olho; a lista de vendas expansível; sem teste de widget da tela inteira.
 - **Atenção**: regras de fontes secundárias, conferir na Receita (GCAP); sem taxas e sem IRRF.
 - **Pendente**: taxa nas transações do mobile (afeta custo e ganho); cripto antiga em USD; sync com o desktop (Fase 8).
+
+## Sessão 182 — cripto no app móvel, etapa 8: taxa nas transações
+- **Plano** (plan mode): espelhar o desktop (`cost_basis.rs`, `crypto.rs`): a taxa da compra soma ao custo; a da venda reduz o ganho (valor − taxa) mas não o total do limite de isenção, que é o valor bruto; na permuta a taxa fica só na venda.
+- **Feito**: coluna `fee REAL` em `portfolio_transactions` (banco v6 → v7, `ALTER TABLE` no `onUpgrade`; linhas antigas ficam sem taxa); `PortfolioTransaction.fee`; campo "Taxa (opcional)" no lançamento de compra/venda (negativa ou
+  inválida bloqueia) e na tela de troca; histórico mostra a taxa; `assessCryptoTax` soma a taxa da compra ao custo e usa `proceeds = (valor − taxa) × parte coberta` (novo campo em `CryptoSale`) como base do ganho; a lista de
+  vendas da tela de IR mostra a taxa quando há.
+- **Verificado**: testes novos (taxa de compra e de venda no motor, limite de isenção com valor bruto, prejuízo causado pela taxa, parte proporcional na venda acima do custo conhecido; taxa só na perna da venda e recusa de
+  negativa/NaN na permuta; ida e volta do modelo com e sem `fee`); resultado no CI.
+- **Não verificado**: a migration v6 → v7 num banco real (sem teste, o `AppDatabase` é um singleton de arquivo) e as telas a olho.
+- **Fora desta fatia**: o "preço médio" das posições (`computePositions`) segue sem taxa (é só exibição, não entra no IR).
+- **Pendente**: cripto antiga em USD; exterior (Lei 14.754); timeout do `statement-review.e2e.mjs` se a instabilidade voltar.

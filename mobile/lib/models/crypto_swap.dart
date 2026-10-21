@@ -17,7 +17,8 @@ class CryptoSwapException implements Exception {
 /// quem grava as duas juntas é `PortfolioRepository.insertTransactions`.
 ///
 /// `available` é o saldo atual da moeda entregue (venda sem saldo é recusada,
-/// como no desktop); o mobile não tem campo de taxa, então a permuta não leva.
+/// como no desktop). A taxa (`fee`, em reais) vai só na perna da venda, onde
+/// reduz o ganho, como em `record_crypto_swap`.
 ({PortfolioTransaction sale, PortfolioTransaction purchase}) buildCryptoSwap({
   required Asset from,
   required Asset to,
@@ -26,6 +27,7 @@ class CryptoSwapException implements Exception {
   required double valueBrl,
   required DateTime date,
   required double available,
+  double? fee,
   int? custodiaId,
   DateTime? now,
 }) {
@@ -55,6 +57,9 @@ class CryptoSwapException implements Exception {
       throw CryptoSwapException('O campo $name deve ser maior que zero.');
     }
   }
+  if (fee != null && (!fee.isFinite || fee < 0)) {
+    throw const CryptoSwapException('A taxa não pode ser negativa.');
+  }
   if (quantityOut > available + 1e-9) {
     throw CryptoSwapException(
       'Saldo insuficiente de ${from.ticker}: tem $available e a troca entrega $quantityOut.',
@@ -63,13 +68,19 @@ class CryptoSwapException implements Exception {
 
   final createdAt = now ?? DateTime.now();
   final notes = 'Swap ${from.ticker} → ${to.ticker}';
-  PortfolioTransaction leg(Asset asset, TransactionType type, double quantity) {
+  PortfolioTransaction leg(
+    Asset asset,
+    TransactionType type,
+    double quantity, {
+    double? legFee,
+  }) {
     return PortfolioTransaction(
       assetId: asset.id,
       type: type,
       quantity: quantity,
       unitPrice: valueBrl / quantity,
       totalValue: valueBrl,
+      fee: legFee,
       custodiaId: custodiaId,
       date: date,
       notes: notes,
@@ -78,7 +89,7 @@ class CryptoSwapException implements Exception {
   }
 
   return (
-    sale: leg(from, TransactionType.venda, quantityOut),
+    sale: leg(from, TransactionType.venda, quantityOut, legFee: fee),
     purchase: leg(to, TransactionType.compra, quantityIn),
   );
 }

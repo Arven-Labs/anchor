@@ -19,6 +19,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   final _quantityController = TextEditingController();
   final _unitPriceController = TextEditingController();
   final _totalValueController = TextEditingController();
+  final _feeController = TextEditingController();
   final _fiEmissorController = TextEditingController();
   final _fiTaxaController = TextEditingController();
 
@@ -67,6 +68,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         _quantityController.text = tx.quantity?.toString() ?? '';
         _unitPriceController.text = tx.unitPrice?.toString() ?? '';
         _totalValueController.text = tx.totalValue.toString();
+        _feeController.text = tx.fee?.toString() ?? '';
         _fiEmissorController.text = tx.fiEmissor ?? '';
         _fiIndexador = tx.fiIndexador ?? fiIndexadores.first;
         _fiTaxaController.text = tx.fiTaxaPercentual?.toString() ?? '';
@@ -149,6 +151,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     if (needsUnitPrice && unitPrice! <= 0) return;
     if (totalValue <= 0) return;
 
+    // Taxa só em compra/venda; vazia = sem taxa, negativa ou inválida bloqueia.
+    final feeText = _feeController.text.trim().replaceAll(',', '.');
+    double? fee;
+    if (needsUnitPrice && feeText.isNotEmpty) {
+      fee = double.tryParse(feeText);
+      if (fee == null || !fee.isFinite || fee < 0) return;
+    }
+
     final showFixedIncomeFields = _showFixedIncomeFields;
 
     setState(() => _saving = true);
@@ -160,6 +170,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       quantity: quantity,
       unitPrice: unitPrice,
       totalValue: totalValue,
+      fee: fee,
       custodiaId: _custodia?.id,
       transferToCustodiaId: _type.needsTransferDestination
           ? _transferToCustodia?.id
@@ -193,6 +204,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     _quantityController.dispose();
     _unitPriceController.dispose();
     _totalValueController.dispose();
+    _feeController.dispose();
     _fiEmissorController.dispose();
     _fiTaxaController.dispose();
     super.dispose();
@@ -321,6 +333,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   ),
                   decoration: const InputDecoration(
                     labelText: 'Preço unitário',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _feeController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Taxa (opcional)',
                   ),
                 ),
                 const SizedBox(height: 16),

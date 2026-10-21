@@ -24,6 +24,7 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
   final _quantityOutController = TextEditingController();
   final _quantityInController = TextEditingController();
   final _valueController = TextEditingController();
+  final _feeController = TextEditingController();
 
   List<Position> _cryptoPositions = [];
   List<Custodia> _custodias = [];
@@ -109,6 +110,13 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
     final to = _to;
     if (from == null || to == null) return;
 
+    final feeText = _feeController.text.trim().replaceAll(',', '.');
+    final fee = feeText.isEmpty ? null : double.tryParse(feeText);
+    if (feeText.isNotEmpty && fee == null) {
+      setState(() => _error = 'A taxa precisa ser um número.');
+      return;
+    }
+
     final ({PortfolioTransaction sale, PortfolioTransaction purchase}) swap;
     try {
       swap = buildCryptoSwap(
@@ -119,6 +127,7 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
         valueBrl: _number(_valueController),
         date: _date,
         available: from.netQuantity,
+        fee: fee,
         custodiaId: _custodia?.id,
       );
     } on CryptoSwapException catch (e) {
@@ -139,6 +148,7 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
     _quantityOutController.dispose();
     _quantityInController.dispose();
     _valueController.dispose();
+    _feeController.dispose();
     super.dispose();
   }
 
@@ -232,6 +242,14 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
             ),
             if (_hint != null)
               Text(_hint!, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _feeController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Taxa (opcional, BRL)',
+              ),
+            ),
             const SizedBox(height: 16),
             DropdownButtonFormField<Custodia?>(
               initialValue: _custodia,
