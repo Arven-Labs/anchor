@@ -24,6 +24,7 @@
 
 import '../models/asset.dart';
 import '../models/portfolio_transaction.dart';
+import 'cost_basis.dart';
 import 'darf_calendar.dart';
 import 'fx_history.dart';
 
@@ -276,33 +277,20 @@ CryptoTaxAssessment assessCryptoTax(
   });
 
   final byMonth = <String, List<CryptoSale>>{};
-  final quantityOf = <int, double>{};
-  final costOf = <int, double>{};
+  final positions = <int, CostPosition>{};
   for (final (_, tx) in trades) {
     final asset = cryptoById[tx.assetId]!;
     final id = asset.id!;
     final quantity = tx.quantity ?? 0;
+    final position = positions.putIfAbsent(id, CostPosition.new);
     if (tx.type == TransactionType.compra) {
-      quantityOf[id] = (quantityOf[id] ?? 0) + quantity;
-      costOf[id] = (costOf[id] ?? 0) + tx.totalValue + (tx.fee ?? 0);
+      position.add(quantity, tx.totalValue + (tx.fee ?? 0));
       continue;
     }
 
-    final held = quantityOf[id] ?? 0;
-    final available = held > 0 ? held : 0.0;
-    final covered = quantity < available ? quantity : available;
-    final average = held > _eps ? (costOf[id] ?? 0) / held : 0.0;
-    final cost = average * covered;
-    quantityOf[id] = held - covered;
-    costOf[id] = (costOf[id] ?? 0) - cost;
-    // Posição zerada → o custo médio recomeça do zero na próxima compra.
-    if (quantityOf[id]! <= _eps) {
-      quantityOf[id] = 0;
-      costOf[id] = 0;
-    }
-
-    final costUnknown = covered + _eps < quantity;
-    final share = quantity > _eps ? covered / quantity : 0.0;
+    final (cost, covered) = position.take(quantity);
+    final costUnknown = covered + costEps < quantity;
+    final share = quantity > costEps ? covered / quantity : 0.0;
     if (costUnknown) {
       warnings.add(
         CryptoTaxWarning.costUnknown(ticker: asset.ticker, date: tx.date),

@@ -17,7 +17,7 @@ const fxUnavailableNote =
     'Tente de novo em instantes.';
 
 /// Reais no formato brasileiro (`R$ 1.234,56`), sem depender de `intl`.
-@visibleForTesting
+/// Compartilhado com a tela de IR de exterior.
 String formatBrl(double value) {
   final cents = (value.abs() * 100).round();
   final whole = (cents ~/ 100).toString();
@@ -30,7 +30,6 @@ String formatBrl(double value) {
   return '${sign}R\$ $grouped,$fraction';
 }
 
-@visibleForTesting
 String formatDay(DateTime date) =>
     '${date.day.toString().padLeft(2, '0')}/'
     '${date.month.toString().padLeft(2, '0')}/${date.year}';

@@ -20,6 +20,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   final _unitPriceController = TextEditingController();
   final _totalValueController = TextEditingController();
   final _feeController = TextEditingController();
+  final _withheldController = TextEditingController();
   final _fiEmissorController = TextEditingController();
   final _fiTaxaController = TextEditingController();
 
@@ -69,6 +70,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         _unitPriceController.text = tx.unitPrice?.toString() ?? '';
         _totalValueController.text = tx.totalValue.toString();
         _feeController.text = tx.fee?.toString() ?? '';
+        _withheldController.text = tx.foreignTaxWithheld?.toString() ?? '';
         _fiEmissorController.text = tx.fiEmissor ?? '';
         _fiIndexador = tx.fiIndexador ?? fiIndexadores.first;
         _fiTaxaController.text = tx.fiTaxaPercentual?.toString() ?? '';
@@ -105,6 +107,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   bool get _showFixedIncomeFields =>
       _type == TransactionType.compra &&
       (_selectedAsset?.assetClass.isFixedIncome ?? false);
+
+  /// Imposto retido lá fora só faz sentido num provento de ativo que paga em
+  /// outra moeda (crédito da apuração do exterior).
+  bool get _showForeignWithholding =>
+      _type == TransactionType.provento &&
+      _selectedAsset != null &&
+      _selectedAsset!.currency != 'BRL';
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -159,6 +168,19 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       if (fee == null || !fee.isFinite || fee < 0) return;
     }
 
+    // Imposto retido no exterior só em provento de ativo fora de BRL; vazio =
+    // sem retenção, negativo ou inválido bloqueia.
+    final withheldText = _withheldController.text.trim().replaceAll(',', '.');
+    double? foreignTaxWithheld;
+    if (_showForeignWithholding && withheldText.isNotEmpty) {
+      foreignTaxWithheld = double.tryParse(withheldText);
+      if (foreignTaxWithheld == null ||
+          !foreignTaxWithheld.isFinite ||
+          foreignTaxWithheld < 0) {
+        return;
+      }
+    }
+
     final showFixedIncomeFields = _showFixedIncomeFields;
 
     setState(() => _saving = true);
@@ -171,6 +193,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       unitPrice: unitPrice,
       totalValue: totalValue,
       fee: fee,
+      foreignTaxWithheld: foreignTaxWithheld,
       custodiaId: _custodia?.id,
       transferToCustodiaId: _type.needsTransferDestination
           ? _transferToCustodia?.id
@@ -205,6 +228,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     _unitPriceController.dispose();
     _totalValueController.dispose();
     _feeController.dispose();
+    _withheldController.dispose();
     _fiEmissorController.dispose();
     _fiTaxaController.dispose();
     super.dispose();
@@ -358,6 +382,20 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   decoration: const InputDecoration(labelText: 'Valor'),
                 ),
               const SizedBox(height: 16),
+              if (_showForeignWithholding) ...[
+                TextField(
+                  controller: _withheldController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText:
+                        'Imposto retido no exterior '
+                        '(${_selectedAsset?.currency}, opcional)',
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               DropdownButtonFormField<Custodia?>(
                 initialValue: _custodia,
                 decoration: InputDecoration(

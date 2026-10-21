@@ -3711,3 +3711,15 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não verificado**: a tela a olho (a captura `taxes-foreign` está nos artefatos do CI); a migration num banco real.
 - **Atenção**: regras de fontes secundárias, conferir na Receita; câmbio de mercado, não PTAX; o campo de retenção só existe no formulário de lançamento (não na importação nem na edição).
 - **Pendente**: exterior no mobile; PTAX; "Bens e Direitos" para a DAA; entidades offshore e come-cotas.
+
+## Sessão 185 — IR de ativos no exterior (Lei 14.754), app móvel
+- **Decisões** (plan mode): extrair o custo médio para uma classe compartilhada; só USD (outra moeda sai da apuração com aviso de câmbio do ano, como no desktop sem cotação); retenção só no formulário de lançamento, como no desktop.
+- **Feito**: `domain/cost_basis.dart` (`CostPosition`, porta de `take_from_position`) agora também alimenta `assessCryptoTax`, sem mudança de comportamento. `domain/foreign_tax.dart` porta `foreign.rs`: por ano a partir de 2024,
+  ganho de capital + proventos em reais pelo dólar de cada dia, custo médio em reais (compras de antes de 2024 formam custo; venda de antes não é apurada), compensação de perda dentro do ano e entre anos, 15% e crédito do
+  retido lá fora até o limite do devido. `PortfolioTransaction.foreignTaxWithheld` (banco v7 → v8, `ALTER TABLE` no `onUpgrade`), campo "Imposto retido no exterior" no lançamento de provento de ativo fora de BRL (e no
+  histórico). `ForeignTaxScreen` (um cartão por ano, vendas e proventos expansíveis) aberta pela ação "IR de exterior" do Portfolio, visível com ao menos um ativo `acao_internacional`/`reit`/`etf_us`. `formatBrl`/`formatDay`
+  perderam o `@visibleForTesting` por serem usados também pela tela nova.
+- **Verificado**: `dart analyze` sem problemas em `lib/domain` e `lib/models`. Testes novos escritos (`foreign_tax_test`, `cost_basis_test`, `foreign_tax_screen_test`, caso novo em `portfolio_transaction_test`), **ainda não rodados**: resultado no CI Mobile (`flutter analyze` e `flutter test`).
+- **Não verificado**: a migration v7 → v8 num banco real; a tela a olho; a resposta real do `USDBRL=X` para históricos longos (a série vai da primeira compra).
+- **Atenção**: regras de fontes secundárias, conferir na Receita; câmbio de mercado, não PTAX; sem desdobramento nem bonificação no mobile.
+- **Pendente**: moedas além de USD; PTAX; "Bens e Direitos" para a DAA; entidades offshore e come-cotas; sync com o desktop (Fase 8).

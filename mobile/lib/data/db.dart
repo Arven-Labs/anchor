@@ -26,7 +26,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -68,7 +68,8 @@ class AppDatabase {
             fi_taxa_percentual REAL,
             fi_data_vencimento TEXT,
             fi_liquidez TEXT,
-            fee REAL
+            fee REAL,
+            foreign_tax_withheld REAL
           )
         ''');
         await db.execute('''
@@ -199,6 +200,13 @@ class AppDatabase {
           // Taxa da compra/venda; linhas antigas ficam sem taxa (nula).
           await db.execute(
             'ALTER TABLE portfolio_transactions ADD COLUMN fee REAL',
+          );
+        }
+        if (oldVersion < 8) {
+          // Imposto retido no exterior sobre o provento; linhas antigas ficam
+          // sem retenção (nula).
+          await db.execute(
+            'ALTER TABLE portfolio_transactions ADD COLUMN foreign_tax_withheld REAL',
           );
         }
       },

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../domain/foreign_tax.dart' show foreignAssetClasses;
 import '../models/asset.dart';
 import '../models/custodia.dart';
 import '../models/position.dart';
@@ -11,6 +12,7 @@ import 'add_transaction_screen.dart';
 import 'crypto_swap_screen.dart';
 import 'crypto_tax_screen.dart';
 import 'custodias_screen.dart';
+import 'foreign_tax_screen.dart';
 import 'manual_asset_details_screen.dart';
 import 'transaction_history_screen.dart';
 
@@ -159,6 +161,12 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     ).push(MaterialPageRoute(builder: (_) => const CryptoTaxScreen()));
   }
 
+  Future<void> _openForeignTax() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ForeignTaxScreen()));
+  }
+
   Future<void> _openCryptoSwap() async {
     final saved = await Navigator.of(
       context,
@@ -191,6 +199,14 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               icon: const Icon(Icons.calculate),
               tooltip: 'IR de cripto',
               onPressed: _openCryptoTax,
+            ),
+          if (_rows.any(
+            (r) => foreignAssetClasses.contains(r.position.asset.assetClass),
+          ))
+            IconButton(
+              icon: const Icon(Icons.public),
+              tooltip: 'IR de exterior',
+              onPressed: _openForeignTax,
             ),
           // Permuta só faz sentido com duas criptos cadastradas (como no desktop).
           if (_rows

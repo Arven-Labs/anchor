@@ -133,7 +133,8 @@ class _TransactionTile extends StatelessWidget {
           '${quantity != null ? ' · ${quantity.toStringAsFixed(quantity == quantity.roundToDouble() ? 0 : 2)} un.' : ''}'
           '${custodiaLabel != null ? ' · $custodiaLabel' : ''}'
           ' · ${transaction.totalValue.toStringAsFixed(2)}'
-          '${transaction.fee != null && transaction.fee! > 0 ? ' · taxa ${transaction.fee!.toStringAsFixed(2)}' : ''}',
+          '${transaction.fee != null && transaction.fee! > 0 ? ' · taxa ${transaction.fee!.toStringAsFixed(2)}' : ''}'
+          '${transaction.foreignTaxWithheld != null && transaction.foreignTaxWithheld! > 0 ? ' · retido ${transaction.foreignTaxWithheld!.toStringAsFixed(2)}' : ''}',
         ),
         onTap: onTap,
         trailing: Row(

@@ -22,6 +22,29 @@ void main() {
     expect(PortfolioTransaction.fromMap(map).fee, 1.5);
   });
 
+  test('o imposto retido no exterior vai e volta pelo mapa do banco', () {
+    final withheld = PortfolioTransaction(
+      id: 4,
+      assetId: 1,
+      type: TransactionType.provento,
+      totalValue: 100,
+      foreignTaxWithheld: 30,
+      date: DateTime(2026, 2, 10),
+      createdAt: DateTime(2026, 2, 10),
+    );
+    final map = withheld.toMap();
+
+    expect(map['foreign_tax_withheld'], 30);
+    expect(PortfolioTransaction.fromMap(map).foreignTaxWithheld, 30);
+    expect(
+      PortfolioTransaction.fromMap(map..remove('foreign_tax_withheld'))
+          .foreignTaxWithheld,
+      isNull,
+      reason: 'linha antiga sem a coluna lê como sem retenção',
+    );
+    expect(tx().toMap()['foreign_tax_withheld'], isNull);
+  });
+
   test('sem taxa fica nula, e linha antiga sem a coluna lê como sem taxa', () {
     final map = tx().toMap();
 

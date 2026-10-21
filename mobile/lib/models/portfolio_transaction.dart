@@ -64,6 +64,11 @@ class PortfolioTransaction {
   /// Na compra soma ao custo; na venda reduz o ganho (como no desktop).
   final double? fee;
 
+  /// Imposto retido no exterior sobre o provento, na moeda do ativo — só em
+  /// `provento` de ativo fora de BRL, `null` = sem retenção informada. É o
+  /// crédito da apuração da Lei 14.754 (`foreign_tax.dart`), como no desktop.
+  final double? foreignTaxWithheld;
+
   /// Custódia da transação — opcional em todos os tipos. Pra
   /// `transferencia` é a origem.
   final int? custodiaId;
@@ -91,6 +96,7 @@ class PortfolioTransaction {
     this.unitPrice,
     required this.totalValue,
     this.fee,
+    this.foreignTaxWithheld,
     this.custodiaId,
     this.transferToCustodiaId,
     required this.date,
@@ -112,6 +118,7 @@ class PortfolioTransaction {
       'unit_price': unitPrice,
       'total_value': totalValue,
       'fee': fee,
+      'foreign_tax_withheld': foreignTaxWithheld,
       'custodia_id': custodiaId,
       'transfer_to_custodia_id': transferToCustodiaId,
       'transaction_date': date.toIso8601String(),
@@ -134,6 +141,7 @@ class PortfolioTransaction {
       unitPrice: map['unit_price'] as double?,
       totalValue: map['total_value'] as double,
       fee: map['fee'] as double?,
+      foreignTaxWithheld: map['foreign_tax_withheld'] as double?,
       custodiaId: map['custodia_id'] as int?,
       transferToCustodiaId: map['transfer_to_custodia_id'] as int?,
       date: DateTime.parse(map['transaction_date'] as String),
