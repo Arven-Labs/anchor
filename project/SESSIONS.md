@@ -3667,3 +3667,12 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   resultado no CI.
 - **Atenção**: as regras vêm de fontes secundárias (as mesmas do desktop); conferir na Receita (GCAP). Sem taxa (o mobile não guarda); sem IRRF. O motor ainda não aparece em nenhuma tela.
 - **Pendente**: etapa 3 (tela de impostos), com os meses, o DARF 4600 e os avisos.
+
+## Sessão 181 — cripto no app móvel, etapa 7: tela de IR de cripto
+- **Feito (etapa 3 do plano, fecha o plano de permuta e IR)**: `screens/crypto_tax_screen.dart` mostra o resultado de `assessCryptoTax` mês a mês (mais recente primeiro): vendas do mês, ganho, imposto e alíquota efetiva, acumulado de meses
+  anteriores, e uma frase de situação (isento até R$ 35 mil, `DARF 4600 de R$ x até dd/mm/aaaa`, imposto abaixo do mínimo que soma ao mês seguinte, ou sem imposto); cada mês expande as vendas com valor, custo e ganho. Avisos no topo
+  (venda acima das compras lançadas; vendas fora de BRL). Ação "IR de cripto" no `AppBar` do Portfolio, visível com ao menos uma cripto. Somente leitura (o mobile não guarda pagamento de DARF). Reais em formato brasileiro sem `intl`.
+- **Verificado**: `crypto_tax_screen_test.dart` (formato em reais, datas, as quatro situações do mês, avisos); resultado no CI.
+- **Não verificado**: a tela a olho; a lista de vendas expansível; sem teste de widget da tela inteira.
+- **Atenção**: regras de fontes secundárias, conferir na Receita (GCAP); sem taxas e sem IRRF.
+- **Pendente**: taxa nas transações do mobile (afeta custo e ganho); cripto antiga em USD; sync com o desktop (Fase 8).
