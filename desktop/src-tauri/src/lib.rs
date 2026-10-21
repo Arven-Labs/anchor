@@ -169,6 +169,8 @@ pub fn run() {
             commands::tax::reset_tax_rule,
             commands::tax::sync_tax_rules,
             commands::tax::get_tax_assessment,
+            commands::tax::get_foreign_holdings,
+            commands::tax::export_foreign_holdings_csv,
             commands::tax::simulate_tax_sale,
             commands::tax::mark_tax_paid,
             commands::tax::unmark_tax_paid,

@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::{NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
     TransactionTrait, Unchanged,
@@ -19,7 +19,8 @@ use crate::commands::currency::load_fx_history;
 use crate::domain::option_position as option_calc;
 use crate::domain::tax::assessment::{self, Assessment, OptionResult, Side, Trade};
 use crate::domain::tax::classify::{treatment, TaxTreatment};
-use crate::domain::ptax::{RateKind, RateSource};
+use crate::domain::currency_conversion::FxHistory;
+use crate::domain::ptax::{PtaxSeries, RateKind, RateSource};
 use crate::domain::tax::foreign;
 use crate::domain::tax::rules::{self, Rule, RuleSet};
 use crate::entity::{
@@ -203,25 +204,142 @@ pub(crate) async fn assess_workspace(
     let mut assessment = assessment::assess_with_options(&trades, &options, &rules)?;
 
     let dividends = load_foreign_dividends(db, workspace_id).await?;
-    let currencies: HashSet<String> = trades
-        .iter()
-        .filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning)
-        .map(|t| t.currency.clone())
-        .chain(dividends.iter().map(|d| d.currency.clone()))
-        .filter(|c| c != "BRL")
+    let currencies: HashSet<String> = foreign_currencies(&trades)
+        .into_iter()
+        .chain(dividends.iter().map(|d| d.currency.clone()).filter(|c| c != "BRL"))
         .collect();
-    // A lei manda a PTAX do Banco Central (gravada por `refresh_ptax`); onde ela falta, vale o câmbio de mercado.
-    let ptax = ptax_store::stored(db, &currencies).await?;
-    let fx = load_fx_history(db, "BRL", &currencies).await?;
-    let rate = |currency: &str, date: NaiveDate, kind: RateKind| {
-        ptax.rate(currency, date, kind)
-            .map(|rate| (rate, RateSource::Ptax))
-            .or_else(|| fx.rate_on(currency, "BRL", date).map(|rate| (rate, RateSource::Market)))
-    };
-    let (years, warnings) = foreign::assess_foreign(&trades, &dividends, &rules, &rate)?;
+    let fx = ForeignFx::load(db, &currencies).await?;
+    let (years, warnings) =
+        foreign::assess_foreign(&trades, &dividends, &rules, &|currency, date, kind| fx.rate(currency, date, kind))?;
     assessment.foreign_years = years;
     assessment.warnings.extend(warnings);
     Ok(assessment)
+}
+
+/// Moedas (fora BRL) dos ativos do exterior nas operações.
+fn foreign_currencies(trades: &[Trade]) -> HashSet<String> {
+    trades
+        .iter()
+        .filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning)
+        .map(|t| t.currency.clone())
+        .filter(|c| c != "BRL")
+        .collect()
+}
+
+/// Câmbio do IR de exterior: a PTAX do Banco Central (gravada por `refresh_ptax`) e, onde ela falta, o câmbio de mercado.
+struct ForeignFx {
+    ptax: PtaxSeries,
+    market: FxHistory,
+}
+
+impl ForeignFx {
+    async fn load(db: &DatabaseConnection, currencies: &HashSet<String>) -> Result<Self, AppError> {
+        Ok(Self {
+            ptax: ptax_store::stored(db, currencies).await?,
+            market: load_fx_history(db, "BRL", currencies).await?,
+        })
+    }
+
+    fn rate(&self, currency: &str, date: NaiveDate, kind: RateKind) -> Option<(f64, RateSource)> {
+        self.ptax
+            .rate(currency, date, kind)
+            .map(|rate| (rate, RateSource::Ptax))
+            .or_else(|| self.market.rate_on(currency, "BRL", date).map(|rate| (rate, RateSource::Market)))
+    }
+}
+
+/// Uma linha do informe de Bens e Direitos do exterior: a posição de um ativo num 31/12, com o nome e a bolsa do ativo.
+#[derive(Serialize)]
+pub struct ForeignHoldingView {
+    #[serde(flatten)]
+    pub holding: foreign::ForeignHolding,
+    pub name: String,
+    pub exchange: Option<String>,
+}
+
+/// Posição de cada ativo do exterior em cada 31/12 (de 2023 até o ano corrente), com custo médio em reais. Só lê o
+/// banco: a PTAX é gravada por `get_tax_assessment` (a aba Taxes consulta este comando depois dele).
+#[tauri::command]
+pub async fn get_foreign_holdings(
+    db: tauri::State<'_, DatabaseConnection>,
+    workspace_id: i32,
+) -> Result<Vec<ForeignHoldingView>, AppError> {
+    foreign_holdings_in(db.inner(), workspace_id).await
+}
+
+pub async fn foreign_holdings_in(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+) -> Result<Vec<ForeignHoldingView>, AppError> {
+    let trades = load_trades(db, workspace_id).await?;
+    let fx = ForeignFx::load(db, &foreign_currencies(&trades)).await?;
+    let holdings = foreign::foreign_holdings(&trades, &|currency, date, kind| fx.rate(currency, date, kind), Utc::now().year());
+
+    let asset_ids: Vec<i32> = holdings.iter().map(|h| h.asset_id).collect::<HashSet<_>>().into_iter().collect();
+    let assets_map: HashMap<i32, assets::Model> = if asset_ids.is_empty() {
+        HashMap::new()
+    } else {
+        assets::Entity::find()
+            .filter(assets::Column::Id.is_in(asset_ids))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|a| (a.id, a))
+            .collect()
+    };
+    Ok(holdings
+        .into_iter()
+        .map(|holding| {
+            let asset = assets_map.get(&holding.asset_id);
+            ForeignHoldingView {
+                name: asset.map(|a| a.name.clone()).unwrap_or_else(|| holding.ticker.clone()),
+                exchange: asset.and_then(|a| a.exchange.clone()),
+                holding,
+            }
+        })
+        .collect())
+}
+
+const HOLDINGS_CSV_HEADER: [&str; 9] =
+    ["year", "ticker", "name", "exchange", "currency", "quantity", "cost_brl", "fx_approximate", "incomplete"];
+
+/// CSV do informe: uma linha por ativo e 31/12, com o custo em reais (duas casas) e a quantidade como está.
+pub fn foreign_holdings_csv_text(rows: &[ForeignHoldingView]) -> Result<String, AppError> {
+    let csv_error = |e: csv::Error| AppError::InvalidInput(format!("CSV: {e}"));
+    let mut writer = csv::Writer::from_writer(Vec::new());
+    writer.write_record(HOLDINGS_CSV_HEADER).map_err(csv_error)?;
+    for row in rows {
+        let h = &row.holding;
+        writer
+            .write_record([
+                h.year.to_string().as_str(),
+                h.ticker.as_str(),
+                row.name.as_str(),
+                row.exchange.as_deref().unwrap_or(""),
+                h.currency.as_str(),
+                h.quantity.to_string().as_str(),
+                format!("{:.2}", h.cost_brl).as_str(),
+                h.fx_approximate.to_string().as_str(),
+                h.incomplete.to_string().as_str(),
+            ])
+            .map_err(csv_error)?;
+    }
+    let bytes = writer.into_inner().map_err(|e| AppError::InvalidInput(format!("CSV: {e}")))?;
+    String::from_utf8(bytes).map_err(|e| AppError::InvalidInput(format!("CSV: {e}")))
+}
+
+/// Grava o informe em `dest_path` (o front escolhe o arquivo no diálogo de salvar) e devolve quantas linhas gravou.
+#[tauri::command]
+pub async fn export_foreign_holdings_csv(
+    db: tauri::State<'_, DatabaseConnection>,
+    workspace_id: i32,
+    dest_path: String,
+) -> Result<usize, AppError> {
+    let rows = foreign_holdings_in(db.inner(), workspace_id).await?;
+    let text = foreign_holdings_csv_text(&rows)?;
+    std::fs::write(&dest_path, text)
+        .map_err(|e| AppError::InvalidInput(format!("não consegui gravar {dest_path}: {e}")))?;
+    Ok(rows.len())
 }
 
 /// Completa a PTAX gravada (`ptax_daily`) para as moedas dos ativos do exterior, do primeiro ao último fato de cada

@@ -111,6 +111,104 @@ fn convert(currency: &str, date: NaiveDate, kind: RateKind, rate: RateToBrl) -> 
     }
 }
 
+/// Compra ou bonificação já convertida (`fx`): soma quantidade e custo em reais. Compartilhada pela apuração e pelo
+/// informe de bens e direitos, para o custo da posição nunca divergir do custo baixado numa venda.
+fn apply_acquisition(pos: &mut Position, t: &Trade, fx: f64) {
+    pos.quantity += t.quantity;
+    pos.cost += match t.side {
+        Side::Bonus => t.gross_value * fx,
+        _ => (t.gross_value + t.fee) * fx,
+    };
+}
+
+/// Um ativo do exterior numa data de 31/12: quantidade e custo médio em reais (o que a ficha Bens e Direitos da DAA
+/// pede: custo de aquisição convertido na data de cada compra, não o valor de mercado).
+#[derive(Clone, Debug, Serialize)]
+pub struct ForeignHolding {
+    /// 31/12 deste ano.
+    pub year: i32,
+    pub asset_id: i32,
+    pub ticker: String,
+    pub currency: String,
+    pub quantity: f64,
+    /// Custo médio restante da posição, em BRL.
+    pub cost_brl: f64,
+    /// Alguma compra da posição foi convertida pelo câmbio de mercado (sem PTAX).
+    pub fx_approximate: bool,
+    /// Faltou câmbio numa operação, ou uma venda passou do histórico conhecido: o custo está subestimado.
+    pub incomplete: bool,
+}
+
+/// Posição de cada ativo do exterior em cada 31/12 de `FIRST_YEAR − 1` até `through_year` (só com quantidade).
+/// Usa a mesma ordem e a mesma conversão de `assess_foreign`; ano sem fato repete a posição anterior. Ordenada por
+/// `(ano, ativo)`.
+pub fn foreign_holdings(trades: &[Trade], rate: RateToBrl, through_year: i32) -> Vec<ForeignHolding> {
+    let mut foreign: Vec<&Trade> =
+        trades.iter().filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning).collect();
+    foreign.sort_by_key(|t| (t.asset_id, t.date, t.side == Side::Sell, t.tx_id));
+
+    let mut holdings = Vec::new();
+    let mut start = 0;
+    while start < foreign.len() {
+        let asset_id = foreign[start].asset_id;
+        let end = foreign[start..].iter().position(|t| t.asset_id != asset_id).map_or(foreign.len(), |p| start + p);
+        let events = &foreign[start..end];
+        start = end;
+
+        let (ticker, currency) = (events[0].ticker.clone(), events[0].currency.clone());
+        let mut pos = Position::default();
+        let (mut approximate, mut incomplete) = (false, false);
+        let mut next_year = FIRST_YEAR - 1;
+        let snapshot = |year: i32, pos: &Position, approximate: bool, incomplete: bool, out: &mut Vec<ForeignHolding>| {
+            if pos.quantity > EPS {
+                out.push(ForeignHolding {
+                    year,
+                    asset_id,
+                    ticker: ticker.clone(),
+                    currency: currency.clone(),
+                    quantity: pos.quantity,
+                    cost_brl: pos.cost,
+                    fx_approximate: approximate,
+                    incomplete,
+                });
+            }
+        };
+
+        for t in events {
+            // Os 31/12 que ficaram para trás são fotos do estado antes deste evento.
+            while next_year < t.date.year() && next_year <= through_year {
+                snapshot(next_year, &pos, approximate, incomplete, &mut holdings);
+                next_year += 1;
+            }
+            if t.side == Side::Split {
+                pos.quantity *= t.quantity;
+                continue;
+            }
+            let Some((fx, source)) = convert(&t.currency, t.date, RateKind::Sell, rate) else {
+                incomplete = true;
+                continue;
+            };
+            match t.side {
+                Side::Buy | Side::Bonus => {
+                    approximate |= source == RateSource::Market;
+                    apply_acquisition(&mut pos, t, fx);
+                }
+                Side::Sell => {
+                    let (_, covered) = take_from_position(&mut pos, t.quantity);
+                    incomplete |= covered + EPS < t.quantity;
+                }
+                Side::Split => unreachable!("tratado acima"),
+            }
+        }
+        while next_year <= through_year {
+            snapshot(next_year, &pos, approximate, incomplete, &mut holdings);
+            next_year += 1;
+        }
+    }
+    holdings.sort_by_key(|h| (h.year, h.asset_id));
+    holdings
+}
+
 /// Apura ano a ano o IR dos ativos do exterior. `trades` e `dividends` podem vir em qualquer ordem e misturar outras
 /// classes (os trades fora de `ForeignWarning` são ignorados). Item sem câmbio na data fica de fora e gera aviso.
 pub fn assess_foreign(
@@ -145,14 +243,7 @@ pub fn assess_foreign(
             fx_approximate_years.insert(t.date.year());
         }
         match t.side {
-            Side::Buy => {
-                pos.quantity += t.quantity;
-                pos.cost += (t.gross_value + t.fee) * fx;
-            }
-            Side::Bonus => {
-                pos.quantity += t.quantity;
-                pos.cost += t.gross_value * fx;
-            }
+            Side::Buy | Side::Bonus => apply_acquisition(pos, t, fx),
             Side::Sell => {
                 let (cost, covered) = take_from_position(pos, t.quantity);
                 let cost_unknown = covered + EPS < t.quantity;
@@ -386,6 +477,142 @@ mod tests {
         let (years, warnings) = assess_foreign(&[brl, brl_sale], &[], &test_rule_set(), &market_only).unwrap();
         assert!(close(years[0].capital_gain, 50.0), "BRL não passa pelo câmbio");
         assert!(warnings.is_empty());
+    }
+
+    fn holdings(trades: &[Trade], through: i32) -> Vec<ForeignHolding> {
+        foreign_holdings(trades, &yearly_rate, through)
+    }
+
+    fn at(list: &[ForeignHolding], year: i32, asset: i32) -> Option<&ForeignHolding> {
+        list.iter().find(|h| h.year == year && h.asset_id == asset)
+    }
+
+    #[test]
+    fn the_position_in_each_december_carries_the_average_cost_in_reais() {
+        // 2024: US$ 1.000 a R$ 5 = 5.000; 2025: mais US$ 1.200 a R$ 6 = 7.200 → 12.200 com 20 ações
+        let list = holdings(
+            &[
+                trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0),
+                trade(2, 1, "2025-03-01", Side::Buy, 10.0, 1_200.0, 0.0),
+            ],
+            2026,
+        );
+        let (y24, y25, y26) = (at(&list, 2024, 1).unwrap(), at(&list, 2025, 1).unwrap(), at(&list, 2026, 1).unwrap());
+        assert!(close(y24.quantity, 10.0) && close(y24.cost_brl, 5_000.0), "{y24:?}");
+        assert!(close(y25.quantity, 20.0) && close(y25.cost_brl, 12_200.0), "{y25:?}");
+        assert!(close(y26.quantity, 20.0) && close(y26.cost_brl, 12_200.0), "um ano sem fato repete a posição");
+        assert!(at(&list, 2023, 1).is_none(), "ainda não tinha nada em 31/12/2023");
+        assert!(!y25.incomplete && !y25.fx_approximate);
+    }
+
+    #[test]
+    fn a_partial_sale_keeps_the_average_cost_and_a_full_sale_removes_the_asset() {
+        let list = holdings(
+            &[
+                trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0),
+                trade(2, 1, "2025-03-01", Side::Sell, 4.0, 600.0, 0.0),
+                trade(3, 1, "2026-03-01", Side::Sell, 6.0, 900.0, 0.0),
+            ],
+            2026,
+        );
+        let y25 = at(&list, 2025, 1).unwrap();
+        // custo médio 500 por ação: sobram 6 com 3.000
+        assert!(close(y25.quantity, 6.0) && close(y25.cost_brl, 3_000.0), "{y25:?}");
+        assert!(at(&list, 2026, 1).is_none(), "vendido por inteiro em 2026");
+    }
+
+    #[test]
+    fn a_split_scales_the_quantity_and_keeps_the_cost_in_the_holding() {
+        let list = holdings(
+            &[
+                trade(1, 1, "2024-03-01", Side::Buy, 1.0, 100.0, 0.0),
+                trade(2, 1, "2025-01-02", Side::Split, 2.0, 0.0, 0.0),
+            ],
+            2025,
+        );
+        let y25 = at(&list, 2025, 1).unwrap();
+        assert!(close(y25.quantity, 2.0) && close(y25.cost_brl, 500.0), "{y25:?}");
+    }
+
+    #[test]
+    fn a_missing_rate_or_a_sale_above_the_known_cost_marks_the_holding_incomplete() {
+        // 2027 não tem câmbio: a segunda compra fica de fora e a posição fica marcada
+        let missing = holdings(
+            &[
+                trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0),
+                trade(2, 1, "2027-03-01", Side::Buy, 10.0, 1_000.0, 0.0),
+            ],
+            2027,
+        );
+        assert!(!at(&missing, 2026, 1).unwrap().incomplete);
+        let y27 = at(&missing, 2027, 1).unwrap();
+        assert!(y27.incomplete && close(y27.quantity, 10.0), "{y27:?}");
+
+        // vendeu 3 tendo comprado 1: o custo conhecido não cobre
+        let unknown = holdings(
+            &[
+                trade(1, 1, "2024-03-01", Side::Buy, 1.0, 100.0, 0.0),
+                trade(2, 1, "2025-03-01", Side::Sell, 3.0, 300.0, 0.0),
+                trade(3, 1, "2026-03-01", Side::Buy, 1.0, 100.0, 0.0),
+            ],
+            2026,
+        );
+        assert!(at(&unknown, 2025, 1).is_none());
+        assert!(at(&unknown, 2026, 1).unwrap().incomplete);
+    }
+
+    #[test]
+    fn a_purchase_converted_at_the_market_rate_marks_the_holding_as_approximate() {
+        let market = |currency: &str, date: NaiveDate, kind: RateKind| {
+            yearly_rate(currency, date, kind)
+                .map(|(rate, _)| (rate, if date.year() >= 2025 { RateSource::Market } else { RateSource::Ptax }))
+        };
+        let list = foreign_holdings(
+            &[
+                trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0),
+                trade(2, 1, "2025-03-01", Side::Buy, 10.0, 1_200.0, 0.0),
+            ],
+            &market,
+            2025,
+        );
+        assert!(!at(&list, 2024, 1).unwrap().fx_approximate);
+        assert!(at(&list, 2025, 1).unwrap().fx_approximate);
+    }
+
+    #[test]
+    fn each_asset_has_its_own_holding_ordered_by_year_and_asset() {
+        let list = holdings(
+            &[
+                trade(1, 2, "2024-03-01", Side::Buy, 5.0, 500.0, 0.0),
+                trade(2, 1, "2024-04-01", Side::Buy, 10.0, 1_000.0, 0.0),
+            ],
+            2025,
+        );
+        let keys: Vec<(i32, i32)> = list.iter().map(|h| (h.year, h.asset_id)).collect();
+        assert_eq!(keys, vec![(2024, 1), (2024, 2), (2025, 1), (2025, 2)]);
+    }
+
+    #[test]
+    fn the_holding_cost_is_the_cost_a_later_sale_takes_out() {
+        let trades = [
+            trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 20.0),
+            trade(2, 1, "2024-09-01", Side::Buy, 5.0, 700.0, 0.0),
+            trade(3, 1, "2025-06-01", Side::Sell, 15.0, 2_000.0, 0.0),
+        ];
+        let y24 = holdings(&trades, 2024).into_iter().find(|h| h.year == 2024).unwrap();
+        let (years, _) = run(&trades, &[]);
+        assert!(close(years[0].sales[0].cost, y24.cost_brl), "{} x {}", years[0].sales[0].cost, y24.cost_brl);
+    }
+
+    #[test]
+    fn other_classes_and_assets_in_brl_follow_the_same_rules() {
+        let mut stock = trade(1, 1, "2024-03-01", Side::Buy, 1.0, 100.0, 0.0);
+        stock.asset_class = "acao_br".to_string();
+        let mut brl = trade(2, 2, "2024-03-01", Side::Buy, 2.0, 100.0, 0.0);
+        brl.currency = "BRL".to_string();
+        let list = holdings(&[stock, brl], 2024);
+        assert!(at(&list, 2024, 1).is_none(), "ação brasileira não é do exterior");
+        assert!(close(at(&list, 2024, 2).unwrap().cost_brl, 100.0), "ativo em BRL não passa por câmbio");
     }
 
     #[test]

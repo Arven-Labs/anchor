@@ -4178,6 +4178,63 @@ async fn the_stored_ptax_decides_the_foreign_assessment_and_the_withholding_uses
 }
 
 #[tokio::test]
+async fn the_foreign_holdings_report_has_the_cost_in_reais_per_asset_and_december() {
+    use crate::commands::tax::{foreign_holdings_csv_text, foreign_holdings_in};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Informe").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    let msft = asset_in(&db, "MSFT", "acao_internacional", "USD").await;
+    // PTAX de venda: 5,5 em 2024 e 6,5 em 2025 (a de compra é irrelevante para o custo).
+    seed_ptax(&db, "USD", "2024-03-15", 5.49, 5.5).await;
+    seed_ptax(&db, "USD", "2025-03-14", 6.49, 6.5).await;
+    // AAPL: compra em 2024 (US$ 1.000 → R$ 5.500) e de novo em 2025 (US$ 1.000 → R$ 6.500). MSFT: comprada e vendida em 2024.
+    trade(&db, pf.id, aapl.id, "compra", 10.0, 1000.0, "2024-03-15").await;
+    trade(&db, pf.id, aapl.id, "compra", 10.0, 1000.0, "2025-03-14").await;
+    trade(&db, pf.id, msft.id, "compra", 5.0, 500.0, "2024-03-15").await;
+    trade(&db, pf.id, msft.id, "venda", 5.0, 600.0, "2024-03-15").await;
+
+    let rows = foreign_holdings_in(&db, ws.id).await.unwrap();
+    let find = |year: i32, ticker: &str| rows.iter().find(|r| r.holding.year == year && r.holding.ticker == ticker);
+    let y24 = find(2024, "AAPL").unwrap();
+    assert!(close(y24.holding.quantity, 10.0) && close(y24.holding.cost_brl, 5500.0), "{:?}", y24.holding);
+    let y25 = find(2025, "AAPL").unwrap();
+    assert!(close(y25.holding.quantity, 20.0) && close(y25.holding.cost_brl, 12000.0), "{:?}", y25.holding);
+    assert!(!y25.holding.incomplete && !y25.holding.fx_approximate);
+    assert_eq!(y25.name, "AAPL");
+    assert!(find(2024, "MSFT").is_none(), "vendida por inteiro no mesmo ano");
+
+    let csv = foreign_holdings_csv_text(&rows).unwrap();
+    let mut lines = csv.lines();
+    assert_eq!(lines.next().unwrap(), "year,ticker,name,exchange,currency,quantity,cost_brl,fx_approximate,incomplete");
+    assert!(csv.contains("2024,AAPL,AAPL,,USD,10,5500.00,false,false"), "{csv}");
+}
+
+#[test]
+fn the_holdings_csv_quotes_names_with_commas_and_keeps_two_decimals() {
+    use crate::commands::tax::{foreign_holdings_csv_text, ForeignHoldingView};
+    use crate::domain::tax::foreign::ForeignHolding;
+
+    let rows = vec![ForeignHoldingView {
+        holding: ForeignHolding {
+            year: 2025,
+            asset_id: 1,
+            ticker: "BRK.B".to_string(),
+            currency: "USD".to_string(),
+            quantity: 2.5,
+            cost_brl: 1234.5,
+            fx_approximate: true,
+            incomplete: false,
+        },
+        name: "Berkshire Hathaway, Inc. \"B\"".to_string(),
+        exchange: Some("NYSE".to_string()),
+    }];
+    let csv = foreign_holdings_csv_text(&rows).unwrap();
+    assert!(csv.contains("2025,BRK.B,\"Berkshire Hathaway, Inc. \"\"B\"\"\",NYSE,USD,2.5,1234.50,true,false"), "{csv}");
+}
+
+#[tokio::test]
 async fn a_weekend_fact_uses_the_last_ptax_before_it_and_a_long_gap_falls_back_to_the_market() {
     let db = memory_db().await;
     let ws = workspace(&db, "PTAX").await;

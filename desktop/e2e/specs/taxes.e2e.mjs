@@ -233,4 +233,36 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await byId("foreign-tax-table").scrollIntoView({ block: "center" });
     await snap("taxes-foreign-ptax");
   });
+
+  // Informe de Bens e Direitos: custo médio em reais de cada ativo do exterior em 31/12, pela PTAX de venda do dia da compra.
+  it("mostra o informe de bens e direitos do exterior com o custo em reais", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('NVDA', 'Nvidia', 'acao_internacional', 'USD', 'pais', 'US', '2025-01-01T00:00:00Z')",
+    );
+    const nvda = sql("SELECT id FROM assets WHERE ticker = 'NVDA'");
+    sql(
+      "INSERT INTO ptax_daily (currency, reference_date, buy, sell, source, fetched_at) " +
+        "VALUES ('USD', '2025-02-14', 5.19, 5.2, 'test', '2025-02-14T00:00:00Z')",
+    );
+    // Compra de US$ 500 a R$ 5,20 (PTAX de venda do dia): custo de R$ 2.600,00 e a posição segue em 31/12/2025.
+    sql(
+      "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+        `VALUES (${portfolio}, ${nvda}, 'compra', 5, 100, 500, 0, '2025-02-14', '2025-02-14T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await byId("foreign-holdings-card").waitForDisplayed({ timeout: 30_000 });
+    await waitForText(
+      byId("foreign-holding-NVDA-cost"),
+      (text) => text.includes("2.600,00") && text.includes("5 un."),
+      "o custo de NVDA em reais deveria ser R$ 2.600,00 com 5 unidades",
+    );
+    await byId("foreign-holdings-card").scrollIntoView({ block: "center" });
+    await snap("taxes-holdings");
+  });
 });

@@ -3735,7 +3735,7 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 
 ## Sessão 187 — PTAX do Banco Central no IR de exterior (desktop e mobile)
 - **A regra** (lida no texto da Lei 14.754 do site da Câmara): art. 15, a conversão usa a cotação de **fechamento para venda** do Banco Central na data do fato gerador; o imposto pago no exterior (crédito) usa a de **compra** do dia do
-  pagamento. Dia sem PTAX (fim de semana, feriado) usa a última anterior, até 10 dias: prática usual, **não lida na lei**, conferir na Receita. O informe de Bens e Direitos usa a PTAX de 31/12 e segue fora.
+  pagamento. Dia sem PTAX (fim de semana, feriado) usa a última anterior, até 10 dias: prática usual, **não lida na lei**, conferir na Receita. *(Correção na Sessão 188: o informe de Bens e Direitos **não** usa a PTAX de 31/12, como esta frase dizia; ver a Sessão 188.)*
 - **A fonte** (testada ao vivo): Olinda do BCB, datas `'MM-DD-YYYY'`. Dólar: `CotacaoDolarPeriodo`, uma linha por dia útil. Outras moedas: `CotacaoMoedaPeriodo` com todos os boletins do dia, vale o `Fechamento`. Cotadas: AUD, CAD, CHF, DKK, EUR, GBP, JPY, NOK, SEK, USD.
 - **Desktop**: `finance_core/bcb_ptax.rs` (parse, janelas de 1 ano, retry no padrão do SGS), tabela própria `ptax_daily` (migration `m20261030`; não `stock_price_history`, para não mexer nos outros leitores de câmbio), `finance_api/ptax_store.rs`
   (só busca o trecho que falta, sem TTL porque PTAX passada não muda, e 10 minutos de espera depois de falha do BCB), `domain/ptax.rs` (`PtaxSeries`, `RateKind`, `RateSource`). `foreign.rs` converte pela PTAX venda e a retenção pela compra, cai no câmbio de mercado e
@@ -3743,4 +3743,16 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Mobile**: `domain/ptax_series.dart`, `services/bcb_ptax_service.dart` (mesma regra de parse, `quoteGet` com timeout de 45 s), `assessForeignTax(ptax:, fx:)`; a tela busca a PTAX por moeda e só vai ao Yahoo para a moeda cuja PTAX falhar ou não existir. `foreignRateLabel` mostra a origem.
 - **Verificado**: CIs do commit `6211b53`: Desktop Rust (`cargo test`, com os testes de `bcb_ptax`, `ptax_store`, `domain/ptax`, `foreign.rs` e de fluxo), Desktop Frontend, Desktop E2E (caso novo com `ptax_daily` e a etiqueta PTAX) e Mobile (`flutter analyze` e `flutter test`) passaram.
 - **Não verificado**: PTAX real no app (os fixtures copiam respostas reais, amostradas com curl); lentidão do BCB na primeira busca de anos de histórico; telas a olho.
-- **Pendente**: informe de Bens e Direitos (PTAX de 31/12); data exata do pagamento do imposto no exterior (usa a do provento); PTAX na cripto e nas telas de câmbio; cotação cruzada para pares que o Yahoo não tem.
+- **Pendente**: informe de Bens e Direitos (feito na Sessão 188); data exata do pagamento do imposto no exterior (usa a do provento); PTAX na cripto e nas telas de câmbio; cotação cruzada para pares que o Yahoo não tem.
+
+## Sessão 188 — informe de Bens e Direitos do exterior (desktop)
+- **Decisões** (plan mode): só desktop; um item por ativo (somando custódias); cartão na aba Taxes, texto de discriminação para copiar e CSV.
+- **Correção**: a Sessão 187 (e o `PHASE.md`) diziam que o informe usa a PTAX de 31/12. Para ativos financeiros no exterior a ficha Bens e Direitos pede o **custo de aquisição em reais, convertido na data de cada compra** (a PTAX de 31/12 é a regra de lucros de controladas, art. 5º,
+  e da atualização opcional de 2023, art. 14, § 3º, da Lei 14.754). A fonte dessa regra do custo são guias e consultorias (Wise, Nomad, Avenue, Brasil Tax), **não** o Perguntas e Respostas da Receita, que não achei; o que a lei diz (art. 15) é a PTAX de fechamento para venda na data do fato gerador. **Conferir na Receita.**
+- **Feito**: `foreign.rs` ganha `foreign_holdings` (foto da posição de cada ativo em cada 31/12 de 2023 até o ano corrente, quantidade e custo médio em reais, com `fx_approximate` e `incomplete`) e `apply_acquisition`, compartilhada com `assess_foreign` para o custo da posição nunca divergir do baixado numa venda.
+  `commands/tax.rs`: helper `ForeignFx` (PTAX → mercado, também usado pela apuração), `get_foreign_holdings` (só lê o banco; a PTAX é gravada por `get_tax_assessment`, que a aba chama antes), `foreign_holdings_csv_text` e `export_foreign_holdings_csv`. Capability `dialog:allow-save` (faltava; o export de transações pode ter tido o mesmo problema).
+  `ForeignHoldingsCard.tsx`: seletor de ano (declaração de Y mostra 31/12/Y−1 e 31/12/Y), quantidade e custo por ativo, selos "approximate" e "incomplete", "Copy description" e "Export CSV".
+- **Não preenche**: grupo, código e país da ficha (as fontes divergem e o app não guarda país); o texto manda conferir no programa da Receita.
+- **Verificado**: `./dev.sh check` (tsc + `cargo check --all-targets`); testes escritos (9 unitários de `foreign_holdings`, 2 de fluxo/CSV, 1 E2E) e **ainda não rodados**: resultado no CI.
+- **Não verificado**: o salvar do CSV no app empacotado (a capability é nova); a tela a olho.
+- **Pendente**: mobile; separar por custódia/corretora (exige incluir transferências no cálculo e ratear o custo); país, grupo e código; saldo em conta e proventos recebidos no exterior; atualização opcional de 2023; entidades offshore e come-cotas.

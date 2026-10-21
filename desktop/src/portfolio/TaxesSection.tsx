@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import type { BankAccountView } from "../finances/types";
 import Field from "../components/Field";
+import ForeignHoldingsCard, { useForeignHoldings } from "./ForeignHoldingsCard";
 import SaleSimulationCard from "./SaleSimulationCard";
 import { Badge } from "@/components/ui/badge";
 import { BUCKET_LABELS, type Bucket, type LossBalance } from "./taxLosses";
@@ -303,6 +304,7 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
   const totalTaxSaved = lossBalances.reduce((sum, l) => sum + l.tax_saved, 0);
   const cryptoMonths = assessmentQuery.data?.assessment.crypto_months ?? [];
   const foreignYears = assessmentQuery.data?.assessment.foreign_years ?? [];
+  const foreignHoldings = useForeignHoldings(workspaceId, assessmentQuery.isSuccess);
   const payments = assessmentQuery.data?.payments ?? [];
   // Um pagamento por mês e por tipo: a B3 e a cripto pagam DARFs diferentes.
   const paymentByPeriod = new Map(payments.filter((p) => p.kind === "b3").map((p) => [p.period, p]));
@@ -702,7 +704,13 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
         </Card>
       )}
 
-      {!assessmentQuery.isLoading && months.length === 0 && cryptoMonths.length === 0 && foreignYears.length === 0 && (
+      <ForeignHoldingsCard workspaceId={workspaceId} holdings={foreignHoldings} />
+
+      {!assessmentQuery.isLoading &&
+        months.length === 0 &&
+        cryptoMonths.length === 0 &&
+        foreignYears.length === 0 &&
+        foreignHoldings.length === 0 && (
         <p className="text-sm text-muted-foreground">
           No sales on B3, of crypto or of foreign assets yet — nothing to assess.
         </p>
