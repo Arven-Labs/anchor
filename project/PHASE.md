@@ -2191,6 +2191,18 @@ saldo, a compra também não fica). A taxa fica na venda e reduz o ganho. Recusa
 reais é digitado, com o botão "Use market price" (Sessão 173) que o preenche: `suggest_crypto_swap_value` multiplica a quantidade que sai pelo último fechamento `-BRL` em `stock_adjusted_close` até a data
 (aceita até 5 dias antes; `None` para ativo que não é cripto, em USD ou sem fechamento recente, e a tela avisa para digitar). Só preenche o campo, o usuário confere. A custódia não é escolhida (fica sem). Ativo de cripto em USD (padrão do `CLASS_DEFAULTS`) grava, mas a apuração só avisa de moeda estrangeira, como já era.
 
+**Cripto no app móvel (Sessões 174–183)**: o mobile (Flutter, banco SQLite próprio, standalone, sem sync) já cadastrava cripto pelo CoinGecko desde a Sessão 70; estas sessões o blindaram e levaram a permuta e o IR para lá.
+- **Cotação**: `QuoteUnavailableException` (429, 5xx, timeout, rede fora) separada de `QuoteNotFoundException` (ativo inexistente) no CoinGecko e no Yahoo (`services/quote_http.dart`); o Portfolio mostra "indisponível agora"
+  e cota todas as criptos numa chamada só (`simple/price?ids=a,b,c`); as telas de busca e cadastro avisam que a fonte está fora.
+- **Moeda**: cripto nova nasce em BRL (`vs_currencies=usd,brl`); a antiga em USD segue em USD. O card das posições mostra a moeda do ativo.
+- **Taxa**: coluna `fee` em `portfolio_transactions` (banco v7), campo "Taxa (opcional)" em compra, venda e troca.
+- **Permuta**: tela "Trocar cripto" (`CryptoSwapScreen`, `buildCryptoSwap`): venda + compra no mesmo valor e data, numa transação do banco; recusa saldo insuficiente e ativo fora de BRL; "Usar preço de mercado" usa o preço de hoje.
+- **IR**: `domain/crypto_tax.dart` porta `crypto.rs` do desktop (custo médio corrente, isenção até R$ 35 mil, faixas marginais no ano, mínimo de DARF R$ 10, código 4600, vencimento no último dia útil em
+  `darf_calendar.dart`; taxa da compra soma ao custo, a da venda reduz o ganho); regras como constantes no código, de **fontes secundárias, conferir na Receita (GCAP)**. Cripto em USD é convertida pelo dólar da data
+  (`USDBRL=X` do Yahoo, `fx_history.dart`). Tela de IR (`CryptoTaxScreen`), somente leitura (o mobile não guarda pagamento de DARF).
+- **Limites**: sem IRRF; permuta só em BRL e com saldo atual (não o da data); o "preço médio" das posições não leva taxa; migration v6→v7, resposta real do `USDBRL=X` e telas a olho não verificadas (sem Flutter local, só CI).
+- **Pendente**: exterior (Lei 14.754), no desktop e no mobile.
+
 **Fora desta fatia**: cálculo de exterior (cripto entrou na Sessão 167); eventos corporativos
 (desdobramento/bonificação não existem como tipo de transação — quem tiver vai ver custo
 distorcido); `metal` (COMEX, não ouro ativo financeiro B3) ignorado; IRRF real informado pela
