@@ -3707,7 +3707,7 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   retido lá fora até o limite do devido. Regra `foreign_rate` (15%) em `tax_rules` (seed `m20261029_110000` e tabela embarcada, 24 → 25 regras). Coluna `transactions.foreign_tax_withheld` (`m20261029_100000`), validada em
   `create_transaction_in` (≥ 0 e só em `provento`) e preenchida no formulário de provento de ativo fora de BRL. `assess_workspace` preenche `Assessment.foreign_years`; `ForeignSales` só vale para anos < 2024 e
   `ForeignFxMissing` avisa de item sem câmbio. Cartão "Foreign assets" em `TaxesSection.tsx` com detalhes por ano.
-- **Verificado**: `./dev.sh check` (tsc + `cargo check --all-targets`) passa. Testes novos escritos mas **ainda não rodados**: unitários de `foreign.rs`, dois de fluxo em `flow_tests.rs`, um E2E em `taxes.e2e.mjs`; resultado no CI.
-- **Não verificado**: a tela a olho (há captura `taxes-foreign` no CI); a migration num banco real.
+- **Verificado**: `./dev.sh check` e o CI (commit `69d20c8`): `cargo test` (unitários de `foreign.rs` e dois de fluxo em `flow_tests.rs`), Frontend e E2E (`taxes.e2e.mjs`, com a captura `taxes-foreign`) passaram.
+- **Não verificado**: a tela a olho (a captura `taxes-foreign` está nos artefatos do CI); a migration num banco real.
 - **Atenção**: regras de fontes secundárias, conferir na Receita; câmbio de mercado, não PTAX; o campo de retenção só existe no formulário de lançamento (não na importação nem na edição).
 - **Pendente**: exterior no mobile; PTAX; "Bens e Direitos" para a DAA; entidades offshore e come-cotas.
