@@ -3753,6 +3753,7 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   `commands/tax.rs`: helper `ForeignFx` (PTAX → mercado, também usado pela apuração), `get_foreign_holdings` (só lê o banco; a PTAX é gravada por `get_tax_assessment`, que a aba chama antes), `foreign_holdings_csv_text` e `export_foreign_holdings_csv`. Capability `dialog:allow-save` (faltava; o export de transações pode ter tido o mesmo problema).
   `ForeignHoldingsCard.tsx`: seletor de ano (declaração de Y mostra 31/12/Y−1 e 31/12/Y), quantidade e custo por ativo, selos "approximate" e "incomplete", "Copy description" e "Export CSV".
 - **Não preenche**: grupo, código e país da ficha (as fontes divergem e o app não guarda país); o texto manda conferir no programa da Receita.
-- **Verificado**: `./dev.sh check` (tsc + `cargo check --all-targets`); testes escritos (9 unitários de `foreign_holdings`, 2 de fluxo/CSV, 1 E2E) e **ainda não rodados**: resultado no CI.
+- **Verificado**: CIs do commit `4b8f9ba`: Desktop Rust (`cargo test`, com os 9 unitários de `foreign_holdings` e os 2 de fluxo/CSV) e Frontend passaram; o E2E falhou na 1ª rodada só em `settings.e2e.mjs` ("Update now registra uma rodada manual", timeout de 2 min, teste que depende
+  de rede) e passou inteiro na 2ª (`gh run rerun --failed`), com `taxes.e2e.mjs` (caso novo do informe) verde nas duas. Flake do `settings.e2e.mjs`, não causado por esta sessão.
 - **Não verificado**: o salvar do CSV no app empacotado (a capability é nova); a tela a olho.
 - **Pendente**: mobile; separar por custódia/corretora (exige incluir transferências no cálculo e ratear o custo); país, grupo e código; saldo em conta e proventos recebidos no exterior; atualização opcional de 2023; entidades offshore e come-cotas.
