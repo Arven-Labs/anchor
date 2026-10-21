@@ -3729,6 +3729,6 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Feito**: `YahooQuoteService.fetchFxHistory({from, currency = 'USD'})` pede `<MOEDA>BRL=X` (ex.: `EURBRL=X`, com a moeda aparada e em maiúsculas). `assessForeignTax(..., fx: Map<String, FxHistory>)` troca o `usdBrl` por uma série por moeda
   (BRL vale 1; moeda sem série ou sem câmbio na data deixa o item de fora e avisa o ano). `ForeignTaxScreen` acha a primeira data de cada moeda dos ativos do exterior e busca uma série por moeda (uma chamada cada); falha em
   alguma só marca o aviso de câmbio indisponível, as outras seguem. A cripto segue só USD (`usdBrl`), como no desktop.
-- **Verificado**: `dart analyze` sem problemas em `lib/domain` e `lib/models`; testes novos escritos (cada moeda pela própria série, moeda sem série com aviso, dividendo em euro com retenção, `fetchFxHistory` com `currency`), **ainda não rodados**: resultado no CI Mobile.
+- **Verificado**: CI Mobile (commit `175e28f`): `flutter analyze` e `flutter test` passaram, incluindo os testes novos (cada moeda pela própria série, moeda sem série com aviso, dividendo em euro com retenção, `fetchFxHistory` com `currency`).
 - **Não verificado**: a resposta real do Yahoo para pares como `EURBRL=X` e para moedas exóticas (o par pode não existir direto: aparece como câmbio indisponível); a tela a olho.
 - **Pendente**: PTAX; "Bens e Direitos" para a DAA; entidades offshore e come-cotas; cotação cruzada para pares que o Yahoo não tem direto.
