@@ -70,8 +70,10 @@ String foreignWarningText(ForeignTaxWarning warning) {
 @visibleForTesting
 const foreignHoldingsNote =
     'Custo de aquisição em reais, não valor de mercado, só do que está lançado '
-    'neste app. Grupo, código e país da ficha não são preenchidos. Estimativa '
-    'de fontes secundárias: confira no programa da Receita.';
+    'neste app. Uma linha por custódia: o custo de cada uma é a quantidade dela '
+    'vezes o custo médio do ativo, então as custódias somam a posição. Grupo, '
+    'código e país da ficha não são preenchidos. Estimativa de fontes '
+    'secundárias: confira no programa da Receita.';
 
 @visibleForTesting
 const foreignHoldingsLegend =
@@ -94,14 +96,16 @@ String foreignHoldingDescription({
   required int year,
   required String ticker,
   required String name,
+  String? custodiaLabel,
   ForeignHolding? previous,
   ForeignHolding? current,
 }) {
   String units(ForeignHolding? h) =>
       h == null ? 'sem posição' : '${formatHoldingQuantity(h.quantity)} un.';
   String cost(ForeignHolding? h) => formatBrl(h?.costBrl ?? 0);
+  final custody = custodiaLabel == null ? '' : ' Custódia: $custodiaLabel.';
   return [
-    '$ticker — $name.',
+    '$ticker — $name.$custody',
     'Situação em 31/12/${year - 1}: ${units(previous)}, custo de aquisição '
         '${cost(previous)}.',
     'Situação em 31/12/$year: ${units(current)}, custo de aquisição '
@@ -129,6 +133,7 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
   bool _fxUnavailable = false;
   ForeignTaxAssessment? _assessment;
   List<ForeignHolding> _holdings = const [];
+  Map<int, String> _custodiaLabels = const {};
 
   @override
   void initState() {
@@ -139,6 +144,7 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
   Future<void> _load() async {
     final assets = await _repository.listAssets();
     final transactions = await _repository.listAllTransactions();
+    final custodias = await _repository.listCustodias();
 
     // O custo médio nasce em reais, então o câmbio de cada moeda vale desde a
     // 1ª compra de um ativo do exterior nela (não só desde a 1ª venda ou
@@ -194,6 +200,10 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
     setState(() {
       _assessment = assessForeignTax(assets, transactions, ptax: ptax, fx: fx);
       _holdings = foreignHoldings(assets, transactions, ptax: ptax, fx: fx);
+      _custodiaLabels = {
+        for (final c in custodias)
+          if (c.id != null) c.id!: c.label,
+      };
       _fxUnavailable = fxUnavailable;
       _loading = false;
     });
@@ -247,7 +257,11 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
                 else
                   for (final year in assessment.years.reversed)
                     _YearCard(year: year),
-                if (_holdings.isNotEmpty) _HoldingsCard(holdings: _holdings),
+                if (_holdings.isNotEmpty)
+                  _HoldingsCard(
+                    holdings: _holdings,
+                    custodiaLabels: _custodiaLabels,
+                  ),
               ],
             ),
     );
@@ -258,8 +272,9 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
 /// `foreignHoldings`). A declaração de Y mostra 31/12/(Y−1) e 31/12/Y.
 class _HoldingsCard extends StatefulWidget {
   final List<ForeignHolding> holdings;
+  final Map<int, String> custodiaLabels;
 
-  const _HoldingsCard({required this.holdings});
+  const _HoldingsCard({required this.holdings, required this.custodiaLabels});
 
   @override
   State<_HoldingsCard> createState() => _HoldingsCardState();
@@ -287,26 +302,31 @@ class _HoldingsCardState extends State<_HoldingsCard> {
     final year = years.contains(_year) ? _year! : years.first;
     final textTheme = Theme.of(context).textTheme;
 
-    ForeignHolding? at(int assetId, int y) {
+    ForeignHolding? at((int, int?) key, int y) {
       for (final h in widget.holdings) {
-        if (h.assetId == assetId && h.year == y) return h;
+        if (h.assetId == key.$1 && h.custodiaId == key.$2 && h.year == y) {
+          return h;
+        }
       }
       return null;
     }
 
-    final assetIds = {
+    // Uma linha por ativo e custódia com posição em 31/12/(Y−1) ou em 31/12/Y.
+    final keys = {
       for (final h in widget.holdings)
-        if (h.year == year - 1 || h.year == year) h.assetId,
+        if (h.year == year - 1 || h.year == year) (h.assetId, h.custodiaId),
     }.toList();
+    String labelOf(ForeignHolding h) =>
+        h.custodiaId == null ? '' : widget.custodiaLabels[h.custodiaId] ?? '';
     final rows =
         [
-          for (final id in assetIds)
-            (previous: at(id, year - 1), current: at(id, year)),
-        ]..sort(
-          (a, b) => (a.current ?? a.previous)!.ticker.compareTo(
-            (b.current ?? b.previous)!.ticker,
-          ),
-        );
+          for (final key in keys)
+            (previous: at(key, year - 1), current: at(key, year)),
+        ]..sort((a, b) {
+          final x = (a.current ?? a.previous)!, y = (b.current ?? b.previous)!;
+          final byTicker = x.ticker.compareTo(y.ticker);
+          return byTicker != 0 ? byTicker : labelOf(x).compareTo(labelOf(y));
+        });
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -335,6 +355,7 @@ class _HoldingsCardState extends State<_HoldingsCard> {
             for (final row in rows)
               _HoldingRow(
                 year: year,
+                custodiaLabel: labelOf((row.current ?? row.previous)!),
                 previous: row.previous,
                 current: row.current,
               ),
@@ -349,11 +370,15 @@ class _HoldingsCardState extends State<_HoldingsCard> {
 
 class _HoldingRow extends StatelessWidget {
   final int year;
+
+  /// Vazio nas operações sem custódia.
+  final String custodiaLabel;
   final ForeignHolding? previous;
   final ForeignHolding? current;
 
   const _HoldingRow({
     required this.year,
+    required this.custodiaLabel,
     required this.previous,
     required this.current,
   });
@@ -372,6 +397,7 @@ class _HoldingRow extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       title: Text('${base.ticker} — ${base.name}'),
       subtitle: Text(
+        '${custodiaLabel.isEmpty ? 'Sem custódia' : custodiaLabel}\n'
         '${_line('31/12/${year - 1}', previous)}\n'
         '${_line('31/12/$year', current)}',
       ),
@@ -387,6 +413,7 @@ class _HoldingRow extends StatelessWidget {
                 year: year,
                 ticker: base.ticker,
                 name: base.name,
+                custodiaLabel: custodiaLabel.isEmpty ? null : custodiaLabel,
                 previous: previous,
                 current: current,
               ),

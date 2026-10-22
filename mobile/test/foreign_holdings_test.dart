@@ -31,14 +31,18 @@ void main() {
     double quantity,
     double gross, {
     double? fee,
+    int? custodia,
+    int? to,
   }) => PortfolioTransaction(
     id: ++nextId,
     assetId: assetId,
     type: type,
     quantity: quantity,
-    unitPrice: gross / quantity,
+    unitPrice: gross == 0 ? null : gross / quantity,
     totalValue: gross,
     fee: fee,
+    custodiaId: custodia,
+    transferToCustodiaId: to,
     date: DateTime.parse(date),
     createdAt: DateTime(2024, 1, 1),
   );
@@ -49,13 +53,44 @@ void main() {
     double quantity,
     double gross, {
     double? fee,
-  }) => trade(asset, date, TransactionType.compra, quantity, gross, fee: fee);
+    int? custodia,
+  }) => trade(
+    asset,
+    date,
+    TransactionType.compra,
+    quantity,
+    gross,
+    fee: fee,
+    custodia: custodia,
+  );
   PortfolioTransaction sell(
     int asset,
     String date,
     double quantity,
-    double gross,
-  ) => trade(asset, date, TransactionType.venda, quantity, gross);
+    double gross, {
+    int? custodia,
+  }) => trade(
+    asset,
+    date,
+    TransactionType.venda,
+    quantity,
+    gross,
+    custodia: custodia,
+  );
+  PortfolioTransaction transfer(
+    String date,
+    double quantity,
+    int from,
+    int to,
+  ) => trade(
+    1,
+    date,
+    TransactionType.transferencia,
+    quantity,
+    0,
+    custodia: from,
+    to: to,
+  );
 
   // PTAX do dólar a R$ 5 em 2024, R$ 6 em 2025 e R$ 4 em 2026, um ponto por
   // mês no dia 15 (mais de 10 dias depois do último ponto fica sem PTAX).
@@ -194,6 +229,81 @@ void main() {
 
     expect(at(all, 1, 2024)!.costBrl, near(1000));
     expect(all.any((h) => h.assetId == 2), isFalse);
+  });
+
+  ForeignHolding? inCustodia(List<ForeignHolding> all, int year, int custodia) {
+    for (final h in all) {
+      if (h.year == year && h.assetId == 1 && h.custodiaId == custodia) {
+        return h;
+      }
+    }
+    return null;
+  }
+
+  test('a transferência divide a posição pelo custo médio do ativo', () {
+    // 10 por R$ 5.000 na custódia 1; em 2025 transfere 4 para a 2 e compra
+    // mais 10 por US$ 1.200 (R$ 7.200) na 2: custo médio global 610.
+    final all = run([
+      buy(1, '2024-03-15', 10, 1000, custodia: 1),
+      transfer('2025-03-15', 4, 1, 2),
+      buy(1, '2025-06-15', 10, 1200, custodia: 2),
+    ], through: 2025);
+
+    final a24 = inCustodia(all, 2024, 1)!;
+    expect(a24.quantity, near(10));
+    expect(a24.costBrl, near(5000));
+    expect(inCustodia(all, 2024, 2), isNull);
+    final a25 = inCustodia(all, 2025, 1)!;
+    final b25 = inCustodia(all, 2025, 2)!;
+    expect(a25.quantity, near(6));
+    expect(a25.costBrl, near(3660));
+    expect(b25.quantity, near(14));
+    expect(b25.costBrl, near(8540));
+    expect(a25.costBrl + b25.costBrl, near(12200));
+    expect(a25.incomplete || b25.incomplete, isFalse);
+  });
+
+  test('a venda baixa a quantidade da custódia e o custo médio do ativo', () {
+    final all = run([
+      buy(1, '2024-03-15', 10, 1000, custodia: 1),
+      transfer('2024-12-15', 5, 1, 2),
+      sell(1, '2025-03-15', 3, 450, custodia: 2),
+    ], through: 2025);
+
+    // sobram 7 com R$ 3.500: 5 na custódia 1 e 2 na 2
+    expect(inCustodia(all, 2025, 1)!.quantity, near(5));
+    expect(inCustodia(all, 2025, 1)!.costBrl, near(2500));
+    expect(inCustodia(all, 2025, 2)!.quantity, near(2));
+    expect(inCustodia(all, 2025, 2)!.costBrl, near(1000));
+  });
+
+  test('transferência no dia da venda conta antes dela', () {
+    final all = run([
+      buy(1, '2024-03-15', 10, 1000, custodia: 1),
+      sell(1, '2025-03-15', 4, 600, custodia: 2),
+      transfer('2025-03-15', 4, 1, 2),
+    ], through: 2025);
+
+    expect(inCustodia(all, 2025, 2), isNull);
+    final a = inCustodia(all, 2025, 1)!;
+    expect(a.quantity, near(6));
+    expect(a.costBrl, near(3000));
+    expect(a.incomplete, isFalse);
+  });
+
+  test('venda maior que o saldo da custódia marca incompleto', () {
+    final all = run([
+      buy(1, '2024-03-15', 10, 1000, custodia: 1),
+      sell(1, '2025-03-15', 3, 450, custodia: 2),
+    ], through: 2025);
+
+    final a = inCustodia(all, 2025, 1)!;
+    expect(a.incomplete, isTrue);
+    expect(a.quantity, near(10));
+  });
+
+  test('transferência de ativo sem compra ou venda é ignorada', () {
+    expect(run([transfer('2025-03-15', 1, 1, 2)], through: 2025), isEmpty);
   });
 
   test('vários ativos saem ordenados por ano e por ativo', () {

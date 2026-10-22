@@ -3773,3 +3773,10 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não verificado**: a tela a olho; o E2E não ganhou caso de custódia (o caso do `taxes.e2e.mjs` segue sem custódia; a transferência é coberta pelo teste de fluxo).
 - **Atenção**: o custo por custódia é rateio (quantidade × custo médio do ativo), não o custo que a corretora mostra; transferência continua sem custo próprio.
 - **Pendente**: mobile; país, grupo e código; entidades offshore e come-cotas.
+
+## Sessão 191 — informe de Bens e Direitos por custódia no app móvel
+- **Decisões**: mesma regra do desktop (Sessão 190), custo médio global do ativo rateado pela quantidade de cada custódia; sem plan mode (porte pequeno, o desenho já estava fechado).
+- **Feito**: `foreignHoldings` lê também as transferências da lista de transações (mesma ordem do dia: compra, transferência, venda) e mantém a quantidade por custódia ao lado da `CostPosition`; `ForeignHolding.custodiaId`; saldo negativo ou custódias que não somam a posição marcam `incomplete`, e sem nenhuma custódia com saldo sai uma linha sem custódia, incompleta. `ForeignTaxScreen` carrega as custódias (`listCustodias`), mostra uma linha por ativo e custódia ("Sem custódia" quando não há) e o texto copiado ganha "Custódia: X.".
+- **Verificado**: `flutter analyze` limpo e `flutter test` nos três arquivos de IR de exterior (49 testes, com 5 casos novos de custódia em `foreign_holdings_test.dart` e 1 em `foreign_tax_screen_test.dart`). CI Mobile: a conferir após o push.
+- **Não verificado**: a tela a olho.
+- **Pendente**: CSV no mobile; país, grupo e código; entidades offshore e come-cotas.

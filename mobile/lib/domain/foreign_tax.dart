@@ -224,10 +224,16 @@ DateTime _day(DateTime date) => DateTime(date.year, date.month, date.day);
 class ForeignHolding {
   final int year;
   final int assetId;
+
+  /// `null` = operações sem custódia informada.
+  final int? custodiaId;
   final String ticker;
   final String name;
   final String currency;
   final double quantity;
+
+  /// Custo médio do ativo × a quantidade desta custódia, em BRL (as
+  /// custódias somam o custo da posição).
   final double costBrl;
 
   /// Alguma compra usou o câmbio de mercado porque a PTAX faltava.
@@ -240,6 +246,7 @@ class ForeignHolding {
   const ForeignHolding({
     required this.year,
     required this.assetId,
+    this.custodiaId,
     required this.ticker,
     required this.name,
     required this.currency,
@@ -268,15 +275,30 @@ List<ForeignHolding> foreignHoldings(
         asset.id!: asset,
   };
   final byAsset = <int, List<(int, PortfolioTransaction)>>{};
+  final transfers = <PortfolioTransaction>[];
   var index = 0;
   for (final tx in transactions) {
     final id = tx.assetId;
     if (id == null || !foreignById.containsKey(id)) continue;
-    if (tx.type != TransactionType.compra && tx.type != TransactionType.venda) {
-      continue;
+    if (tx.type == TransactionType.transferencia) {
+      transfers.add(tx);
+    } else if (tx.type == TransactionType.compra ||
+        tx.type == TransactionType.venda) {
+      byAsset.putIfAbsent(id, () => []).add((index++, tx));
     }
-    byAsset.putIfAbsent(id, () => []).add((index++, tx));
   }
+  // Só ativo com compra ou venda tem posição; a transferência só move
+  // quantidade entre custódias.
+  for (final tx in transfers) {
+    byAsset[tx.assetId]?.add((index++, tx));
+  }
+
+  // No mesmo dia: compra, depois transferência, depois venda.
+  int rank(PortfolioTransaction tx) => switch (tx.type) {
+    TransactionType.venda => 2,
+    TransactionType.transferencia => 1,
+    _ => 0,
+  };
 
   final holdings = <ForeignHolding>[];
   for (final entry in byAsset.entries) {
@@ -286,32 +308,63 @@ List<ForeignHolding> foreignHoldings(
         final x = a.$2, y = b.$2;
         final byDay = _day(x.date).compareTo(_day(y.date));
         if (byDay != 0) return byDay;
-        final xSale = x.type == TransactionType.venda ? 1 : 0;
-        final ySale = y.type == TransactionType.venda ? 1 : 0;
-        if (xSale != ySale) return xSale.compareTo(ySale);
+        final byRank = rank(x).compareTo(rank(y));
+        if (byRank != 0) return byRank;
         final byId = (x.id ?? 0).compareTo(y.id ?? 0);
         return byId != 0 ? byId : a.$1.compareTo(b.$1);
       });
 
     final position = CostPosition();
+    // Quantidade por custódia (`null` = sem custódia); o custo é do ativo.
+    final byCustodia = <int?, double>{};
     var approximate = false;
     var incomplete = false;
     var nextYear = foreignFirstYear - 1;
     void snapshot(int year) {
       if (position.quantity <= costEps) return;
-      holdings.add(
-        ForeignHolding(
-          year: year,
-          assetId: entry.key,
-          ticker: asset.ticker,
-          name: asset.name,
-          currency: asset.currency,
-          quantity: position.quantity,
-          costBrl: position.cost,
-          fxApproximate: approximate,
-          incomplete: incomplete,
-        ),
-      );
+      // Saldo negativo numa custódia, ou custódias que não somam a posição:
+      // o rateio não fecha.
+      final sum = byCustodia.values.fold(0.0, (a, b) => a + b);
+      final uneven =
+          byCustodia.values.any((q) => q < -1e-6) ||
+          (sum - position.quantity).abs() > 1e-6;
+      var emitted = false;
+      for (final MapEntry(key: custodiaId, value: quantity)
+          in byCustodia.entries) {
+        if (quantity <= costEps) continue;
+        emitted = true;
+        holdings.add(
+          ForeignHolding(
+            year: year,
+            assetId: entry.key,
+            custodiaId: custodiaId,
+            ticker: asset.ticker,
+            name: asset.name,
+            currency: asset.currency,
+            quantity: quantity,
+            costBrl: position.cost * quantity / position.quantity,
+            fxApproximate: approximate,
+            incomplete: incomplete || uneven,
+          ),
+        );
+      }
+      if (!emitted) {
+        // Venda sem saldo zerou ou negativou todas as custódias, mas a
+        // posição existe: mostra-a inteira.
+        holdings.add(
+          ForeignHolding(
+            year: year,
+            assetId: entry.key,
+            ticker: asset.ticker,
+            name: asset.name,
+            currency: asset.currency,
+            quantity: position.quantity,
+            costBrl: position.cost,
+            fxApproximate: approximate,
+            incomplete: true,
+          ),
+        );
+      }
     }
 
     for (final (_, tx) in events) {
@@ -319,6 +372,13 @@ List<ForeignHolding> foreignHoldings(
       while (nextYear < tx.date.year && nextYear <= lastYear) {
         snapshot(nextYear);
         nextYear++;
+      }
+      if (tx.type == TransactionType.transferencia) {
+        final moved = tx.quantity ?? 0;
+        byCustodia[tx.custodiaId] = (byCustodia[tx.custodiaId] ?? 0) - moved;
+        byCustodia[tx.transferToCustodiaId] =
+            (byCustodia[tx.transferToCustodiaId] ?? 0) + moved;
+        continue;
       }
       final converted = _rateToBrl(
         asset.currency,
@@ -336,9 +396,11 @@ List<ForeignHolding> foreignHoldings(
       if (tx.type == TransactionType.compra) {
         if (source == RateSource.market) approximate = true;
         position.add(quantity, (tx.totalValue + (tx.fee ?? 0)) * rate);
+        byCustodia[tx.custodiaId] = (byCustodia[tx.custodiaId] ?? 0) + quantity;
       } else {
         final (_, covered) = position.take(quantity);
         if (covered + costEps < quantity) incomplete = true;
+        byCustodia[tx.custodiaId] = (byCustodia[tx.custodiaId] ?? 0) - quantity;
       }
     }
     while (nextYear <= lastYear) {
@@ -348,7 +410,12 @@ List<ForeignHolding> foreignHoldings(
   }
   holdings.sort((a, b) {
     final byYear = a.year.compareTo(b.year);
-    return byYear != 0 ? byYear : a.assetId.compareTo(b.assetId);
+    if (byYear != 0) return byYear;
+    final byAsset = a.assetId.compareTo(b.assetId);
+    // Sem custódia primeiro, como no desktop.
+    return byAsset != 0
+        ? byAsset
+        : (a.custodiaId ?? -1).compareTo(b.custodiaId ?? -1);
   });
   return holdings;
 }

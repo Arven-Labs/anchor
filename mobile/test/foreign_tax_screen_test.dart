@@ -130,6 +130,18 @@ void main() {
     },
   );
 
+  test('a descrição traz a custódia quando há', () {
+    final text = foreignHoldingDescription(
+      year: 2025,
+      ticker: 'AAPL',
+      name: 'Apple',
+      custodiaLabel: 'Avenue (Eu)',
+      current: holding(2025, 4, 2200),
+    );
+
+    expect(text, contains('AAPL — Apple. Custódia: Avenue (Eu).'));
+  });
+
   test('a descrição sem posição em uma das datas diz isso', () {
     final text = foreignHoldingDescription(
       year: 2025,

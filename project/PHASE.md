@@ -2210,7 +2210,8 @@ reais é digitado, com o botão "Use market price" (Sessão 173) que o preenche:
   conferir na Receita). Cartão na aba Taxes com copiar discriminação e CSV (`dialog:allow-save`). Não preenche grupo, código nem país da ficha. Um item por ativo, sem separar custódias.
 - **Informe no mobile (Sessão 189)**: `foreignHoldings` (porte de `foreign_holdings`) e cartão "Bens e Direitos" na `ForeignTaxScreen`, com seletor de declaração, selos "aproximado"/"incompleto" e copiar descrição. Sem CSV (o mobile não exporta arquivo), sem bolsa no texto (o `Asset` do mobile não tem `exchange`) e sem desdobramento/bonificação.
 - **Informe por custódia (Sessão 190, desktop)**: uma linha por ativo e custódia; o custo de cada uma é a quantidade dela × o custo médio do ativo (as custódias somam a posição), com as transferências entre custódias movendo só quantidade. Coluna `custodia` no CSV e "Custódia: X." no texto copiado.
-- **Pendente**: informe por custódia no mobile; CSV no mobile; cotação cruzada para pares que o Yahoo não tem direto.
+- **Informe por custódia no mobile (Sessão 191)**: mesma regra do desktop, na `ForeignTaxScreen` (uma linha por ativo e custódia, "Custódia: X." no texto copiado).
+- **Pendente**: CSV no mobile; cotação cruzada para pares que o Yahoo não tem direto.
 
 **Exterior no desktop (feito, Sessão 184)**: IR anual de ações, ETFs e REITs do exterior (Lei 14.754/2023).
 - **Motor**: `domain/tax/foreign.rs` (`assess_foreign`) apura por ano-calendário, a partir de 2024: cada compra, venda e provento vira reais pelo dólar do próprio dia (`FxHistory::rate_on`), o custo médio nasce em
