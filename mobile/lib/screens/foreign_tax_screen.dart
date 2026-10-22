@@ -1,6 +1,10 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../domain/foreign_holdings_csv.dart';
 import '../domain/foreign_tax.dart';
 import '../domain/fx_history.dart';
 import '../domain/ptax_series.dart';
@@ -283,6 +287,31 @@ class _HoldingsCard extends StatefulWidget {
 class _HoldingsCardState extends State<_HoldingsCard> {
   int? _year;
 
+  /// Salva o informe inteiro (todos os anos) num CSV com as colunas do desktop.
+  Future<void> _exportCsv() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final day = DateTime.now().toIso8601String().substring(0, 10);
+    try {
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Salvar informe de Bens e Direitos',
+        fileName: 'anchor-foreign-holdings-$day.csv',
+        type: FileType.custom,
+        allowedExtensions: const ['csv'],
+        bytes: utf8.encode(
+          foreignHoldingsCsv(widget.holdings, widget.custodiaLabels),
+        ),
+      );
+      if (path == null) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('${widget.holdings.length} linhas salvas.')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Não consegui salvar o CSV: $e')),
+      );
+    }
+  }
+
   List<int> get _years {
     final maxYear = widget.holdings
         .map((h) => h.year)
@@ -339,13 +368,25 @@ class _HoldingsCardState extends State<_HoldingsCard> {
             const SizedBox(height: 4),
             Text(foreignHoldingsNote, style: textTheme.bodySmall),
             const SizedBox(height: 8),
-            DropdownButton<int>(
-              value: year,
-              items: [
-                for (final y in years)
-                  DropdownMenuItem(value: y, child: Text('Declaração de $y')),
+            Row(
+              children: [
+                DropdownButton<int>(
+                  value: year,
+                  items: [
+                    for (final y in years)
+                      DropdownMenuItem(
+                        value: y,
+                        child: Text('Declaração de $y'),
+                      ),
+                  ],
+                  onChanged: (y) => setState(() => _year = y),
+                ),
+                const Spacer(),
+                OutlinedButton(
+                  onPressed: _exportCsv,
+                  child: const Text('Exportar CSV'),
+                ),
               ],
-              onChanged: (y) => setState(() => _year = y),
             ),
             if (rows.isEmpty)
               Text(
