@@ -3785,5 +3785,5 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Como**: não há como abrir o app Tauri nem o aparelho daqui; baixei o artefato `e2e-artifacts` do CI Desktop E2E (`gh run download`) e vi `taxes-holdings.png` e `taxes-foreign-ptax.png`.
 - **Achado**: o ano de 2026 mostrava **"-R$ 0,00"** em Dividends e no crédito retido. Causa: `sum()` de `f64` vazio devolve −0,0 no Rust atual, e o ano só com venda não tem provento. Corrigido em `foreign.rs` (`fold` a partir de +0,0 para ganho, proventos e retido), com teste de regressão (`is_sign_positive`). O mesmo padrão existe em `crypto.rs` (`sales_total`, `gain`), mas lá o mês só existe com venda; não mexi.
 - **Visto e certo**: o cartão de Bens e Direitos (seletor, "No custody", custo e quantidade de 31/12/2025 e 31/12/2026, botão de copiar, legenda e nota de rateio por custódia).
-- **Verificado**: `./dev.sh check` limpo. CIs: a conferir após o push.
-- **Não verificado**: o mobile a olho (o CI Mobile não gera captura); o caso com mais de uma custódia na tela (a captura só tem o NVDA sem custódia).
+- **Verificado**: `./dev.sh check` limpo. CIs do commit `7737720`: Desktop Rust (`cargo test`, com o teste de regressão do −0,0), Desktop E2E (de primeira, sem o flake) e Private Files passaram.
+- **Não verificado**: a correção na tela (a captura nova só sai no próximo artefato do E2E); o mobile a olho (o CI Mobile não gera captura); o caso com mais de uma custódia na tela (a captura só tem o NVDA sem custódia).
