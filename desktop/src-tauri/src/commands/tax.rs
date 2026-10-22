@@ -14,7 +14,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::commands::transaction::{split_ratio, BONUS, REVERSE_SPLIT, SPLIT};
+use crate::commands::transaction::{custodia_label, split_ratio, BONUS, REVERSE_SPLIT, SPLIT};
 use crate::commands::currency::load_fx_history;
 use crate::domain::option_position as option_calc;
 use crate::domain::tax::assessment::{self, Assessment, OptionResult, Side, Trade};
@@ -24,7 +24,7 @@ use crate::domain::ptax::{PtaxSeries, RateKind, RateSource};
 use crate::domain::tax::foreign;
 use crate::domain::tax::rules::{self, Rule, RuleSet};
 use crate::entity::{
-    assets, bank_account, general_transaction, general_transaction_category, option_position,
+    assets, bank_account, custodia, general_transaction, general_transaction_category, option_position,
     portfolio, tax_payments, tax_rules, transactions,
 };
 use crate::error::AppError;
@@ -33,6 +33,7 @@ use crate::finance_api::{client, ptax_store};
 const BUY: &str = "compra";
 const SELL: &str = "venda";
 const DIVIDEND: &str = "provento";
+const TRANSFER: &str = "transferencia";
 const DESPESA: &str = "despesa";
 const TAXES_CATEGORY: &str = "Taxes";
 const YIELD_CATEGORY: &str = "Yield";
@@ -248,13 +249,42 @@ impl ForeignFx {
     }
 }
 
-/// Uma linha do informe de Bens e Direitos do exterior: a posição de um ativo num 31/12, com o nome e a bolsa do ativo.
+/// Transferências entre custódias das carteiras do Workspace (só quantidade; o custo é do ativo).
+async fn load_transfers(db: &DatabaseConnection, workspace_id: i32) -> Result<Vec<foreign::Transfer>, AppError> {
+    let portfolio_ids = workspace_portfolio_ids(db, workspace_id).await?;
+    if portfolio_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = transactions::Entity::find()
+        .filter(transactions::Column::PortfolioId.is_in(portfolio_ids))
+        .filter(transactions::Column::TransactionType.eq(TRANSFER))
+        .all(db)
+        .await?;
+    let mut transfers = Vec::with_capacity(rows.len());
+    for row in rows {
+        let Some(asset_id) = row.asset_id else { continue };
+        transfers.push(foreign::Transfer {
+            tx_id: row.id,
+            asset_id,
+            date: parse_date(&row.transaction_date)?,
+            quantity: row.quantity.unwrap_or(0.0),
+            from: row.custodia_id,
+            to: row.transfer_to_custodia_id,
+        });
+    }
+    Ok(transfers)
+}
+
+/// Uma linha do informe de Bens e Direitos do exterior: a posição de um ativo numa custódia num 31/12, com o nome e a
+/// bolsa do ativo e o nome da custódia.
 #[derive(Serialize)]
 pub struct ForeignHoldingView {
     #[serde(flatten)]
     pub holding: foreign::ForeignHolding,
     pub name: String,
     pub exchange: Option<String>,
+    /// `instituição (titular)`; `None` nas operações sem custódia.
+    pub custodia_label: Option<String>,
 }
 
 /// Posição de cada ativo do exterior em cada 31/12 (de 2023 até o ano corrente), com custo médio em reais. Só lê o
@@ -272,8 +302,22 @@ pub async fn foreign_holdings_in(
     workspace_id: i32,
 ) -> Result<Vec<ForeignHoldingView>, AppError> {
     let trades = load_trades(db, workspace_id).await?;
+    let transfers = load_transfers(db, workspace_id).await?;
     let fx = ForeignFx::load(db, &foreign_currencies(&trades)).await?;
-    let holdings = foreign::foreign_holdings(&trades, &|currency, date, kind| fx.rate(currency, date, kind), Utc::now().year());
+    let holdings = foreign::foreign_holdings(
+        &trades,
+        &transfers,
+        &|currency, date, kind| fx.rate(currency, date, kind),
+        Utc::now().year(),
+    );
+    let custodias_map: HashMap<i32, custodia::Model> =
+        custodia::Entity::find()
+            .filter(custodia::Column::WorkspaceId.eq(workspace_id))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|c| (c.id, c))
+            .collect();
 
     let asset_ids: Vec<i32> = holdings.iter().map(|h| h.asset_id).collect::<HashSet<_>>().into_iter().collect();
     let assets_map: HashMap<i32, assets::Model> = if asset_ids.is_empty() {
@@ -294,16 +338,17 @@ pub async fn foreign_holdings_in(
             ForeignHoldingView {
                 name: asset.map(|a| a.name.clone()).unwrap_or_else(|| holding.ticker.clone()),
                 exchange: asset.and_then(|a| a.exchange.clone()),
+                custodia_label: custodia_label(&custodias_map, holding.custodia_id),
                 holding,
             }
         })
         .collect())
 }
 
-const HOLDINGS_CSV_HEADER: [&str; 9] =
-    ["year", "ticker", "name", "exchange", "currency", "quantity", "cost_brl", "fx_approximate", "incomplete"];
+const HOLDINGS_CSV_HEADER: [&str; 10] =
+    ["year", "ticker", "name", "exchange", "custodia", "currency", "quantity", "cost_brl", "fx_approximate", "incomplete"];
 
-/// CSV do informe: uma linha por ativo e 31/12, com o custo em reais (duas casas) e a quantidade como está.
+/// CSV do informe: uma linha por ativo, custódia e 31/12, com o custo em reais (duas casas) e a quantidade como está.
 pub fn foreign_holdings_csv_text(rows: &[ForeignHoldingView]) -> Result<String, AppError> {
     let csv_error = |e: csv::Error| AppError::InvalidInput(format!("CSV: {e}"));
     let mut writer = csv::Writer::from_writer(Vec::new());
@@ -316,6 +361,7 @@ pub fn foreign_holdings_csv_text(rows: &[ForeignHoldingView]) -> Result<String, 
                 h.ticker.as_str(),
                 row.name.as_str(),
                 row.exchange.as_deref().unwrap_or(""),
+                row.custodia_label.as_deref().unwrap_or(""),
                 h.currency.as_str(),
                 h.quantity.to_string().as_str(),
                 format!("{:.2}", h.cost_brl).as_str(),

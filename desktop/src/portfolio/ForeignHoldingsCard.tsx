@@ -35,6 +35,7 @@ import {
 type Holding = {
   year: number;
   asset_id: number;
+  custodia_id: number | null;
   ticker: string;
   currency: string;
   quantity: number;
@@ -43,6 +44,7 @@ type Holding = {
   incomplete: boolean;
   name: string;
   exchange: string | null;
+  custodia_label: string | null;
 };
 
 function formatBrl(value: number): string {
@@ -53,24 +55,36 @@ function formatQuantity(value: number): string {
   return value.toLocaleString("pt-BR", { maximumFractionDigits: 8 });
 }
 
-type AssetRow = { assetId: number; ticker: string; name: string; exchange: string | null; previous?: Holding; current?: Holding };
+type AssetRow = {
+  key: string;
+  ticker: string;
+  name: string;
+  exchange: string | null;
+  custodiaLabel: string | null;
+  previous?: Holding;
+  current?: Holding;
+};
 
-// Um item por ativo que tinha posição em 31/12/(ano−1) ou em 31/12/ano.
+// Um item por ativo e custódia que tinha posição em 31/12/(ano−1) ou em 31/12/ano.
 function rowsOfYear(holdings: Holding[], year: number): AssetRow[] {
-  const byAsset = new Map<number, AssetRow>();
+  const byKey = new Map<string, AssetRow>();
   for (const h of holdings) {
     if (h.year !== year && h.year !== year - 1) continue;
-    const row = byAsset.get(h.asset_id) ?? {
-      assetId: h.asset_id,
+    const key = `${h.asset_id}:${h.custodia_id ?? "none"}`;
+    const row = byKey.get(key) ?? {
+      key,
       ticker: h.ticker,
       name: h.name,
       exchange: h.exchange,
+      custodiaLabel: h.custodia_label,
     };
     if (h.year === year) row.current = h;
     else row.previous = h;
-    byAsset.set(h.asset_id, row);
+    byKey.set(key, row);
   }
-  return [...byAsset.values()].sort((a, b) => a.ticker.localeCompare(b.ticker));
+  return [...byKey.values()].sort(
+    (a, b) => a.ticker.localeCompare(b.ticker) || (a.custodiaLabel ?? "").localeCompare(b.custodiaLabel ?? ""),
+  );
 }
 
 // Texto para colar no campo "Discriminação" do programa da Receita.
@@ -78,8 +92,9 @@ function descriptionText(year: number, row: AssetRow): string {
   const unit = (h?: Holding) => (h ? `${formatQuantity(h.quantity)} un.` : "sem posição");
   const cost = (h?: Holding) => (h ? formatBrl(h.cost_brl) : formatBrl(0));
   const venue = row.exchange ? ` negociado em ${row.exchange}` : "";
+  const custody = row.custodiaLabel ? ` Custódia: ${row.custodiaLabel}.` : "";
   return [
-    `${row.ticker} — ${row.name}${venue}.`,
+    `${row.ticker} — ${row.name}${venue}.${custody}`,
     `Situação em 31/12/${year - 1}: ${unit(row.previous)}, custo de aquisição ${cost(row.previous)}.`,
     `Situação em 31/12/${year}: ${unit(row.current)}, custo de aquisição ${cost(row.current)}.`,
     "Custo de aquisição convertido em reais pela cotação de fechamento (venda) do Banco Central na data de cada compra.",
@@ -98,7 +113,7 @@ export function useForeignHoldings(workspaceId: number, enabled: boolean): Holdi
 
 export default function ForeignHoldingsCard({ workspaceId, holdings }: { workspaceId: number; holdings: Holding[] }) {
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
-  const [copied, setCopied] = useState<number | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const exportMutation = useMutation<number, AppError, void>({
     mutationFn: async () => {
@@ -123,7 +138,7 @@ export default function ForeignHoldingsCard({ workspaceId, holdings }: { workspa
   async function copyDescription(row: AssetRow) {
     try {
       await navigator.clipboard.writeText(descriptionText(year, row));
-      setCopied(row.assetId);
+      setCopied(row.key);
       setTimeout(() => setCopied(null), 2000);
     } catch {
       setCopied(null);
@@ -137,7 +152,9 @@ export default function ForeignHoldingsCard({ workspaceId, holdings }: { workspa
         <CardDescription>
           What the Bens e Direitos form asks for each foreign asset: the position on 31/12 of the previous year and
           of the year, at the acquisition cost in reais (each purchase converted at the Central Bank's PTAX
-          selling rate of its day) — not the market value. It only counts what is recorded in Anchor. The group,
+          selling rate of its day) — not the market value. One line per custody; the cost of each is its quantity
+          times the asset's average cost, so the custodies add up to the whole position. It only counts what is
+          recorded in Anchor. The group,
           code and country of each item are not filled in here: confirm them in the Receita's program, since
           guides disagree. This is an estimate based on secondary sources.
         </CardDescription>
@@ -187,10 +204,13 @@ export default function ForeignHoldingsCard({ workspaceId, holdings }: { workspa
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
-                <TableRow key={row.assetId}>
+                <TableRow key={row.key}>
                   <TableCell>
                     <span className="font-medium">{row.ticker}</span>
                     <span className="block text-xs text-muted-foreground">{row.name}</span>
+                    <span className="block text-xs text-muted-foreground" data-testid={`foreign-holding-${row.ticker}-custody`}>
+                      {row.custodiaLabel ?? "No custody"}
+                    </span>
                   </TableCell>
                   {[row.previous, row.current].map((h, index) => (
                     <TableCell
@@ -225,7 +245,7 @@ export default function ForeignHoldingsCard({ workspaceId, holdings }: { workspa
                       data-testid={`foreign-holding-copy-${row.ticker}`}
                       onClick={() => copyDescription(row)}
                     >
-                      {copied === row.assetId ? "Copied" : "Copy description"}
+                      {copied === row.key ? "Copied" : "Copy description"}
                     </Button>
                   </TableCell>
                 </TableRow>

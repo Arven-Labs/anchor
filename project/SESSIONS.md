@@ -3765,3 +3765,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não verificado**: a tela a olho; o botão de copiar num aparelho.
 - **Atenção**: a regra do custo vem de guias e consultorias, não do Perguntas e Respostas da Receita (ver Sessão 188); conferir na Receita.
 - **Pendente**: informe por custódia; CSV no mobile; país, grupo e código; entidades offshore e come-cotas.
+
+## Sessão 190 — informe de Bens e Direitos do exterior por custódia (desktop)
+- **Decisões** (plan mode): rateio pelo **custo médio global do ativo** (cada custódia leva quantidade × custo médio; as custódias somam a posição e o informe agregado, e a apuração do IR não muda); só desktop.
+- **Feito**: `foreign.rs` ganha `Transfer` e `foreign_holdings(trades, transfers, rate, through_year)`, que junta operações e transferências numa linha do tempo (no mesmo dia: compra/bônus/desdobramento, transferência, venda) e mantém a quantidade por custódia ao lado da posição global; `ForeignHolding.custodia_id`. Saldo negativo numa custódia ou custódias que não somam a posição marcam `incomplete`; se nenhuma custódia fica com saldo mas a posição existe, sai uma linha sem custódia, incompleta. `commands/tax.rs`: `load_transfers`, `custodia_label` (reaproveitada de `transaction.rs`, agora `pub(crate)`) e coluna `custodia` no CSV. `ForeignHoldingsCard.tsx`: uma linha por ativo e custódia, rótulo da custódia e "Custódia: X." no texto da discriminação.
+- **Verificado**: `./dev.sh check` (tsc e `cargo check --all-targets`) limpo. CIs: a conferir após o push.
+- **Não verificado**: a tela a olho; o E2E não ganhou caso de custódia (o caso do `taxes.e2e.mjs` segue sem custódia; a transferência é coberta pelo teste de fluxo).
+- **Atenção**: o custo por custódia é rateio (quantidade × custo médio do ativo), não o custo que a corretora mostra; transferência continua sem custo próprio.
+- **Pendente**: mobile; país, grupo e código; entidades offshore e come-cotas.

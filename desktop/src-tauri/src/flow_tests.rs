@@ -4207,8 +4207,60 @@ async fn the_foreign_holdings_report_has_the_cost_in_reais_per_asset_and_decembe
 
     let csv = foreign_holdings_csv_text(&rows).unwrap();
     let mut lines = csv.lines();
-    assert_eq!(lines.next().unwrap(), "year,ticker,name,exchange,currency,quantity,cost_brl,fx_approximate,incomplete");
-    assert!(csv.contains("2024,AAPL,AAPL,,USD,10,5500.00,false,false"), "{csv}");
+    assert_eq!(
+        lines.next().unwrap(),
+        "year,ticker,name,exchange,custodia,currency,quantity,cost_brl,fx_approximate,incomplete"
+    );
+    assert!(csv.contains("2024,AAPL,AAPL,,,USD,10,5500.00,false,false"), "{csv}");
+}
+
+#[tokio::test]
+async fn the_foreign_holdings_report_splits_the_position_by_custody_after_a_transfer() {
+    use crate::commands::tax::{foreign_holdings_csv_text, foreign_holdings_in};
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Custódias").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    let mut custodias = Vec::new();
+    for name in ["Avenue", "Nomad"] {
+        let row = crate::entity::custodia::ActiveModel {
+            workspace_id: Set(ws.id),
+            instituicao: Set(name.to_string()),
+            titular: Set("Eu".to_string()),
+            created_at: Set("2024-01-01T00:00:00Z".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        custodias.push(row);
+    }
+    seed_ptax(&db, "USD", "2024-03-15", 5.49, 5.5).await;
+
+    // US$ 1.000 a R$ 5,50 = 5.500 na Avenue; em 2025 transfere 4 das 10 ações para a Nomad.
+    let mut buy = tx_request(pf.id, aapl.id, "compra", 10.0, 100.0, "2024-03-15", 0.0);
+    buy.custodia_id = Some(custodias[0].id);
+    add(&db, buy).await;
+    let mut transfer = tx_request(pf.id, aapl.id, "transferencia", 4.0, 0.0, "2025-02-10", 0.0);
+    transfer.custodia_id = Some(custodias[0].id);
+    transfer.transfer_to_custodia_id = Some(custodias[1].id);
+    add(&db, transfer).await;
+
+    let rows = foreign_holdings_in(&db, ws.id).await.unwrap();
+    let find = |year: i32, custodia: i32| rows.iter().find(|r| r.holding.year == year && r.holding.custodia_id == Some(custodia));
+    let y24 = find(2024, custodias[0].id).unwrap();
+    assert!(close(y24.holding.quantity, 10.0) && close(y24.holding.cost_brl, 5500.0), "{:?}", y24.holding);
+    assert_eq!(y24.custodia_label.as_deref(), Some("Avenue (Eu)"));
+    assert!(find(2024, custodias[1].id).is_none());
+    let (avenue, nomad) = (find(2025, custodias[0].id).unwrap(), find(2025, custodias[1].id).unwrap());
+    assert!(close(avenue.holding.quantity, 6.0) && close(avenue.holding.cost_brl, 3300.0), "{:?}", avenue.holding);
+    assert!(close(nomad.holding.quantity, 4.0) && close(nomad.holding.cost_brl, 2200.0), "{:?}", nomad.holding);
+    assert_eq!(nomad.custodia_label.as_deref(), Some("Nomad (Eu)"));
+
+    let csv = foreign_holdings_csv_text(&rows).unwrap();
+    assert!(csv.contains("2025,AAPL,AAPL,,Nomad (Eu),USD,4,2200.00,false,false"), "{csv}");
 }
 
 #[test]
@@ -4220,6 +4272,7 @@ fn the_holdings_csv_quotes_names_with_commas_and_keeps_two_decimals() {
         holding: ForeignHolding {
             year: 2025,
             asset_id: 1,
+            custodia_id: Some(3),
             ticker: "BRK.B".to_string(),
             currency: "USD".to_string(),
             quantity: 2.5,
@@ -4229,9 +4282,13 @@ fn the_holdings_csv_quotes_names_with_commas_and_keeps_two_decimals() {
         },
         name: "Berkshire Hathaway, Inc. \"B\"".to_string(),
         exchange: Some("NYSE".to_string()),
+        custodia_label: Some("Avenue (Eu)".to_string()),
     }];
     let csv = foreign_holdings_csv_text(&rows).unwrap();
-    assert!(csv.contains("2025,BRK.B,\"Berkshire Hathaway, Inc. \"\"B\"\"\",NYSE,USD,2.5,1234.50,true,false"), "{csv}");
+    assert!(
+        csv.contains("2025,BRK.B,\"Berkshire Hathaway, Inc. \"\"B\"\"\",NYSE,Avenue (Eu),USD,2.5,1234.50,true,false"),
+        "{csv}"
+    );
 }
 
 #[tokio::test]

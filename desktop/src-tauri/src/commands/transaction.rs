@@ -472,7 +472,7 @@ pub async fn delete_transaction(
     Ok(())
 }
 
-fn custodia_label(custodias: &HashMap<i32, custodia::Model>, id: Option<i32>) -> Option<String> {
+pub(crate) fn custodia_label(custodias: &HashMap<i32, custodia::Model>, id: Option<i32>) -> Option<String> {
     id.and_then(|id| custodias.get(&id))
         .map(|c| format!("{} ({})", c.instituicao, c.titular))
 }

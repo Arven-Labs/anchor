@@ -121,17 +121,30 @@ fn apply_acquisition(pos: &mut Position, t: &Trade, fx: f64) {
     };
 }
 
-/// Um ativo do exterior numa data de 31/12: quantidade e custo médio em reais (o que a ficha Bens e Direitos da DAA
-/// pede: custo de aquisição convertido na data de cada compra, não o valor de mercado).
+/// Transferência de um ativo entre custódias: move só quantidade, o custo não muda (o custo médio é do ativo).
+#[derive(Clone, Debug)]
+pub struct Transfer {
+    pub tx_id: i32,
+    pub asset_id: i32,
+    pub date: NaiveDate,
+    pub quantity: f64,
+    pub from: Option<i32>,
+    pub to: Option<i32>,
+}
+
+/// Um ativo do exterior numa custódia numa data de 31/12: quantidade e custo médio em reais (o que a ficha Bens e
+/// Direitos da DAA pede: custo de aquisição convertido na data de cada compra, não o valor de mercado).
 #[derive(Clone, Debug, Serialize)]
 pub struct ForeignHolding {
     /// 31/12 deste ano.
     pub year: i32,
     pub asset_id: i32,
+    /// `None` = operações sem custódia informada.
+    pub custodia_id: Option<i32>,
     pub ticker: String,
     pub currency: String,
     pub quantity: f64,
-    /// Custo médio restante da posição, em BRL.
+    /// Custo médio do ativo × a quantidade desta custódia, em BRL (as custódias somam o custo da posição).
     pub cost_brl: f64,
     /// Alguma compra da posição foi convertida pelo câmbio de mercado (sem PTAX).
     pub fx_approximate: bool,
@@ -139,49 +152,124 @@ pub struct ForeignHolding {
     pub incomplete: bool,
 }
 
-/// Posição de cada ativo do exterior em cada 31/12 de `FIRST_YEAR − 1` até `through_year` (só com quantidade).
-/// Usa a mesma ordem e a mesma conversão de `assess_foreign`; ano sem fato repete a posição anterior. Ordenada por
-/// `(ano, ativo)`.
-pub fn foreign_holdings(trades: &[Trade], rate: RateToBrl, through_year: i32) -> Vec<ForeignHolding> {
-    let mut foreign: Vec<&Trade> =
-        trades.iter().filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning).collect();
-    foreign.sort_by_key(|t| (t.asset_id, t.date, t.side == Side::Sell, t.tx_id));
+/// Um fato do ativo na linha do tempo do informe: operação ou transferência entre custódias.
+enum HoldingEvent<'a> {
+    Trade(&'a Trade),
+    Transfer(&'a Transfer),
+}
+
+impl HoldingEvent<'_> {
+    fn date(&self) -> NaiveDate {
+        match self {
+            Self::Trade(t) => t.date,
+            Self::Transfer(t) => t.date,
+        }
+    }
+
+    /// No mesmo dia: compra, bonificação e desdobramento, depois a transferência, depois a venda.
+    fn order_key(&self) -> (NaiveDate, u8, i32) {
+        match self {
+            Self::Trade(t) => (t.date, if t.side == Side::Sell { 2 } else { 0 }, t.tx_id),
+            Self::Transfer(t) => (t.date, 1, t.tx_id),
+        }
+    }
+}
+
+/// Posição de cada ativo do exterior, por custódia, em cada 31/12 de `FIRST_YEAR − 1` até `through_year` (só com
+/// quantidade). Usa a mesma ordem e a mesma conversão de `assess_foreign`; ano sem fato repete a posição anterior.
+/// O custo é do ativo (custo médio global): cada custódia leva a quantidade dela × o custo médio, então a soma das
+/// custódias é a posição do ativo. Ordenada por `(ano, ativo, custódia)`.
+pub fn foreign_holdings(
+    trades: &[Trade],
+    transfers: &[Transfer],
+    rate: RateToBrl,
+    through_year: i32,
+) -> Vec<ForeignHolding> {
+    let mut by_asset: BTreeMap<i32, Vec<HoldingEvent>> = BTreeMap::new();
+    for t in trades.iter().filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning) {
+        by_asset.entry(t.asset_id).or_default().push(HoldingEvent::Trade(t));
+    }
+    for t in transfers {
+        // Só ativos que têm operação do exterior: transferência de outro ativo não entra.
+        if let Some(events) = by_asset.get_mut(&t.asset_id) {
+            events.push(HoldingEvent::Transfer(t));
+        }
+    }
 
     let mut holdings = Vec::new();
-    let mut start = 0;
-    while start < foreign.len() {
-        let asset_id = foreign[start].asset_id;
-        let end = foreign[start..].iter().position(|t| t.asset_id != asset_id).map_or(foreign.len(), |p| start + p);
-        let events = &foreign[start..end];
-        start = end;
+    for (asset_id, mut events) in by_asset {
+        events.sort_by_key(HoldingEvent::order_key);
+        let (ticker, currency) = events
+            .iter()
+            .find_map(|e| match e {
+                HoldingEvent::Trade(t) => Some((t.ticker.clone(), t.currency.clone())),
+                HoldingEvent::Transfer(_) => None,
+            })
+            .expect("o ativo entrou por uma operação");
 
-        let (ticker, currency) = (events[0].ticker.clone(), events[0].currency.clone());
         let mut pos = Position::default();
+        let mut by_custodia: BTreeMap<Option<i32>, f64> = BTreeMap::new();
         let (mut approximate, mut incomplete) = (false, false);
         let mut next_year = FIRST_YEAR - 1;
-        let snapshot = |year: i32, pos: &Position, approximate: bool, incomplete: bool, out: &mut Vec<ForeignHolding>| {
-            if pos.quantity > EPS {
+        let snapshot = |year: i32,
+                        pos: &Position,
+                        by_custodia: &BTreeMap<Option<i32>, f64>,
+                        approximate: bool,
+                        incomplete: bool,
+                        out: &mut Vec<ForeignHolding>| {
+            if pos.quantity <= EPS {
+                return;
+            }
+            // Saldo negativo numa custódia, ou custódias que não somam a posição: o rateio não fecha.
+            let sum: f64 = by_custodia.values().sum();
+            let uneven = by_custodia.values().any(|q| *q < -1e-6) || (sum - pos.quantity).abs() > 1e-6;
+            let before = out.len();
+            for (custodia_id, quantity) in by_custodia.iter().filter(|(_, q)| **q > EPS) {
                 out.push(ForeignHolding {
                     year,
                     asset_id,
+                    custodia_id: *custodia_id,
+                    ticker: ticker.clone(),
+                    currency: currency.clone(),
+                    quantity: *quantity,
+                    cost_brl: pos.cost * quantity / pos.quantity,
+                    fx_approximate: approximate,
+                    incomplete: incomplete || uneven,
+                });
+            }
+            if out.len() == before {
+                // Venda sem saldo deixou todas as custódias zeradas ou negativas, mas a posição existe: mostra-a inteira.
+                out.push(ForeignHolding {
+                    year,
+                    asset_id,
+                    custodia_id: None,
                     ticker: ticker.clone(),
                     currency: currency.clone(),
                     quantity: pos.quantity,
                     cost_brl: pos.cost,
                     fx_approximate: approximate,
-                    incomplete,
+                    incomplete: true,
                 });
             }
         };
 
-        for t in events {
+        for event in &events {
             // Os 31/12 que ficaram para trás são fotos do estado antes deste evento.
-            while next_year < t.date.year() && next_year <= through_year {
-                snapshot(next_year, &pos, approximate, incomplete, &mut holdings);
+            while next_year < event.date().year() && next_year <= through_year {
+                snapshot(next_year, &pos, &by_custodia, approximate, incomplete, &mut holdings);
                 next_year += 1;
             }
+            let t = match event {
+                HoldingEvent::Transfer(tr) => {
+                    *by_custodia.entry(tr.from).or_insert(0.0) -= tr.quantity;
+                    *by_custodia.entry(tr.to).or_insert(0.0) += tr.quantity;
+                    continue;
+                }
+                HoldingEvent::Trade(t) => t,
+            };
             if t.side == Side::Split {
                 pos.quantity *= t.quantity;
+                by_custodia.values_mut().for_each(|q| *q *= t.quantity);
                 continue;
             }
             let Some((fx, source)) = convert(&t.currency, t.date, RateKind::Sell, rate) else {
@@ -192,20 +280,22 @@ pub fn foreign_holdings(trades: &[Trade], rate: RateToBrl, through_year: i32) ->
                 Side::Buy | Side::Bonus => {
                     approximate |= source == RateSource::Market;
                     apply_acquisition(&mut pos, t, fx);
+                    *by_custodia.entry(t.custodia_id).or_insert(0.0) += t.quantity;
                 }
                 Side::Sell => {
                     let (_, covered) = take_from_position(&mut pos, t.quantity);
                     incomplete |= covered + EPS < t.quantity;
+                    *by_custodia.entry(t.custodia_id).or_insert(0.0) -= t.quantity;
                 }
                 Side::Split => unreachable!("tratado acima"),
             }
         }
         while next_year <= through_year {
-            snapshot(next_year, &pos, approximate, incomplete, &mut holdings);
+            snapshot(next_year, &pos, &by_custodia, approximate, incomplete, &mut holdings);
             next_year += 1;
         }
     }
-    holdings.sort_by_key(|h| (h.year, h.asset_id));
+    holdings.sort_by_key(|h| (h.year, h.asset_id, h.custodia_id));
     holdings
 }
 
@@ -480,7 +570,116 @@ mod tests {
     }
 
     fn holdings(trades: &[Trade], through: i32) -> Vec<ForeignHolding> {
-        foreign_holdings(trades, &yearly_rate, through)
+        foreign_holdings(trades, &[], &yearly_rate, through)
+    }
+
+    fn in_custodia(mut t: Trade, custodia: i32) -> Trade {
+        t.custodia_id = Some(custodia);
+        t
+    }
+
+    fn transfer(id: i32, date: &str, quantity: f64, from: i32, to: i32) -> Transfer {
+        Transfer { tx_id: id, asset_id: 1, date: d(date), quantity, from: Some(from), to: Some(to) }
+    }
+
+    fn at_custodia(list: &[ForeignHolding], year: i32, custodia: i32) -> Option<&ForeignHolding> {
+        list.iter().find(|h| h.year == year && h.asset_id == 1 && h.custodia_id == Some(custodia))
+    }
+
+    #[test]
+    fn a_transfer_splits_the_holding_by_custody_at_the_average_cost_of_the_asset() {
+        // 10 ações na custódia 1 (5.000); em 2025 transfere 4 para a 2 e compra mais 10 por 7.200 na custódia 2
+        let list = foreign_holdings(
+            &[
+                in_custodia(trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0), 1),
+                in_custodia(trade(3, 1, "2025-06-01", Side::Buy, 10.0, 1_200.0, 0.0), 2),
+            ],
+            &[transfer(2, "2025-03-01", 4.0, 1, 2)],
+            &yearly_rate,
+            2025,
+        );
+        let (a24, a25, b25) =
+            (at_custodia(&list, 2024, 1).unwrap(), at_custodia(&list, 2025, 1).unwrap(), at_custodia(&list, 2025, 2).unwrap());
+        assert!(close(a24.quantity, 10.0) && close(a24.cost_brl, 5_000.0), "{a24:?}");
+        assert!(at_custodia(&list, 2024, 2).is_none());
+        // custo médio global em 2025: 12.200 / 20 = 610 por ação
+        assert!(close(a25.quantity, 6.0) && close(a25.cost_brl, 3_660.0), "{a25:?}");
+        assert!(close(b25.quantity, 14.0) && close(b25.cost_brl, 8_540.0), "{b25:?}");
+        assert!(close(a25.cost_brl + b25.cost_brl, 12_200.0), "as custódias somam a posição");
+        assert!(!a25.incomplete && !b25.incomplete);
+    }
+
+    #[test]
+    fn a_sale_takes_the_quantity_from_its_custody_and_the_cost_at_the_global_average() {
+        let list = foreign_holdings(
+            &[
+                in_custodia(trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0), 1),
+                in_custodia(trade(3, 1, "2025-03-01", Side::Sell, 3.0, 450.0, 0.0), 2),
+            ],
+            &[transfer(2, "2024-12-01", 5.0, 1, 2)],
+            &yearly_rate,
+            2025,
+        );
+        let (a, b) = (at_custodia(&list, 2025, 1).unwrap(), at_custodia(&list, 2025, 2).unwrap());
+        // sobram 7 com 3.500 (500 por ação): 5 na custódia 1 e 2 na 2
+        assert!(close(a.quantity, 5.0) && close(a.cost_brl, 2_500.0), "{a:?}");
+        assert!(close(b.quantity, 2.0) && close(b.cost_brl, 1_000.0), "{b:?}");
+    }
+
+    #[test]
+    fn a_transfer_on_the_day_of_a_sale_counts_before_it() {
+        // vende 4 na custódia 2 no mesmo dia em que as 4 chegam a ela: não fica saldo negativo
+        let list = foreign_holdings(
+            &[
+                in_custodia(trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0), 1),
+                in_custodia(trade(2, 1, "2025-03-01", Side::Sell, 4.0, 600.0, 0.0), 2),
+            ],
+            &[transfer(3, "2025-03-01", 4.0, 1, 2)],
+            &yearly_rate,
+            2025,
+        );
+        assert!(at_custodia(&list, 2025, 2).is_none(), "a custódia 2 zerou");
+        let a = at_custodia(&list, 2025, 1).unwrap();
+        assert!(close(a.quantity, 6.0) && close(a.cost_brl, 3_000.0) && !a.incomplete, "{a:?}");
+    }
+
+    #[test]
+    fn a_split_scales_every_custody() {
+        let list = foreign_holdings(
+            &[
+                in_custodia(trade(1, 1, "2024-03-01", Side::Buy, 2.0, 200.0, 0.0), 1),
+                trade(3, 1, "2025-01-02", Side::Split, 2.0, 0.0, 0.0),
+            ],
+            &[transfer(2, "2024-06-01", 1.0, 1, 2)],
+            &yearly_rate,
+            2025,
+        );
+        let (a, b) = (at_custodia(&list, 2025, 1).unwrap(), at_custodia(&list, 2025, 2).unwrap());
+        assert!(close(a.quantity, 2.0) && close(b.quantity, 2.0), "{a:?} {b:?}");
+        assert!(close(a.cost_brl + b.cost_brl, 1_000.0));
+    }
+
+    #[test]
+    fn a_sale_above_the_balance_of_its_custody_marks_the_holding_incomplete() {
+        // a custódia 2 vende 3 sem ter nada: o saldo dela fica negativo e o rateio não fecha
+        let list = foreign_holdings(
+            &[
+                in_custodia(trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0), 1),
+                in_custodia(trade(2, 1, "2025-03-01", Side::Sell, 3.0, 450.0, 0.0), 2),
+            ],
+            &[],
+            &yearly_rate,
+            2025,
+        );
+        let a = at_custodia(&list, 2025, 1).unwrap();
+        assert!(a.incomplete && close(a.quantity, 10.0), "{a:?}");
+    }
+
+    #[test]
+    fn a_transfer_of_an_asset_without_foreign_trades_is_ignored() {
+        let mut other = transfer(1, "2025-03-01", 1.0, 1, 2);
+        other.asset_id = 9;
+        assert!(foreign_holdings(&[], &[other], &yearly_rate, 2025).is_empty());
     }
 
     fn at(list: &[ForeignHolding], year: i32, asset: i32) -> Option<&ForeignHolding> {
@@ -572,6 +771,7 @@ mod tests {
                 trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0),
                 trade(2, 1, "2025-03-01", Side::Buy, 10.0, 1_200.0, 0.0),
             ],
+            &[],
             &market,
             2025,
         );
