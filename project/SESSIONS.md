@@ -3790,6 +3790,6 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 
 ## Sessão 193 — CSV do informe de Bens e Direitos no app móvel
 - **Feito**: `domain/foreign_holdings_csv.dart` (`foreignHoldingsCsv`) com as mesmas colunas do desktop (`year,ticker,name,exchange,custodia,currency,quantity,cost_brl,fx_approximate,incomplete`; `exchange` sai vazia porque o mobile não guarda a bolsa; custo com duas casas, quantidade sem zeros à direita, campo com vírgula ou aspas entre aspas). Botão "Exportar CSV" no cartão "Bens e Direitos" da `ForeignTaxScreen`, que grava todos os anos com `FilePicker.platform.saveFile` (já era dependência, sem pacote novo).
-- **Verificado**: `flutter analyze` limpo e `flutter test` nos quatro arquivos de IR de exterior (54 testes, 5 novos em `foreign_holdings_csv_test.dart`). CI Mobile: a conferir após o push.
+- **Verificado**: `flutter analyze` limpo e `flutter test` nos quatro arquivos de IR de exterior (54 testes, 5 novos em `foreign_holdings_csv_test.dart`). CI Mobile (commit `701228e`): `flutter analyze` e `flutter test` passaram.
 - **Não verificado**: o salvar do arquivo num aparelho real (Android e iOS exigem os bytes no `saveFile`, que é o que o código passa); a tela a olho.
 - **Pendente**: país, grupo e código da ficha; entidades offshore e come-cotas.
