@@ -402,9 +402,10 @@ pub fn assess_foreign(
         sales.sort_by_key(|s| (s.date, s.tx_id));
         let dividend_items = dividends_by_year.remove(&year).unwrap_or_default();
 
-        let capital_gain: f64 = sales.iter().map(|s| s.gain).sum();
-        let dividends_total: f64 = dividend_items.iter().map(|i| i.gross).sum();
-        let withheld: f64 = dividend_items.iter().map(|i| i.withheld).sum();
+        // `sum()` de f64 vazio dá −0,0 (e a tela mostraria "-R$ 0,00"): soma a partir de +0,0.
+        let capital_gain = sales.iter().fold(0.0, |acc, s| acc + s.gain);
+        let dividends_total = dividend_items.iter().fold(0.0, |acc, i| acc + i.gross);
+        let withheld = dividend_items.iter().fold(0.0, |acc, i| acc + i.withheld);
         let net_result = capital_gain + dividends_total;
 
         let loss_carried_in = loss_carried;
@@ -864,6 +865,23 @@ mod tests {
         assert!(close(years[0].capital_gain, -600.0), "{:?}", years[0]);
         assert!(close(years[0].taxable_base, 0.0) && close(years[0].tax_due, 0.0));
         assert!(close(years[0].loss_carried_out, 600.0));
+    }
+
+    #[test]
+    fn a_year_without_dividends_or_sales_has_positive_zero_not_negative_zero() {
+        // `sum()` de f64 vazio dá −0,0 e a tela mostrava "-R$ 0,00"
+        let (years, _) = run(
+            &[
+                trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0),
+                trade(2, 1, "2025-03-01", Side::Sell, 10.0, 1_200.0, 0.0),
+            ],
+            &[],
+        );
+        let y = &years[0];
+        assert!(y.dividends.is_sign_positive() && y.withheld.is_sign_positive(), "{y:?}");
+
+        let (years, _) = run(&[], &[dividend(1, "2025-05-01", 100.0, 0.0)]);
+        assert!(years[0].capital_gain.is_sign_positive(), "{:?}", years[0]);
     }
 
     #[test]

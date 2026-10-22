@@ -3780,3 +3780,10 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Verificado**: `flutter analyze` limpo e `flutter test` nos três arquivos de IR de exterior (49 testes, com 5 casos novos de custódia em `foreign_holdings_test.dart` e 1 em `foreign_tax_screen_test.dart`). CI Mobile (commit `af38ab4`): `flutter analyze` e `flutter test` passaram.
 - **Não verificado**: a tela a olho.
 - **Pendente**: CSV no mobile; país, grupo e código; entidades offshore e come-cotas.
+
+## Sessão 192 — conferência de tela do IR de exterior pelas capturas do CI
+- **Como**: não há como abrir o app Tauri nem o aparelho daqui; baixei o artefato `e2e-artifacts` do CI Desktop E2E (`gh run download`) e vi `taxes-holdings.png` e `taxes-foreign-ptax.png`.
+- **Achado**: o ano de 2026 mostrava **"-R$ 0,00"** em Dividends e no crédito retido. Causa: `sum()` de `f64` vazio devolve −0,0 no Rust atual, e o ano só com venda não tem provento. Corrigido em `foreign.rs` (`fold` a partir de +0,0 para ganho, proventos e retido), com teste de regressão (`is_sign_positive`). O mesmo padrão existe em `crypto.rs` (`sales_total`, `gain`), mas lá o mês só existe com venda; não mexi.
+- **Visto e certo**: o cartão de Bens e Direitos (seletor, "No custody", custo e quantidade de 31/12/2025 e 31/12/2026, botão de copiar, legenda e nota de rateio por custódia).
+- **Verificado**: `./dev.sh check` limpo. CIs: a conferir após o push.
+- **Não verificado**: o mobile a olho (o CI Mobile não gera captura); o caso com mais de uma custódia na tela (a captura só tem o NVDA sem custódia).
