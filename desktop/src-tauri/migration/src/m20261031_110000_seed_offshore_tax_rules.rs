@@ -12,7 +12,7 @@ const EFFECTIVE_FROM: &str = "2024-01-01";
 // edição do usuário.
 // (key, value, description, source)
 const SEEDS: &[(&str, f64, &str, &str)] = &[
-    ("offshore_rate", 0.15, "Yearly IR on the profit of a controlled entity abroad, taxed on 31/12 whether or not it was distributed, as a flat 15% (the entity's loss only offsets its own later profits)", "Lei 14.754/2023, arts. 2 to 5 (secondary sources; verify on gov.br)"),
+    ("offshore_rate", 0.15, "Yearly IR on the profit of a controlled entity abroad, taxed on 31/12 whether or not it was distributed, as a flat 15% (a loss of the entity only offsets its own later profits)", "Lei 14.754/2023, arts. 2 to 5 (secondary sources; verify on gov.br)"),
 ];
 
 #[async_trait::async_trait]

@@ -53,7 +53,7 @@ const RULES: &[(&str, f64, (i32, u32, u32), &str, &str)] = &[
     ("crypto_rate_fourth_tier", 0.225, (2019, 1, 1), "Rate on the part of the yearly taxable crypto gain above the third tier limit", "Lei 8.981/1995, art. 21, with Lei 13.259/2016 (secondary sources; verify on gov.br)"),
     ("darf_code_crypto", 4600.0, (2019, 1, 1), "Revenue code of the DARF for capital gains on crypto (the stock exchange DARF is 6015)", "Receita Federal, GCAP (secondary sources; verify on gov.br)"),
     ("foreign_rate", 0.15, (2024, 1, 1), "Yearly IR on gains and dividends of financial investments held abroad (stocks, ETFs, REITs), as a flat 15% on the net result of the year, with no monthly exemption and no monthly DARF", "Lei 14.754/2023, arts. 2 to 4 (secondary sources; verify on gov.br)"),
-    ("offshore_rate", 0.15, (2024, 1, 1), "Yearly IR on the profit of a controlled entity abroad, taxed on 31/12 whether or not it was distributed, as a flat 15% (the entity's loss only offsets its own later profits)", "Lei 14.754/2023, arts. 2 to 5 (secondary sources; verify on gov.br)"),
+    ("offshore_rate", 0.15, (2024, 1, 1), "Yearly IR on the profit of a controlled entity abroad, taxed on 31/12 whether or not it was distributed, as a flat 15% (a loss of the entity only offsets its own later profits)", "Lei 14.754/2023, arts. 2 to 5 (secondary sources; verify on gov.br)"),
 ];
 
 fn date(ymd: (i32, u32, u32)) -> NaiveDate {
