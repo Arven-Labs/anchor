@@ -218,6 +218,141 @@ class ForeignTaxAssessment {
 
 DateTime _day(DateTime date) => DateTime(date.year, date.month, date.day);
 
+/// Posição de um ativo do exterior em 31/12 de `year`, para o informe de Bens e
+/// Direitos: quantidade e custo de aquisição em reais (convertido pela cotação
+/// de venda do dia de cada compra).
+class ForeignHolding {
+  final int year;
+  final int assetId;
+  final String ticker;
+  final String name;
+  final String currency;
+  final double quantity;
+  final double costBrl;
+
+  /// Alguma compra usou o câmbio de mercado porque a PTAX faltava.
+  final bool fxApproximate;
+
+  /// Operação sem câmbio na data, ou venda maior que as compras conhecidas:
+  /// o custo está subestimado.
+  final bool incomplete;
+
+  const ForeignHolding({
+    required this.year,
+    required this.assetId,
+    required this.ticker,
+    required this.name,
+    required this.currency,
+    required this.quantity,
+    required this.costBrl,
+    required this.fxApproximate,
+    required this.incomplete,
+  });
+}
+
+/// Foto da posição de cada ativo do exterior em cada 31/12, de 2023 até
+/// `throughYear` (padrão: o ano corrente). Porta de `foreign_holdings` do
+/// desktop; ano sem posição não gera linha, e as marcas `fxApproximate` e
+/// `incomplete` valem daí em diante.
+List<ForeignHolding> foreignHoldings(
+  List<Asset> assets,
+  List<PortfolioTransaction> transactions, {
+  Map<String, PtaxSeries> ptax = const {},
+  Map<String, FxHistory> fx = const {},
+  int? throughYear,
+}) {
+  final lastYear = throughYear ?? DateTime.now().year;
+  final foreignById = {
+    for (final asset in assets)
+      if (foreignAssetClasses.contains(asset.assetClass) && asset.id != null)
+        asset.id!: asset,
+  };
+  final byAsset = <int, List<(int, PortfolioTransaction)>>{};
+  var index = 0;
+  for (final tx in transactions) {
+    final id = tx.assetId;
+    if (id == null || !foreignById.containsKey(id)) continue;
+    if (tx.type != TransactionType.compra && tx.type != TransactionType.venda) {
+      continue;
+    }
+    byAsset.putIfAbsent(id, () => []).add((index++, tx));
+  }
+
+  final holdings = <ForeignHolding>[];
+  for (final entry in byAsset.entries) {
+    final asset = foreignById[entry.key]!;
+    final events = entry.value
+      ..sort((a, b) {
+        final x = a.$2, y = b.$2;
+        final byDay = _day(x.date).compareTo(_day(y.date));
+        if (byDay != 0) return byDay;
+        final xSale = x.type == TransactionType.venda ? 1 : 0;
+        final ySale = y.type == TransactionType.venda ? 1 : 0;
+        if (xSale != ySale) return xSale.compareTo(ySale);
+        final byId = (x.id ?? 0).compareTo(y.id ?? 0);
+        return byId != 0 ? byId : a.$1.compareTo(b.$1);
+      });
+
+    final position = CostPosition();
+    var approximate = false;
+    var incomplete = false;
+    var nextYear = foreignFirstYear - 1;
+    void snapshot(int year) {
+      if (position.quantity <= costEps) return;
+      holdings.add(
+        ForeignHolding(
+          year: year,
+          assetId: entry.key,
+          ticker: asset.ticker,
+          name: asset.name,
+          currency: asset.currency,
+          quantity: position.quantity,
+          costBrl: position.cost,
+          fxApproximate: approximate,
+          incomplete: incomplete,
+        ),
+      );
+    }
+
+    for (final (_, tx) in events) {
+      // Os 31/12 que já passaram pegam a posição de antes deste evento.
+      while (nextYear < tx.date.year && nextYear <= lastYear) {
+        snapshot(nextYear);
+        nextYear++;
+      }
+      final converted = _rateToBrl(
+        asset.currency,
+        tx.date,
+        RateKind.sell,
+        ptax,
+        fx,
+      );
+      if (converted == null) {
+        incomplete = true;
+        continue;
+      }
+      final (rate, source) = converted;
+      final quantity = tx.quantity ?? 0;
+      if (tx.type == TransactionType.compra) {
+        if (source == RateSource.market) approximate = true;
+        position.add(quantity, (tx.totalValue + (tx.fee ?? 0)) * rate);
+      } else {
+        final (_, covered) = position.take(quantity);
+        if (covered + costEps < quantity) incomplete = true;
+      }
+    }
+    while (nextYear <= lastYear) {
+      snapshot(nextYear);
+      nextYear++;
+    }
+  }
+  holdings.sort((a, b) {
+    final byYear = a.year.compareTo(b.year);
+    return byYear != 0 ? byYear : a.assetId.compareTo(b.assetId);
+  });
+  return holdings;
+}
+
 /// Apura ano a ano o IR dos ativos do exterior. As transações podem vir em
 /// qualquer ordem e misturar outras classes e tipos (são ignorados:
 /// transferência, aporte e retirada não mexem em custo nem em venda).

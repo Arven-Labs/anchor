@@ -2208,7 +2208,8 @@ reais é digitado, com o botão "Use market price" (Sessão 173) que o preenche:
   e no mobile (`bcb_ptax_service.dart`), com o câmbio de mercado de reserva e aviso de ano aproximado. Regra do dia sem cotação a conferir na Receita.
 - **Informe de Bens e Direitos (Sessão 188, desktop)**: `foreign_holdings` dá, por ativo e por 31/12 (de 2023 ao ano corrente), a quantidade e o custo médio em reais (custo de aquisição convertido na data de cada compra, **não** a PTAX de 31/12 nem o valor de mercado; fonte: guias e consultorias,
   conferir na Receita). Cartão na aba Taxes com copiar discriminação e CSV (`dialog:allow-save`). Não preenche grupo, código nem país da ficha. Um item por ativo, sem separar custódias.
-- **Pendente**: informe no mobile e por custódia; cotação cruzada para pares que o Yahoo não tem direto.
+- **Informe no mobile (Sessão 189)**: `foreignHoldings` (porte de `foreign_holdings`) e cartão "Bens e Direitos" na `ForeignTaxScreen`, com seletor de declaração, selos "aproximado"/"incompleto" e copiar descrição. Sem CSV (o mobile não exporta arquivo), sem bolsa no texto (o `Asset` do mobile não tem `exchange`) e sem desdobramento/bonificação.
+- **Pendente**: informe por custódia; CSV no mobile; cotação cruzada para pares que o Yahoo não tem direto.
 
 **Exterior no desktop (feito, Sessão 184)**: IR anual de ações, ETFs e REITs do exterior (Lei 14.754/2023).
 - **Motor**: `domain/tax/foreign.rs` (`assess_foreign`) apura por ano-calendário, a partir de 2024: cada compra, venda e provento vira reais pelo dólar do próprio dia (`FxHistory::rate_on`), o custo médio nasce em

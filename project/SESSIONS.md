@@ -3757,3 +3757,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   de rede) e passou inteiro na 2ª (`gh run rerun --failed`), com `taxes.e2e.mjs` (caso novo do informe) verde nas duas. Flake do `settings.e2e.mjs`, não causado por esta sessão.
 - **Não verificado**: o salvar do CSV no app empacotado (a capability é nova); a tela a olho.
 - **Pendente**: mobile; separar por custódia/corretora (exige incluir transferências no cálculo e ratear o custo); país, grupo e código; saldo em conta e proventos recebidos no exterior; atualização opcional de 2023; entidades offshore e come-cotas.
+
+## Sessão 189 — informe de Bens e Direitos do exterior no app móvel
+- **Decisões** (plan mode): porte do `foreign_holdings` do desktop; sem CSV (o mobile não tem como salvar arquivo e não vale dependência nova), sem bolsa no texto (o `Asset` do mobile não tem `exchange`), sem desdobramento nem bonificação (o mobile não tem esses tipos).
+- **Feito**: `foreignHoldings` em `domain/foreign_tax.dart` (`ForeignHolding`; foto da posição em cada 31/12 de 2023 até o ano corrente, custo médio em reais pela PTAX de venda do dia de cada compra, `CostPosition` compartilhada; câmbio de mercado marca `fxApproximate`, operação sem câmbio ou venda maior que as compras marca `incomplete`, ambas acumulativas). Cartão "Bens e Direitos" na `ForeignTaxScreen`: seletor "Declaração de Y" (mostra 31/12/Y−1 e 31/12/Y), uma linha por ativo, selos e botão de copiar a discriminação (`Clipboard`), o mesmo texto do desktop sem a bolsa.
+- **Verificado**: `flutter analyze` limpo e `flutter test` nos três arquivos de IR de exterior (43 testes, com `foreign_holdings_test.dart` novo e casos novos em `foreign_tax_screen_test.dart`). CI Mobile: a conferir após o push.
+- **Não verificado**: a tela a olho; o botão de copiar num aparelho.
+- **Atenção**: a regra do custo vem de guias e consultorias, não do Perguntas e Respostas da Receita (ver Sessão 188); conferir na Receita.
+- **Pendente**: informe por custódia; CSV no mobile; país, grupo e código; entidades offshore e come-cotas.

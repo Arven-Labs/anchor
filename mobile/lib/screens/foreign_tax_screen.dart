@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../domain/foreign_tax.dart';
 import '../domain/fx_history.dart';
@@ -66,6 +67,50 @@ String foreignWarningText(ForeignTaxWarning warning) {
   }
 }
 
+@visibleForTesting
+const foreignHoldingsNote =
+    'Custo de aquisição em reais, não valor de mercado, só do que está lançado '
+    'neste app. Grupo, código e país da ficha não são preenchidos. Estimativa '
+    'de fontes secundárias: confira no programa da Receita.';
+
+@visibleForTesting
+const foreignHoldingsLegend =
+    '"aproximado": alguma compra sem PTAX usou o câmbio de mercado. '
+    '"incompleto": uma operação ficou sem câmbio, ou uma venda foi maior que '
+    'as compras lançadas, e o custo está subestimado.';
+
+/// Quantidade sem zeros à direita, com vírgula decimal (até 8 casas).
+@visibleForTesting
+String formatHoldingQuantity(double quantity) {
+  var text = quantity.toStringAsFixed(8);
+  text = text.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+  return text.replaceAll('.', ',');
+}
+
+/// Texto de discriminação de um ativo na declaração de `year` (posição em
+/// 31/12 do ano anterior e do ano), para colar no programa da Receita.
+@visibleForTesting
+String foreignHoldingDescription({
+  required int year,
+  required String ticker,
+  required String name,
+  ForeignHolding? previous,
+  ForeignHolding? current,
+}) {
+  String units(ForeignHolding? h) =>
+      h == null ? 'sem posição' : '${formatHoldingQuantity(h.quantity)} un.';
+  String cost(ForeignHolding? h) => formatBrl(h?.costBrl ?? 0);
+  return [
+    '$ticker — $name.',
+    'Situação em 31/12/${year - 1}: ${units(previous)}, custo de aquisição '
+        '${cost(previous)}.',
+    'Situação em 31/12/$year: ${units(current)}, custo de aquisição '
+        '${cost(current)}.',
+    'Custo de aquisição convertido em reais pela cotação de fechamento (venda) '
+        'do Banco Central na data de cada compra.',
+  ].join('\n');
+}
+
 /// IR de ativos no exterior ano a ano (ver `assessForeignTax`). Somente
 /// leitura: a apuração é anual, não há DARF para marcar como pago.
 class ForeignTaxScreen extends StatefulWidget {
@@ -83,6 +128,7 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
   bool _loading = true;
   bool _fxUnavailable = false;
   ForeignTaxAssessment? _assessment;
+  List<ForeignHolding> _holdings = const [];
 
   @override
   void initState() {
@@ -146,12 +192,8 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
 
     if (!mounted) return;
     setState(() {
-      _assessment = assessForeignTax(
-        assets,
-        transactions,
-        ptax: ptax,
-        fx: fx,
-      );
+      _assessment = assessForeignTax(assets, transactions, ptax: ptax, fx: fx);
+      _holdings = foreignHoldings(assets, transactions, ptax: ptax, fx: fx);
       _fxUnavailable = fxUnavailable;
       _loading = false;
     });
@@ -205,8 +247,156 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
                 else
                   for (final year in assessment.years.reversed)
                     _YearCard(year: year),
+                if (_holdings.isNotEmpty) _HoldingsCard(holdings: _holdings),
               ],
             ),
+    );
+  }
+}
+
+/// Informe de Bens e Direitos: posição de cada ativo em 31/12 (ver
+/// `foreignHoldings`). A declaração de Y mostra 31/12/(Y−1) e 31/12/Y.
+class _HoldingsCard extends StatefulWidget {
+  final List<ForeignHolding> holdings;
+
+  const _HoldingsCard({required this.holdings});
+
+  @override
+  State<_HoldingsCard> createState() => _HoldingsCardState();
+}
+
+class _HoldingsCardState extends State<_HoldingsCard> {
+  int? _year;
+
+  List<int> get _years {
+    final maxYear = widget.holdings
+        .map((h) => h.year)
+        .reduce((a, b) => a > b ? a : b);
+    final years =
+        {
+            for (final h in widget.holdings) ...[h.year, h.year + 1],
+          }.where((y) => y >= foreignFirstYear && y <= maxYear).toList()
+          ..sort((a, b) => b.compareTo(a));
+    return years;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final years = _years;
+    if (years.isEmpty) return const SizedBox.shrink();
+    final year = years.contains(_year) ? _year! : years.first;
+    final textTheme = Theme.of(context).textTheme;
+
+    ForeignHolding? at(int assetId, int y) {
+      for (final h in widget.holdings) {
+        if (h.assetId == assetId && h.year == y) return h;
+      }
+      return null;
+    }
+
+    final assetIds = {
+      for (final h in widget.holdings)
+        if (h.year == year - 1 || h.year == year) h.assetId,
+    }.toList();
+    final rows =
+        [
+          for (final id in assetIds)
+            (previous: at(id, year - 1), current: at(id, year)),
+        ]..sort(
+          (a, b) => (a.current ?? a.previous)!.ticker.compareTo(
+            (b.current ?? b.previous)!.ticker,
+          ),
+        );
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Bens e Direitos', style: textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(foreignHoldingsNote, style: textTheme.bodySmall),
+            const SizedBox(height: 8),
+            DropdownButton<int>(
+              value: year,
+              items: [
+                for (final y in years)
+                  DropdownMenuItem(value: y, child: Text('Declaração de $y')),
+              ],
+              onChanged: (y) => setState(() => _year = y),
+            ),
+            if (rows.isEmpty)
+              Text(
+                'Nenhuma posição no exterior em 31/12/${year - 1} nem em '
+                '31/12/$year.',
+              ),
+            for (final row in rows)
+              _HoldingRow(
+                year: year,
+                previous: row.previous,
+                current: row.current,
+              ),
+            const SizedBox(height: 4),
+            Text(foreignHoldingsLegend, style: textTheme.bodySmall),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HoldingRow extends StatelessWidget {
+  final int year;
+  final ForeignHolding? previous;
+  final ForeignHolding? current;
+
+  const _HoldingRow({
+    required this.year,
+    required this.previous,
+    required this.current,
+  });
+
+  String _line(String label, ForeignHolding? h) => h == null
+      ? '$label: —'
+      : '$label: ${formatBrl(h.costBrl)} '
+            '(${formatHoldingQuantity(h.quantity)} un.)'
+            '${h.fxApproximate ? ' · aproximado' : ''}'
+            '${h.incomplete ? ' · incompleto' : ''}';
+
+  @override
+  Widget build(BuildContext context) {
+    final base = (current ?? previous)!;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text('${base.ticker} — ${base.name}'),
+      subtitle: Text(
+        '${_line('31/12/${year - 1}', previous)}\n'
+        '${_line('31/12/$year', current)}',
+      ),
+      isThreeLine: true,
+      trailing: IconButton(
+        icon: const Icon(Icons.copy),
+        tooltip: 'Copiar descrição',
+        onPressed: () async {
+          final messenger = ScaffoldMessenger.of(context);
+          await Clipboard.setData(
+            ClipboardData(
+              text: foreignHoldingDescription(
+                year: year,
+                ticker: base.ticker,
+                name: base.name,
+                previous: previous,
+                current: current,
+              ),
+            ),
+          );
+          messenger.showSnackBar(
+            const SnackBar(content: Text('Descrição copiada.')),
+          );
+        },
+      ),
     );
   }
 }
