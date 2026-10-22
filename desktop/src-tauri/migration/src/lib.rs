@@ -88,6 +88,8 @@ mod m20261028_100000_seed_crypto_progressive_rules;
 mod m20261029_100000_add_foreign_tax_withheld_to_transactions;
 mod m20261029_110000_seed_foreign_tax_rules;
 mod m20261030_100000_create_ptax_daily;
+mod m20261031_100000_create_offshore_entities;
+mod m20261031_110000_seed_offshore_tax_rules;
 
 pub struct Migrator;
 
@@ -183,6 +185,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261029_100000_add_foreign_tax_withheld_to_transactions::Migration),
             Box::new(m20261029_110000_seed_foreign_tax_rules::Migration),
             Box::new(m20261030_100000_create_ptax_daily::Migration),
+            Box::new(m20261031_100000_create_offshore_entities::Migration),
+            Box::new(m20261031_110000_seed_offshore_tax_rules::Migration),
         ]
     }
 }

@@ -4292,6 +4292,117 @@ fn the_holdings_csv_quotes_names_with_commas_and_keeps_two_decimals() {
 }
 
 #[tokio::test]
+async fn an_offshore_entity_is_taxed_on_the_ptax_of_31_12_and_an_open_year_waits() {
+    use crate::commands::offshore::{
+        create_offshore_entity_in, list_offshore_entities_in, update_offshore_entity_in, upsert_offshore_result_in,
+        CreateOffshoreEntityRequest, OffshoreEntityRequest, UpdateOffshoreEntityRequest, UpsertOffshoreResultRequest,
+    };
+    use crate::domain::tax::assessment::TaxWarning;
+    use chrono::{Datelike, Utc};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Offshore").await;
+    seed_ptax(&db, "USD", "2024-12-31", 4.9, 5.0).await;
+    let entity_request = |currency: &str, percent: f64| OffshoreEntityRequest {
+        name: " Holding LLC ".to_string(),
+        country: "US".to_string(),
+        currency: currency.to_string(),
+        ownership_percent: percent,
+        notes: None,
+    };
+
+    let entity = create_offshore_entity_in(
+        &db,
+        CreateOffshoreEntityRequest { workspace_id: ws.id, entity: entity_request("usd", 40.0) },
+    )
+    .await
+    .unwrap();
+    assert_eq!(entity.name, "Holding LLC", "o nome é aparado");
+    assert_eq!(entity.currency, "USD", "a moeda vai em maiúsculas");
+
+    let result = |year: i32, profit: f64, tax: f64| UpsertOffshoreResultRequest {
+        entity_id: entity.id,
+        year,
+        profit,
+        tax_paid_abroad: tax,
+    };
+    upsert_offshore_result_in(&db, result(2024, 500.0, 0.0)).await.unwrap();
+    // o mesmo ano de novo corrige em vez de duplicar
+    upsert_offshore_result_in(&db, result(2024, 1_000.0, 100.0)).await.unwrap();
+    // o ano corrente ainda não fechou
+    upsert_offshore_result_in(&db, result(Utc::now().year(), 800.0, 0.0)).await.unwrap();
+
+    let views = list_offshore_entities_in(&db, ws.id).await.unwrap();
+    assert_eq!(views.len(), 1);
+    assert_eq!(views[0].results.len(), 2, "{:?}", views[0].results);
+
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert_eq!(assessment.offshore_years.len(), 1);
+    let y = &assessment.offshore_years[0];
+    // 40% de US$ 1.000 × 5,0 = 2.000; imposto 300; crédito 100 × 40% × 4,9 (compra) = 196; devido 104
+    assert_eq!(y.year, 2024);
+    assert!(close(y.profit_share_brl, 2000.0) && close(y.tax_before_credit, 300.0), "{y:?}");
+    assert!(close(y.credit_used, 196.0) && close(y.tax_due, 104.0), "{y:?}");
+    assert_eq!(y.lines[0].fx_source, crate::domain::ptax::RateSource::Ptax);
+    assert!(assessment
+        .warnings
+        .iter()
+        .any(|w| matches!(w, TaxWarning::OffshoreYearOpen { year } if *year == Utc::now().year())));
+
+    // trocar a participação muda a apuração
+    update_offshore_entity_in(
+        &db,
+        UpdateOffshoreEntityRequest { id: entity.id, entity: entity_request("USD", 100.0) },
+    )
+    .await
+    .unwrap();
+    let y = &assess_workspace(&db, ws.id).await.unwrap().offshore_years[0];
+    assert!(close(y.profit_share_brl, 5000.0) && close(y.tax_before_credit, 750.0), "{y:?}");
+}
+
+#[tokio::test]
+async fn the_offshore_commands_refuse_invalid_input() {
+    use crate::commands::offshore::{
+        create_offshore_entity_in, upsert_offshore_result_in, CreateOffshoreEntityRequest, OffshoreEntityRequest,
+        UpsertOffshoreResultRequest,
+    };
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Offshore").await;
+    let create = |name: &str, currency: &str, percent: f64| {
+        create_offshore_entity_in(
+            &db,
+            CreateOffshoreEntityRequest {
+                workspace_id: ws.id,
+                entity: OffshoreEntityRequest {
+                    name: name.to_string(),
+                    country: "US".to_string(),
+                    currency: currency.to_string(),
+                    ownership_percent: percent,
+                    notes: None,
+                },
+            },
+        )
+    };
+    assert!(matches!(create("  ", "USD", 50.0).await, Err(AppError::InvalidInput(_))));
+    assert!(matches!(create("A", "US", 50.0).await, Err(AppError::InvalidInput(_))), "moeda de 3 letras");
+    assert!(matches!(create("A", "U5D", 50.0).await, Err(AppError::InvalidInput(_))));
+    assert!(matches!(create("A", "USD", 0.0).await, Err(AppError::InvalidInput(_))), "participação acima de zero");
+    assert!(matches!(create("A", "USD", 100.5).await, Err(AppError::InvalidInput(_))), "participação até 100");
+    let entity = create("A", "USD", 100.0).await.unwrap();
+
+    let result = |entity_id: i32, year: i32, profit: f64, tax: f64| {
+        upsert_offshore_result_in(&db, UpsertOffshoreResultRequest { entity_id, year, profit, tax_paid_abroad: tax })
+    };
+    assert!(matches!(result(entity.id, 2023, 1.0, 0.0).await, Err(AppError::InvalidInput(_))), "só de 2024 em diante");
+    assert!(matches!(result(entity.id, 2025, f64::NAN, 0.0).await, Err(AppError::InvalidInput(_))));
+    assert!(matches!(result(entity.id, 2025, 1.0, -1.0).await, Err(AppError::InvalidInput(_))));
+    assert!(matches!(result(9999, 2025, 1.0, 0.0).await, Err(AppError::NotFound(_))));
+    assert!(result(entity.id, 2025, -50.0, 0.0).await.is_ok(), "prejuízo é válido");
+}
+
+#[tokio::test]
 async fn a_weekend_fact_uses_the_last_ptax_before_it_and_a_long_gap_falls_back_to_the_market() {
     let db = memory_db().await;
     let ws = workspace(&db, "PTAX").await;

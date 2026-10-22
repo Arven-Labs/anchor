@@ -21,7 +21,9 @@ use crate::domain::tax::assessment::{self, Assessment, OptionResult, Side, Trade
 use crate::domain::tax::classify::{treatment, TaxTreatment};
 use crate::domain::currency_conversion::FxHistory;
 use crate::domain::ptax::{PtaxSeries, RateKind, RateSource};
+use crate::commands::offshore as offshore_cmd;
 use crate::domain::tax::foreign;
+use crate::domain::tax::offshore;
 use crate::domain::tax::rules::{self, Rule, RuleSet};
 use crate::entity::{
     assets, bank_account, custodia, general_transaction, general_transaction_category, option_position,
@@ -205,15 +207,27 @@ pub(crate) async fn assess_workspace(
     let mut assessment = assessment::assess_with_options(&trades, &options, &rules)?;
 
     let dividends = load_foreign_dividends(db, workspace_id).await?;
+    let (offshore_entities, offshore_results) = offshore_cmd::load_inputs(db, workspace_id).await?;
     let currencies: HashSet<String> = foreign_currencies(&trades)
         .into_iter()
         .chain(dividends.iter().map(|d| d.currency.clone()).filter(|c| c != "BRL"))
+        .chain(offshore_entities.iter().map(|e| e.currency.clone()).filter(|c| c != "BRL"))
         .collect();
     let fx = ForeignFx::load(db, &currencies).await?;
-    let (years, warnings) =
-        foreign::assess_foreign(&trades, &dividends, &rules, &|currency, date, kind| fx.rate(currency, date, kind))?;
+    let rate = |currency: &str, date: NaiveDate, kind: RateKind| fx.rate(currency, date, kind);
+    let (years, warnings) = foreign::assess_foreign(&trades, &dividends, &rules, &rate)?;
     assessment.foreign_years = years;
     assessment.warnings.extend(warnings);
+
+    let (offshore_years, offshore_warnings) = offshore::assess_offshore(
+        &offshore_entities,
+        &offshore_results,
+        &rules,
+        Utc::now().date_naive(),
+        &rate,
+    )?;
+    assessment.offshore_years = offshore_years;
+    assessment.warnings.extend(offshore_warnings);
     Ok(assessment)
 }
 
@@ -408,6 +422,21 @@ async fn refresh_ptax(db: &DatabaseConnection, workspace_id: i32, allow_network:
             let entry = span.entry(currency).or_insert((date, date));
             entry.0 = entry.0.min(date);
             entry.1 = entry.1.max(date);
+        }
+        // Entidades controladas no exterior: a PTAX de 31/12 de cada ano informado que já fechou (10 dias antes, para o
+        // dia útil anterior quando 31/12 não tem cotação).
+        let today = Utc::now().date_naive();
+        let (entities, results) = offshore_cmd::load_inputs(db, workspace_id).await?;
+        for result in &results {
+            let Some(entity) = entities.iter().find(|e| e.id == result.entity_id).filter(|e| e.currency != "BRL") else {
+                continue;
+            };
+            let Some(year_end) = NaiveDate::from_ymd_opt(result.year, 12, 31).filter(|end| *end < today) else {
+                continue;
+            };
+            let entry = span.entry(entity.currency.clone()).or_insert((year_end, year_end));
+            entry.0 = entry.0.min(year_end - chrono::Duration::days(10));
+            entry.1 = entry.1.max(year_end);
         }
         for (currency, (since, until)) in span {
             ptax_store::refresh(db, &currency, since, until).await?;

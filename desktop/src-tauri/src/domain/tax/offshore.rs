@@ -1,0 +1,322 @@
+// IR sobre entidade controlada no exterior (Lei 14.754/2023): o lucro da offshore é tributado todo 31/12, mesmo sem
+// distribuição, e entra na apuração do dono na proporção da participação. O app não faz a contabilidade da entidade: o
+// usuário informa o resultado do exercício (e o imposto pago lá fora) na moeda dela.
+//
+// Regras (a alíquota vem de `tax_rules`, o resto é código):
+// - Só vale para anos que já fecharam (31/12 passou); o ano corrente fica "aberto" e não entra, com aviso.
+// - Lucro atribuível = lucro × participação × câmbio de 31/12. O câmbio é a PTAX de venda do Banco Central (art. 5º, como
+//   anotado na Sessão 188); dia sem PTAX usa a última anterior (`PtaxSeries`). Sem PTAX vale o câmbio de mercado e o ano
+//   avisa que é aproximado; sem nenhum dos dois a linha fica de fora e avisa. Entidade em BRL vale 1.
+// - O prejuízo de uma entidade só abate lucros futuros da própria entidade.
+// - Imposto = base × alíquota (15%). O imposto pago lá fora (× participação) abate o devido, até o limite dele,
+//   convertido pela PTAX de compra de 31/12 (pressuposto; sem ela, a de venda do mesmo dia).
+// - Não há DARF: vai na declaração anual.
+//
+// ATENÇÃO: as regras vêm de fontes secundárias, as mesmas do IR de exterior; conferir na Receita antes de confiar.
+
+use std::collections::BTreeMap;
+
+use chrono::NaiveDate;
+use serde::Serialize;
+
+use super::assessment::TaxWarning;
+use super::foreign::{convert, RateToBrl};
+use super::rules::{self, RuleSet};
+use crate::domain::ptax::{RateKind, RateSource};
+use crate::error::AppError;
+
+/// Uma entidade controlada no exterior, como saiu de `offshore_entities`.
+#[derive(Clone, Debug)]
+pub struct OffshoreEntity {
+    pub id: i32,
+    pub name: String,
+    pub country: String,
+    pub currency: String,
+    /// De 0 (exclusive) a 100.
+    pub ownership_percent: f64,
+}
+
+/// O resultado do exercício de uma entidade, na moeda dela.
+#[derive(Clone, Debug)]
+pub struct OffshoreResult {
+    pub entity_id: i32,
+    pub year: i32,
+    pub profit: f64,
+    pub tax_paid_abroad: f64,
+}
+
+/// Uma entidade num ano, já convertida e com a compensação de prejuízo aplicada.
+#[derive(Clone, Debug, Serialize)]
+pub struct OffshoreLine {
+    pub entity_id: i32,
+    pub entity_name: String,
+    pub country: String,
+    pub currency: String,
+    pub ownership_percent: f64,
+    /// Lucro do exercício na moeda da entidade (100% da entidade).
+    pub profit: f64,
+    /// Câmbio de 31/12 (venda) e de onde veio.
+    pub fx_rate: f64,
+    pub fx_source: RateSource,
+    /// Lucro × participação × câmbio, em BRL (negativo = prejuízo).
+    pub profit_share_brl: f64,
+    /// Prejuízo dos anos anteriores desta entidade disponível para abater.
+    pub loss_carried_in: f64,
+    pub taxable_base: f64,
+    pub tax_before_credit: f64,
+    /// Imposto pago lá fora × participação, em BRL (o que poderia virar crédito).
+    pub tax_paid_abroad_brl: f64,
+    pub credit_used: f64,
+    pub tax_due: f64,
+    pub loss_carried_out: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct OffshoreYear {
+    pub year: i32,
+    pub rate: f64,
+    pub profit_share_brl: f64,
+    pub taxable_base: f64,
+    pub tax_before_credit: f64,
+    pub credit_used: f64,
+    pub tax_due: f64,
+    pub lines: Vec<OffshoreLine>,
+}
+
+/// Soma a partir de +0,0: o `sum()` de `f64` vazio dá −0,0 e a tela mostraria "-R$ 0,00".
+fn total(lines: &[OffshoreLine], f: impl Fn(&OffshoreLine) -> f64) -> f64 {
+    lines.iter().fold(0.0, |acc, line| acc + f(line))
+}
+
+/// Apura ano a ano o IR das entidades controladas no exterior. `today` decide quais anos já fecharam. Linha sem câmbio
+/// de 31/12 fica de fora e gera aviso; ano que ainda não fechou gera `OffshoreYearOpen`.
+pub fn assess_offshore(
+    entities: &[OffshoreEntity],
+    results: &[OffshoreResult],
+    rules: &RuleSet,
+    today: NaiveDate,
+    rate: RateToBrl,
+) -> Result<(Vec<OffshoreYear>, Vec<TaxWarning>), AppError> {
+    let mut warnings = Vec::new();
+    let mut open_years = std::collections::BTreeSet::new();
+    let mut approximate_years = std::collections::BTreeSet::new();
+    let by_id: BTreeMap<i32, &OffshoreEntity> = entities.iter().map(|e| (e.id, e)).collect();
+
+    let mut ordered: Vec<&OffshoreResult> = results.iter().filter(|r| by_id.contains_key(&r.entity_id)).collect();
+    ordered.sort_by_key(|r| (r.year, r.entity_id));
+
+    let mut loss_by_entity: BTreeMap<i32, f64> = BTreeMap::new();
+    let mut lines_by_year: BTreeMap<i32, Vec<OffshoreLine>> = BTreeMap::new();
+    for result in ordered {
+        let entity = by_id[&result.entity_id];
+        let year_end = NaiveDate::from_ymd_opt(result.year, 12, 31)
+            .ok_or_else(|| AppError::InvalidInput(format!("invalid year {}", result.year)))?;
+        if today <= year_end {
+            open_years.insert(result.year);
+            continue;
+        }
+        let Some((fx_rate, fx_source)) = convert(&entity.currency, year_end, RateKind::Sell, rate) else {
+            warnings.push(TaxWarning::OffshoreFxMissing { year: result.year, entity: entity.name.clone() });
+            continue;
+        };
+        // O imposto pago lá fora usa a compra; sem ela, a de venda do mesmo dia.
+        let (withheld_rate, withheld_source) =
+            convert(&entity.currency, year_end, RateKind::Buy, rate).unwrap_or((fx_rate, fx_source));
+        if fx_source == RateSource::Market || (result.tax_paid_abroad > 0.0 && withheld_source == RateSource::Market) {
+            approximate_years.insert(result.year);
+        }
+
+        let share = entity.ownership_percent / 100.0;
+        let profit_share_brl = result.profit * share * fx_rate;
+        let tax_paid_abroad_brl = result.tax_paid_abroad * share * withheld_rate;
+
+        let loss_carried_in = loss_by_entity.get(&entity.id).copied().unwrap_or(0.0);
+        let (taxable_base, loss_carried_out) = if profit_share_brl >= 0.0 {
+            let used = loss_carried_in.min(profit_share_brl);
+            (profit_share_brl - used, loss_carried_in - used)
+        } else {
+            (0.0, loss_carried_in - profit_share_brl)
+        };
+        loss_by_entity.insert(entity.id, loss_carried_out);
+
+        let tax_rate = rules.get(rules::OFFSHORE_RATE, year_end)?;
+        let tax_before_credit = taxable_base * tax_rate;
+        let credit_used = tax_paid_abroad_brl.min(tax_before_credit);
+        lines_by_year.entry(result.year).or_default().push(OffshoreLine {
+            entity_id: entity.id,
+            entity_name: entity.name.clone(),
+            country: entity.country.clone(),
+            currency: entity.currency.clone(),
+            ownership_percent: entity.ownership_percent,
+            profit: result.profit,
+            fx_rate,
+            fx_source,
+            profit_share_brl,
+            loss_carried_in,
+            taxable_base,
+            tax_before_credit,
+            tax_paid_abroad_brl,
+            credit_used,
+            tax_due: tax_before_credit - credit_used,
+            loss_carried_out,
+        });
+    }
+
+    let mut years = Vec::new();
+    for (year, lines) in lines_by_year {
+        let year_end = NaiveDate::from_ymd_opt(year, 12, 31).expect("validated above");
+        years.push(OffshoreYear {
+            year,
+            rate: rules.get(rules::OFFSHORE_RATE, year_end)?,
+            profit_share_brl: total(&lines, |l| l.profit_share_brl),
+            taxable_base: total(&lines, |l| l.taxable_base),
+            tax_before_credit: total(&lines, |l| l.tax_before_credit),
+            credit_used: total(&lines, |l| l.credit_used),
+            tax_due: total(&lines, |l| l.tax_due),
+            lines,
+        });
+    }
+    warnings.extend(approximate_years.into_iter().map(|year| TaxWarning::OffshoreFxApproximate { year }));
+    warnings.extend(open_years.into_iter().map(|year| TaxWarning::OffshoreYearOpen { year }));
+    Ok((years, warnings))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::tax::rules::test_rule_set;
+    use chrono::Datelike;
+
+    fn d(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-6
+    }
+
+    fn entity(id: i32, currency: &str, percent: f64) -> OffshoreEntity {
+        OffshoreEntity { id, name: format!("Holding {id}"), country: "US".to_string(), currency: currency.to_string(), ownership_percent: percent }
+    }
+
+    fn result(entity_id: i32, year: i32, profit: f64, tax_paid_abroad: f64) -> OffshoreResult {
+        OffshoreResult { entity_id, year, profit, tax_paid_abroad }
+    }
+
+    /// PTAX de 31/12: venda 5 em 2024 e 6 em 2025; compra 0,1 abaixo; sem cotação para o resto.
+    fn ptax_rate(currency: &str, date: NaiveDate, kind: RateKind) -> Option<(f64, RateSource)> {
+        let sell = match (currency, date.year()) {
+            ("USD", 2024) => 5.0,
+            ("USD", 2025) => 6.0,
+            _ => return None,
+        };
+        Some((if kind == RateKind::Buy { sell - 0.1 } else { sell }, RateSource::Ptax))
+    }
+
+    fn run(entities: &[OffshoreEntity], results: &[OffshoreResult]) -> (Vec<OffshoreYear>, Vec<TaxWarning>) {
+        assess_offshore(entities, results, &test_rule_set(), d("2026-10-22"), &ptax_rate).unwrap()
+    }
+
+    #[test]
+    fn the_profit_converts_at_the_ptax_of_31_12_and_pays_15_percent() {
+        // US$ 1.000 × R$ 5 = 5.000; imposto 750
+        let (years, warnings) = run(&[entity(1, "USD", 100.0)], &[result(1, 2024, 1_000.0, 0.0)]);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let y = &years[0];
+        assert_eq!(y.year, 2024);
+        assert!(close(y.profit_share_brl, 5_000.0) && close(y.taxable_base, 5_000.0), "{y:?}");
+        assert!(close(y.tax_before_credit, 750.0) && close(y.tax_due, 750.0) && close(y.rate, 0.15));
+        assert!(close(y.lines[0].fx_rate, 5.0) && y.lines[0].fx_source == RateSource::Ptax);
+    }
+
+    #[test]
+    fn only_the_ownership_share_of_the_profit_is_taxed() {
+        // 40% de US$ 1.000 × 5 = 2.000; imposto 300
+        let (years, _) = run(&[entity(1, "USD", 40.0)], &[result(1, 2024, 1_000.0, 0.0)]);
+        assert!(close(years[0].profit_share_brl, 2_000.0) && close(years[0].tax_due, 300.0), "{:?}", years[0]);
+    }
+
+    #[test]
+    fn a_loss_offsets_later_profits_of_the_same_entity_only() {
+        // entidade 1: −1.000 em 2024 (−5.000) e +1.500 em 2025 (9.000) → base 4.000; entidade 2 não herda o prejuízo
+        let (years, _) = run(
+            &[entity(1, "USD", 100.0), entity(2, "USD", 100.0)],
+            &[result(1, 2024, -1_000.0, 0.0), result(1, 2025, 1_500.0, 0.0), result(2, 2025, 500.0, 0.0)],
+        );
+        assert_eq!(years.iter().map(|y| y.year).collect::<Vec<_>>(), vec![2024, 2025]);
+        assert!(close(years[0].taxable_base, 0.0) && close(years[0].lines[0].loss_carried_out, 5_000.0));
+        let (first, second) = (&years[1].lines[0], &years[1].lines[1]);
+        assert!(close(first.loss_carried_in, 5_000.0) && close(first.taxable_base, 4_000.0), "{first:?}");
+        assert!(close(first.loss_carried_out, 0.0) && close(first.tax_before_credit, 600.0));
+        assert!(close(second.loss_carried_in, 0.0) && close(second.taxable_base, 3_000.0), "{second:?}");
+        assert!(close(years[1].tax_before_credit, 1_050.0));
+    }
+
+    #[test]
+    fn the_tax_paid_abroad_is_a_credit_at_the_buy_rate_limited_to_the_tax() {
+        // imposto lá fora US$ 100 × 4,9 (compra) = 490 de crédito; devido 750 − 490 = 260
+        let (years, _) = run(&[entity(1, "USD", 100.0)], &[result(1, 2024, 1_000.0, 100.0)]);
+        let line = &years[0].lines[0];
+        assert!(close(line.tax_paid_abroad_brl, 490.0) && close(line.credit_used, 490.0), "{line:?}");
+        assert!(close(line.tax_due, 260.0));
+
+        // imposto lá fora US$ 1.000 → 4.900, o crédito para em 750
+        let (years, _) = run(&[entity(1, "USD", 100.0)], &[result(1, 2024, 1_000.0, 1_000.0)]);
+        assert!(close(years[0].lines[0].credit_used, 750.0) && close(years[0].tax_due, 0.0), "{:?}", years[0]);
+    }
+
+    #[test]
+    fn the_market_rate_is_a_fallback_and_marks_the_year_approximate() {
+        let market = |currency: &str, date: NaiveDate, kind: RateKind| {
+            ptax_rate(currency, date, kind).map(|(rate, _)| (rate, RateSource::Market))
+        };
+        let (years, warnings) = assess_offshore(
+            &[entity(1, "USD", 100.0)],
+            &[result(1, 2024, 1_000.0, 0.0)],
+            &test_rule_set(),
+            d("2026-10-22"),
+            &market,
+        )
+        .unwrap();
+        assert!(close(years[0].profit_share_brl, 5_000.0) && years[0].lines[0].fx_source == RateSource::Market);
+        assert!(warnings.iter().any(|w| matches!(w, TaxWarning::OffshoreFxApproximate { year: 2024 })));
+    }
+
+    #[test]
+    fn a_year_without_any_rate_is_left_out_and_warns() {
+        // 2023 não tem câmbio no teste
+        let (years, warnings) = run(&[entity(1, "USD", 100.0)], &[result(1, 2023, 1_000.0, 0.0)]);
+        assert!(years.is_empty());
+        assert!(warnings
+            .iter()
+            .any(|w| matches!(w, TaxWarning::OffshoreFxMissing { year: 2023, entity } if entity == "Holding 1")));
+    }
+
+    #[test]
+    fn a_year_that_has_not_closed_is_open_and_not_assessed() {
+        let (years, warnings) = run(&[entity(1, "USD", 100.0)], &[result(1, 2026, 1_000.0, 0.0)]);
+        assert!(years.is_empty());
+        assert!(warnings.iter().any(|w| matches!(w, TaxWarning::OffshoreYearOpen { year: 2026 })));
+    }
+
+    #[test]
+    fn an_entity_in_brl_needs_no_exchange_rate() {
+        let (years, warnings) = run(&[entity(1, "BRL", 50.0)], &[result(1, 2024, 1_000.0, 0.0)]);
+        assert!(warnings.is_empty());
+        assert!(close(years[0].profit_share_brl, 500.0) && close(years[0].lines[0].fx_rate, 1.0));
+    }
+
+    #[test]
+    fn totals_start_at_positive_zero_when_nothing_is_due() {
+        // ano de prejuízo: base, imposto e crédito são zero, nunca −0,0
+        let (years, _) = run(&[entity(1, "USD", 100.0)], &[result(1, 2024, -1_000.0, 0.0)]);
+        let y = &years[0];
+        assert!(y.taxable_base.is_sign_positive() && y.tax_due.is_sign_positive() && y.credit_used.is_sign_positive(), "{y:?}");
+    }
+
+    #[test]
+    fn a_result_of_an_unknown_entity_is_ignored() {
+        let (years, warnings) = run(&[entity(1, "USD", 100.0)], &[result(9, 2024, 1_000.0, 0.0)]);
+        assert!(years.is_empty() && warnings.is_empty());
+    }
+}

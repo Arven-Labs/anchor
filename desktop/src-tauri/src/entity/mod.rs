@@ -30,6 +30,8 @@ pub mod liability_installment;
 pub mod loan;
 pub mod loan_repayment;
 pub mod macro_index_monthly;
+pub mod offshore_entity;
+pub mod offshore_result;
 pub mod option_position;
 pub mod portfolio;
 pub mod projected_ceiling_inputs;

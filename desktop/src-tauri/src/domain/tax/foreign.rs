@@ -103,7 +103,7 @@ pub struct ForeignYear {
 }
 
 /// BRL não converte nada (taxa 1, exata: conta como PTAX para não marcar o ano como aproximado).
-fn convert(currency: &str, date: NaiveDate, kind: RateKind, rate: RateToBrl) -> Option<(f64, RateSource)> {
+pub(super) fn convert(currency: &str, date: NaiveDate, kind: RateKind, rate: RateToBrl) -> Option<(f64, RateSource)> {
     if currency == "BRL" {
         Some((1.0, RateSource::Ptax))
     } else {

@@ -265,4 +265,36 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await byId("foreign-holdings-card").scrollIntoView({ block: "center" });
     await snap("taxes-holdings");
   });
+
+  // Entidade controlada no exterior: lucro de 31/12 pela PTAX de venda, participação e crédito pela PTAX de compra.
+  it("apura uma entidade controlada no exterior pela PTAX de 31/12", async () => {
+    const workspace = sql("SELECT id FROM workspace WHERE name = 'Tax E2E'");
+    sql(
+      "INSERT INTO ptax_daily (currency, reference_date, buy, sell, source, fetched_at) " +
+        "VALUES ('USD', '2025-12-31', 5.9, 6.0, 'test', '2025-12-31T00:00:00Z')",
+    );
+    sql(
+      "INSERT INTO offshore_entities (workspace_id, name, country, currency, ownership_percent, created_at) " +
+        `VALUES (${workspace}, 'Holding LLC', 'US', 'USD', 50, '2026-01-01T00:00:00Z')`,
+    );
+    const entity = sql("SELECT id FROM offshore_entities WHERE name = 'Holding LLC'");
+    // 50% de US$ 2.000 × 6,00 = R$ 6.000 (imposto 900); crédito 100 × 50% × 5,90 = R$ 295; devido R$ 605.
+    sql(
+      "INSERT INTO offshore_results (entity_id, year, profit, tax_paid_abroad, created_at) " +
+        `VALUES (${entity}, 2025, 2000, 100, '2026-01-01T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await waitForText(
+      byId("offshore-tax-due-2025"),
+      (text) => text.includes("605,00"),
+      "o imposto estimado da entidade no exterior em 2025 deveria ser R$ 605,00",
+    );
+    await byId("offshore-details-2025").click();
+    await byId("offshore-card").scrollIntoView({ block: "center" });
+    await snap("taxes-offshore");
+  });
 });

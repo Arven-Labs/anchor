@@ -7,6 +7,7 @@ use super::calendar::darf_due_date;
 use super::classify::{is_unit, treatment, TaxTreatment};
 use super::crypto::{assess_crypto, CryptoMonth};
 use super::foreign::{self, ForeignYear};
+use super::offshore::OffshoreYear;
 use super::rules::{self, RuleSet};
 use crate::domain::cost_basis::{take_from_position, Position, EPS};
 use crate::error::AppError;
@@ -143,6 +144,12 @@ pub enum TaxWarning {
     ForeignFxMissing { year: i32 },
     /// Operação ou provento no exterior convertido pelo câmbio de mercado (a PTAX do dia faltava): o valor do ano é aproximado.
     ForeignFxApproximate { year: i32 },
+    /// Resultado de entidade controlada no exterior sem câmbio de 31/12 (nem PTAX nem de mercado): ficou de fora.
+    OffshoreFxMissing { year: i32, entity: String },
+    /// Resultado de entidade controlada no exterior convertido pelo câmbio de mercado (a PTAX de 31/12 faltava).
+    OffshoreFxApproximate { year: i32 },
+    /// Resultado de entidade controlada no exterior de um ano que ainda não fechou (31/12 não passou): não apurado.
+    OffshoreYearOpen { year: i32 },
     /// Opção exercida: o resultado não é apurado aqui (o prêmio vai pro custo da ação).
     OptionExercised { ticker: String, date: NaiveDate },
 }
@@ -165,6 +172,8 @@ pub struct Assessment {
     pub crypto_months: Vec<CryptoMonth>,
     /// Exterior (Lei 14.754): apuração anual, preenchida pelo comando (precisa de câmbio); vazia na apuração pura.
     pub foreign_years: Vec<ForeignYear>,
+    /// Entidades controladas no exterior (Lei 14.754): apuração anual de 31/12, preenchida pelo comando.
+    pub offshore_years: Vec<OffshoreYear>,
     pub warnings: Vec<TaxWarning>,
     /// Só gavetas com saldo de prejuízo > 0.
     pub loss_balances: Vec<LossBalance>,
@@ -504,7 +513,14 @@ pub fn assess_with_options(
     let (crypto_months, crypto_warnings) = assess_crypto(trades, rules)?;
     warnings.extend(crypto_warnings);
 
-    Ok(Assessment { months, crypto_months, foreign_years: Vec::new(), warnings, loss_balances })
+    Ok(Assessment {
+        months,
+        crypto_months,
+        foreign_years: Vec::new(),
+        offshore_years: Vec::new(),
+        warnings,
+        loss_balances,
+    })
 }
 
 /// `tx_id` reservado da venda hipotética (maior que qualquer id real, então

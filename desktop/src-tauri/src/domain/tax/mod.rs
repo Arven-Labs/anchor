@@ -12,4 +12,5 @@ pub mod classify;
 pub mod crypto;
 pub mod foreign;
 pub mod iof;
+pub mod offshore;
 pub mod rules;
