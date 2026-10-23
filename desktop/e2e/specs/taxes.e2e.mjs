@@ -354,4 +354,28 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await byId("come-cotas-card").scrollIntoView({ block: "center" });
     await snap("taxes-come-cotas-recorded");
   });
+
+  // Resgate (venda do fundo): IOF e IR estimados por lote, com o come-cotas pago abatendo o IR. Compra a 400 dias do resgate,
+  // fundo de curto prazo (20% acima de 180 dias); o come-cotas pago (R$ 12,63 desta fração) passa do IR devido (R$ 12,42),
+  // então o IR estimado é zero e o excesso vira aviso. As datas são relativas a hoje, mas o prazo (400 dias) é fixo.
+  it("estima o IR do resgate de um fundo com o come-cotas já pago", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    const fund = sql("SELECT id FROM assets WHERE ticker = 'FUNDOX'");
+    sql(
+      "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+        `VALUES (${portfolio}, ${fund}, 'venda', 20, 13, 260, NULL, date('now'), '2025-01-10T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await waitForText(
+      byId("fund-redemptions-FUNDOX"),
+      (text) => text.includes("20 quotas") && text.includes("260,00") && text.includes("excess come-cotas"),
+      "o resgate de 20 cotas por R$ 260,00 deveria aparecer com o aviso de come-cotas em excesso",
+    );
+    await byId("come-cotas-card").scrollIntoView({ block: "center" });
+    await snap("taxes-fund-redemption");
+  });
 });

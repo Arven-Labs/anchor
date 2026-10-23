@@ -24,12 +24,31 @@ import {
 // Come-cotas dos fundos abertos (estimativa): o usuário escolhe o tipo de cada fundo e lança o valor da cota; a conta
 // (base, alíquota, cotas descontadas) vem pronta de `get_funds_overview`. Aqui só cadastra e exibe. O desconto real do
 // fundo é registrado como uma transação "Come-cotas" no formulário de lançamentos; esta tela só lista os já registrados.
+// Cada venda do fundo aparece como resgate, com o IOF e o IR estimados (informativo: o imposto sai na fonte).
 
 type FundTerm = "longo_prazo" | "curto_prazo" | "acoes";
 
 type QuotaRow = { id: number; asset_id: number; quota_date: string; value: number };
 
 type DeductionRow = { tx_id: number; date: string; quotas: number; quota_value: number; tax: number };
+
+type LotPart = { lot_date: string; quotas: number; days: number; rate: number; gain: number; iof: number; ir: number };
+
+type RedemptionRow = {
+  tx_id: number;
+  date: string;
+  quotas: number;
+  quota_value: number;
+  gross: number;
+  cost: number;
+  iof: number;
+  ir: number;
+  come_cotas_credit: number;
+  net: number;
+  lots: LotPart[];
+  uncovered_quotas: number;
+  excess_come_cotas: number;
+};
 
 type FundRow = {
   asset_id: number;
@@ -40,6 +59,7 @@ type FundRow = {
   average_cost: number | null;
   quotas: QuotaRow[];
   deductions: DeductionRow[];
+  redemptions: RedemptionRow[];
 };
 
 type Estimate = {
@@ -82,6 +102,52 @@ function formatDate(date: string): string {
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// IR e IOF estimados de um resgate (venda do fundo), com o detalhe por lote numa área expansível.
+function RedemptionLine({ redemption, ticker }: { redemption: RedemptionRow; ticker: string }) {
+  return (
+    <details className="text-sm" data-testid={`fund-redemption-${ticker}-${redemption.tx_id}`}>
+      <summary className="cursor-pointer">
+        {formatDate(redemption.date)}: {formatQuotas(redemption.quotas)} quotas at {formatBrl(redemption.quota_value)} ={" "}
+        {formatBrl(redemption.gross)} gross — IOF {formatBrl(redemption.iof)}, IR{" "}
+        <span className="font-medium">{formatBrl(redemption.ir)}</span>, net{" "}
+        <span className="font-medium">{formatBrl(redemption.net)}</span>
+        {redemption.uncovered_quotas > 0 && (
+          <Badge variant="destructive" className="ml-2">
+            incomplete
+          </Badge>
+        )}
+        {redemption.excess_come_cotas > 0 && (
+          <Badge variant="outline" className="ml-2">
+            excess come-cotas
+          </Badge>
+        )}
+      </summary>
+      <div className="mt-1 flex flex-col gap-1 pl-4 text-xs text-muted-foreground">
+        {redemption.lots.map((lot, index) => (
+          <span key={index}>
+            Lot of {formatDate(lot.lot_date)}: {formatQuotas(lot.quotas)} quotas held {lot.days} days at{" "}
+            {(lot.rate * 100).toFixed(1)}% — gain {formatBrl(lot.gain)}, IOF {formatBrl(lot.iof)}, IR {formatBrl(lot.ir)}
+          </span>
+        ))}
+        {redemption.come_cotas_credit > 0 && (
+          <span>Come-cotas already paid, credited against this IR: {formatBrl(redemption.come_cotas_credit)}</span>
+        )}
+        {redemption.excess_come_cotas > 0 && (
+          <span>
+            Come-cotas paid above the IR due: {formatBrl(redemption.excess_come_cotas)} (the offset is not handled).
+          </span>
+        )}
+        {redemption.uncovered_quotas > 0 && (
+          <span>
+            {formatQuotas(redemption.uncovered_quotas)} quotas of this redemption have no recorded purchase, so the
+            cost is missing.
+          </span>
+        )}
+      </div>
+    </details>
+  );
 }
 
 function EstimateLine({ estimate }: { estimate: Estimate }) {
@@ -169,14 +235,17 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
   return (
     <Card data-testid="come-cotas-card">
       <CardHeader>
-        <CardTitle>Funds — come-cotas (estimate)</CardTitle>
+        <CardTitle>Funds — come-cotas and redemption (estimate)</CardTitle>
         <CardDescription>
           Open funds withhold income tax from you in quotas on the last business day of May and November: 15% on
           long-term funds, 20% on short-term ones, none on equity funds. Choose each fund's type and enter its quota
           value; Anchor estimates the next deduction from your latest quota value (it does not project to the date) and
           your position. After the fund deducts, register it as a Come-cotas transaction (quotas taken and the quota
-          value of the day): the position, the average cost and the next estimate follow. The tax at redemption is
-          not handled yet. This is an estimate based on secondary sources — confirm with your fund statement.
+          value of the day): the position, the average cost and the next estimate follow. A Sell of fund quotas is
+          read as a redemption: enter the gross value (before IR and IOF) as the total, and Anchor estimates what the
+          fund withheld — IR by the regressive table on each purchase lot (oldest first), IOF under 30 days, minus the
+          come-cotas already paid. It is informational: the tax leaves the redemption at the source, so there is no
+          DARF. This is an estimate based on secondary sources — confirm with your fund statement.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -236,6 +305,15 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
                       {formatDate(d.date)}: {formatQuotas(d.quotas)} quotas at {formatBrl(d.quota_value)} ={" "}
                       <span className="font-medium">{formatBrl(d.tax)}</span>
                     </span>
+                  ))}
+                </div>
+              )}
+
+              {fund.redemptions.length > 0 && (
+                <div className="flex flex-col gap-1" data-testid={`fund-redemptions-${fund.ticker}`}>
+                  <span className="text-xs text-muted-foreground">Redemptions (estimated IR and IOF)</span>
+                  {[...fund.redemptions].reverse().map((r) => (
+                    <RedemptionLine key={r.tx_id} redemption={r} ticker={fund.ticker} />
                   ))}
                 </div>
               )}

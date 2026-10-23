@@ -4510,6 +4510,42 @@ async fn a_come_cotas_entry_takes_quotas_at_the_average_cost_and_is_recorded_for
 }
 
 #[tokio::test]
+async fn a_fund_redemption_estimates_the_iof_and_the_ir_with_the_come_cotas_credit() {
+    use crate::commands::fund::{funds_overview_in, set_fund_term_in};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Resgate").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDO1", "fundo", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+
+    // 100 cotas a R$ 10,00; come-cotas de 2,5 cotas a R$ 12,00; resgate das 97,5 cotas restantes a R$ 15,00
+    add(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2024-01-02", 0.0)).await;
+    add(&db, tx_request(pf.id, fund.id, "come_cotas", 2.5, 12.0, "2024-05-31", 0.0)).await;
+    add(&db, tx_request(pf.id, fund.id, "venda", 97.5, 15.0, "2026-03-01", 0.0)).await;
+
+    // sem o tipo do fundo não há estimativa de resgate
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    assert!(overview.funds[0].redemptions.is_empty());
+
+    set_fund_term_in(&db, fund.id, "longo_prazo").await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let redemptions = &overview.funds[0].redemptions;
+    assert_eq!(redemptions.len(), 1);
+    let r = &redemptions[0];
+    // 789 dias (15%): rendimento 487,50 + 5 já tributados = 492,50; IR 73,875 − 30 de come-cotas = 43,875
+    assert!(close(r.gross, 1462.5) && close(r.cost, 975.0), "{r:?}");
+    assert!(close(r.iof, 0.0) && close(r.ir, 43.875) && close(r.come_cotas_credit, 30.0), "{r:?}");
+    assert!(close(r.net, 1418.625), "{r:?}");
+    assert!(close(r.uncovered_quotas, 0.0) && close(r.excess_come_cotas, 0.0));
+
+    // fundo de ações: 15% sem come-cotas nem IOF (o come-cotas registrado não muda a regra do resgate)
+    set_fund_term_in(&db, fund.id, "acoes").await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    assert!(close(overview.funds[0].redemptions[0].iof, 0.0));
+}
+
+#[tokio::test]
 async fn the_come_cotas_entry_refuses_what_is_not_a_fund_quota_deduction() {
     use crate::error::AppError;
 

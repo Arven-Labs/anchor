@@ -14,11 +14,13 @@ use crate::commands::tax::{load_rule_set, workspace_portfolio_ids};
 use crate::commands::transaction::{cost_events, COME_COTAS};
 use crate::domain::cost_basis;
 use crate::domain::tax::come_cotas::{self, ComeCotasEstimate, FundHolding, FundTerm, QuotaValue};
+use crate::domain::tax::fund_redemption::{self, FundEvent, FundEventKind, RedemptionEstimate};
 use crate::entity::{assets, fund_detail, fund_quota_value, transactions};
 use crate::error::AppError;
 
 const FUND_CLASS: &str = "fundo";
 const BUY: &str = "compra";
+const SELL: &str = "venda";
 
 /// Um desconto de come-cotas já registrado (transação `come_cotas`).
 #[derive(Serialize)]
@@ -44,6 +46,8 @@ pub struct FundView {
     pub quotas: Vec<fund_quota_value::Model>,
     /// Descontos de come-cotas registrados, do mais antigo ao mais novo.
     pub deductions: Vec<DeductionView>,
+    /// IR e IOF estimados de cada resgate (venda), do mais antigo ao mais novo; vazio até o fundo ter tipo.
+    pub redemptions: Vec<RedemptionEstimate>,
 }
 
 #[derive(Serialize)]
@@ -60,6 +64,24 @@ pub struct UpsertFundQuotaRequest {
     pub quota_date: String,
     /// Valor de uma cota, em BRL.
     pub value: f64,
+}
+
+/// Os fatos do fundo que importam para o IR no resgate: aplicações (custo = valor + taxa), come-cotas e resgates. Data
+/// inválida fica de fora (não derruba a tela).
+fn fund_events(txs: &[&transactions::Model]) -> Vec<FundEvent> {
+    txs.iter()
+        .filter_map(|t| {
+            let date = NaiveDate::parse_from_str(&t.transaction_date, "%Y-%m-%d").ok()?;
+            let quantity = t.quantity.unwrap_or(0.0);
+            let kind = match t.transaction_type.as_str() {
+                BUY => FundEventKind::Buy { quantity, cost: t.total_value + t.fee.unwrap_or(0.0) },
+                COME_COTAS => FundEventKind::ComeCotas { quantity, quota_value: t.unit_price.unwrap_or(0.0) },
+                SELL => FundEventKind::Redeem { tx_id: t.id, quantity, quota_value: t.unit_price.unwrap_or(0.0) },
+                _ => return None,
+            };
+            Some(FundEvent { date, id: t.id, kind })
+        })
+        .collect()
 }
 
 async fn fund_asset(db: &DatabaseConnection, asset_id: i32) -> Result<assets::Model, AppError> {
@@ -120,6 +142,7 @@ pub async fn funds_overview_in(
             .await?
     };
 
+    let rules = load_rule_set(db).await?;
     let mut funds = Vec::with_capacity(fund_assets.len());
     let mut holdings = Vec::with_capacity(fund_assets.len());
     for asset in &fund_assets {
@@ -150,6 +173,12 @@ pub async fn funds_overview_in(
             })
             .collect();
         deductions.sort_by(|a, b| (&a.date, a.tx_id).cmp(&(&b.date, b.tx_id)));
+
+        // IR e IOF estimados de cada resgate (venda): precisa do tipo do fundo.
+        let redemptions = match term.as_deref().and_then(FundTerm::parse) {
+            Some(fund_term) => fund_redemption::estimate_redemptions(&fund_events(&asset_txs), fund_term, &rules)?,
+            None => Vec::new(),
+        };
 
         holdings.push(FundHolding {
             asset_id: asset.id,
@@ -185,10 +214,10 @@ pub async fn funds_overview_in(
             average_cost: state.average_price(),
             quotas,
             deductions,
+            redemptions,
         });
     }
 
-    let rules = load_rule_set(db).await?;
     let estimates = come_cotas::estimate(&holdings, &rules, today)?;
     Ok(FundsOverview { funds, estimates })
 }

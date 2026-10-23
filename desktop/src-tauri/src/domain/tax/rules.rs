@@ -26,6 +26,13 @@ pub const FOREIGN_RATE: &str = "foreign_rate";
 pub const OFFSHORE_RATE: &str = "offshore_rate";
 pub const COME_COTAS_RATE_LONG: &str = "come_cotas_rate_long";
 pub const COME_COTAS_RATE_SHORT: &str = "come_cotas_rate_short";
+pub const FUND_IR_LONG_UP_TO_180: &str = "fund_ir_long_up_to_180";
+pub const FUND_IR_LONG_181_360: &str = "fund_ir_long_181_360";
+pub const FUND_IR_LONG_361_720: &str = "fund_ir_long_361_720";
+pub const FUND_IR_LONG_OVER_720: &str = "fund_ir_long_over_720";
+pub const FUND_IR_SHORT_UP_TO_180: &str = "fund_ir_short_up_to_180";
+pub const FUND_IR_SHORT_OVER_180: &str = "fund_ir_short_over_180";
+pub const FUND_IR_EQUITY: &str = "fund_ir_equity";
 
 /// IR retido no resgate de renda fixa, uma taxa fixa por papel (a tabela
 /// regressiva do IR não é modelada; o IOF mora em `domain::tax::iof`). `None`
@@ -100,6 +107,13 @@ pub(crate) fn test_rule_set() -> RuleSet {
         rule(OFFSHORE_RATE, "2024-01-01", 0.15),
         rule(COME_COTAS_RATE_LONG, "2005-01-01", 0.15),
         rule(COME_COTAS_RATE_SHORT, "2005-01-01", 0.20),
+        rule(FUND_IR_LONG_UP_TO_180, "2005-01-01", 0.225),
+        rule(FUND_IR_LONG_181_360, "2005-01-01", 0.20),
+        rule(FUND_IR_LONG_361_720, "2005-01-01", 0.175),
+        rule(FUND_IR_LONG_OVER_720, "2005-01-01", 0.15),
+        rule(FUND_IR_SHORT_UP_TO_180, "2005-01-01", 0.225),
+        rule(FUND_IR_SHORT_OVER_180, "2005-01-01", 0.20),
+        rule(FUND_IR_EQUITY, "2005-01-01", 0.15),
     ])
 }
 

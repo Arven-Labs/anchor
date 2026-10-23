@@ -56,6 +56,13 @@ const RULES: &[(&str, f64, (i32, u32, u32), &str, &str)] = &[
     ("offshore_rate", 0.15, (2024, 1, 1), "Yearly IR on the profit of a controlled entity abroad, taxed on 31/12 whether or not it was distributed, as a flat 15% (a loss of the entity only offsets its own later profits)", "Lei 14.754/2023, arts. 2 to 5 (secondary sources; verify on gov.br)"),
     ("come_cotas_rate_long", 0.15, (2005, 1, 1), "Come-cotas rate of open funds with a long-term portfolio (average maturity above 365 days), charged in quotas on the last business day of May and November", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
     ("come_cotas_rate_short", 0.20, (2005, 1, 1), "Come-cotas rate of open funds with a short-term portfolio (average maturity up to 365 days), charged in quotas on the last business day of May and November", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
+    ("fund_ir_long_up_to_180", 0.225, (2005, 1, 1), "IR withheld on the redemption of a long-term open fund, quotas held up to 180 days", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
+    ("fund_ir_long_181_360", 0.20, (2005, 1, 1), "IR withheld on the redemption of a long-term open fund, quotas held from 181 to 360 days", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
+    ("fund_ir_long_361_720", 0.175, (2005, 1, 1), "IR withheld on the redemption of a long-term open fund, quotas held from 361 to 720 days", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
+    ("fund_ir_long_over_720", 0.15, (2005, 1, 1), "IR withheld on the redemption of a long-term open fund, quotas held over 720 days", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
+    ("fund_ir_short_up_to_180", 0.225, (2005, 1, 1), "IR withheld on the redemption of a short-term open fund, quotas held up to 180 days", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
+    ("fund_ir_short_over_180", 0.20, (2005, 1, 1), "IR withheld on the redemption of a short-term open fund, quotas held over 180 days", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
+    ("fund_ir_equity", 0.15, (2005, 1, 1), "IR withheld on the redemption of an equity fund, flat on the gain and with no come-cotas", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
 ];
 
 fn date(ymd: (i32, u32, u32)) -> NaiveDate {
@@ -91,7 +98,7 @@ mod tests {
         let rules = rules_br();
         let unique: HashSet<_> = rules.iter().map(|r| (r.key, r.effective_from)).collect();
         assert_eq!(unique.len(), rules.len());
-        assert_eq!(rules.len(), 28);
+        assert_eq!(rules.len(), 35);
     }
 
     #[test]
