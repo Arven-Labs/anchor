@@ -30,7 +30,8 @@ pub fn running_quantities(entries: &[LedgerEntry]) -> HashMap<i32, f64> {
         let qty = running_by_asset.entry(entry.asset_id).or_insert(0.0);
         match entry.transaction_type.as_str() {
             "compra" => *qty += entry.quantity,
-            "venda" => *qty -= entry.quantity,
+            // O come-cotas tira cotas como uma venda (sem caixa).
+            "venda" | "come_cotas" => *qty -= entry.quantity,
             _ => {}
         }
         result.insert(entry.id, *qty);
@@ -72,6 +73,18 @@ mod tests {
 
         assert_eq!(result[&1], 100.0);
         assert_eq!(result[&2], 60.0);
+    }
+
+    #[test]
+    fn come_cotas_takes_quotas_like_a_sale() {
+        let entries = [
+            entry(1, 1, "compra", 100.0, "2026-01-10"),
+            entry(2, 1, "come_cotas", 2.5, "2026-05-29"),
+        ];
+
+        let result = running_quantities(&entries);
+
+        assert_eq!(result[&2], 97.5);
     }
 
     #[test]

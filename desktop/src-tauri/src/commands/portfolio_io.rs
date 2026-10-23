@@ -161,6 +161,11 @@ pub fn parse_number(raw: &str) -> Result<Option<f64>, String> {
     normalized.parse::<f64>().map(Some).map_err(|_| format!("número inválido: '{raw}'"))
 }
 
+/// Tipo que tira quantidade da carteira (venda ou come-cotas): na ordenação do mesmo dia vem depois das compras.
+fn reduces_quantity(transaction_type: &str) -> bool {
+    matches!(transaction_type, "venda" | "come_cotas")
+}
+
 fn non_empty(value: &str) -> Option<String> {
     let value = value.trim();
     (!value.is_empty()).then(|| value.to_string())
@@ -832,8 +837,11 @@ pub async fn commit_rows(
     mut items: Vec<CommitItem>,
 ) -> Result<CommitResult, AppError> {
     let workspace_id = workspace_of_portfolio(db, portfolio_id).await?;
-    // Compras antes das vendas do mesmo dia, pra a validação de saldo enxergar a ordem real.
-    items.sort_by_key(|i| (i.proposed.transaction_date.clone(), i.proposed.transaction_type == "venda", i.proposed.line));
+    // Compras antes das vendas do mesmo dia, pra a validação de saldo enxergar a ordem real (o come-cotas tira cotas
+    // como uma venda).
+    items.sort_by_key(|i| {
+        (i.proposed.transaction_date.clone(), reduces_quantity(&i.proposed.transaction_type), i.proposed.line)
+    });
 
     let txn = db.begin().await?;
     let mut known = known_tickers(&txn).await?;
@@ -1096,7 +1104,7 @@ pub async fn list_import_pending_in(
             })
         })
         .collect();
-    items.sort_by_key(|i| (i.proposed.transaction_date.clone(), i.proposed.transaction_type == "venda", i.id));
+    items.sort_by_key(|i| (i.proposed.transaction_date.clone(), reduces_quantity(&i.proposed.transaction_type), i.id));
     Ok(items)
 }
 

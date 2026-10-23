@@ -244,7 +244,8 @@ export type TransactionType =
   | "transferencia"
   | "desdobramento"
   | "grupamento"
-  | "bonificacao";
+  | "bonificacao"
+  | "come_cotas";
 
 export const TRANSACTION_TYPES: TransactionType[] = [
   "compra",
@@ -256,6 +257,7 @@ export const TRANSACTION_TYPES: TransactionType[] = [
   "desdobramento",
   "grupamento",
   "bonificacao",
+  "come_cotas",
 ];
 
 export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
@@ -268,6 +270,7 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
   desdobramento: "Stock split",
   grupamento: "Reverse split",
   bonificacao: "Bonus shares",
+  come_cotas: "Come-cotas (fund quotas withheld)",
 };
 
 // Fase 13.4 — Dividendo vs. JSCP (juros sobre capital próprio, retido 15% de

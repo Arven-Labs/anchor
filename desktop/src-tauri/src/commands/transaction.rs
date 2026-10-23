@@ -33,8 +33,13 @@ const TRANSFER: &str = "transferencia";
 pub const SPLIT: &str = "desdobramento";
 pub const REVERSE_SPLIT: &str = "grupamento";
 pub const BONUS: &str = "bonificacao";
-const TRANSACTION_TYPES: [&str; 9] =
-    [BUY, SELL, DEPOSIT, WITHDRAWAL, DIVIDEND, TRANSFER, SPLIT, REVERSE_SPLIT, BONUS];
+// Come-cotas de fundo aberto: IR retido pelo fundo em cotas. `quantity` = cotas retiradas, `unit_price` = valor da cota na
+// data, `total_value` = quantity × unit_price (o imposto em reais). Sem caixa. Para o custo médio é uma venda com
+// proceeds zero (reduz a quantidade ao custo médio e consome o custo); só vale para a classe `fundo`.
+pub const COME_COTAS: &str = "come_cotas";
+const FUND_CLASS: &str = "fundo";
+const TRANSACTION_TYPES: [&str; 10] =
+    [BUY, SELL, DEPOSIT, WITHDRAWAL, DIVIDEND, TRANSFER, SPLIT, REVERSE_SPLIT, BONUS, COME_COTAS];
 
 /// Fator multiplicativo da quantidade de um desdobramento (`quantity` = 2 → ×2)
 /// ou grupamento (`quantity` = 10 → ×0,1).
@@ -53,7 +58,8 @@ pub fn cost_events(txs: &[&transactions::Model]) -> Result<Vec<cost_basis::Event
     for tx in txs {
         let kind = match tx.transaction_type.as_str() {
             BUY => EventKind::Buy,
-            SELL => EventKind::Sell,
+            // Come-cotas: venda sem proceeds (abaixo, `value` vai a zero).
+            SELL | COME_COTAS => EventKind::Sell,
             TRANSFER => EventKind::Transfer,
             SPLIT | REVERSE_SPLIT => EventKind::Split,
             BONUS => EventKind::Bonus,
@@ -68,7 +74,7 @@ pub fn cost_events(txs: &[&transactions::Model]) -> Result<Vec<cost_basis::Event
             id: tx.id,
             kind,
             quantity: if kind == EventKind::Split { split_ratio(&tx.transaction_type, quantity) } else { quantity },
-            value: tx.total_value,
+            value: if tx.transaction_type == COME_COTAS { 0.0 } else { tx.total_value },
             fee: tx.fee.unwrap_or(0.0),
             custodia_id: tx.custodia_id,
             to_custodia_id: tx.transfer_to_custodia_id,
@@ -141,7 +147,7 @@ fn validate(request: &CreateTransactionRequest) -> Result<(), AppError> {
     }
 
     match request.transaction_type.as_str() {
-        BUY | SELL => {
+        BUY | SELL | COME_COTAS => {
             if request.asset_id.is_none() {
                 return Err(AppError::InvalidGuard(format!(
                     "asset_id é obrigatório para '{}'",
@@ -156,6 +162,9 @@ fn validate(request: &CreateTransactionRequest) -> Result<(), AppError> {
             };
             if !unit_price.is_finite() || unit_price < 0.0 {
                 return Err(AppError::InvalidGuard("unit_price não pode ser negativo".to_string()));
+            }
+            if request.transaction_type == COME_COTAS && request.fee.is_some() {
+                return Err(AppError::InvalidGuard("come_cotas não tem taxa".to_string()));
             }
             // total_value = quantidade × preço (sem taxas); tolera arredondamento de centavos.
             let expected = quantity * unit_price;
@@ -242,13 +251,19 @@ pub async fn create_transaction_in<C: ConnectionTrait>(
 ) -> Result<transactions::Model, AppError> {
     validate(&request)?;
 
-    if let Some(asset_id) = request.asset_id {
-        assets::Entity::find_by_id(asset_id)
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("asset {asset_id}")))?;
+    let asset = match request.asset_id {
+        Some(asset_id) => Some(
+            assets::Entity::find_by_id(asset_id)
+                .one(db)
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("asset {asset_id}")))?,
+        ),
+        None => None,
+    };
+    if request.transaction_type == COME_COTAS && asset.as_ref().map(|a| a.asset_class.as_str()) != Some(FUND_CLASS) {
+        return Err(AppError::InvalidGuard("come_cotas só vale para ativo da classe 'fundo'".to_string()));
     }
-    if request.transaction_type == SELL {
+    if request.transaction_type == SELL || request.transaction_type == COME_COTAS {
         ensure_covered_sale(db, &request).await?;
     }
 
@@ -448,7 +463,8 @@ async fn ensure_covered_sale<C: ConnectionTrait>(
         id: i32::MAX,
         kind: EventKind::Sell,
         quantity: request.quantity.unwrap_or(0.0),
-        value: request.total_value,
+        // O come-cotas não recebe nada: o valor dele é o imposto, não o produto de uma venda.
+        value: if request.transaction_type == COME_COTAS { 0.0 } else { request.total_value },
         fee: request.fee.unwrap_or(0.0),
         custodia_id: request.custodia_id,
         to_custodia_id: None,

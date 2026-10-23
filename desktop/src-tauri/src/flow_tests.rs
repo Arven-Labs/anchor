@@ -4461,6 +4461,90 @@ async fn a_fund_estimate_uses_the_position_the_quota_values_and_the_stored_rate(
 }
 
 #[tokio::test]
+async fn a_come_cotas_entry_takes_quotas_at_the_average_cost_and_is_recorded_for_the_estimate() {
+    use crate::commands::fund::{funds_overview_in, set_fund_term_in, upsert_fund_quota_in, UpsertFundQuotaRequest};
+    use crate::commands::transaction::compute_positions;
+    use crate::domain::tax::come_cotas::BasisSource;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Come-cotas").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDO1", "fundo", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+
+    // 100 cotas a R$ 10,00; o fundo desconta 5 cotas a R$ 12,00 (imposto de R$ 60,00) em 29/05/2026
+    add(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2025-01-10", 0.0)).await;
+    add(&db, tx_request(pf.id, fund.id, "come_cotas", 5.0, 12.0, "2026-05-29", 0.0)).await;
+    set_fund_term_in(&db, fund.id, "longo_prazo").await.unwrap();
+    upsert_fund_quota_in(
+        &db,
+        UpsertFundQuotaRequest { asset_id: fund.id, quota_date: "2026-10-20".to_string(), value: 13.0 },
+        today,
+    )
+    .await
+    .unwrap();
+
+    // a posição perde as cotas, o custo médio por cota não muda e o custo consumido vira prejuízo realizado
+    let positions = compute_positions(&db, pf.id).await.unwrap();
+    let position = positions.iter().find(|p| p.ticker == "FUNDO1").unwrap();
+    assert!(close(position.quantity, 95.0), "{}", position.quantity);
+    assert!(close(position.average_buy_price.unwrap(), 10.0), "{:?}", position.average_buy_price);
+    assert!(close(position.realized_pl, -50.0), "{}", position.realized_pl);
+
+    // a coluna de quantidade corrente do livro desconta as cotas
+    let entries = list_transactions_in(&db, pf.id).await.unwrap();
+    let row = entries.iter().find(|e| e.transaction_type == "come_cotas").unwrap();
+    assert!(close(row.running_quantity.unwrap(), 95.0), "{:?}", row.running_quantity);
+    assert!(close(row.total_value, 60.0));
+
+    // a estimativa usa o valor de cota do desconto registrado como base e não avisa que faltou registro
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    assert_eq!(overview.funds[0].deductions.len(), 1);
+    assert!(close(overview.funds[0].deductions[0].tax, 60.0));
+    let e = &overview.estimates[0];
+    assert_eq!(e.basis_source, Some(BasisSource::LastComeCotas));
+    assert!(close(e.basis_per_quota.unwrap(), 12.0), "{e:?}");
+    // cota atual 13,00 contra base 12,00: ganho de 1,00 por cota em 95 cotas
+    assert!(close(e.gain, 95.0) && close(e.tax, 14.25), "{e:?}");
+    assert_eq!(e.last_reference_unrecorded, None);
+}
+
+#[tokio::test]
+async fn the_come_cotas_entry_refuses_what_is_not_a_fund_quota_deduction() {
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Come-cotas").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDO1", "fundo", "BRL").await;
+    let stock = asset_in(&db, "PETR4", "acao_br", "BRL").await;
+    use crate::commands::transaction::create_transaction_in;
+
+    add(&db, tx_request(pf.id, fund.id, "compra", 10.0, 10.0, "2025-01-10", 0.0)).await;
+    add(&db, tx_request(pf.id, stock.id, "compra", 10.0, 30.0, "2025-01-10", 0.0)).await;
+
+    // só vale para fundo
+    let on_stock = create_transaction_in(&db, tx_request(pf.id, stock.id, "come_cotas", 1.0, 30.0, "2026-05-29", 0.0)).await;
+    assert!(matches!(on_stock, Err(AppError::InvalidGuard(_))), "ativo que não é fundo");
+    // não passa do saldo
+    let too_many = create_transaction_in(&db, tx_request(pf.id, fund.id, "come_cotas", 11.0, 12.0, "2026-05-29", 0.0)).await;
+    assert!(matches!(too_many, Err(AppError::InvalidGuard(_))), "mais cotas que o saldo");
+    // o total precisa bater com cotas × valor da cota
+    let mut wrong_total = tx_request(pf.id, fund.id, "come_cotas", 1.0, 12.0, "2026-05-29", 0.0);
+    wrong_total.total_value = 99.0;
+    assert!(matches!(create_transaction_in(&db, wrong_total).await, Err(AppError::InvalidGuard(_))));
+    // o come-cotas não tem taxa
+    let with_fee = tx_request(pf.id, fund.id, "come_cotas", 1.0, 12.0, "2026-05-29", 1.0);
+    assert!(matches!(create_transaction_in(&db, with_fee).await, Err(AppError::InvalidGuard(_))), "sem taxa");
+    // sem ativo
+    let mut no_asset = tx_request(pf.id, fund.id, "come_cotas", 1.0, 12.0, "2026-05-29", 0.0);
+    no_asset.asset_id = None;
+    assert!(matches!(create_transaction_in(&db, no_asset).await, Err(AppError::InvalidGuard(_))));
+    // o caso válido grava
+    assert!(create_transaction_in(&db, tx_request(pf.id, fund.id, "come_cotas", 1.0, 12.0, "2026-05-29", 0.0)).await.is_ok());
+}
+
+#[tokio::test]
 async fn the_fund_commands_refuse_invalid_input() {
     use crate::commands::fund::{set_fund_term_in, upsert_fund_quota_in, UpsertFundQuotaRequest};
     use crate::error::AppError;

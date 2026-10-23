@@ -13,7 +13,8 @@ pub fn quantity_held_by(txs: &[LedgerRow], cutoff_date: &str) -> f64 {
         .filter(|tx| tx.transaction_date.as_str() <= cutoff_date)
         .map(|tx| match tx.transaction_type.as_str() {
             "compra" => tx.quantity,
-            "venda" => -tx.quantity,
+            // O come-cotas tira cotas como uma venda (sem caixa).
+            "venda" | "come_cotas" => -tx.quantity,
             _ => 0.0,
         })
         .sum()
@@ -52,6 +53,14 @@ mod tests {
             quantity,
             transaction_date: transaction_date.to_string(),
         }
+    }
+
+    #[test]
+    fn come_cotas_reduces_the_quantity_held() {
+        let txs = [row("compra", 100.0, "2026-01-10"), row("come_cotas", 2.5, "2026-05-29")];
+
+        assert_eq!(quantity_held_by(&txs, "2026-05-28"), 100.0);
+        assert_eq!(quantity_held_by(&txs, "2026-06-01"), 97.5);
     }
 
     #[test]

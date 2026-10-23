@@ -327,7 +327,31 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
       (text) => text.includes("Next come-cotas") && text.includes("20.0%") && text.includes("12,00"),
       "a estimativa do fundo de curto prazo deveria mostrar a alíquota de 20% e a cota de R$ 12,00",
     );
+    // A posição existia na última data de come-cotas e nenhum desconto foi registrado: o cartão avisa.
+    await byId("come-cotas-unrecorded-FUNDOX").waitForDisplayed({ timeout: 30_000 });
     await byId("come-cotas-card").scrollIntoView({ block: "center" });
     await snap("taxes-come-cotas");
+  });
+
+  // O desconto real é uma transação `come_cotas` (cotas retiradas × valor da cota, sem caixa): aparece na lista do cartão.
+  it("lista o come-cotas registrado como transação", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    const fund = sql("SELECT id FROM assets WHERE ticker = 'FUNDOX'");
+    sql(
+      "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+        `VALUES (${portfolio}, ${fund}, 'come_cotas', 5, 12, 60, NULL, date('now', '-1 day'), '2025-01-10T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await waitForText(
+      byId("come-cotas-deductions-FUNDOX"),
+      (text) => text.includes("5 quotas") && text.includes("12,00") && text.includes("60,00"),
+      "o come-cotas registrado deveria aparecer com 5 cotas a R$ 12,00 e imposto de R$ 60,00",
+    );
+    await byId("come-cotas-card").scrollIntoView({ block: "center" });
+    await snap("taxes-come-cotas-recorded");
   });
 });

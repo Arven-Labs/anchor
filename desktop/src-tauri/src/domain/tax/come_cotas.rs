@@ -11,7 +11,7 @@
 //
 // ATENÇÃO: as regras vêm de fontes secundárias; conferir na Receita antes de confiar.
 
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, Duration, NaiveDate};
 use serde::Serialize;
 
 use super::calendar::last_business_day;
@@ -23,6 +23,9 @@ use crate::error::AppError;
 pub const STALE_QUOTA_DAYS: i64 = 35;
 /// O valor da cota da última data de come-cotas só serve de base se foi lançado até tantos dias antes dela.
 const BASIS_QUOTA_WINDOW_DAYS: i64 = 45;
+/// Um desconto registrado conta como o da última data de come-cotas se caiu entre tantos dias antes e depois dela.
+const DEDUCTION_DAYS_BEFORE: i64 = 5;
+const DEDUCTION_DAYS_AFTER: i64 = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -64,6 +67,8 @@ pub struct FundHolding {
     pub first_buy: Option<NaiveDate>,
     /// Valores de cota lançados, em qualquer ordem.
     pub quotas: Vec<QuotaValue>,
+    /// Descontos de come-cotas já registrados (transação `come_cotas`): data e valor da cota de cada um.
+    pub deductions: Vec<QuotaValue>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -108,6 +113,9 @@ pub struct ComeCotasEstimate {
     pub quotas_deducted: f64,
     /// O último valor de cota lançado é antigo (`STALE_QUOTA_DAYS`).
     pub stale_quota: bool,
+    /// A última data de come-cotas passou com a posição já existente e sem nenhum desconto registrado em volta dela:
+    /// o usuário provavelmente ainda não lançou a transação `come_cotas`.
+    pub last_reference_unrecorded: Option<NaiveDate>,
 }
 
 /// Datas de come-cotas de um ano: última data útil de maio e de novembro.
@@ -162,6 +170,7 @@ pub fn estimate(
             tax: 0.0,
             quotas_deducted: 0.0,
             stale_quota: false,
+            last_reference_unrecorded: None,
         };
         if holding.quantity <= EPS {
             estimates.push(estimate);
@@ -194,17 +203,32 @@ pub fn estimate(
         let rate = rules.get(rate_key, reference_date)?;
 
         // Se a posição já existia no último come-cotas, o ganho antes dele já foi tributado: a base sobe para o valor
-        // da cota daquela data (quando há valor lançado perto dela e ele é maior que o custo).
+        // da cota daquela data (quando é maior que o custo). O desconto registrado dá esse valor com exatidão e vale
+        // mais que a busca na tabela de cotas (valor lançado perto da data).
         let held_then = holding.first_buy.is_some_and(|date| date <= last_reference);
-        let last_quota = holding
+        let recorded = holding
+            .deductions
+            .iter()
+            .filter(|q| {
+                q.date >= last_reference - Duration::days(DEDUCTION_DAYS_BEFORE)
+                    && q.date <= last_reference + Duration::days(DEDUCTION_DAYS_AFTER)
+            })
+            .max_by_key(|q| q.date);
+        let table_quota = holding
             .quotas
             .iter()
             .filter(|q| q.date <= last_reference && (last_reference - q.date).num_days() <= BASIS_QUOTA_WINDOW_DAYS)
             .max_by_key(|q| q.date);
-        let (basis, basis_source) = match last_quota {
-            Some(q) if held_then && q.value > holding.average_cost => (q.value, BasisSource::LastComeCotas),
+        let last_value = recorded.or(table_quota).map(|q| q.value);
+        let (basis, basis_source) = match last_value {
+            Some(value) if (recorded.is_some() || held_then) && value > holding.average_cost => {
+                (value, BasisSource::LastComeCotas)
+            }
             _ => (holding.average_cost, BasisSource::Cost),
         };
+        if recorded.is_none() && held_then {
+            estimate.last_reference_unrecorded = Some(last_reference);
+        }
 
         let gain = (latest.value - basis).max(0.0) * holding.quantity;
         let tax = gain * rate;
@@ -247,7 +271,13 @@ mod tests {
             average_cost,
             first_buy: Some(d("2025-01-10")),
             quotas,
+            deductions: Vec::new(),
         }
+    }
+
+    fn with_deductions(mut holding: FundHolding, deductions: Vec<QuotaValue>) -> FundHolding {
+        holding.deductions = deductions;
+        holding
     }
 
     fn run(holding: FundHolding, today: &str) -> ComeCotasEstimate {
@@ -363,6 +393,56 @@ mod tests {
         assert!(old.stale_quota);
         let recent = run(fund(Some(FundTerm::LongTerm), 100.0, 10.0, vec![quota("2026-01-05", 12.0)]), "2026-01-10");
         assert!(!recent.stale_quota);
+    }
+
+    #[test]
+    fn a_recorded_deduction_gives_the_exact_quota_value_of_the_last_come_cotas() {
+        // sem valor lançado perto de 29/05, mas com o desconto registrado a 11,00 (> custo 10,00)
+        let holding = with_deductions(
+            fund(Some(FundTerm::LongTerm), 100.0, 10.0, vec![quota("2026-10-20", 12.0)]),
+            vec![quota("2026-05-29", 11.0)],
+        );
+        let e = run(holding, "2026-10-22");
+        assert_eq!(e.basis_source, Some(BasisSource::LastComeCotas));
+        assert!(close(e.basis_per_quota.unwrap(), 11.0) && close(e.gain, 100.0), "{e:?}");
+        assert_eq!(e.last_reference_unrecorded, None, "o desconto está registrado");
+    }
+
+    #[test]
+    fn a_recorded_deduction_wins_over_the_quota_table() {
+        // a tabela diz 10,50 perto da data, o desconto registrado diz 11,00
+        let holding = with_deductions(
+            fund(Some(FundTerm::LongTerm), 100.0, 10.0, vec![quota("2026-05-28", 10.5), quota("2026-10-20", 12.0)]),
+            vec![quota("2026-05-29", 11.0)],
+        );
+        let e = run(holding, "2026-10-22");
+        assert!(close(e.basis_per_quota.unwrap(), 11.0), "{e:?}");
+    }
+
+    #[test]
+    fn a_come_cotas_date_that_passed_without_a_record_is_flagged() {
+        let holding = fund(Some(FundTerm::LongTerm), 100.0, 10.0, vec![quota("2026-10-20", 12.0)]);
+        let e = run(holding, "2026-10-22");
+        assert_eq!(e.last_reference_unrecorded, Some(d("2026-05-29")));
+        // um desconto registrado 30 dias depois da data não é o dela
+        let late = with_deductions(
+            fund(Some(FundTerm::LongTerm), 100.0, 10.0, vec![quota("2026-10-20", 12.0)]),
+            vec![quota("2026-06-28", 11.0)],
+        );
+        assert_eq!(run(late, "2026-10-22").last_reference_unrecorded, Some(d("2026-05-29")));
+    }
+
+    #[test]
+    fn no_flag_for_an_equity_fund_a_later_purchase_or_no_position() {
+        let equity = fund(Some(FundTerm::Equity), 100.0, 10.0, vec![quota("2026-10-20", 12.0)]);
+        assert_eq!(run(equity, "2026-10-22").last_reference_unrecorded, None);
+
+        let mut later = fund(Some(FundTerm::LongTerm), 100.0, 10.0, vec![quota("2026-10-20", 12.0)]);
+        later.first_buy = Some(d("2026-07-01"));
+        assert_eq!(run(later, "2026-10-22").last_reference_unrecorded, None);
+
+        let empty = fund(Some(FundTerm::LongTerm), 0.0, 10.0, vec![quota("2026-10-20", 12.0)]);
+        assert_eq!(run(empty, "2026-10-22").last_reference_unrecorded, None);
     }
 
     #[test]

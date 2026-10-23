@@ -23,11 +23,13 @@ import {
 
 // Come-cotas dos fundos abertos (estimativa): o usuário escolhe o tipo de cada fundo e lança o valor da cota; a conta
 // (base, alíquota, cotas descontadas) vem pronta de `get_funds_overview`. Aqui só cadastra e exibe. O desconto real do
-// fundo não é registrado (próxima fatia): depois que ele acontecer, lance as cotas retiradas como uma venda.
+// fundo é registrado como uma transação "Come-cotas" no formulário de lançamentos; esta tela só lista os já registrados.
 
 type FundTerm = "longo_prazo" | "curto_prazo" | "acoes";
 
 type QuotaRow = { id: number; asset_id: number; quota_date: string; value: number };
+
+type DeductionRow = { tx_id: number; date: string; quotas: number; quota_value: number; tax: number };
 
 type FundRow = {
   asset_id: number;
@@ -37,6 +39,7 @@ type FundRow = {
   quantity: number;
   average_cost: number | null;
   quotas: QuotaRow[];
+  deductions: DeductionRow[];
 };
 
 type Estimate = {
@@ -53,6 +56,7 @@ type Estimate = {
   tax: number;
   quotas_deducted: number;
   stale_quota: boolean;
+  last_reference_unrecorded: string | null;
 };
 
 type FundsOverview = { funds: FundRow[]; estimates: Estimate[] };
@@ -170,9 +174,9 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
           Open funds withhold income tax from you in quotas on the last business day of May and November: 15% on
           long-term funds, 20% on short-term ones, none on equity funds. Choose each fund's type and enter its quota
           value; Anchor estimates the next deduction from your latest quota value (it does not project to the date) and
-          your position. After the fund deducts, register the quotas taken as a sale so the position stays right — a
-          dedicated entry and the tax at redemption are not handled yet. This is an estimate based on secondary
-          sources — confirm with your fund statement.
+          your position. After the fund deducts, register it as a Come-cotas transaction (quotas taken and the quota
+          value of the day): the position, the average cost and the next estimate follow. The tax at redemption is
+          not handled yet. This is an estimate based on secondary sources — confirm with your fund statement.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -213,6 +217,26 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
               {estimate && (
                 <div data-testid={`come-cotas-estimate-${fund.ticker}`}>
                   <EstimateLine estimate={estimate} />
+                </div>
+              )}
+
+              {estimate?.last_reference_unrecorded && (
+                <p className="text-sm text-amber-500" data-testid={`come-cotas-unrecorded-${fund.ticker}`}>
+                  The come-cotas of {formatDate(estimate.last_reference_unrecorded)} is not recorded. If the fund
+                  already took the quotas, add a Come-cotas entry in Transactions so the position and the next
+                  estimate are right.
+                </p>
+              )}
+
+              {fund.deductions.length > 0 && (
+                <div className="flex flex-col gap-1 text-sm" data-testid={`come-cotas-deductions-${fund.ticker}`}>
+                  <span className="text-xs text-muted-foreground">Recorded come-cotas</span>
+                  {[...fund.deductions].reverse().map((d) => (
+                    <span key={d.tx_id}>
+                      {formatDate(d.date)}: {formatQuotas(d.quotas)} quotas at {formatBrl(d.quota_value)} ={" "}
+                      <span className="font-medium">{formatBrl(d.tax)}</span>
+                    </span>
+                  ))}
                 </div>
               )}
 

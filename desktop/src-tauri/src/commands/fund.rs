@@ -11,7 +11,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 
 use crate::commands::tax::{load_rule_set, workspace_portfolio_ids};
-use crate::commands::transaction::cost_events;
+use crate::commands::transaction::{cost_events, COME_COTAS};
 use crate::domain::cost_basis;
 use crate::domain::tax::come_cotas::{self, ComeCotasEstimate, FundHolding, FundTerm, QuotaValue};
 use crate::entity::{assets, fund_detail, fund_quota_value, transactions};
@@ -19,6 +19,17 @@ use crate::error::AppError;
 
 const FUND_CLASS: &str = "fundo";
 const BUY: &str = "compra";
+
+/// Um desconto de come-cotas já registrado (transação `come_cotas`).
+#[derive(Serialize)]
+pub struct DeductionView {
+    pub tx_id: i32,
+    pub date: String,
+    pub quotas: f64,
+    pub quota_value: f64,
+    /// O imposto em reais (cotas × valor da cota).
+    pub tax: f64,
+}
 
 /// Um fundo com a posição do Workspace e os valores de cota lançados (do mais antigo ao mais novo).
 #[derive(Serialize)]
@@ -31,6 +42,8 @@ pub struct FundView {
     pub quantity: f64,
     pub average_cost: Option<f64>,
     pub quotas: Vec<fund_quota_value::Model>,
+    /// Descontos de come-cotas registrados, do mais antigo ao mais novo.
+    pub deductions: Vec<DeductionView>,
 }
 
 #[derive(Serialize)]
@@ -122,6 +135,22 @@ pub async fn funds_overview_in(
             quota_rows.iter().filter(|q| q.asset_id == asset.id).cloned().collect();
         let term = terms.get(&asset.id).cloned();
 
+        let mut deductions: Vec<DeductionView> = asset_txs
+            .iter()
+            .filter(|t| t.transaction_type == COME_COTAS)
+            .map(|t| {
+                let quotas = t.quantity.unwrap_or(0.0);
+                DeductionView {
+                    tx_id: t.id,
+                    date: t.transaction_date.clone(),
+                    quotas,
+                    quota_value: t.unit_price.unwrap_or(0.0),
+                    tax: t.total_value,
+                }
+            })
+            .collect();
+        deductions.sort_by(|a, b| (&a.date, a.tx_id).cmp(&(&b.date, b.tx_id)));
+
         holdings.push(FundHolding {
             asset_id: asset.id,
             ticker: asset.ticker.clone(),
@@ -138,6 +167,14 @@ pub async fn funds_overview_in(
                         .map(|date| QuotaValue { date, value: q.value })
                 })
                 .collect(),
+            deductions: deductions
+                .iter()
+                .filter_map(|d| {
+                    NaiveDate::parse_from_str(&d.date, "%Y-%m-%d")
+                        .ok()
+                        .map(|date| QuotaValue { date, value: d.quota_value })
+                })
+                .collect(),
         });
         funds.push(FundView {
             asset_id: asset.id,
@@ -147,6 +184,7 @@ pub async fn funds_overview_in(
             quantity: state.quantity,
             average_cost: state.average_price(),
             quotas,
+            deductions,
         });
     }
 

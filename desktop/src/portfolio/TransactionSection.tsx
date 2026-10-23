@@ -64,7 +64,9 @@ function needsAsset(type: TransactionType): boolean {
 }
 
 function needsQuantity(type: TransactionType): boolean {
-  return type === "compra" || type === "venda" || type === "transferencia" || isCorporateAction(type);
+  return (
+    type === "compra" || type === "venda" || type === "transferencia" || type === "come_cotas" || isCorporateAction(type)
+  );
 }
 
 // Fase 34 — desdobramento/grupamento (quantidade = razão) e bonificação
@@ -81,11 +83,13 @@ function quantityLabel(type: TransactionType): string {
   if (type === "desdobramento") return "Ratio (2 = each share becomes 2)";
   if (type === "grupamento") return "Ratio (10 = 10 shares become 1)";
   if (type === "bonificacao") return "New shares";
+  if (type === "come_cotas") return "Quotas taken";
   return "Quantity";
 }
 
+// Compra, venda e come-cotas: total = quantidade × preço (no come-cotas, o valor da cota; o total é o imposto em reais).
 function needsUnitPrice(type: TransactionType): boolean {
-  return type === "compra" || type === "venda";
+  return type === "compra" || type === "venda" || type === "come_cotas";
 }
 
 function needsTransferDestination(type: TransactionType): boolean {
@@ -178,7 +182,7 @@ function TransactionSection({
       quantity: needsQuantity(transactionType) && quantity !== "" ? Number(quantity) : null,
       unit_price: needsUnitPrice(transactionType) && unitPrice !== "" ? Number(unitPrice) : null,
       total_value: needsTotalValue(transactionType) ? Number(totalValue) : 0,
-      fee: fee !== "" ? Number(fee) : null,
+      fee: transactionType !== "come_cotas" && fee !== "" ? Number(fee) : null,
       foreign_tax_withheld: showForeignWithholding && foreignTaxWithheld !== "" ? Number(foreignTaxWithheld) : null,
       transaction_date: transactionDate,
       notes: notes.trim() === "" ? null : notes,
@@ -247,7 +251,9 @@ function TransactionSection({
                       <SelectValue placeholder="Select an asset" />
                     </SelectTrigger>
                     <SelectContent>
-                      {assets.map((asset) => (
+                      {assets
+                        .filter((asset) => transactionType !== "come_cotas" || asset.asset_class === "fundo")
+                        .map((asset) => (
                         <SelectItem key={asset.id} value={String(asset.id)}>
                           {asset.ticker} — {asset.name}
                         </SelectItem>
@@ -275,7 +281,7 @@ function TransactionSection({
                 </Field>
               )}
               {needsUnitPrice(transactionType) && (
-                <Field label="Unit price">
+                <Field label={transactionType === "come_cotas" ? "Quota value" : "Unit price"}>
                   <Input
                     required
                     type="number"
@@ -290,7 +296,15 @@ function TransactionSection({
                 </Field>
               )}
               {needsTotalValue(transactionType) && (
-                <Field label={transactionType === "bonificacao" ? "Cost attributed to the new shares" : "Total value"}>
+                <Field
+                  label={
+                    transactionType === "bonificacao"
+                      ? "Cost attributed to the new shares"
+                      : transactionType === "come_cotas"
+                        ? "Tax withheld (BRL)"
+                        : "Total value"
+                  }
+                >
                   <Input
                     required
                     type="number"
@@ -300,15 +314,17 @@ function TransactionSection({
                   />
                 </Field>
               )}
-              <Field label="Fee (optional)">
-                <Input
-                  type="number"
-                  step="any"
-                  data-testid="tx-fee"
-                  value={fee}
-                  onChange={(e) => setFee(e.currentTarget.value)}
-                />
-              </Field>
+              {transactionType !== "come_cotas" && (
+                <Field label="Fee (optional)">
+                  <Input
+                    type="number"
+                    step="any"
+                    data-testid="tx-fee"
+                    value={fee}
+                    onChange={(e) => setFee(e.currentTarget.value)}
+                  />
+                </Field>
+              )}
               {showForeignWithholding && (
                 <Field label={`Tax withheld abroad (${selectedAsset?.currency}, optional)`}>
                   <Input
