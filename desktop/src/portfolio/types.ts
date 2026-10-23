@@ -71,7 +71,8 @@ export type AssetClass =
   | "tesouro_direto"
   | "renda_fixa"
   | "imovel"
-  | "empresa_nao_listada";
+  | "empresa_nao_listada"
+  | "fundo";
 
 export const ASSET_CLASSES: AssetClass[] = [
   "acao_br",
@@ -88,6 +89,7 @@ export const ASSET_CLASSES: AssetClass[] = [
   "renda_fixa",
   "imovel",
   "empresa_nao_listada",
+  "fundo",
 ];
 
 export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
@@ -105,6 +107,7 @@ export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   renda_fixa: "Fixed income",
   imovel: "Real estate",
   empresa_nao_listada: "Private company",
+  fundo: "Fund",
 };
 
 // Classes que usam os campos fi_* (renda fixa detalhada) na transação de compra.
@@ -381,7 +384,7 @@ export type PositionView = {
   // preço e quanto do câmbio desde a compra (somam `unrealized_pl`).
   unrealized_pl_price: number | null;
   unrealized_pl_fx: number | null;
-  price_source: "market" | "manual_valuation" | "avg_buy_price" | "none";
+  price_source: "market" | "manual_valuation" | "manual_quota" | "avg_buy_price" | "none";
 };
 
 // Fase 13.1 — agregados pra tela Resumo (`commands/portfolio_summary.rs`).

@@ -19,6 +19,9 @@ pub const ASSET_CLASSES_WITH_AUTO_QUOTE: [&str; 10] = [
     "etf_us",
 ];
 const MANUAL_VALUATION_CLASSES: [&str; 2] = ["imovel", "empresa_nao_listada"];
+// Fundos: sem cotação de mercado, mas com valor de cota lançado pelo usuário (`fund_quota_values`), que entra no lugar
+// do preço da cotação automática.
+const MANUAL_QUOTA_CLASSES: [&str; 1] = ["fundo"];
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PricingResult {
@@ -48,11 +51,15 @@ pub fn price_position(
 ) -> PricingResult {
     let is_auto_quote = ASSET_CLASSES_WITH_AUTO_QUOTE.contains(&asset_class);
     let is_manual_valuation_class = MANUAL_VALUATION_CLASSES.contains(&asset_class);
+    let is_manual_quota_class = MANUAL_QUOTA_CLASSES.contains(&asset_class);
 
     let (current_price, market_value, price_source) =
         if is_auto_quote && latest_ticker_price.is_some() {
             let price = latest_ticker_price.unwrap();
             (Some(price), Some(price * quantity), "market".to_string())
+        } else if is_manual_quota_class && latest_ticker_price.is_some() {
+            let price = latest_ticker_price.unwrap();
+            (Some(price), Some(price * quantity), "manual_quota".to_string())
         } else if is_manual_valuation_class && latest_manual_valuation.is_some() {
             (None, latest_manual_valuation, "manual_valuation".to_string())
         } else if let Some(avg_price) = average_buy_price {

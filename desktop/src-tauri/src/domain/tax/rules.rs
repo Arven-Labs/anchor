@@ -24,6 +24,8 @@ pub const CRYPTO_RATE_FOURTH_TIER: &str = "crypto_rate_fourth_tier";
 pub const DARF_CODE_CRYPTO: &str = "darf_code_crypto";
 pub const FOREIGN_RATE: &str = "foreign_rate";
 pub const OFFSHORE_RATE: &str = "offshore_rate";
+pub const COME_COTAS_RATE_LONG: &str = "come_cotas_rate_long";
+pub const COME_COTAS_RATE_SHORT: &str = "come_cotas_rate_short";
 
 /// IR retido no resgate de renda fixa, uma taxa fixa por papel (a tabela
 /// regressiva do IR não é modelada; o IOF mora em `domain::tax::iof`). `None`
@@ -96,6 +98,8 @@ pub(crate) fn test_rule_set() -> RuleSet {
         rule(DARF_CODE_CRYPTO, "2019-01-01", 4600.0),
         rule(FOREIGN_RATE, "2024-01-01", 0.15),
         rule(OFFSHORE_RATE, "2024-01-01", 0.15),
+        rule(COME_COTAS_RATE_LONG, "2005-01-01", 0.15),
+        rule(COME_COTAS_RATE_SHORT, "2005-01-01", 0.20),
     ])
 }
 

@@ -9,6 +9,7 @@
 pub mod assessment;
 pub mod calendar;
 pub mod classify;
+pub mod come_cotas;
 pub mod crypto;
 pub mod foreign;
 pub mod iof;

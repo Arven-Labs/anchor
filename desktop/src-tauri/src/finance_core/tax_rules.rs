@@ -54,6 +54,8 @@ const RULES: &[(&str, f64, (i32, u32, u32), &str, &str)] = &[
     ("darf_code_crypto", 4600.0, (2019, 1, 1), "Revenue code of the DARF for capital gains on crypto (the stock exchange DARF is 6015)", "Receita Federal, GCAP (secondary sources; verify on gov.br)"),
     ("foreign_rate", 0.15, (2024, 1, 1), "Yearly IR on gains and dividends of financial investments held abroad (stocks, ETFs, REITs), as a flat 15% on the net result of the year, with no monthly exemption and no monthly DARF", "Lei 14.754/2023, arts. 2 to 4 (secondary sources; verify on gov.br)"),
     ("offshore_rate", 0.15, (2024, 1, 1), "Yearly IR on the profit of a controlled entity abroad, taxed on 31/12 whether or not it was distributed, as a flat 15% (a loss of the entity only offsets its own later profits)", "Lei 14.754/2023, arts. 2 to 5 (secondary sources; verify on gov.br)"),
+    ("come_cotas_rate_long", 0.15, (2005, 1, 1), "Come-cotas rate of open funds with a long-term portfolio (average maturity above 365 days), charged in quotas on the last business day of May and November", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
+    ("come_cotas_rate_short", 0.20, (2005, 1, 1), "Come-cotas rate of open funds with a short-term portfolio (average maturity up to 365 days), charged in quotas on the last business day of May and November", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
 ];
 
 fn date(ymd: (i32, u32, u32)) -> NaiveDate {
@@ -89,7 +91,7 @@ mod tests {
         let rules = rules_br();
         let unique: HashSet<_> = rules.iter().map(|r| (r.key, r.effective_from)).collect();
         assert_eq!(unique.len(), rules.len());
-        assert_eq!(rules.len(), 26);
+        assert_eq!(rules.len(), 28);
     }
 
     #[test]

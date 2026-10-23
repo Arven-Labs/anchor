@@ -297,4 +297,37 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await byId("offshore-card").scrollIntoView({ block: "center" });
     await snap("taxes-offshore");
   });
+
+  // Come-cotas: fundo com cotas, tipo e valor de cota lançados. As datas são relativas a hoje (o app usa a data de hoje),
+  // então o teste confere o texto da estimativa, não o valor do imposto (que depende da última data de come-cotas).
+  it("estima o come-cotas de um fundo pelo último valor de cota lançado", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('FUNDOX', 'Fundo X', 'fundo', 'BRL', 'pais', 'BR', '2025-01-01T00:00:00Z')",
+    );
+    const fund = sql("SELECT id FROM assets WHERE ticker = 'FUNDOX'");
+    sql(
+      "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+        `VALUES (${portfolio}, ${fund}, 'compra', 100, 10, 1000, 0, date('now', '-400 days'), '2025-01-10T00:00:00Z')`,
+    );
+    sql(`INSERT INTO fund_details (asset_id, term, created_at) VALUES (${fund}, 'curto_prazo', '2025-01-10T00:00:00Z')`);
+    sql(
+      "INSERT INTO fund_quota_values (asset_id, quota_date, value, created_at) " +
+        `VALUES (${fund}, date('now', '-1 day'), 12, '2025-01-10T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await byId("come-cotas-card").waitForDisplayed({ timeout: 30_000 });
+    await waitForText(
+      byId("come-cotas-estimate-FUNDOX"),
+      (text) => text.includes("Next come-cotas") && text.includes("20.0%") && text.includes("12,00"),
+      "a estimativa do fundo de curto prazo deveria mostrar a alíquota de 20% e a cota de R$ 12,00",
+    );
+    await byId("come-cotas-card").scrollIntoView({ block: "center" });
+    await snap("taxes-come-cotas");
+  });
 });

@@ -6,6 +6,7 @@ import type { AppError } from "../types";
 import type { BankAccountView } from "../finances/types";
 import Field from "../components/Field";
 import ForeignHoldingsCard, { useForeignHoldings } from "./ForeignHoldingsCard";
+import ComeCotasCard from "./ComeCotasCard";
 import OffshoreCard, { type OffshoreYear } from "./OffshoreCard";
 import SaleSimulationCard from "./SaleSimulationCard";
 import { Badge } from "@/components/ui/badge";
@@ -719,6 +720,8 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
       <ForeignHoldingsCard workspaceId={workspaceId} holdings={foreignHoldings} />
 
       <OffshoreCard workspaceId={workspaceId} years={offshoreYears} />
+
+      <ComeCotasCard workspaceId={workspaceId} />
 
       {!assessmentQuery.isLoading &&
         months.length === 0 &&

@@ -37,6 +37,8 @@ function priceSourceHint(source: PositionView["price_source"]): string | null {
       return "no live quote — using average buy price";
     case "manual_valuation":
       return "manual valuation (asset_valuations), not a per-unit price";
+    case "manual_quota":
+      return "last fund quota value you entered";
     case "none":
       return "no price/valuation registered";
     default:

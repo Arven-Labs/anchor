@@ -4403,6 +4403,90 @@ async fn the_offshore_commands_refuse_invalid_input() {
 }
 
 #[tokio::test]
+async fn a_fund_estimate_uses_the_position_the_quota_values_and_the_stored_rate() {
+    use crate::commands::fund::{funds_overview_in, set_fund_term_in, upsert_fund_quota_in, UpsertFundQuotaRequest};
+    use crate::commands::transaction::compute_positions;
+    use crate::domain::tax::come_cotas::{BasisSource, EstimateStatus};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Fundos").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDO1", "fundo", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+    let quota = |date: &str, value: f64| UpsertFundQuotaRequest { asset_id: fund.id, quota_date: date.to_string(), value };
+
+    // 100 cotas a R$ 10,00 em jan/2025
+    add(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2025-01-10", 0.0)).await;
+
+    // sem tipo e sem cota: o fundo aparece, sem estimativa
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    assert_eq!(overview.funds.len(), 1);
+    assert!(close(overview.funds[0].quantity, 100.0) && overview.funds[0].term.is_none());
+    assert_eq!(overview.estimates[0].status, EstimateStatus::NoTerm);
+
+    set_fund_term_in(&db, fund.id, "longo_prazo").await.unwrap();
+    assert_eq!(funds_overview_in(&db, ws.id, today).await.unwrap().estimates[0].status, EstimateStatus::NoQuota);
+
+    // última data de come-cotas: 29/05/2026 (cota de 28/05 a 11,00); hoje a cota vale 12,00
+    upsert_fund_quota_in(&db, quota("2026-05-28", 11.0), today).await.unwrap();
+    upsert_fund_quota_in(&db, quota("2026-10-20", 11.5), today).await.unwrap();
+    // o mesmo dia de novo corrige em vez de duplicar
+    upsert_fund_quota_in(&db, quota("2026-10-20", 12.0), today).await.unwrap();
+
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    assert_eq!(overview.funds[0].quotas.len(), 2, "{:?}", overview.funds[0].quotas);
+    let e = &overview.estimates[0];
+    // base 11,00 (a cota do último come-cotas supera o custo de 10,00): ganho 100, imposto 15, 1,25 cota
+    assert_eq!(e.status, EstimateStatus::Estimated);
+    assert_eq!(e.basis_source, Some(BasisSource::LastComeCotas));
+    assert!(close(e.gain, 100.0) && close(e.rate, 0.15) && close(e.tax, 15.0), "{e:?}");
+    assert!(close(e.quotas_deducted, 1.25), "{e:?}");
+    assert_eq!(e.reference_date.to_string(), "2026-11-30");
+
+    // curto prazo: 20%
+    set_fund_term_in(&db, fund.id, "curto_prazo").await.unwrap();
+    let e = &funds_overview_in(&db, ws.id, today).await.unwrap().estimates[0];
+    assert!(close(e.rate, 0.20) && close(e.tax, 20.0), "{e:?}");
+
+    // a posição vale o último valor de cota lançado
+    let positions = compute_positions(&db, pf.id).await.unwrap();
+    let position = positions.iter().find(|p| p.ticker == "FUNDO1").unwrap();
+    assert_eq!(position.price_source, "manual_quota");
+    assert!(
+        close(position.current_price.unwrap(), 12.0) && close(position.market_value.unwrap(), 1200.0),
+        "{:?} {:?}",
+        position.current_price,
+        position.market_value
+    );
+}
+
+#[tokio::test]
+async fn the_fund_commands_refuse_invalid_input() {
+    use crate::commands::fund::{set_fund_term_in, upsert_fund_quota_in, UpsertFundQuotaRequest};
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let fund = asset_in(&db, "FUNDO1", "fundo", "BRL").await;
+    let stock = asset_in(&db, "PETR4", "acao_br", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+    let quota = |asset_id: i32, date: &str, value: f64| {
+        upsert_fund_quota_in(&db, UpsertFundQuotaRequest { asset_id, quota_date: date.to_string(), value }, today)
+    };
+
+    assert!(matches!(set_fund_term_in(&db, fund.id, "outro").await, Err(AppError::InvalidInput(_))));
+    assert!(matches!(set_fund_term_in(&db, stock.id, "longo_prazo").await, Err(AppError::InvalidInput(_))), "só fundo");
+    assert!(matches!(set_fund_term_in(&db, 9999, "longo_prazo").await, Err(AppError::NotFound(_))));
+    assert!(set_fund_term_in(&db, fund.id, "acoes").await.is_ok());
+
+    assert!(matches!(quota(fund.id, "2026-10-23", 10.0).await, Err(AppError::InvalidInput(_))), "data futura");
+    assert!(matches!(quota(fund.id, "22/10/2026", 10.0).await, Err(AppError::InvalidInput(_))), "formato da data");
+    assert!(matches!(quota(fund.id, "2026-10-20", 0.0).await, Err(AppError::InvalidInput(_))), "valor acima de zero");
+    assert!(matches!(quota(fund.id, "2026-10-20", f64::NAN).await, Err(AppError::InvalidInput(_))));
+    assert!(matches!(quota(stock.id, "2026-10-20", 10.0).await, Err(AppError::InvalidInput(_))), "só fundo");
+    assert!(quota(fund.id, "2026-10-20", 10.0).await.is_ok());
+}
+
+#[tokio::test]
 async fn a_weekend_fact_uses_the_last_ptax_before_it_and_a_long_gap_falls_back_to_the_market() {
     let db = memory_db().await;
     let ws = workspace(&db, "PTAX").await;

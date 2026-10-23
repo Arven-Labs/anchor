@@ -17,6 +17,8 @@ pub mod crypto_indicators;
 pub mod custodia;
 pub mod dcf_inputs;
 pub mod fii_cnpj_cache;
+pub mod fund_detail;
+pub mod fund_quota_value;
 pub mod fii_cvm_monthly;
 pub mod fii_cvm_properties;
 pub mod general_transaction;

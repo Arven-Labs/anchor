@@ -56,6 +56,16 @@ pub fn is_business_day(date: NaiveDate) -> bool {
     !matches!(date.weekday(), Weekday::Sat | Weekday::Sun) && !is_bank_holiday(date)
 }
 
+/// Último dia útil de (`year`, `month`).
+pub fn last_business_day(year: i32, month: u32) -> NaiveDate {
+    let (next_y, next_m) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+    let mut day = NaiveDate::from_ymd_opt(next_y, next_m, 1).expect("valid date") - Duration::days(1);
+    while !is_business_day(day) {
+        day -= Duration::days(1);
+    }
+    day
+}
+
 /// Último dia útil do mês seguinte a (`year`, `month`).
 pub fn darf_due_date(year: i32, month: u32) -> NaiveDate {
     let (next_y, next_m) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };

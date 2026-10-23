@@ -64,7 +64,7 @@ pub fn jcp_rate_on(rules: &RuleSet, date: &str) -> Result<f64, AppError> {
     rules.get(rules::JCP_IRRF_RATE, parse_date(date)?)
 }
 
-async fn workspace_portfolio_ids(db: &DatabaseConnection, workspace_id: i32) -> Result<Vec<i32>, AppError> {
+pub(crate) async fn workspace_portfolio_ids(db: &DatabaseConnection, workspace_id: i32) -> Result<Vec<i32>, AppError> {
     Ok(portfolio::Entity::find()
         .filter(portfolio::Column::WorkspaceId.eq(workspace_id))
         .all(db)

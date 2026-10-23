@@ -16,7 +16,9 @@ use crate::domain::proventos::{
     PAYMENT_TYPE_ALUGUEL, PAYMENT_TYPE_DIVIDENDO, PAYMENT_TYPE_JSCP, PAYMENT_TYPE_REEMBOLSO,
 };
 use crate::domain::transaction_ledger::{self, LedgerEntry};
-use crate::entity::{asset_valuations, assets, custodia, stock_adjusted_close, stock_price_history, transactions};
+use crate::entity::{
+    asset_valuations, assets, custodia, fund_quota_value, stock_adjusted_close, stock_price_history, transactions,
+};
 use crate::error::AppError;
 
 const BUY: &str = "compra";
@@ -758,7 +760,7 @@ pub async fn compute_positions(
     let latest_manual_valuation: HashMap<i32, f64> = {
         let mut by_asset_id: HashMap<i32, (String, f64)> = HashMap::new();
         for row in asset_valuations::Entity::find()
-            .filter(asset_valuations::Column::AssetId.is_in(asset_ids))
+            .filter(asset_valuations::Column::AssetId.is_in(asset_ids.clone()))
             .all(db)
             .await?
         {
@@ -767,6 +769,22 @@ pub async fn compute_positions(
                 .or_insert((row.valuation_date.clone(), row.value));
             if row.valuation_date > entry.0 {
                 *entry = (row.valuation_date, row.value);
+            }
+        }
+        by_asset_id.into_iter().map(|(k, (_, value))| (k, value)).collect()
+    };
+
+    // Valor de cota lançado pelo usuário (fundos): o mais recente por ativo.
+    let latest_fund_quota: HashMap<i32, f64> = {
+        let mut by_asset_id: HashMap<i32, (String, f64)> = HashMap::new();
+        for row in fund_quota_value::Entity::find()
+            .filter(fund_quota_value::Column::AssetId.is_in(asset_ids))
+            .all(db)
+            .await?
+        {
+            let entry = by_asset_id.entry(row.asset_id).or_insert((row.quota_date.clone(), row.value));
+            if row.quota_date > entry.0 {
+                *entry = (row.quota_date, row.value);
             }
         }
         by_asset_id.into_iter().map(|(k, (_, value))| (k, value)).collect()
@@ -806,7 +824,12 @@ pub async fn compute_positions(
             &asset.asset_class,
             net_qty,
             average_buy_price,
-            latest_ticker_price.get(&asset.ticker).copied(),
+            // Fundo: o valor de cota lançado ocupa o lugar da cotação de mercado.
+            if asset.asset_class == "fundo" {
+                latest_fund_quota.get(&asset_id).copied()
+            } else {
+                latest_ticker_price.get(&asset.ticker).copied()
+            },
             latest_manual_valuation.get(&asset_id).copied(),
         );
 

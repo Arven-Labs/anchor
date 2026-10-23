@@ -41,7 +41,7 @@ const CSV_HEADER: [&str; 12] = [
 ];
 
 /// Classes que o importador sabe criar sozinho, com a moeda e a exposição padrão.
-const CLASS_DEFAULTS: [(&str, &str, &str); 14] = [
+const CLASS_DEFAULTS: [(&str, &str, &str); 15] = [
     ("acao_br", "BRL", "BR"),
     ("fii", "BRL", "BR"),
     ("etf_br", "BRL", "BR"),
@@ -56,6 +56,7 @@ const CLASS_DEFAULTS: [(&str, &str, &str); 14] = [
     ("renda_fixa", "BRL", "BR"),
     ("imovel", "BRL", "BR"),
     ("empresa_nao_listada", "BRL", "BR"),
+    ("fundo", "BRL", "BR"),
 ];
 
 /// Um lançamento proposto por qualquer origem (arquivo, planilha, IA no futuro),
