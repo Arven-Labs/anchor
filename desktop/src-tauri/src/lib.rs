@@ -171,6 +171,8 @@ pub fn run() {
             commands::tax::get_tax_assessment,
             commands::fund::get_funds_overview,
             commands::fund::set_fund_term,
+            commands::fund::set_fund_cvm,
+            commands::fund::refresh_fund_quotas_now,
             commands::fund::upsert_fund_quota,
             commands::fund::delete_fund_quota,
             commands::offshore::list_offshore_entities,

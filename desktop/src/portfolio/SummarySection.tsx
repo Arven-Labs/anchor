@@ -123,6 +123,8 @@ function priceSourceHint(source: PositionView["price_source"]): string | null {
       return "manual valuation (asset_valuations), not a per-unit price";
     case "manual_quota":
       return "last fund quota value you entered";
+    case "cvm_quota":
+      return "last fund quota value from the CVM daily report";
     case "none":
       return "no price/valuation registered";
     default:

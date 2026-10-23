@@ -1,4 +1,4 @@
-//! `SeaORM` Entity — Fase 24, valor da cota de um fundo numa data, lançado pelo usuário.
+//! `SeaORM` Entity — Fase 24, valor da cota de um fundo numa data, lançado pelo usuário ou lido da CVM.
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,8 @@ pub struct Model {
     /// Valor de uma cota, em BRL.
     #[sea_orm(column_type = "Double")]
     pub value: f64,
+    /// `manual` (lançado pelo usuário) ou `cvm` (lido do informe diário); a CVM nunca sobrescreve uma manual.
+    pub source: String,
     pub created_at: String,
 }
 

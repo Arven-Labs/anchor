@@ -387,7 +387,7 @@ export type PositionView = {
   // preço e quanto do câmbio desde a compra (somam `unrealized_pl`).
   unrealized_pl_price: number | null;
   unrealized_pl_fx: number | null;
-  price_source: "market" | "manual_valuation" | "manual_quota" | "avg_buy_price" | "none";
+  price_source: "market" | "manual_valuation" | "manual_quota" | "cvm_quota" | "avg_buy_price" | "none";
 };
 
 // Fase 13.1 — agregados pra tela Resumo (`commands/portfolio_summary.rs`).

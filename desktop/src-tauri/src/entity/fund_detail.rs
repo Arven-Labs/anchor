@@ -12,6 +12,8 @@ pub struct Model {
     pub asset_id: i32,
     /// `longo_prazo`, `curto_prazo` ou `acoes`.
     pub term: String,
+    /// Subclasse do informe diário da CVM; `None` = a linha da classe (sem subclasse).
+    pub cvm_subclass: Option<String>,
     pub created_at: String,
 }
 

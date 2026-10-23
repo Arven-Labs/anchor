@@ -43,6 +43,7 @@ pub mod cache;
 pub mod coingecko;
 pub mod cvm_dfp;
 pub mod cvm_fii;
+pub mod cvm_inf_diario;
 pub mod cvm_ipe;
 pub mod disk_cache;
 pub mod eth_indicators;

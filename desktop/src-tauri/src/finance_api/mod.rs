@@ -7,6 +7,7 @@ pub mod benchmark;
 pub mod client;
 pub mod crypto;
 pub mod fii;
+pub mod fund_quota_store;
 pub mod fx;
 pub mod metals;
 pub mod ptax_store;

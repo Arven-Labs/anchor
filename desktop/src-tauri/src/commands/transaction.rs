@@ -790,20 +790,20 @@ pub async fn compute_positions(
         by_asset_id.into_iter().map(|(k, (_, value))| (k, value)).collect()
     };
 
-    // Valor de cota lançado pelo usuário (fundos): o mais recente por ativo.
-    let latest_fund_quota: HashMap<i32, f64> = {
-        let mut by_asset_id: HashMap<i32, (String, f64)> = HashMap::new();
+    // Valor de cota dos fundos (lançado pelo usuário ou lido da CVM): o mais recente por ativo, com a origem.
+    let latest_fund_quota: HashMap<i32, (f64, String)> = {
+        let mut by_asset_id: HashMap<i32, (String, f64, String)> = HashMap::new();
         for row in fund_quota_value::Entity::find()
             .filter(fund_quota_value::Column::AssetId.is_in(asset_ids))
             .all(db)
             .await?
         {
-            let entry = by_asset_id.entry(row.asset_id).or_insert((row.quota_date.clone(), row.value));
+            let entry = by_asset_id.entry(row.asset_id).or_insert((row.quota_date.clone(), row.value, row.source.clone()));
             if row.quota_date > entry.0 {
-                *entry = (row.quota_date, row.value);
+                *entry = (row.quota_date, row.value, row.source);
             }
         }
-        by_asset_id.into_iter().map(|(k, (_, value))| (k, value)).collect()
+        by_asset_id.into_iter().map(|(k, (_, value, source))| (k, (value, source))).collect()
     };
 
     let mut positions = Vec::new();
@@ -835,19 +835,24 @@ pub async fn compute_positions(
             market_value,
             unrealized_pl,
             unrealized_pl_pct,
-            price_source,
+            mut price_source,
         } = position_pricing::price_position(
             &asset.asset_class,
             net_qty,
             average_buy_price,
-            // Fundo: o valor de cota lançado ocupa o lugar da cotação de mercado.
+            // Fundo: o valor de cota (manual ou da CVM) ocupa o lugar da cotação de mercado.
             if asset.asset_class == "fundo" {
-                latest_fund_quota.get(&asset_id).copied()
+                latest_fund_quota.get(&asset_id).map(|(value, _)| *value)
             } else {
                 latest_ticker_price.get(&asset.ticker).copied()
             },
             latest_manual_valuation.get(&asset_id).copied(),
         );
+        if price_source == "manual_quota"
+            && latest_fund_quota.get(&asset_id).is_some_and(|(_, source)| source == "cvm")
+        {
+            price_source = "cvm_quota".to_string();
+        }
 
         positions.push(PositionView {
             asset_id,

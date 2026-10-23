@@ -4461,6 +4461,174 @@ async fn a_fund_estimate_uses_the_position_the_quota_values_and_the_stored_rate(
 }
 
 #[tokio::test]
+async fn the_cvm_quota_fills_the_fund_prices_the_position_and_never_overwrites_a_manual_quota() {
+    use crate::commands::fund::{
+        funds_overview_with, refresh_fund_quotas_with, set_fund_cvm_in, set_fund_term_in, upsert_fund_quota_in,
+        SetFundCvmRequest, UpsertFundQuotaRequest,
+    };
+    use crate::commands::transaction::compute_positions;
+    use crate::entity::fund_quota_value;
+    use crate::error::AppError;
+    use crate::finance_api::fund_quota_store::{CvmStatus, Session};
+    use crate::finance_core::cvm_inf_diario::tests::{csv_of, FakeZips, CLASS_CNPJ};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use std::sync::atomic::Ordering;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "CVM").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDO2", "fundo", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+    let session = Session::new();
+    add(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2026-09-10", 0.0)).await;
+    set_fund_term_in(&db, fund.id, "curto_prazo").await.unwrap();
+
+    // sem CNPJ a CVM não entra: nada a buscar e o estado diz por quê
+    let zips = FakeZips::new(&[
+        (
+            (2026, 9),
+            csv_of(&["CLASSES - FIF;00.017.024/0001-53;;2026-09-30;1119426.37;44.500000000000;1221524.87;0.00;0.00;1"]),
+        ),
+        (
+            (2026, 10),
+            csv_of(&[
+                "CLASSES - FIF;00.017.024/0001-53;;2026-10-01;1119426.37;44.990762600000;1221524.87;0.00;2902.97;1",
+                "CLASSES - FIF;00.017.024/0001-53;;2026-10-02;1120004.10;45.009590600000;1222036.06;0.00;0.00;1",
+            ]),
+        ),
+    ]);
+    refresh_fund_quotas_with(&db, &session, &zips, ws.id, today, false).await.unwrap();
+    assert_eq!(zips.calls.load(Ordering::SeqCst), 0);
+    let overview = funds_overview_with(&db, &session, ws.id, today).await.unwrap();
+    assert_eq!(overview.funds[0].cvm_status, CvmStatus::NoCnpj);
+    assert!(overview.funds[0].quotas.is_empty());
+
+    // CNPJ inválido é recusado; o válido é guardado pontuado
+    let bad = SetFundCvmRequest { asset_id: fund.id, cnpj: Some("123".into()), subclass: None };
+    assert!(matches!(set_fund_cvm_in(&db, &session, bad).await, Err(AppError::InvalidInput(_))));
+    let set = SetFundCvmRequest { asset_id: fund.id, cnpj: Some("00017024000153".into()), subclass: None };
+    set_fund_cvm_in(&db, &session, set).await.unwrap();
+
+    // uma cota do usuário no dia 02/10 (valor bem diferente do da CVM)
+    let manual = UpsertFundQuotaRequest { asset_id: fund.id, quota_date: "2026-10-02".into(), value: 99.0 };
+    upsert_fund_quota_in(&db, manual, today).await.unwrap();
+
+    refresh_fund_quotas_with(&db, &session, &zips, ws.id, today, false).await.unwrap();
+    assert_eq!(zips.calls.load(Ordering::SeqCst), 2, "setembro e outubro, uma vez cada");
+    let overview = funds_overview_with(&db, &session, ws.id, today).await.unwrap();
+    let view = &overview.funds[0];
+    assert_eq!(view.cnpj.as_deref(), Some(CLASS_CNPJ));
+    assert_eq!(view.cvm_status, CvmStatus::Ok);
+    assert_eq!(view.last_cvm_date.as_deref(), Some("2026-10-01"), "o dia 02/10 é do usuário");
+    let by_date = |date: &str| view.quotas.iter().find(|q| q.quota_date == date).unwrap();
+    assert!(close(by_date("2026-09-30").value, 44.5) && by_date("2026-09-30").source == "cvm");
+    assert!(close(by_date("2026-10-01").value, 44.9907626) && by_date("2026-10-01").source == "cvm");
+    assert!(close(by_date("2026-10-02").value, 99.0) && by_date("2026-10-02").source == "manual");
+
+    // a cota mais recente é a do usuário: a posição diz isso
+    let position = |positions: Vec<crate::commands::transaction::PositionView>| {
+        positions.into_iter().find(|p| p.ticker == "FUNDO2").unwrap()
+    };
+    let current = position(compute_positions(&db, pf.id).await.unwrap());
+    assert_eq!(current.price_source, "manual_quota");
+    assert!(close(current.current_price.unwrap(), 99.0));
+
+    // sem a cota do usuário, a da CVM volta no dia 02/10 e passa a ser o preço da posição
+    fund_quota_value::Entity::delete_many()
+        .filter(fund_quota_value::Column::AssetId.eq(fund.id))
+        .filter(fund_quota_value::Column::Source.eq("manual"))
+        .exec(&db)
+        .await
+        .unwrap();
+    refresh_fund_quotas_with(&db, &session, &zips, ws.id, today, true).await.unwrap();
+    let current = position(compute_positions(&db, pf.id).await.unwrap());
+    assert_eq!(current.price_source, "cvm_quota");
+    assert!(close(current.current_price.unwrap(), 45.0095906), "{:?}", current.current_price);
+    assert!(close(current.market_value.unwrap(), 4500.95906), "{:?}", current.market_value);
+
+    // corrigir à mão uma cota da CVM a torna do usuário
+    let fix = UpsertFundQuotaRequest { asset_id: fund.id, quota_date: "2026-10-02".into(), value: 46.0 };
+    upsert_fund_quota_in(&db, fix, today).await.unwrap();
+    refresh_fund_quotas_with(&db, &session, &zips, ws.id, today, true).await.unwrap();
+    let overview = funds_overview_with(&db, &session, ws.id, today).await.unwrap();
+    let fixed = overview.funds[0].quotas.iter().find(|q| q.quota_date == "2026-10-02").unwrap();
+    assert!(close(fixed.value, 46.0) && fixed.source == "manual");
+
+    // trocar o CNPJ descarta o que veio da CVM e mantém o do usuário
+    let other = SetFundCvmRequest { asset_id: fund.id, cnpj: Some("97.929.213/0001-34".into()), subclass: None };
+    set_fund_cvm_in(&db, &session, other).await.unwrap();
+    let overview = funds_overview_with(&db, &session, ws.id, today).await.unwrap();
+    assert_eq!(overview.funds[0].quotas.len(), 1, "{:?}", overview.funds[0].quotas);
+    assert_eq!(overview.funds[0].quotas[0].source, "manual");
+}
+
+#[tokio::test]
+async fn a_cnpj_with_only_subclasses_asks_for_one_and_a_cvm_outage_rests_the_network() {
+    use crate::commands::fund::{funds_overview_with, refresh_fund_quotas_with, set_fund_cvm_in, set_fund_term_in, SetFundCvmRequest};
+    use crate::error::AppError;
+    use crate::finance_api::fund_quota_store::{CvmStatus, Session};
+    use crate::finance_core::cvm_inf_diario::tests::{csv_of, FakeZips};
+    use std::sync::atomic::Ordering;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Subclasses").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDO3", "fundo", "BRL").await;
+    let stock = asset_in(&db, "PETR4", "acao_br", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+    let session = Session::new();
+    add(&db, tx_request(pf.id, fund.id, "compra", 10.0, 70.0, "2026-10-01", 0.0)).await;
+
+    let request = |subclass: Option<&str>| SetFundCvmRequest {
+        asset_id: fund.id,
+        cnpj: Some("00.888.897/0001-31".into()),
+        subclass: subclass.map(str::to_string),
+    };
+    // só fundo recebe CNPJ da CVM
+    let on_stock = SetFundCvmRequest { asset_id: stock.id, cnpj: Some("00.888.897/0001-31".into()), subclass: None };
+    assert!(matches!(set_fund_cvm_in(&db, &session, on_stock).await, Err(AppError::InvalidInput(_))));
+    // a subclasse mora em `fund_details`, que só existe depois do tipo do fundo
+    assert!(matches!(set_fund_cvm_in(&db, &session, request(Some("RBMFN1747320951"))).await, Err(AppError::InvalidInput(_))));
+    set_fund_cvm_in(&db, &session, request(None)).await.unwrap();
+
+    let zips = FakeZips::new(&[(
+        (2026, 10),
+        csv_of(&[
+            "CLASSES - FIF;00.888.897/0001-31;RBMFN1747320951;2026-10-01;47114895.69;74.383553275471;47091275.92;74000.00;17000.00;1",
+            "CLASSES - FIF;00.888.897/0001-31;MZMRC1747322915;2026-10-01;700260258.28;74.040455402933;700168039.98;971319.87;6732106.10;10909",
+        ]),
+    )]);
+    refresh_fund_quotas_with(&db, &session, &zips, ws.id, today, false).await.unwrap();
+    let overview = funds_overview_with(&db, &session, ws.id, today).await.unwrap();
+    assert_eq!(
+        overview.funds[0].cvm_status,
+        CvmStatus::NeedsSubclass { options: vec!["MZMRC1747322915".into(), "RBMFN1747320951".into()] }
+    );
+    assert!(overview.funds[0].quotas.is_empty());
+
+    // escolhida a subclasse (depois do tipo), a cota dela entra
+    set_fund_term_in(&db, fund.id, "longo_prazo").await.unwrap();
+    set_fund_cvm_in(&db, &session, request(Some("RBMFN1747320951"))).await.unwrap();
+    refresh_fund_quotas_with(&db, &session, &zips, ws.id, today, false).await.unwrap();
+    let overview = funds_overview_with(&db, &session, ws.id, today).await.unwrap();
+    assert_eq!(overview.funds[0].cvm_status, CvmStatus::Ok);
+    assert_eq!(overview.funds[0].cvm_subclass.as_deref(), Some("RBMFN1747320951"));
+    assert!(close(overview.funds[0].quotas[0].value, 74.383553275471));
+
+    // uma CVM fora do ar vira erro no fundo e deixa a rede de molho: a segunda tentativa nem chama o fetcher
+    let down = FakeZips::down();
+    set_fund_cvm_in(&db, &session, request(Some("MZMRC1747322915"))).await.unwrap();
+    assert!(refresh_fund_quotas_with(&db, &session, &down, ws.id, today, true).await.is_err());
+    assert_eq!(down.calls.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        funds_overview_with(&db, &session, ws.id, today).await.unwrap().funds[0].cvm_status,
+        CvmStatus::Error { .. }
+    ));
+    assert!(refresh_fund_quotas_with(&db, &session, &down, ws.id, today, true).await.is_err());
+    assert_eq!(down.calls.load(Ordering::SeqCst), 1, "em espera depois da falha");
+}
+
+#[tokio::test]
 async fn a_come_cotas_entry_takes_quotas_at_the_average_cost_and_is_recorded_for_the_estimate() {
     use crate::commands::fund::{funds_overview_in, set_fund_term_in, upsert_fund_quota_in, UpsertFundQuotaRequest};
     use crate::commands::transaction::compute_positions;

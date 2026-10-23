@@ -21,14 +21,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-// Come-cotas dos fundos abertos (estimativa): o usuário escolhe o tipo de cada fundo e lança o valor da cota; a conta
-// (base, alíquota, cotas descontadas) vem pronta de `get_funds_overview`. Aqui só cadastra e exibe. O desconto real do
-// fundo é registrado como uma transação "Come-cotas" no formulário de lançamentos; esta tela só lista os já registrados.
-// Cada venda do fundo aparece como resgate, com o IOF e o IR estimados (informativo: o imposto sai na fonte).
+// Come-cotas dos fundos abertos (estimativa): o usuário escolhe o tipo de cada fundo; o valor da cota vem do informe
+// diário da CVM (com o CNPJ do fundo) ou é lançado à mão; a conta (base, alíquota, cotas descontadas) vem pronta de
+// `get_funds_overview`. Aqui só cadastra e exibe. O desconto real do fundo é registrado como uma transação "Come-cotas"
+// no formulário de lançamentos; esta tela só lista os já registrados. Cada venda do fundo aparece como resgate, com o
+// IOF e o IR estimados (informativo: o imposto sai na fonte).
 
 type FundTerm = "longo_prazo" | "curto_prazo" | "acoes";
 
-type QuotaRow = { id: number; asset_id: number; quota_date: string; value: number };
+type QuotaRow = { id: number; asset_id: number; quota_date: string; value: number; source: "manual" | "cvm" };
+
+type CvmStatus =
+  | { kind: "no_cnpj" }
+  | { kind: "pending" }
+  | { kind: "ok" }
+  | { kind: "not_found" }
+  | { kind: "needs_subclass"; options: string[] }
+  | { kind: "error"; message: string };
 
 type DeductionRow = { tx_id: number; date: string; quotas: number; quota_value: number; tax: number };
 
@@ -57,6 +66,10 @@ type FundRow = {
   term: FundTerm | null;
   quantity: number;
   average_cost: number | null;
+  cnpj: string | null;
+  cvm_subclass: string | null;
+  cvm_status: CvmStatus;
+  last_cvm_date: string | null;
   quotas: QuotaRow[];
   deductions: DeductionRow[];
   redemptions: RedemptionRow[];
@@ -157,7 +170,11 @@ function EstimateLine({ estimate }: { estimate: Estimate }) {
     case "no_term":
       return <p className="text-sm text-muted-foreground">Choose the fund type to estimate the come-cotas.</p>;
     case "no_quota":
-      return <p className="text-sm text-muted-foreground">Enter a quota value to estimate the come-cotas.</p>;
+      return (
+        <p className="text-sm text-muted-foreground">
+          Enter the fund's CNPJ to read its quota from the CVM, or add a quota value yourself, to estimate the come-cotas.
+        </p>
+      );
     case "exempt":
       return <p className="text-sm text-muted-foreground">Equity funds have no come-cotas.</p>;
     case "estimated":
@@ -186,6 +203,88 @@ function EstimateLine({ estimate }: { estimate: Estimate }) {
   }
 }
 
+// Onde a cota do fundo vem: o CNPJ (e a subclasse, quando o informe só as tem) para a leitura do informe diário da CVM.
+function CvmSource({ fund, onChanged }: { fund: FundRow; onChanged: () => void }) {
+  const [cnpj, setCnpj] = useState(fund.cnpj ?? "");
+  const status = fund.cvm_status;
+  const showSubclass = status.kind === "needs_subclass" || fund.cvm_subclass !== null;
+  const options = status.kind === "needs_subclass" ? status.options : fund.cvm_subclass ? [fund.cvm_subclass] : [];
+
+  const saveMutation = useMutation<void, AppError, { cnpj: string; subclass: string }>({
+    mutationFn: ({ cnpj: nextCnpj, subclass }) =>
+      invoke("set_fund_cvm", { request: { asset_id: fund.asset_id, cnpj: nextCnpj, subclass } }),
+    onSuccess: onChanged,
+  });
+
+  return (
+    <div className="flex flex-col gap-2" data-testid={`fund-cvm-${fund.ticker}`}>
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          // A subclasse é de um CNPJ: trocar o CNPJ a descarta, salvar o mesmo CNPJ a mantém.
+          saveMutation.mutate({ cnpj, subclass: cnpj.trim() === (fund.cnpj ?? "") ? (fund.cvm_subclass ?? "") : "" });
+        }}
+      >
+        <Field label="Fund CNPJ (CVM)">
+          <Input
+            value={cnpj}
+            placeholder="00.000.000/0000-00"
+            onChange={(e) => setCnpj(e.currentTarget.value)}
+            className="w-56"
+            data-testid={`fund-cnpj-${fund.ticker}`}
+          />
+        </Field>
+        <Button
+          type="submit"
+          variant="outline"
+          size="sm"
+          disabled={saveMutation.isPending}
+          data-testid={`fund-cnpj-save-${fund.ticker}`}
+        >
+          Save CNPJ
+        </Button>
+        {showSubclass && (
+          <Select
+            value={fund.cvm_subclass ?? ""}
+            onValueChange={(subclass) => saveMutation.mutate({ cnpj, subclass })}
+          >
+            <SelectTrigger className="w-56" data-testid={`fund-subclass-${fund.ticker}`}>
+              <SelectValue placeholder="CVM subclass…" />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </form>
+      <p className="text-xs text-muted-foreground" data-testid={`fund-cvm-status-${fund.ticker}`}>
+        {status.kind === "no_cnpj" && "No CNPJ: the quota value is yours to enter."}
+        {status.kind === "pending" && "Not read from the CVM yet."}
+        {status.kind === "ok" && (
+          <>
+            <Badge variant="outline" className="mr-2">
+              CVM
+            </Badge>
+            Latest quota from the CVM daily report{fund.last_cvm_date ? `: ${formatDate(fund.last_cvm_date)}` : ""}.
+          </>
+        )}
+        {status.kind === "not_found" && "The CVM daily report has no quota for this CNPJ (or this subclass)."}
+        {status.kind === "needs_subclass" &&
+          (fund.term === null
+            ? "This CNPJ has only subclasses in the CVM report. Choose the fund type first, then the subclass."
+            : "This CNPJ has only subclasses in the CVM report: choose one.")}
+        {status.kind === "error" && `Could not read the CVM report: ${status.message}`}
+      </p>
+      {saveMutation.isError && <p className="text-sm text-destructive">{saveMutation.error.message}</p>}
+    </div>
+  );
+}
+
 export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) {
   const queryClient = useQueryClient();
   const [quotaFundId, setQuotaFundId] = useState<number | null>(null);
@@ -198,6 +297,20 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
   });
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["funds-overview", workspaceId] });
+
+  // O CNPJ ou a subclasse mudou: a cota (e o preço da posição) vem de outra série.
+  const cvmChanged = () => {
+    refresh();
+    void queryClient.invalidateQueries({ queryKey: ["positions"] });
+  };
+
+  const cvmRefreshMutation = useMutation<FundsOverview, AppError, void>({
+    mutationFn: () => invoke("refresh_fund_quotas_now", { workspaceId }),
+    onSuccess: (overview) => {
+      queryClient.setQueryData(["funds-overview", workspaceId], overview);
+      void queryClient.invalidateQueries({ queryKey: ["positions"] });
+    },
+  });
 
   const setTermMutation = useMutation<void, AppError, { assetId: number; term: FundTerm }>({
     mutationFn: ({ assetId, term }) => invoke("set_fund_term", { assetId, term }),
@@ -238,9 +351,10 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
         <CardTitle>Funds — come-cotas and redemption (estimate)</CardTitle>
         <CardDescription>
           Open funds withhold income tax from you in quotas on the last business day of May and November: 15% on
-          long-term funds, 20% on short-term ones, none on equity funds. Choose each fund's type and enter its quota
-          value; Anchor estimates the next deduction from your latest quota value (it does not project to the date) and
-          your position. After the fund deducts, register it as a Come-cotas transaction (quotas taken and the quota
+          long-term funds, 20% on short-term ones, none on equity funds. Choose each fund's type and give its CNPJ:
+          Anchor reads the quota value from the CVM daily report (it lags one or two business days), and you can still
+          enter a quota value yourself — yours is never overwritten. It estimates the next deduction from the latest
+          quota value (it does not project to the date) and your position. After the fund deducts, register it as a Come-cotas transaction (quotas taken and the quota
           value of the day): the position, the average cost and the next estimate follow. A Sell of fund quotas is
           read as a redemption: enter the gross value (before IR and IOF) as the total, and Anchor estimates what the
           fund withheld — IR by the regressive table on each purchase lot (oldest first), IOF under 30 days, minus the
@@ -249,6 +363,22 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={cvmRefreshMutation.isPending}
+            onClick={() => cvmRefreshMutation.mutate()}
+            data-testid="fund-cvm-refresh"
+          >
+            {cvmRefreshMutation.isPending ? "Reading the CVM…" : "Update from CVM"}
+          </Button>
+          {cvmRefreshMutation.isError && (
+            <span className="text-sm text-destructive" data-testid="fund-cvm-refresh-error">
+              {cvmRefreshMutation.error.message}
+            </span>
+          )}
+        </div>
         {funds.map((fund) => {
           const estimate = estimates.get(fund.asset_id);
           return (
@@ -282,6 +412,8 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
                   </Button>
                 </div>
               </div>
+
+              <CvmSource fund={fund} onChanged={cvmChanged} />
 
               {estimate && (
                 <div data-testid={`come-cotas-estimate-${fund.ticker}`}>
@@ -323,6 +455,7 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
                   {[...fund.quotas].reverse().slice(0, 6).map((q) => (
                     <span key={q.id} className="inline-flex items-center gap-1 rounded border px-2 py-0.5">
                       {formatDate(q.quota_date)}: {formatBrl(q.value)}
+                      {q.source === "cvm" && <span className="text-[10px] uppercase">CVM</span>}
                       <button
                         type="button"
                         aria-label={`Remove the quota value of ${formatDate(q.quota_date)}`}

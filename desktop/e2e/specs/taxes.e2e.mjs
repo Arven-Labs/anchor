@@ -378,4 +378,36 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await byId("come-cotas-card").scrollIntoView({ block: "center" });
     await snap("taxes-fund-redemption");
   });
+
+  // Cota da CVM: o E2E roda sem rede (ANCHOR_DISABLE_INGESTION), então a leitura do informe diário não acontece. Aqui
+  // confere o que a tela mostra sem CNPJ e, com o CNPJ e uma cota gravada com `source = 'cvm'`, o selo e a data.
+  it("mostra de onde vem a cota do fundo: sem CNPJ, e lida da CVM", async () => {
+    const fund = sql("SELECT id FROM assets WHERE ticker = 'FUNDOX'");
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+    await waitForText(
+      byId("fund-cvm-status-FUNDOX"),
+      (text) => text.includes("No CNPJ"),
+      "um fundo sem CNPJ deveria dizer que a cota é lançada à mão",
+    );
+
+    sql(`UPDATE assets SET cnpj = '00.017.024/0001-53' WHERE id = ${fund}`);
+    sql(
+      "INSERT INTO fund_quota_values (asset_id, quota_date, value, source, created_at) " +
+        `VALUES (${fund}, date('now', '-2 days'), 12.5, 'cvm', '2025-01-10T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+    await waitForText(
+      byId("fund-cvm-status-FUNDOX"),
+      (text) => text.includes("CVM") && text.includes("Latest quota from the CVM daily report"),
+      "com o CNPJ e uma cota da CVM, a tela deveria mostrar o selo CVM e a data da última cota",
+    );
+    await byId("come-cotas-card").scrollIntoView({ block: "center" });
+    await snap("taxes-fund-cvm");
+  });
 });
