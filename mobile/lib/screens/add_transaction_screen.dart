@@ -100,6 +100,26 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   double get _manualTotal =>
       double.tryParse(_totalValueController.text.replaceAll(',', '.')) ?? 0;
 
+  /// Taxa só em compra/venda: o come-cotas não tem (guard do desktop).
+  bool get _showFee =>
+      _type == TransactionType.compra || _type == TransactionType.venda;
+
+  /// `come_cotas` só vale para ativo da classe `fundo` (guard do desktop); os
+  /// outros tipos aceitam qualquer ativo.
+  List<Asset> get _eligibleAssets => _type == TransactionType.comeCotas
+      ? _assets.where((a) => a.assetClass == AssetClass.fundo).toList()
+      : _assets;
+
+  void _onTypeChanged(TransactionType type) {
+    setState(() {
+      _type = type;
+      final eligible = _eligibleAssets;
+      if (!eligible.any((a) => a.id == _selectedAsset?.id)) {
+        _selectedAsset = eligible.isNotEmpty ? eligible.first : null;
+      }
+    });
+  }
+
   /// Mesma regra do `showFixedIncomeFields` do desktop
   /// (`TransactionSection.tsx:131-134`): só faz sentido registrar
   /// emissor/indexador/taxa/vencimento/liquidez numa compra de ativo de
@@ -139,6 +159,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     final needsAsset = _type.needsAsset;
     final asset = _selectedAsset;
     if (needsAsset && asset?.id == null) return;
+    if (_type == TransactionType.comeCotas &&
+        asset?.assetClass != AssetClass.fundo) {
+      return;
+    }
 
     if (_type.needsTransferDestination) {
       if (_custodia?.id == null ||
@@ -163,7 +187,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     // Taxa só em compra/venda; vazia = sem taxa, negativa ou inválida bloqueia.
     final feeText = _feeController.text.trim().replaceAll(',', '.');
     double? fee;
-    if (needsUnitPrice && feeText.isNotEmpty) {
+    if (_showFee && feeText.isNotEmpty) {
       fee = double.tryParse(feeText);
       if (fee == null || !fee.isFinite || fee < 0) return;
     }
@@ -245,7 +269,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     final needsUnitPrice = _type.needsUnitPrice;
     final needsTransferDestination = _type.needsTransferDestination;
     final autoTotal = needsQuantity && needsUnitPrice;
-    final blockedByMissingAsset = needsAsset && _assets.isEmpty;
+    final blockedByMissingAsset = needsAsset && _eligibleAssets.isEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -263,18 +287,24 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   .map((t) => DropdownMenuItem(value: t, child: Text(t.label)))
                   .toList(),
               onChanged: (value) {
-                if (value != null) setState(() => _type = value);
+                if (value != null) _onTypeChanged(value);
               },
             ),
             const SizedBox(height: 16),
             if (blockedByMissingAsset)
-              const Text('Cadastre um ativo primeiro, na aba Portfolio.')
+              Text(
+                _type == TransactionType.comeCotas
+                    ? 'Cadastre um ativo da classe Fundo primeiro.'
+                    : 'Cadastre um ativo primeiro, na aba Portfolio.',
+              )
             else ...[
               if (needsAsset) ...[
                 DropdownButtonFormField<Asset>(
+                  // Recria ao trocar o tipo: a lista de ativos muda.
+                  key: ValueKey(_type == TransactionType.comeCotas),
                   initialValue: _selectedAsset,
                   decoration: const InputDecoration(labelText: 'Ativo'),
-                  items: _assets
+                  items: _eligibleAssets
                       .map(
                         (a) => DropdownMenuItem(
                           value: a,
@@ -355,21 +385,25 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
-                    labelText: 'Preço unitário',
+                  decoration: InputDecoration(
+                    labelText: _type == TransactionType.comeCotas
+                        ? 'Valor da cota'
+                        : 'Preço unitário',
                   ),
                 ),
                 const SizedBox(height: 16),
-                TextField(
-                  controller: _feeController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                if (_showFee) ...[
+                  TextField(
+                    controller: _feeController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Taxa (opcional)',
+                    ),
                   ),
-                  decoration: const InputDecoration(
-                    labelText: 'Taxa (opcional)',
-                  ),
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
+                ],
               ],
               if (autoTotal)
                 Text('Total: ${_computedTotal.toStringAsFixed(2)}')

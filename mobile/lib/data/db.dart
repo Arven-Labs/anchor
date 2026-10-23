@@ -26,7 +26,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -95,6 +95,7 @@ class AppDatabase {
             created_at TEXT NOT NULL
           )
         ''');
+        await _createFundTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -209,7 +210,33 @@ class AppDatabase {
             'ALTER TABLE portfolio_transactions ADD COLUMN foreign_tax_withheld REAL',
           );
         }
+        if (oldVersion < 9) {
+          // Fundos: tipo do fundo e valor da cota por data.
+          await _createFundTables(db);
+        }
       },
     );
+  }
+
+  /// Tipo tributário do fundo e valores de cota lançados (mesmas tabelas do
+  /// desktop; `source` já prevê a leitura da CVM, que o mobile ainda não faz).
+  static Future<void> _createFundTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE fund_details (
+        asset_id INTEGER PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+        term TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE fund_quota_values (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        quota_date TEXT NOT NULL,
+        value REAL NOT NULL,
+        source TEXT NOT NULL DEFAULT 'manual',
+        notes TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 }

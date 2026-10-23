@@ -2,12 +2,14 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 
 import '../data/db.dart';
 import '../models/asset.dart';
 import '../models/asset_attachment.dart';
 import '../models/asset_valuation.dart';
 import '../models/custodia.dart';
+import '../models/fund.dart';
 import '../models/portfolio_transaction.dart';
 import '../models/position.dart';
 
@@ -118,6 +120,105 @@ class PortfolioRepository {
   Future<void> deleteAssetValuation(int id) async {
     final db = await AppDatabase.instance();
     await db.delete('asset_valuations', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Tipo tributário do fundo; `null` enquanto o usuário não escolheu.
+  Future<FundTerm?> getFundTerm(int assetId) async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query(
+      'fund_details',
+      where: 'asset_id = ?',
+      whereArgs: [assetId],
+    );
+    return rows.isEmpty ? null : FundTerm.parse(rows.first['term'] as String?);
+  }
+
+  Future<void> setFundTerm(int assetId, FundTerm term) async {
+    final db = await AppDatabase.instance();
+    await db.insert('fund_details', {
+      'asset_id': assetId,
+      'term': term.value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Tipo de todos os fundos que já têm um, por id do ativo.
+  Future<Map<int, FundTerm>> listFundTerms() async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query('fund_details');
+    final terms = <int, FundTerm>{};
+    for (final row in rows) {
+      final term = FundTerm.parse(row['term'] as String?);
+      if (term != null) terms[row['asset_id'] as int] = term;
+    }
+    return terms;
+  }
+
+  /// Uma data tem um valor só: lançar de novo na mesma data corrige o anterior.
+  Future<void> setFundQuota({
+    required int assetId,
+    required DateTime date,
+    required double value,
+    String? notes,
+  }) async {
+    final db = await AppDatabase.instance();
+    final quota = FundQuota(
+      assetId: assetId,
+      date: date,
+      value: value,
+      notes: notes,
+      createdAt: DateTime.now(),
+    );
+    final map = quota.toMap()..remove('id');
+    await db.transaction((txn) async {
+      await txn.delete(
+        'fund_quota_values',
+        where: 'asset_id = ? AND quota_date = ?',
+        whereArgs: [assetId, map['quota_date']],
+      );
+      await txn.insert('fund_quota_values', map);
+    });
+  }
+
+  Future<List<FundQuota>> listFundQuotas(int assetId) async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query(
+      'fund_quota_values',
+      where: 'asset_id = ?',
+      whereArgs: [assetId],
+      orderBy: 'quota_date DESC',
+    );
+    return rows.map(FundQuota.fromMap).toList();
+  }
+
+  Future<List<FundQuota>> listAllFundQuotas() async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query('fund_quota_values');
+    return rows.map(FundQuota.fromMap).toList();
+  }
+
+  /// Última cota lançada — o "preço atual" da posição de fundo. Data futura não
+  /// conta (mesma regra da estimativa do come-cotas).
+  Future<FundQuota?> getLatestFundQuota(int assetId, {DateTime? today}) async {
+    final db = await AppDatabase.instance();
+    final now = today ?? DateTime.now();
+    final rows = await db.query(
+      'fund_quota_values',
+      where: 'asset_id = ? AND quota_date <= ?',
+      whereArgs: [
+        assetId,
+        '${now.year.toString().padLeft(4, '0')}-'
+            '${now.month.toString().padLeft(2, '0')}-'
+            '${now.day.toString().padLeft(2, '0')}',
+      ],
+      orderBy: 'quota_date DESC',
+      limit: 1,
+    );
+    return rows.isEmpty ? null : FundQuota.fromMap(rows.first);
+  }
+
+  Future<void> deleteFundQuota(int id) async {
+    final db = await AppDatabase.instance();
+    await db.delete('fund_quota_values', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<List<AssetAttachment>> listAssetAttachments(int assetId) async {
@@ -334,6 +435,9 @@ class PortfolioRepository {
             custodiaQty[tx.custodiaId] =
                 (custodiaQty[tx.custodiaId] ?? 0) + tx.quantity!;
           case TransactionType.venda:
+          // O come-cotas tira cotas como uma venda e não mexe no preço médio
+          // (mesma regra do desktop).
+          case TransactionType.comeCotas:
             netQuantity -= tx.quantity!;
             custodiaQty[tx.custodiaId] =
                 (custodiaQty[tx.custodiaId] ?? 0) - tx.quantity!;

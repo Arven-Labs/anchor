@@ -13,6 +13,7 @@ import 'crypto_swap_screen.dart';
 import 'crypto_tax_screen.dart';
 import 'custodias_screen.dart';
 import 'foreign_tax_screen.dart';
+import 'fund_tax_screen.dart';
 import 'manual_asset_details_screen.dart';
 import 'transaction_history_screen.dart';
 
@@ -103,6 +104,15 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
           return _PositionRow(position, latest?.value);
         }
 
+        // `fundo`: sem cotação automática; o "preço atual" é a última cota
+        // lançada à mão (aba de IR de fundos).
+        if (assetClass == AssetClass.fundo) {
+          final latest = await _repository.getLatestFundQuota(
+            position.asset.id!,
+          );
+          return _PositionRow(position, latest?.value);
+        }
+
         // `empresaNaoListada`: o valor de participação já é o total da
         // posição (percentual × valuation da empresa), não um preço por
         // unidade — não entra na conta quantidade×preço, aparece como linha
@@ -167,6 +177,14 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     ).push(MaterialPageRoute(builder: (_) => const ForeignTaxScreen()));
   }
 
+  Future<void> _openFundTax() async {
+    // Volta recarregando: as cotas lançadas lá mudam o preço das posições.
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const FundTaxScreen()));
+    _load();
+  }
+
   Future<void> _openCryptoSwap() async {
     final saved = await Navigator.of(
       context,
@@ -207,6 +225,12 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               icon: const Icon(Icons.public),
               tooltip: 'IR de exterior',
               onPressed: _openForeignTax,
+            ),
+          if (_rows.any((r) => r.position.asset.assetClass == AssetClass.fundo))
+            IconButton(
+              icon: const Icon(Icons.savings),
+              tooltip: 'IR de fundos',
+              onPressed: _openFundTax,
             ),
           // Permuta só faz sentido com duas criptos cadastradas (como no desktop).
           if (_rows

@@ -69,3 +69,13 @@ DateTime darfDueDate(int year, int month) {
   }
   return day;
 }
+
+/// Último dia útil do mês (`year`, `month`), em UTC. Porta de `last_business_day`
+/// do desktop; usado na data do come-cotas dos fundos.
+DateTime lastBusinessDay(int year, int month) {
+  var day = DateTime.utc(year, month + 1, 0);
+  while (!isBusinessDay(day)) {
+    day = day.subtract(const Duration(days: 1));
+  }
+  return day;
+}

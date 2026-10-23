@@ -38,10 +38,12 @@ class QuoteDispatcher {
       case AssetClass.rendaFixa:
       case AssetClass.imovel:
       case AssetClass.empresaNaoListada:
-        // Sem fonte automática — nem o desktop tem cotação pra essas 4
+      case AssetClass.fundo:
+        // Sem fonte automática — nem o desktop tem cotação pra essas 5
         // classes (`AssetClassMeta.hasAutoQuote`). Quem quiser "preço
         // atual" de `imovel` usa `PortfolioRepository.getLatestValuation`
-        // direto, fora do dispatcher.
+        // direto, e o de `fundo` a última cota lançada
+        // (`getLatestFundQuota`), fora do dispatcher.
         throw QuoteNotFoundException(ticker);
     }
   }

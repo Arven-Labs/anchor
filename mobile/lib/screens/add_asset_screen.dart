@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/asset.dart';
+import '../models/fund.dart';
 import '../services/portfolio_repository.dart';
 import '../services/quote_dispatcher.dart';
 import '../services/quote_exceptions.dart';
@@ -22,6 +23,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   final _repository = PortfolioRepository();
 
   AssetClass _assetClass = AssetClass.acaoBr;
+  FundTerm? _fundTerm;
   String _currency = AssetClass.acaoBr.defaultCurrency;
   String? _externalId;
   bool _searching = false;
@@ -106,7 +108,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
     setState(() => _saving = true);
 
-    await _repository.insertAsset(
+    final assetId = await _repository.insertAsset(
       Asset(
         ticker: ticker,
         name: name,
@@ -125,6 +127,10 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             : null,
       ),
     );
+    final fundTerm = _fundTerm;
+    if (_assetClass == AssetClass.fundo && fundTerm != null) {
+      await _repository.setFundTerm(assetId, fundTerm);
+    }
 
     if (mounted) Navigator.of(context).pop(true);
   }
@@ -194,6 +200,19 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
                 if (value != null) _onAssetClassChanged(value);
               },
             ),
+            if (_assetClass == AssetClass.fundo) ...[
+              const SizedBox(height: 16),
+              DropdownButtonFormField<FundTerm>(
+                initialValue: _fundTerm,
+                decoration: const InputDecoration(
+                  labelText: 'Tipo do fundo (para o come-cotas)',
+                ),
+                items: FundTerm.values
+                    .map((t) => DropdownMenuItem(value: t, child: Text(t.label)))
+                    .toList(),
+                onChanged: (value) => setState(() => _fundTerm = value),
+              ),
+            ],
             if (_assetClass == AssetClass.empresaNaoListada) ...[
               const SizedBox(height: 16),
               Text(

@@ -26,7 +26,8 @@ enum AssetClass {
   tesouroDireto('tesouro_direto', 'Tesouro Direto'),
   rendaFixa('renda_fixa', 'Renda Fixa'),
   imovel('imovel', 'Imóvel'),
-  empresaNaoListada('empresa_nao_listada', 'Empresa não listada');
+  empresaNaoListada('empresa_nao_listada', 'Empresa não listada'),
+  fundo('fundo', 'Fundo');
 
   final String value;
   final String label;
@@ -71,6 +72,8 @@ extension AssetClassMeta on AssetClass {
         return 'Apto Centro';
       case AssetClass.empresaNaoListada:
         return 'Empresa XYZ';
+      case AssetClass.fundo:
+        return 'Fundo XYZ FIC FIM';
     }
   }
 
@@ -85,6 +88,7 @@ extension AssetClassMeta on AssetClass {
       case AssetClass.rendaFixa:
       case AssetClass.imovel:
       case AssetClass.empresaNaoListada:
+      case AssetClass.fundo:
         return 'BRL';
       case AssetClass.acaoInternacional:
       case AssetClass.reit:
@@ -108,6 +112,7 @@ extension AssetClassMeta on AssetClass {
       case AssetClass.rendaFixa:
       case AssetClass.imovel:
       case AssetClass.empresaNaoListada:
+      case AssetClass.fundo:
         return false;
       default:
         return true;

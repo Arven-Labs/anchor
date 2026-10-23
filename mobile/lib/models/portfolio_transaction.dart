@@ -1,4 +1,4 @@
-/// Os 6 tipos do desktop. Valores string iguais ao desktop
+/// Os tipos do desktop que o mobile usa. Valores string iguais ao desktop
 /// (`desktop/src/portfolio/types.ts`).
 enum TransactionType {
   compra('compra', 'Compra'),
@@ -6,7 +6,11 @@ enum TransactionType {
   aporte('aporte', 'Aporte'),
   retirada('retirada', 'Retirada'),
   provento('provento', 'Provento'),
-  transferencia('transferencia', 'Transferência');
+  transferencia('transferencia', 'Transferência'),
+
+  /// Desconto real do come-cotas de um fundo: cotas retiradas, valor da cota do dia e
+  /// total = imposto em reais. Só vale para ativo `fundo`, sem taxa e sem caixa.
+  comeCotas('come_cotas', 'Come-cotas');
 
   final String value;
   final String label;
@@ -32,10 +36,13 @@ extension TransactionTypeMeta on TransactionType {
   bool get needsQuantity =>
       this == TransactionType.compra ||
       this == TransactionType.venda ||
-      this == TransactionType.transferencia;
+      this == TransactionType.transferencia ||
+      this == TransactionType.comeCotas;
 
   bool get needsUnitPrice =>
-      this == TransactionType.compra || this == TransactionType.venda;
+      this == TransactionType.compra ||
+      this == TransactionType.venda ||
+      this == TransactionType.comeCotas;
 
   bool get needsTransferDestination => this == TransactionType.transferencia;
 }
