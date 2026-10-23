@@ -407,6 +407,10 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
       (text) => text.includes("CVM") && text.includes("Latest quota from the CVM daily report"),
       "com o CNPJ e uma cota da CVM, a tela deveria mostrar o selo CVM e a data da última cota",
     );
+    await browser.waitUntil(async () => (await byId("fund-cnpj-FUNDOX").getValue()) === "00.017.024/0001-53", {
+      timeout: 20_000,
+      timeoutMsg: "o campo do CNPJ deveria mostrar o CNPJ gravado do fundo",
+    });
     await byId("come-cotas-card").scrollIntoView({ block: "center" });
     await snap("taxes-fund-cvm");
   });

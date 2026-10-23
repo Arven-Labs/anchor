@@ -413,7 +413,8 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
                 </div>
               </div>
 
-              <CvmSource fund={fund} onChanged={cvmChanged} />
+              {/* A chave segue o CNPJ gravado: o campo é estado local e remonta com o valor que chegou do banco. */}
+              <CvmSource key={`${fund.asset_id}:${fund.cnpj ?? ""}`} fund={fund} onChanged={cvmChanged} />
 
               {estimate && (
                 <div data-testid={`come-cotas-estimate-${fund.ticker}`}>
