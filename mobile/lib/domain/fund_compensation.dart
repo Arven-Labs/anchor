@@ -27,7 +27,11 @@
 //   tinha saldo de perdas de datas estritamente anteriores: o saldo mostrado pode estar
 //   acima do real. Valor informado acima do saldo também avisa (`informed` com o
 //   valor). Valor informado dentro do saldo, inclusive 0, não avisa.
-// - O crédito não tem validade modelada (as fontes divergem sobre o prazo).
+// - O crédito não tem validade. O art. 15 §2 da IN 1.585 manda a administradora guardar
+//   o registro das perdas até o fim do ano seguinte ao resgate total em todos os fundos
+//   dela, mas isso é garantia mínima de guarda e não limita o direito de compensar
+//   (Solução de Consulta Cosit 38/2016, sobre o mesmo parágrafo da IN anterior). O app
+//   só avisa (`recordNotes`).
 
 import '../models/fund.dart';
 import 'come_cotas.dart';
@@ -128,6 +132,101 @@ class CompensationResult {
     required this.credits,
     this.notes = const [],
   });
+}
+
+/// Um fundo visto pelo aviso de guarda do registro: com ou sem tipo, porque o art. 15
+/// §2 fala de todos os fundos da mesma instituição.
+class RecordFund {
+  final String? administrator;
+
+  /// Cotas em aberto.
+  final double quantity;
+
+  /// Data do último resgate (venda) do fundo.
+  final DateTime? lastSell;
+
+  const RecordFund({
+    required this.administrator,
+    required this.quantity,
+    required this.lastSell,
+  });
+}
+
+/// Aviso de uma administradora de onde o usuário saiu por completo com saldo de crédito
+/// de prejuízo: o registro só tem guarda garantida até o fim do ano seguinte ao resgate
+/// total (IN RFB 1.585/2015, art. 15 §2). Não limita o direito de compensar (Solução de
+/// Consulta Cosit 38/2016): é só um aviso, nenhum número muda.
+class RecordNote {
+  /// A administradora como o usuário escreveu (a do primeiro fundo dela).
+  final String administrator;
+
+  /// Data do último resgate entre os fundos dela.
+  final DateTime redeemedOn;
+
+  /// 31/12 do ano seguinte ao do resgate total.
+  final DateTime guaranteedUntil;
+
+  /// A garantia de guarda já terminou na data de hoje.
+  final bool expired;
+
+  /// Saldo de crédito dos grupos dessa administradora (todos os tipos), em BRL.
+  final double balance;
+
+  const RecordNote({
+    required this.administrator,
+    required this.redeemedOn,
+    required this.guaranteedUntil,
+    required this.expired,
+    required this.balance,
+  });
+}
+
+/// Um aviso por administradora em que todos os fundos lançados estão zerados, houve
+/// resgate e sobrou saldo de crédito. Fundo sem administradora não agrupa e não entra.
+/// [credits] é o saldo já compensado ([compensate]).
+List<RecordNote> recordNotes(
+  List<RecordFund> funds,
+  List<LossCredit> credits,
+  DateTime today,
+) {
+  // administradora normalizada -> nome escrito, todos zerados, último resgate
+  final names = <String, String>{};
+  final allClosed = <String, bool>{};
+  final lastSells = <String, DateTime?>{};
+  for (final fund in funds) {
+    final key = normalizeAdministrator(fund.administrator);
+    if (key == null) continue;
+    names.putIfAbsent(key, () => collapseAdministrator(fund.administrator)!);
+    allClosed[key] = (allClosed[key] ?? true) && fund.quantity.abs() <= costEps;
+    final sell = fund.lastSell;
+    final current = lastSells[key];
+    if (sell != null && (current == null || sell.isAfter(current))) {
+      lastSells[key] = sell;
+    } else {
+      lastSells.putIfAbsent(key, () => null);
+    }
+  }
+  final notes = <RecordNote>[];
+  final keys = names.keys.toList()..sort();
+  for (final key in keys) {
+    final redeemedOn = lastSells[key];
+    if (redeemedOn == null || allClosed[key] != true) continue;
+    final balance = credits
+        .where((c) => normalizeAdministrator(c.administrator) == key)
+        .fold<double>(0, (sum, c) => sum + c.amount);
+    if (balance <= costEps) continue;
+    final guaranteedUntil = DateTime.utc(redeemedOn.year + 1, 12, 31);
+    notes.add(
+      RecordNote(
+        administrator: names[key]!,
+        redeemedOn: redeemedOn,
+        guaranteedUntil: guaranteedUntil,
+        expired: today.isAfter(guaranteedUntil),
+        balance: balance,
+      ),
+    );
+  }
+  return notes;
 }
 
 /// Administradora sem espaços sobrando e em minúsculas; vazia vira `null`.

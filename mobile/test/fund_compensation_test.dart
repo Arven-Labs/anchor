@@ -249,6 +249,90 @@ void main() {
     expect(result.credits.single.amount, closeTo(92.5, 1e-6));
   });
 
+  group('guarda do registro (art. 15 §2)', () {
+    LossCredit credit(String? admin, FundTerm term, double amount) => LossCredit(
+      administrator: admin,
+      term: term,
+      tickers: const ['X'],
+      assetIds: const [1],
+      amount: amount,
+    );
+
+    RecordFund recordFund(String? admin, double quantity, String? lastSell) =>
+        RecordFund(
+          administrator: admin,
+          quantity: quantity,
+          lastSell: lastSell == null ? null : d(lastSell),
+        );
+
+    test('sair com saldo avisa; a guarda vai até 31/12 do ano seguinte, somando os tipos', () {
+      // resgate total em 15/11/2025 e saldo de 80 + 20 (longo e curto prazo da mesma
+      // administradora): um aviso, guarda até 31/12/2026, ainda não terminada em
+      // 22/10/2026
+      final notes = recordNotes(
+        [
+          recordFund('XP', 0, '2025-06-01'),
+          recordFund(' xp ', 0, '2025-11-15'),
+        ],
+        [
+          credit('XP', FundTerm.longTerm, 80),
+          credit('XP', FundTerm.shortTerm, 20),
+        ],
+        d('2026-10-22'),
+      );
+      expect(notes, hasLength(1));
+      expect(notes.single.redeemedOn, d('2025-11-15'));
+      expect(notes.single.guaranteedUntil, DateTime.utc(2026, 12, 31));
+      expect(notes.single.expired, isFalse);
+      expect(notes.single.balance, closeTo(100, 1e-6));
+      expect(notes.single.administrator, 'XP');
+    });
+
+    test('a garantia termina depois do último dia do ano seguinte', () {
+      final funds = [recordFund('XP', 0, '2025-12-31')];
+      final credits = [credit('XP', FundTerm.longTerm, 10)];
+      expect(recordNotes(funds, credits, d('2026-12-31')).single.expired, isFalse);
+      expect(recordNotes(funds, credits, d('2027-01-01')).single.expired, isTrue);
+    });
+
+    test('sem aviso com cotas em aberto, sem saldo ou sem resgate', () {
+      final credits = [credit('XP', FundTerm.longTerm, 10)];
+      expect(
+        recordNotes(
+          [recordFund('XP', 0, '2025-06-01'), recordFund('XP', 5, null)],
+          credits,
+          d('2026-10-22'),
+        ),
+        isEmpty,
+      );
+      expect(
+        recordNotes([recordFund('XP', 0, '2025-06-01')], const [], d('2026-10-22')),
+        isEmpty,
+      );
+      expect(
+        recordNotes([recordFund('XP', 0, null)], credits, d('2026-10-22')),
+        isEmpty,
+      );
+    });
+
+    test('administradoras são independentes e fundo sem administradora não entra', () {
+      final notes = recordNotes(
+        [
+          recordFund('XP', 0, '2025-06-01'),
+          recordFund('Itaú', 3, '2025-06-01'),
+          recordFund(null, 0, '2025-06-01'),
+        ],
+        [
+          credit('XP', FundTerm.longTerm, 10),
+          credit('Itaú', FundTerm.longTerm, 10),
+          credit(null, FundTerm.longTerm, 10),
+        ],
+        d('2026-10-22'),
+      );
+      expect(notes.map((n) => n.administrator), ['XP']);
+    });
+  });
+
   test('sem prejuízo nada muda', () {
     final result = compensate([
       winner(1, 'XPTO11', FundTerm.longTerm, 'XP', '2025-09-01'),

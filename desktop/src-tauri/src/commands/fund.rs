@@ -16,7 +16,9 @@ use crate::commands::tax::{load_rule_set, workspace_portfolio_ids};
 use crate::commands::transaction::{cost_events, AMORTIZATION, COME_COTAS};
 use crate::domain::cost_basis;
 use crate::domain::tax::come_cotas::{self, ComeCotasEstimate, FundHolding, FundTerm, QuotaValue};
-use crate::domain::tax::fund_compensation::{self, CompFund, ComeCotasMark, CreditNote, LossCredit};
+use crate::domain::tax::fund_compensation::{
+    self, CompFund, ComeCotasMark, CreditNote, LossCredit, RecordFund, RecordNote,
+};
 use crate::domain::tax::fund_redemption::{self, EstoqueEstimate, FundEvent, FundEventKind, RedemptionEstimate};
 use crate::domain::tax::rules;
 use crate::entity::{assets, fund_detail, fund_quota_value, transactions};
@@ -83,6 +85,9 @@ pub struct FundsOverview {
     pub estimates: Vec<ComeCotasEstimate>,
     /// Prejuízo a compensar que sobrou em cada grupo (mesma administradora e mesmo tipo), depois dos resgates.
     pub loss_credits: Vec<LossCredit>,
+    /// Administradoras de onde o usuário saiu por completo com saldo de crédito: a guarda do registro vai até o fim do ano
+    /// seguinte (só aviso).
+    pub record_notes: Vec<RecordNote>,
 }
 
 #[derive(Deserialize)]
@@ -319,7 +324,12 @@ pub async fn funds_overview_with(
         .all(db)
         .await?;
     if fund_assets.is_empty() {
-        return Ok(FundsOverview { funds: Vec::new(), estimates: Vec::new(), loss_credits: Vec::new() });
+        return Ok(FundsOverview {
+            funds: Vec::new(),
+            estimates: Vec::new(),
+            loss_credits: Vec::new(),
+            record_notes: Vec::new(),
+        });
     }
     let ids: Vec<i32> = fund_assets.iter().map(|a| a.id).collect();
 
@@ -350,8 +360,17 @@ pub async fn funds_overview_with(
     let rules = load_rule_set(db).await?;
     let mut funds = Vec::with_capacity(fund_assets.len());
     let mut holdings = Vec::with_capacity(fund_assets.len());
+    let mut last_sells: HashMap<i32, NaiveDate> = HashMap::new();
     for asset in &fund_assets {
         let asset_txs: Vec<&transactions::Model> = txs.iter().filter(|t| t.asset_id == Some(asset.id)).collect();
+        if let Some(date) = asset_txs
+            .iter()
+            .filter(|t| t.transaction_type == SELL)
+            .filter_map(|t| NaiveDate::parse_from_str(&t.transaction_date, "%Y-%m-%d").ok())
+            .max()
+        {
+            last_sells.insert(asset.id, date);
+        }
         let state = cost_basis::replay(&cost_events(&asset_txs)?, &cost_basis::native_rate)
             .expect("a taxa nativa sempre existe");
         let first_buy = asset_txs
@@ -497,9 +516,19 @@ pub async fn funds_overview_with(
             fund.credit_notes.push(note);
         }
     }
+    let record_funds: Vec<RecordFund<'_>> = funds
+        .iter()
+        .map(|f| RecordFund {
+            administrator: f.administrator.as_deref(),
+            quantity: f.quantity,
+            last_sell: last_sells.get(&f.asset_id).copied(),
+        })
+        .collect();
+    let record_notes = fund_compensation::record_notes(&record_funds, &loss_credits, today);
+    drop(record_funds);
     let mut estimates = come_cotas::estimate(&holdings, &rules, today)?;
     fund_compensation::apply_loss_credit(&mut estimates, &loss_credits);
-    Ok(FundsOverview { funds, estimates, loss_credits })
+    Ok(FundsOverview { funds, estimates, loss_credits, record_notes })
 }
 
 #[tauri::command]

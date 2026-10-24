@@ -20,11 +20,13 @@
 //   a administradora abateu e só avisa (`CreditNote`, `informed = None`) quando o grupo tinha saldo de perdas de datas
 //   estritamente anteriores: o saldo mostrado pode estar acima do real. Valor informado acima do saldo também avisa
 //   (`informed = Some`). Valor informado dentro do saldo, inclusive 0, não avisa.
-// - O crédito não tem validade modelada (as fontes divergem sobre o prazo).
+// - O crédito não tem validade. O art. 15 §2 da IN 1.585 manda a administradora guardar o registro das perdas até o fim do
+//   ano seguinte ao resgate total em todos os fundos dela, mas isso é garantia mínima de guarda e não limita o direito de
+//   compensar (Solução de Consulta Cosit 38/2016, sobre o mesmo parágrafo da IN anterior). O app só avisa (`record_notes`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use serde::Serialize;
 
 use super::come_cotas::{ComeCotasEstimate, EstimateStatus, FundTerm};
@@ -210,6 +212,63 @@ pub fn compensate_with_notes(funds: &mut [CompFund<'_>]) -> (Vec<LossCredit>, Ve
         })
         .collect();
     (credits, notes)
+}
+
+/// Um fundo do Workspace visto pelo aviso de guarda do registro: com ou sem tipo, porque o art. 15 §2 fala de todos os
+/// fundos da mesma instituição.
+pub struct RecordFund<'a> {
+    pub administrator: Option<&'a str>,
+    /// Cotas em aberto.
+    pub quantity: f64,
+    /// Data do último resgate (venda) do fundo.
+    pub last_sell: Option<NaiveDate>,
+}
+
+/// Aviso de uma administradora de onde o usuário saiu por completo com saldo de crédito de prejuízo: o registro só tem
+/// guarda garantida até o fim do ano seguinte ao resgate total (IN RFB 1.585/2015, art. 15 §2). Não limita o direito de
+/// compensar (Solução de Consulta Cosit 38/2016): é só um aviso, nenhum número muda.
+#[derive(Clone, Debug, Serialize)]
+pub struct RecordNote {
+    /// A administradora como o usuário escreveu (a do primeiro fundo dela).
+    pub administrator: String,
+    /// Data do último resgate entre os fundos dela.
+    pub redeemed_on: NaiveDate,
+    /// 31/12 do ano seguinte ao do resgate total.
+    pub guaranteed_until: NaiveDate,
+    /// A garantia de guarda já terminou em `today`.
+    pub expired: bool,
+    /// Saldo de crédito dos grupos dessa administradora (todos os tipos), em BRL.
+    pub balance: f64,
+}
+
+/// Um aviso por administradora em que todos os fundos lançados estão zerados, houve resgate e sobrou saldo de crédito.
+/// Fundo sem administradora não agrupa e não entra. `credits` é o saldo já compensado (`compensate_with_notes`).
+pub fn record_notes(funds: &[RecordFund<'_>], credits: &[LossCredit], today: NaiveDate) -> Vec<RecordNote> {
+    // administradora normalizada -> (nome escrito, todos zerados, último resgate)
+    let mut by_admin: BTreeMap<String, (String, bool, Option<NaiveDate>)> = BTreeMap::new();
+    for fund in funds {
+        let Some(key) = normalize_administrator(fund.administrator) else { continue };
+        let name = fund.administrator.map(|a| a.split_whitespace().collect::<Vec<_>>().join(" ")).unwrap_or_default();
+        let entry = by_admin.entry(key).or_insert((name, true, None));
+        entry.1 &= fund.quantity.abs() <= EPS;
+        entry.2 = entry.2.max(fund.last_sell);
+    }
+    by_admin
+        .into_iter()
+        .filter_map(|(key, (administrator, all_closed, last_sell))| {
+            let redeemed_on = last_sell.filter(|_| all_closed)?;
+            let balance: f64 = credits
+                .iter()
+                .filter(|c| normalize_administrator(c.administrator.as_deref()).as_deref() == Some(key.as_str()))
+                .map(|c| c.amount)
+                .sum();
+            if balance <= EPS {
+                return None;
+            }
+            let guaranteed_until = NaiveDate::from_ymd_opt(redeemed_on.year() + 1, 12, 31)?;
+            Some(RecordNote { administrator, redeemed_on, guaranteed_until, expired: today > guaranteed_until, balance })
+        })
+        .collect()
 }
 
 /// Abate o ganho das estimativas de come-cotas com o saldo dos grupos em `credits`. Estimativas sem imposto, sem
@@ -573,6 +632,71 @@ mod tests {
         assert_eq!(normalize_administrator(Some("  XP   Investimentos ")), Some("xp investimentos".to_string()));
         assert_eq!(normalize_administrator(Some("   ")), None);
         assert_eq!(normalize_administrator(None), None);
+    }
+
+    fn credit(administrator: Option<&str>, term: FundTerm, amount: f64) -> LossCredit {
+        LossCredit {
+            administrator: administrator.map(str::to_string),
+            term,
+            tickers: vec!["X".to_string()],
+            asset_ids: vec![1],
+            amount,
+        }
+    }
+
+    fn record_fund<'a>(administrator: Option<&'a str>, quantity: f64, last_sell: Option<&str>) -> RecordFund<'a> {
+        RecordFund { administrator, quantity, last_sell: last_sell.map(d) }
+    }
+
+    #[test]
+    fn leaving_an_administrator_with_a_balance_warns_with_the_guarantee_until_the_end_of_the_next_year() {
+        // resgate total em 15/11/2025 e saldo de 80 + 20 (longo e curto prazo da mesma administradora): um aviso, guarda
+        // até 31/12/2026, ainda não terminada em 22/10/2026
+        let funds = [record_fund(Some("XP"), 0.0, Some("2025-06-01")), record_fund(Some(" xp "), 0.0, Some("2025-11-15"))];
+        let credits = [credit(Some("XP"), FundTerm::LongTerm, 80.0), credit(Some("XP"), FundTerm::ShortTerm, 20.0)];
+        let notes = record_notes(&funds, &credits, d("2026-10-22"));
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        let n = &notes[0];
+        assert_eq!((n.redeemed_on, n.guaranteed_until, n.expired), (d("2025-11-15"), d("2026-12-31"), false));
+        assert!(close(n.balance, 100.0) && n.administrator == "XP", "{n:?}");
+    }
+
+    #[test]
+    fn the_guarantee_ends_after_the_last_day_of_the_next_year() {
+        let funds = [record_fund(Some("XP"), 0.0, Some("2025-12-31"))];
+        let credits = [credit(Some("XP"), FundTerm::LongTerm, 10.0)];
+        // resgate em 31/12/2025: a guarda vai até 31/12/2026 (o ano de 2026 inteiro), e 01/01/2027 já passou
+        assert!(!record_notes(&funds, &credits, d("2026-12-31"))[0].expired);
+        assert!(record_notes(&funds, &credits, d("2027-01-01"))[0].expired);
+    }
+
+    #[test]
+    fn no_warning_while_a_fund_of_the_administrator_still_holds_quotas_or_without_a_balance_or_a_redemption() {
+        let credits = [credit(Some("XP"), FundTerm::LongTerm, 10.0)];
+        let holding_one = [record_fund(Some("XP"), 0.0, Some("2025-06-01")), record_fund(Some("XP"), 5.0, None)];
+        assert!(record_notes(&holding_one, &credits, d("2026-10-22")).is_empty());
+        let closed = [record_fund(Some("XP"), 0.0, Some("2025-06-01"))];
+        assert!(record_notes(&closed, &[], d("2026-10-22")).is_empty(), "sem saldo");
+        let never_sold = [record_fund(Some("XP"), 0.0, None)];
+        assert!(record_notes(&never_sold, &credits, d("2026-10-22")).is_empty(), "sem resgate");
+    }
+
+    #[test]
+    fn administrators_are_independent_and_funds_without_one_are_ignored() {
+        // XP saiu por completo e tem saldo; Itaú ainda tem cotas; o fundo sem administradora não agrupa
+        let funds = [
+            record_fund(Some("XP"), 0.0, Some("2025-06-01")),
+            record_fund(Some("Itaú"), 3.0, Some("2025-06-01")),
+            record_fund(None, 0.0, Some("2025-06-01")),
+        ];
+        let credits = [
+            credit(Some("XP"), FundTerm::LongTerm, 10.0),
+            credit(Some("Itaú"), FundTerm::LongTerm, 10.0),
+            credit(None, FundTerm::LongTerm, 10.0),
+        ];
+        let notes = record_notes(&funds, &credits, d("2026-10-22"));
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert_eq!(notes[0].administrator, "XP");
     }
 
     fn holding(asset_id: i32, ticker: &str, quantity: f64, quota: f64) -> FundHolding {

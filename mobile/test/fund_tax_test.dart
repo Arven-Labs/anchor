@@ -147,6 +147,40 @@ void main() {
       expect(lossCreditText(result.lossCredits.single), contains('sem administradora'));
     });
 
+    test('sair de uma administradora com saldo de perda avisa até quando vai a guarda', () {
+      // A (XP) perde 200 e zera a posição em 01/06/2025; B não tem administradora. O
+      // saldo de 200 fica no grupo XP e a guarda do registro vai até 31/12/2026.
+      final result = twoFunds({1: 'XP'});
+      final note = result.recordNotes.single;
+      expect(note.administrator, 'XP');
+      expect(note.redeemedOn, d('2025-06-01'));
+      expect(note.guaranteedUntil, DateTime.utc(2026, 12, 31));
+      expect(note.expired, isFalse);
+      expect(note.balance, closeTo(200, 1e-6));
+      final text = recordNoteText(note);
+      expect(text, contains('XP'));
+      expect(text, contains('31/12/2026'));
+      expect(text, contains('A lei não limita'));
+
+      // depois de 31/12/2026 a garantia terminou
+      final late = buildFundReports(
+        assets: [fundAsset(1, 'AAA11'), fundAsset(2, 'BBB11')],
+        transactions: transactions,
+        terms: {1: FundTerm.longTerm, 2: FundTerm.longTerm},
+        quotas: const [],
+        today: d('2027-01-05'),
+        administrators: {1: 'XP'},
+      );
+      expect(late.recordNotes.single.expired, isTrue);
+      expect(recordNoteText(late.recordNotes.single), contains('terminou em 31/12/2026'));
+    });
+
+    test('sem saldo de perda, ou sem administradora, não há aviso de guarda', () {
+      // a perda de A foi toda usada pelo ganho de B (mesma administradora): saldo zero
+      expect(twoFunds({1: 'XP', 2: '  xp '}).recordNotes, isEmpty);
+      expect(twoFunds(const {}).recordNotes, isEmpty);
+    });
+
     test('um come-cotas registrado depois da perda do grupo gera o aviso na tela', () {
       // A perde 200 em 01/06/2025. C tem um come-cotas registrado de 5 cotas a 12,00
       // em 30/11/2025 (depois da perda) e outro de 1 cota a 11,00 em 01/05/2025

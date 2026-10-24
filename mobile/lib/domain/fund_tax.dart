@@ -116,7 +116,15 @@ class FundTaxResult {
   final List<FundReport> reports;
   final List<LossCredit> lossCredits;
 
-  const FundTaxResult({required this.reports, required this.lossCredits});
+  /// Administradoras de onde o usuário saiu por completo com saldo de crédito: a guarda
+  /// do registro vai até o fim do ano seguinte (só aviso).
+  final List<RecordNote> recordNotes;
+
+  const FundTaxResult({
+    required this.reports,
+    required this.lossCredits,
+    this.recordNotes = const [],
+  });
 }
 
 /// Valor da cota de uma transação de fundo: o preço unitário (o guard do desktop
@@ -201,6 +209,7 @@ FundTaxResult buildFundReports({
   Map<int, EstoqueOption> estoqueOptions = const {},
 }) {
   final reports = <FundReport>[];
+  final lastSells = <int, DateTime>{};
   for (final asset in assets.where((a) => a.assetClass == AssetClass.fundo)) {
     final id = asset.id;
     if (id == null) continue;
@@ -243,6 +252,8 @@ FundTaxResult buildFundReports({
           );
         case TransactionType.venda:
           position.take(quantity);
+          // As transações vêm em ordem de data: a última venda é a mais recente.
+          lastSells[id] = tx.date;
           events.add(
             FundEvent.redeem(
               date: tx.date,
@@ -372,5 +383,16 @@ FundTaxResult buildFundReports({
             ),
   ];
   applyLossCredit([for (final r in adjusted) r.estimate], result.credits);
-  return FundTaxResult(reports: adjusted, lossCredits: result.credits);
+  return FundTaxResult(
+    reports: adjusted,
+    lossCredits: result.credits,
+    recordNotes: recordNotes([
+      for (final report in adjusted)
+        RecordFund(
+          administrator: report.administrator,
+          quantity: report.quantity,
+          lastSell: lastSells[report.asset.id],
+        ),
+    ], result.credits, today),
+  );
 }

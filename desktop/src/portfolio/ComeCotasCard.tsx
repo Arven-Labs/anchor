@@ -133,7 +133,20 @@ type Estimate = {
   tax_before_compensation: number;
 };
 
-type FundsOverview = { funds: FundRow[]; estimates: Estimate[]; loss_credits: LossCredit[] };
+type RecordNote = {
+  administrator: string;
+  redeemed_on: string;
+  guaranteed_until: string;
+  expired: boolean;
+  balance: number;
+};
+
+type FundsOverview = {
+  funds: FundRow[];
+  estimates: Estimate[];
+  loss_credits: LossCredit[];
+  record_notes: RecordNote[];
+};
 
 const TERM_LABELS: Record<FundTerm, string> = {
   longo_prazo: "Long term (15%)",
@@ -578,6 +591,7 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
   const funds = overviewQuery.data?.funds ?? [];
   const estimates = new Map((overviewQuery.data?.estimates ?? []).map((e) => [e.asset_id, e]));
   const lossCredits = overviewQuery.data?.loss_credits ?? [];
+  const recordNotes = overviewQuery.data?.record_notes ?? [];
   if (funds.length === 0) return null;
 
   function onSubmitQuota(event: FormEvent) {
@@ -603,8 +617,9 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
           another fund of the same type and the same administrator (or broker): give each fund's administrator so Anchor
           can group them; without it a fund only offsets itself. A recorded come-cotas only uses up the credit if you
           fill in the loss credit used in its transaction (Anchor cannot know how much the administrator offset there:
-          without the value it only warns when the come-cotas could have used it) and the credit has no expiry in this
-          estimate. This is an estimate based on secondary sources — confirm with your fund statement.
+          without the value it only warns when the come-cotas could have used it). The credit has no expiry in this
+          estimate: the law only requires the administrator to keep the loss record until the end of the year after you
+          redeem every fund with it, and Anchor warns when that happens. This is an estimate based on secondary sources — confirm with your fund statement.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -633,6 +648,18 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
               <span key={`${credit.administrator ?? ""}:${credit.term}:${credit.tickers.join(",")}`}>
                 <span className="font-medium">{formatBrl(credit.amount)}</span> — {credit.tickers.join(", ")} (
                 {credit.administrator ?? "no administrator"}, {TERM_LABELS[credit.term]})
+              </span>
+            ))}
+          </div>
+        )}
+        {recordNotes.length > 0 && (
+          <div className="flex flex-col gap-1 text-sm text-amber-500" data-testid="fund-record-notes">
+            {recordNotes.map((note) => (
+              <span key={note.administrator} data-testid={`fund-record-note-${note.administrator}`}>
+                All the funds you entered with {note.administrator} were redeemed by {formatDate(note.redeemed_on)}.{" "}
+                {note.expired
+                  ? `The administrator's duty to keep the loss record (${formatBrl(note.balance)}) ended on ${formatDate(note.guaranteed_until)} (IN RFB 1.585, art. 15 §2): check that it still has it before counting on the balance.`
+                  : `The administrator is only required to keep the loss record (${formatBrl(note.balance)}) until ${formatDate(note.guaranteed_until)} (IN RFB 1.585, art. 15 §2). The law does not limit your right to offset it, but check with the administrator.`}
               </span>
             ))}
           </div>

@@ -4807,6 +4807,42 @@ async fn a_fund_redemption_estimates_the_iof_and_the_ir_with_the_come_cotas_cred
 }
 
 #[tokio::test]
+async fn leaving_an_administrator_with_a_loss_balance_warns_until_the_record_guarantee_ends() {
+    use crate::commands::fund::{funds_overview_in, set_fund_administrator_in, set_fund_term_in};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Guarda").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let loser = asset_in(&db, "FUNDOA", "fundo", "BRL").await;
+    let other = asset_in(&db, "FUNDOB", "fundo", "BRL").await;
+    let day = |y, m, d| chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
+
+    // A: 100 cotas a 10,00 resgatadas a 8,00 em 01/06/2025 (perda de 200, saldo 200 do grupo XP/longo prazo)
+    add(&db, tx_request(pf.id, loser.id, "compra", 100.0, 10.0, "2025-01-01", 0.0)).await;
+    add(&db, tx_request(pf.id, loser.id, "venda", 100.0, 8.0, "2025-06-01", 0.0)).await;
+    set_fund_term_in(&db, loser.id, "longo_prazo").await.unwrap();
+    set_fund_administrator_in(&db, loser.id, Some("XP")).await.unwrap();
+
+    // todos os fundos lançados da XP estão zerados: a guarda vai até 31/12/2026 (o ano seguinte ao do resgate)
+    let overview = funds_overview_in(&db, ws.id, day(2026, 10, 22)).await.unwrap();
+    assert_eq!(overview.record_notes.len(), 1, "{:?}", overview.record_notes);
+    let note = &overview.record_notes[0];
+    assert_eq!((note.redeemed_on, note.guaranteed_until, note.expired), (day(2025, 6, 1), day(2026, 12, 31), false));
+    assert!(close(note.balance, 200.0), "{note:?}");
+
+    // depois de 31/12/2026 a garantia terminou
+    let overview = funds_overview_in(&db, ws.id, day(2027, 1, 5)).await.unwrap();
+    assert!(overview.record_notes[0].expired);
+
+    // um segundo fundo da XP, de outro tipo, ainda com cotas: não saiu por completo, sem aviso
+    add(&db, tx_request(pf.id, other.id, "compra", 50.0, 10.0, "2025-02-01", 0.0)).await;
+    set_fund_term_in(&db, other.id, "curto_prazo").await.unwrap();
+    set_fund_administrator_in(&db, other.id, Some(" xp")).await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, day(2026, 10, 22)).await.unwrap();
+    assert!(overview.record_notes.is_empty(), "{:?}", overview.record_notes);
+}
+
+#[tokio::test]
 async fn a_loss_in_one_fund_offsets_the_later_ir_of_another_fund_of_the_same_administrator() {
     use crate::commands::fund::{funds_overview_in, set_fund_administrator_in, set_fund_term_in};
     use crate::error::AppError;

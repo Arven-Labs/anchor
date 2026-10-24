@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/come_cotas.dart';
-import '../domain/fund_compensation.dart' show LossCredit;
+import '../domain/fund_compensation.dart' show LossCredit, RecordNote;
 import '../domain/fund_redemption.dart';
 import '../domain/fund_tax.dart';
 import '../models/fund.dart';
@@ -147,6 +147,26 @@ String lossCreditText(LossCredit credit) =>
     '${formatBrl(credit.amount)} — ${credit.tickers.join(', ')} '
     '(${credit.administrator ?? 'sem administradora'}, ${credit.term.label})';
 
+/// O aviso de guarda do registro das perdas de uma administradora que o usuário
+/// zerou: a lei só obriga a administradora a guardar o registro até o fim do ano
+/// seguinte (IN RFB 1.585, art. 15 §2) e não limita o direito de compensar.
+@visibleForTesting
+String recordNoteText(RecordNote note) {
+  final head =
+      'Todos os fundos que você lançou da administradora ${note.administrator} '
+      'foram resgatados até ${formatDay(note.redeemedOn)}. ';
+  final until = formatDay(note.guaranteedUntil);
+  final balance = formatBrl(note.balance);
+  if (note.expired) {
+    return '$head A obrigação da administradora de guardar o registro das '
+        'perdas ($balance) terminou em $until (IN RFB 1.585, art. 15 §2): '
+        'confira se ela ainda tem o registro antes de contar com o saldo.';
+  }
+  return '$head A administradora só é obrigada a guardar o registro das perdas '
+      '($balance) até $until (IN RFB 1.585, art. 15 §2). A lei não limita o seu '
+      'direito de compensar, mas confira com a administradora.';
+}
+
 /// IR e IOF de fundos (ver `buildFundReports`): cota por data, estimativa do
 /// próximo come-cotas e resgates. Estimativa informativa: o imposto sai na fonte
 /// e o app não guarda pagamento.
@@ -203,6 +223,7 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
   String? _progress;
   List<FundReport> _reports = [];
   List<LossCredit> _lossCredits = [];
+  List<RecordNote> _recordNotes = [];
   Map<int, String> _subclasses = {};
   Map<int, CvmStatus> _statuses = {};
 
@@ -235,6 +256,7 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
     setState(() {
       _reports = result.reports;
       _lossCredits = result.lossCredits;
+      _recordNotes = result.recordNotes;
       _subclasses = subclasses;
       _loading = false;
     });
@@ -403,6 +425,15 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   for (final credit in _lossCredits) Text(lossCreditText(credit)),
+                  const SizedBox(height: 12),
+                ],
+                for (final note in _recordNotes) ...[
+                  Text(
+                    recordNoteText(note),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.orange,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                 ],
                 if (_reports.isEmpty)
