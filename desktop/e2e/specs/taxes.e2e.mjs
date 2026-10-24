@@ -377,8 +377,8 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     );
     await waitForText(
       byId("fund-refundable-FUNDOX"),
-      (text) => text.includes("possibly refundable") && text.includes("PER/DCOMP"),
-      "o excesso de come-cotas deveria aparecer somado como possível restituição",
+      (text) => text.includes("provides no refund") && text.includes("loss to offset later gains"),
+      "o excesso de come-cotas deveria aparecer somado, dizendo que não há restituição e que vira perda a compensar",
     );
     await byId("come-cotas-card").scrollIntoView({ block: "center" });
     await snap("taxes-fund-redemption");

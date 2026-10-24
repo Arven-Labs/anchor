@@ -912,10 +912,10 @@ void main() {
         expect(warnings.first, isNot(contains('não é modelado')));
 
         final text = refundableText(report);
-        expect(text, contains('possivelmente restituível'));
-        expect(text, contains('PER/DCOMP'));
-        expect(text, contains('em até 5 anos'));
-        expect(text, contains('não foi confirmada'));
+        expect(text, contains('não prevê restituição'));
+        expect(text, contains('perda a compensar'));
+        expect(text, contains('IN RFB 1.585/2015, art. 15'));
+        expect(text, isNot(contains('PER/DCOMP')));
       });
 
       test('sem excesso não há frase nem soma', () {

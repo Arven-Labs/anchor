@@ -229,7 +229,7 @@ function RedemptionLine({ redemption, ticker }: { redemption: RedemptionRow; tic
         {redemption.excess_come_cotas > 0 && (
           <span>
             Come-cotas paid above the IR due: {formatBrl(redemption.excess_come_cotas)} (not in the net value; see the
-            refund note above).
+            note above).
           </span>
         )}
         {redemption.loss_credit_used > 0 && (
@@ -741,11 +741,11 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
                   <span className="text-xs text-muted-foreground">Redemptions (estimated IR and IOF)</span>
                   {refundableTotal(fund.redemptions) > 0.005 && (
                     <span className="text-xs" data-testid={`fund-refundable-${fund.ticker}`}>
-                      Come-cotas paid above the IR due, possibly refundable:{" "}
-                      <span className="font-medium">{formatBrl(refundableTotal(fund.redemptions))}</span>. Tax withheld in
-                      excess may be recovered through PER/DCOMP within 5 years of the payment date; this rule was not
-                      confirmed for come-cotas, so check with the fund administrator or an accountant. It is not
-                      included in the net values below.
+                      Come-cotas paid above the IR due:{" "}
+                      <span className="font-medium">{formatBrl(refundableTotal(fund.redemptions))}</span>. The law
+                      provides no refund of this excess (IN RFB 1.585/2015, art. 15; Lei 14.754/2023, art. 17, §6). It
+                      is tax paid on income that later vanished, and it comes back as a loss to offset later gains.
+                      The app does not add it to the loss credit yet, and it is not included in the net values below.
                     </span>
                   )}
                   {[...fund.redemptions].reverse().map((r) => (

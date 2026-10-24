@@ -65,18 +65,19 @@ String estoqueText(FundReport report) {
   }
 }
 
-/// O come-cotas pago acima do IR devido, somado, como possível restituição; vazio sem
-/// excesso. A regra (PER/DCOMP, 5 anos do pagamento) não foi confirmada para o
-/// come-cotas.
+/// O come-cotas pago acima do IR devido, somado; vazio sem excesso. A lei não prevê
+/// restituição (IN RFB 1.585/2015, art. 15; Lei 14.754/2023, art. 17, §6): é imposto
+/// pago sobre rendimento que depois sumiu e volta como perda a compensar.
 @visibleForTesting
 String refundableText(FundReport report) {
   final total = report.refundableComeCotas;
   if (total <= 0.005) return '';
-  return 'Come-cotas pago acima do IR devido, possivelmente restituível: '
-      '${formatBrl(total)}. O imposto retido a maior pode ser pedido por '
-      'PER/DCOMP em até 5 anos da data do pagamento; essa regra não foi '
-      'confirmada para o come-cotas, então confira com a administradora ou um '
-      'contador. Não está incluído nos líquidos.';
+  return 'Come-cotas pago acima do IR devido: ${formatBrl(total)}. A lei não '
+      'prevê restituição desse excesso (IN RFB 1.585/2015, art. 15; Lei '
+      '14.754/2023, art. 17, §6). É imposto pago sobre rendimento que depois '
+      'sumiu, e ele volta como perda a compensar em ganhos posteriores. O app '
+      'ainda não soma isso ao crédito de prejuízo, e o valor não está incluído '
+      'nos líquidos.';
 }
 
 /// Avisos do cartão do fundo, em frases.
@@ -109,7 +110,7 @@ List<String> fundWarnings(FundReport report) {
       if (redemption.excessComeCotas > 0.005)
         'No resgate de ${formatDay(redemption.date)} o come-cotas pago passou '
             'do IR devido em ${formatBrl(redemption.excessComeCotas)}: fica '
-            'fora do líquido (veja a possível restituição).',
+            'fora do líquido (veja a nota sobre o excesso).',
     ],
   ];
 }

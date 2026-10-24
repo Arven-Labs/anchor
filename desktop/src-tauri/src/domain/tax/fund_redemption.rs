@@ -11,7 +11,8 @@
 //   pago abate dele. O come-cotas retira cotas proporcionalmente à quantidade de cada lote aberto (aproximação).
 //   Rendimento nominal = rendimento do resgate + a parte do ganho que os come-cotas do lote já tributaram.
 //   IR = max(0, (nominal − IOF) × alíquota − come-cotas pago); o excesso de come-cotas é só informação
-//   (possível restituição por PER/DCOMP, regra não confirmada): não entra no IR nem no líquido.
+//   (a lei não prevê restituição: juridicamente é perda a compensar, IN 1.585 art. 15; o app ainda não a soma ao crédito):
+//   não entra no IR nem no líquido.
 // - Fundos fechados e exclusivos (Lei 14.754/2023): o art. 17 vale igual para eles. A amortização devolve capital sem tirar
 //   cotas: cada lote devolve a fração `valor ÷ (cota × cotas em carteira)` e é tributado como um resgate dessa fração; o custo
 //   por cota e o ganho já tributado do lote caem nessa fração. Entidades de investimento (art. 18): 15% fixo e sem IOF.
@@ -100,7 +101,8 @@ pub struct RedemptionEstimate {
     pub lots: Vec<LotPart>,
     /// Cotas do resgate sem lote de compra conhecido (o custo está incompleto).
     pub uncovered_quotas: f64,
-    /// Come-cotas pago acima do IR devido: só informação (possível restituição), fora do IR e do líquido.
+    /// Come-cotas pago acima do IR devido: só informação (sem restituição prevista; é perda a compensar), fora do IR e do
+    /// líquido.
     pub excess_come_cotas: f64,
     /// Prejuízo deste resgate: a soma dos lotes com rendimento negativo depois do IOF. É crédito para resgates e
     /// come-cotas posteriores do mesmo grupo (`fund_compensation`).
