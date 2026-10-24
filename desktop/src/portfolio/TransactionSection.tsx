@@ -46,6 +46,8 @@ type CreateTransactionRequest = {
   total_value: number;
   fee: number | null;
   foreign_tax_withheld: number | null;
+  // Dia em que esse imposto foi pago no exterior (AAAA-MM-DD); o crédito usa a PTAX de compra dele. Vazio = o dia do provento.
+  foreign_tax_paid_on: string | null;
   // Só em come_cotas: rendimento, em BRL, que o crédito de prejuízo cobriu nesse desconto (vazio = não informado).
   loss_credit_used: number | null;
   transaction_date: string;
@@ -125,6 +127,7 @@ function TransactionSection({
   const [totalValue, setTotalValue] = useState("");
   const [fee, setFee] = useState("");
   const [foreignTaxWithheld, setForeignTaxWithheld] = useState("");
+  const [foreignTaxPaidOn, setForeignTaxPaidOn] = useState("");
   const [lossCreditUsed, setLossCreditUsed] = useState("");
   const [transactionDate, setTransactionDate] = useState(todayIso());
   const [notes, setNotes] = useState("");
@@ -169,6 +172,7 @@ function TransactionSection({
       setTotalValue("");
       setFee("");
       setForeignTaxWithheld("");
+      setForeignTaxPaidOn("");
       setLossCreditUsed("");
       setNotes("");
       setFiTaxaPercentual("");
@@ -194,6 +198,9 @@ function TransactionSection({
       total_value: needsTotalValue(transactionType) ? Number(totalValue) : 0,
       fee: !isFundOnly(transactionType) && fee !== "" ? Number(fee) : null,
       foreign_tax_withheld: showForeignWithholding && foreignTaxWithheld !== "" ? Number(foreignTaxWithheld) : null,
+      // A data só vale com retenção maior que zero (o backend recusa sem ela).
+      foreign_tax_paid_on:
+        showForeignWithholding && Number(foreignTaxWithheld) > 0 && foreignTaxPaidOn !== "" ? foreignTaxPaidOn : null,
       loss_credit_used: transactionType === "come_cotas" && lossCreditUsed !== "" ? Number(lossCreditUsed) : null,
       transaction_date: transactionDate,
       notes: notes.trim() === "" ? null : notes,
@@ -347,6 +354,16 @@ function TransactionSection({
                     data-testid="tx-foreign-tax-withheld"
                     value={foreignTaxWithheld}
                     onChange={(e) => setForeignTaxWithheld(e.currentTarget.value)}
+                  />
+                </Field>
+              )}
+              {showForeignWithholding && Number(foreignTaxWithheld) > 0 && (
+                <Field label="Date the tax was paid abroad (optional, default: the dividend date)">
+                  <Input
+                    type="date"
+                    data-testid="tx-foreign-tax-paid-on"
+                    value={foreignTaxPaidOn}
+                    onChange={(e) => setForeignTaxPaidOn(e.currentTarget.value)}
                   />
                 </Field>
               )}

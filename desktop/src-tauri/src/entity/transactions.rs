@@ -24,6 +24,8 @@ pub struct Model {
     pub fee: Option<f64>,
     #[sea_orm(column_type = "Double", nullable)]
     pub foreign_tax_withheld: Option<f64>,
+    /// Data (`AAAA-MM-DD`) em que o imposto retido no exterior foi pago; `None` = a data do provento.
+    pub foreign_tax_paid_on: Option<String>,
     #[sea_orm(column_type = "Double", nullable)]
     pub loss_credit_used: Option<f64>,
     pub transaction_date: String,

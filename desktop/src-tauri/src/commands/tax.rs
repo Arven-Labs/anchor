@@ -425,6 +425,39 @@ pub async fn export_foreign_holdings_csv(
     Ok(rows.len())
 }
 
+/// O primeiro e o último dia de cada moeda (menos BRL) entre os fatos que precisam de câmbio.
+fn ptax_spans(facts: impl IntoIterator<Item = (String, NaiveDate)>) -> HashMap<String, (NaiveDate, NaiveDate)> {
+    let mut span: HashMap<String, (NaiveDate, NaiveDate)> = HashMap::new();
+    for (currency, date) in facts.into_iter().filter(|(currency, _)| currency != "BRL") {
+        let entry = span.entry(currency).or_insert((date, date));
+        entry.0 = entry.0.min(date);
+        entry.1 = entry.1.max(date);
+    }
+    span
+}
+
+#[cfg(test)]
+mod ptax_span_tests {
+    use super::*;
+
+    #[test]
+    fn the_span_covers_every_fact_per_currency_and_skips_brl() {
+        let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        let span = ptax_spans([
+            ("USD".to_string(), d("2025-03-10")),
+            ("USD".to_string(), d("2025-06-01")),
+            // dia de pagamento do imposto antes do primeiro fato e outro depois do último
+            ("USD".to_string(), d("2025-02-27")),
+            ("USD".to_string(), d("2025-07-15")),
+            ("EUR".to_string(), d("2025-04-01")),
+            ("BRL".to_string(), d("2025-01-01")),
+        ]);
+        assert_eq!(span["USD"], (d("2025-02-27"), d("2025-07-15")));
+        assert_eq!(span["EUR"], (d("2025-04-01"), d("2025-04-01")));
+        assert!(!span.contains_key("BRL"));
+    }
+}
+
 /// Completa a PTAX gravada (`ptax_daily`) para as moedas dos ativos do exterior, do primeiro ao último fato de cada
 /// uma (as compras antigas formam o custo médio). Vai ao BCB só com `allow_network`; falha vai para o log e nunca
 /// derruba quem chama: a apuração segue com a PTAX gravada e o câmbio de mercado de reserva.
@@ -435,17 +468,14 @@ async fn refresh_ptax(db: &DatabaseConnection, workspace_id: i32, allow_network:
     let result: Result<(), AppError> = async {
         let trades = load_trades(db, workspace_id).await?;
         let dividends = load_foreign_dividends(db, workspace_id).await?;
-        let mut span: HashMap<String, (NaiveDate, NaiveDate)> = HashMap::new();
         let facts = trades
             .iter()
             .filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning)
             .map(|t| (t.currency.clone(), t.date))
-            .chain(dividends.iter().map(|d| (d.currency.clone(), d.date)));
-        for (currency, date) in facts.filter(|(currency, _)| currency != "BRL") {
-            let entry = span.entry(currency).or_insert((date, date));
-            entry.0 = entry.0.min(date);
-            entry.1 = entry.1.max(date);
-        }
+            .chain(dividends.iter().map(|d| (d.currency.clone(), d.date)))
+            // O dia em que o imposto foi pago no exterior também precisa de PTAX (pode cair fora do primeiro/último fato).
+            .chain(dividends.iter().filter_map(|d| d.tax_paid_on.map(|paid| (d.currency.clone(), paid))));
+        let mut span = ptax_spans(facts);
         // Entidades controladas no exterior: a PTAX de 31/12 de cada ano informado que já fechou (10 dias antes, para o
         // dia útil anterior quando 31/12 não tem cotação).
         let today = Utc::now().date_naive();
@@ -515,6 +545,7 @@ async fn load_foreign_dividends(
             date: parse_date(&tx.transaction_date)?,
             gross_value: tx.total_value,
             withheld: tx.foreign_tax_withheld.unwrap_or(0.0),
+            tax_paid_on: tx.foreign_tax_paid_on.as_deref().map(parse_date).transpose()?,
         });
     }
     Ok(dividends)

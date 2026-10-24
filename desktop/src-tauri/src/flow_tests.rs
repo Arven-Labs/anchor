@@ -1875,6 +1875,7 @@ fn tx_request(
         total_value: quantity * unit_price,
         fee: (fee > 0.0).then_some(fee),
         foreign_tax_withheld: None,
+        foreign_tax_paid_on: None,
         loss_credit_used: None,
         transaction_date: date.to_string(),
         notes: None,
@@ -5512,6 +5513,43 @@ async fn the_foreign_rule_is_seeded_and_a_withholding_outside_a_dividend_is_refu
     let mut negative = tx_request(pf.id, aapl.id, "provento", 1.0, 100.0, "2025-01-10", 0.0);
     negative.foreign_tax_withheld = Some(-1.0);
     assert!(crate::commands::transaction::create_transaction_in(&db, negative).await.is_err());
+}
+
+#[tokio::test]
+async fn the_foreign_tax_payment_date_needs_a_dividend_with_a_withholding_and_a_valid_date() {
+    use crate::commands::transaction::{create_transaction_in, list_transactions_in};
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Pagamento").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    let dividend = |withheld: Option<f64>, paid_on: Option<&str>, kind: &str| {
+        let mut request = tx_request(pf.id, aapl.id, kind, 1.0, 100.0, "2025-03-10", 0.0);
+        request.foreign_tax_withheld = withheld;
+        request.foreign_tax_paid_on = paid_on.map(str::to_string);
+        request
+    };
+
+    // sem retenção, com retenção zero, em tipo que não é provento ou com data inválida: recusado
+    for (withheld, paid_on, kind) in [
+        (None, Some("2025-03-14"), "provento"),
+        (Some(0.0), Some("2025-03-14"), "provento"),
+        (Some(10.0), Some("2025-03-14"), "compra"),
+        (Some(10.0), Some("14/03/2025"), "provento"),
+        (Some(10.0), Some("2025-3-14"), "provento"),
+    ] {
+        let result = create_transaction_in(&db, dividend(withheld, paid_on, kind)).await;
+        assert!(matches!(result, Err(AppError::InvalidGuard(_))), "{withheld:?} {paid_on:?} {kind}: {result:?}");
+    }
+
+    // provento com retenção e data válida (inclusive antes do provento) grava e volta na lista
+    create_transaction_in(&db, dividend(Some(10.0), Some("2025-03-14"), "provento")).await.unwrap();
+    create_transaction_in(&db, dividend(Some(10.0), Some("2025-03-01"), "provento")).await.unwrap();
+    let listed = list_transactions_in(&db, pf.id).await.unwrap();
+    let mut dates: Vec<_> = listed.iter().filter_map(|t| t.foreign_tax_paid_on.clone()).collect();
+    dates.sort();
+    assert_eq!(dates, ["2025-03-01", "2025-03-14"]);
 }
 
 #[tokio::test]

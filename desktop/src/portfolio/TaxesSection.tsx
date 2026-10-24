@@ -646,7 +646,8 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
               plus dividends, in reais. Each trade and dividend is converted at the exchange rate of its own
               day; losses offset gains and carry into later years; tax withheld abroad is a credit up to the
               tax due. It goes in the annual tax return, not a monthly DARF. The rate is the Central Bank's
-              PTAX closing quote (selling rate; the buying rate for tax withheld abroad), and on a day with
+              PTAX closing quote (selling rate; the buying rate, on the day it was paid, for tax withheld
+              abroad), and on a day with
               no quote the last one before it. Where the PTAX is missing the market rate is used instead and
               the year is flagged as approximate. This is an estimate based on secondary sources — confirm
               in the return.

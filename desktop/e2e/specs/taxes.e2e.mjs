@@ -604,4 +604,41 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await byId("fund-record-notes").scrollIntoView({ block: "center" });
     await snap("taxes-fund-record-note");
   });
+
+  // Data do pagamento do imposto retido no exterior (Lei 14.754, art. 15): o crédito converte pela PTAX de compra do dia do
+  // pagamento, não do provento. 2024 não tem outro dado de exterior. Provento de US$ 100 em 10/04 (venda 5,10 = R$ 510,00),
+  // US$ 10 retidos e pagos em 12/04 (compra 5,40 = R$ 54,00; pela data do provento, 5,00 = R$ 50,00): imposto 15% de R$ 510,00
+  // = R$ 76,50, menos o crédito de R$ 54,00 = R$ 22,50 (seriam R$ 26,50).
+  it("converte o imposto retido no exterior pela PTAX de compra do dia do pagamento", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('KO', 'Coca-Cola', 'acao_internacional', 'USD', 'pais', 'US', '2024-01-01T00:00:00Z')",
+    );
+    const ko = sql("SELECT id FROM assets WHERE ticker = 'KO'");
+    const ptax = (date, buy, sell) =>
+      sql(
+        "INSERT INTO ptax_daily (currency, reference_date, buy, sell, source, fetched_at) " +
+          `VALUES ('USD', '${date}', ${buy}, ${sell}, 'test', '${date}T00:00:00Z')`,
+      );
+    ptax("2024-04-10", 5.0, 5.1);
+    ptax("2024-04-12", 5.4, 5.5);
+    sql(
+      "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, payment_type, quantity, unit_price, total_value, fee, " +
+        "foreign_tax_withheld, foreign_tax_paid_on, transaction_date, created_at) " +
+        `VALUES (${portfolio}, ${ko}, 'provento', 'dividendo', 1, 100, 100, 0, 10, '2024-04-12', '2024-04-10', '2024-04-10T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await waitForText(
+      byId("foreign-tax-due-2024"),
+      (text) => text.includes("22,50"),
+      "o imposto de 2024 deveria ser R$ 22,50, com o crédito de R$ 54,00 pela PTAX de compra do dia do pagamento",
+    );
+    await byId("foreign-tax-due-2024").scrollIntoView({ block: "center" });
+    await snap("taxes-foreign-paid-on");
+  });
 });

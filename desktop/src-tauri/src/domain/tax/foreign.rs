@@ -41,6 +41,9 @@ pub struct ForeignDividend {
     pub gross_value: f64,
     /// Imposto retido no exterior, na mesma moeda.
     pub withheld: f64,
+    /// Dia em que esse imposto foi pago no exterior; o crédito converte pela PTAX de compra dele (art. 15 da Lei 14.754).
+    /// `None` = o dia do provento. O crédito entra no ano do provento de qualquer jeito.
+    pub tax_paid_on: Option<NaiveDate>,
 }
 
 /// Uma venda, com o custo médio em reais já baixado.
@@ -372,9 +375,11 @@ pub fn assess_foreign(
             fx_missing_years.insert(dividend.date.year());
             continue;
         };
-        // O imposto retido usa a cotação para compra; sem ela, a de venda do mesmo dia (já convertida acima).
+        // O imposto retido usa a cotação para compra do dia do pagamento (o do provento, se não foi informado); sem
+        // cotação nenhuma, a de venda do dia do provento (já convertida acima).
+        let tax_date = dividend.tax_paid_on.unwrap_or(dividend.date);
         let (withheld_fx, withheld_source) =
-            convert(&dividend.currency, dividend.date, RateKind::Buy, rate).unwrap_or((fx, fx_source));
+            convert(&dividend.currency, tax_date, RateKind::Buy, rate).unwrap_or((fx, fx_source));
         if fx_source == RateSource::Market || (dividend.withheld > 0.0 && withheld_source == RateSource::Market) {
             fx_approximate_years.insert(dividend.date.year());
         }
@@ -488,6 +493,7 @@ mod tests {
             date: d(date),
             gross_value: gross,
             withheld,
+            tax_paid_on: None,
         }
     }
 
@@ -519,6 +525,46 @@ mod tests {
         assert!(close(y.dividends, 600.0) && close(y.withheld, 59.0), "{y:?}");
         assert!(close(y.dividend_items[0].fx_rate, 6.0) && y.dividend_items[0].fx_source == RateSource::Ptax);
         assert!(warnings.is_empty());
+    }
+
+    /// PTAX de compra de 2025: 6,00 em 10/03, 6,20 em 14/03 e nada antes de 01/03; a de venda é 6,00 em todo o ano.
+    fn dated_rate(currency: &str, date: NaiveDate, kind: RateKind) -> Option<(f64, RateSource)> {
+        if currency != "USD" || date.year() != 2025 {
+            return None;
+        }
+        let buy = match date.format("%m-%d").to_string().as_str() {
+            "03-14" => 6.2,
+            "03-10" => 6.0,
+            _ => return None,
+        };
+        Some((if kind == RateKind::Buy { buy } else { 6.0 }, RateSource::Ptax))
+    }
+
+    #[test]
+    fn the_withholding_uses_the_buy_quote_of_the_payment_day_and_the_year_stays_the_dividends() {
+        let paid = |paid_on: Option<&str>| {
+            let mut d = dividend(1, "2025-03-10", 100.0, 10.0);
+            d.tax_paid_on = paid_on.map(d_of);
+            let (years, warnings) = assess_foreign(&[], &[d], &test_rule_set(), &dated_rate).unwrap();
+            (years, warnings)
+        };
+        fn d_of(s: &str) -> NaiveDate {
+            NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+        }
+        // retido US$ 10: sem data de pagamento, a compra de 10/03 (6,00) = 60,00
+        let (years, warnings) = paid(None);
+        assert!(close(years[0].withheld, 60.0), "{:?}", years[0]);
+        assert!(warnings.is_empty());
+        // pago em 14/03, compra 6,20 = 62,00; o provento e o ano seguem os de 10/03
+        let (years, warnings) = paid(Some("2025-03-14"));
+        assert_eq!(years.len(), 1);
+        assert_eq!(years[0].year, 2025);
+        assert!(close(years[0].withheld, 62.0) && close(years[0].dividends, 600.0), "{:?}", years[0]);
+        assert_eq!(years[0].dividend_items[0].date, d_of("2025-03-10"));
+        assert!(warnings.is_empty());
+        // pago em 20/12/2025, sem cotação de compra nesse dia: cai na taxa de venda do provento (6,00), 60,00
+        let (years, _) = paid(Some("2025-12-20"));
+        assert!(close(years[0].withheld, 60.0), "{:?}", years[0]);
     }
 
     #[test]
