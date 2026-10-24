@@ -13,11 +13,12 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 
 use crate::commands::tax::{load_rule_set, workspace_portfolio_ids};
-use crate::commands::transaction::{cost_events, COME_COTAS};
+use crate::commands::transaction::{cost_events, AMORTIZATION, COME_COTAS};
 use crate::domain::cost_basis;
 use crate::domain::tax::come_cotas::{self, ComeCotasEstimate, FundHolding, FundTerm, QuotaValue};
 use crate::domain::tax::fund_compensation::{self, CompFund, LossCredit};
-use crate::domain::tax::fund_redemption::{self, FundEvent, FundEventKind, RedemptionEstimate};
+use crate::domain::tax::fund_redemption::{self, EstoqueEstimate, FundEvent, FundEventKind, RedemptionEstimate};
+use crate::domain::tax::rules;
 use crate::entity::{assets, fund_detail, fund_quota_value, transactions};
 use crate::error::AppError;
 use crate::finance_api::fund_quota_store::{self, CvmStatus, FundTarget, Session, SESSION, SOURCE_CVM};
@@ -56,6 +57,11 @@ pub struct FundView {
     pub cvm_status: CvmStatus,
     /// Administradora ou intermediário informado; agrupa os fundos que compensam prejuízo entre si.
     pub administrator: Option<String>,
+    /// `aberto` (padrão), `fechado` ou `exclusivo`: o IR do art. 17 é o mesmo, mas só os dois últimos têm estoque de 2023.
+    pub structure: String,
+    /// Como o estoque de 2023 foi tributado: `geral` (15%), `opcao_8` (8%) ou nada.
+    pub estoque_option: Option<String>,
+    pub estoque: EstoqueStatus,
     /// Data da cota mais recente lida da CVM.
     pub last_cvm_date: Option<String>,
     pub quotas: Vec<fund_quota_value::Model>,
@@ -83,10 +89,12 @@ pub struct UpsertFundQuotaRequest {
     pub value: f64,
 }
 
-/// Os fatos do fundo que importam para o IR no resgate: aplicações (custo = valor + taxa), come-cotas e resgates. Data
-/// inválida fica de fora (não derruba a tela).
-fn fund_events(txs: &[&transactions::Model]) -> Vec<FundEvent> {
-    txs.iter()
+/// Os fatos do fundo que importam para o IR no resgate: aplicações (custo = valor + taxa), come-cotas, resgates e
+/// amortizações, mais o estoque de 2023 quando o fundo o tem (`estoque`: cota de 31/12/2023 e alíquota). Data inválida
+/// fica de fora (não derruba a tela).
+fn fund_events(txs: &[&transactions::Model], estoque: Option<(f64, f64)>) -> Vec<FundEvent> {
+    let mut events: Vec<FundEvent> = txs
+        .iter()
         .filter_map(|t| {
             let date = NaiveDate::parse_from_str(&t.transaction_date, "%Y-%m-%d").ok()?;
             let quantity = t.quantity.unwrap_or(0.0);
@@ -94,11 +102,54 @@ fn fund_events(txs: &[&transactions::Model]) -> Vec<FundEvent> {
                 BUY => FundEventKind::Buy { quantity, cost: t.total_value + t.fee.unwrap_or(0.0) },
                 COME_COTAS => FundEventKind::ComeCotas { quantity, quota_value: t.unit_price.unwrap_or(0.0) },
                 SELL => FundEventKind::Redeem { tx_id: t.id, quantity, quota_value: t.unit_price.unwrap_or(0.0) },
+                AMORTIZATION => FundEventKind::Amortize {
+                    tx_id: t.id,
+                    amount: t.total_value,
+                    quota_value: t.unit_price.unwrap_or(0.0),
+                },
                 _ => return None,
             };
             Some(FundEvent { date, id: t.id, kind })
         })
-        .collect()
+        .collect();
+    if let Some((quota_value, rate)) = estoque {
+        events.push(FundEvent { date: estoque_date(), id: 0, kind: FundEventKind::Estoque { quota_value, rate } });
+    }
+    events
+}
+
+/// A data de referência do estoque (Lei 14.754, arts. 27 e 28).
+fn estoque_date() -> NaiveDate {
+    NaiveDate::from_ymd_opt(2023, 12, 31).expect("data válida")
+}
+
+/// A cota usada como valor patrimonial de 31/12/2023: a última lançada até a data, no máximo 10 dias antes (o último dia
+/// útil de 2023 foi 29/12).
+const ESTOQUE_QUOTA_WINDOW_DAYS: i64 = 10;
+
+fn estoque_quota(quotas: &[fund_quota_value::Model]) -> Option<(NaiveDate, f64)> {
+    let reference = estoque_date();
+    quotas
+        .iter()
+        .filter_map(|q| NaiveDate::parse_from_str(&q.quota_date, "%Y-%m-%d").ok().map(|d| (d, q.value)))
+        .filter(|(d, _)| *d <= reference && (reference - *d).num_days() <= ESTOQUE_QUOTA_WINDOW_DAYS)
+        .max_by_key(|(d, _)| *d)
+}
+
+pub const STRUCTURES: [&str; 3] = ["aberto", "fechado", "exclusivo"];
+pub const ESTOQUE_OPTIONS: [&str; 2] = ["geral", "opcao_8"];
+
+/// Como está o estoque de 2023 de um fundo.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EstoqueStatus {
+    /// Só fundo fechado ou exclusivo de longo ou curto prazo tem estoque.
+    NotApplicable,
+    /// O usuário não informou como o estoque foi tributado (ou o contesta): nada é estimado.
+    NotTaxed,
+    /// Falta a cota de 31/12/2023 (ou de até 10 dias antes).
+    NeedsQuota,
+    Estimated { estimate: EstoqueEstimate },
 }
 
 async fn fund_asset(db: &DatabaseConnection, asset_id: i32) -> Result<assets::Model, AppError> {
@@ -305,10 +356,35 @@ pub async fn funds_overview_with(
             .collect();
         deductions.sort_by(|a, b| (&a.date, a.tx_id).cmp(&(&b.date, b.tx_id)));
 
-        // IR e IOF estimados de cada resgate (venda): precisa do tipo do fundo.
-        let redemptions = match term.as_deref().and_then(FundTerm::parse) {
-            Some(fund_term) => fund_redemption::estimate_redemptions(&fund_events(&asset_txs), fund_term, &rules)?,
-            None => Vec::new(),
+        let structure = details.get(&asset.id).map(|d| d.structure.clone()).unwrap_or_else(|| "aberto".to_string());
+        let estoque_option = details.get(&asset.id).and_then(|d| d.estoque_option.clone());
+        let fund_term = term.as_deref().and_then(FundTerm::parse);
+
+        // Estoque de rendimento até 31/12/2023 (Lei 14.754, arts. 27 e 28): só fundo fechado ou exclusivo de longo ou curto
+        // prazo; precisa da opção informada e da cota daquela data.
+        let has_estoque = structure != "aberto" && matches!(fund_term, Some(FundTerm::LongTerm | FundTerm::ShortTerm));
+        let reference_quota = estoque_quota(&quotas);
+        let estoque_input = match (has_estoque, estoque_option.as_deref(), reference_quota) {
+            (true, Some(option), Some((_, quota_value))) => {
+                let key = if option == "opcao_8" { rules::FUND_ESTOQUE_RATE_OPTION } else { rules::FUND_ESTOQUE_RATE_GENERAL };
+                Some((quota_value, rules.get(key, estoque_date())?))
+            }
+            _ => None,
+        };
+
+        // IR e IOF estimados de cada resgate e amortização: precisa do tipo do fundo.
+        let (redemptions, estoque_estimate) = match fund_term {
+            Some(fund_term) => {
+                let estimate = fund_redemption::estimate_fund(&fund_events(&asset_txs, estoque_input), fund_term, &rules)?;
+                (estimate.redemptions, estimate.estoque)
+            }
+            None => (Vec::new(), None),
+        };
+        let estoque = match (has_estoque, estoque_option.is_some(), estoque_estimate) {
+            (false, ..) => EstoqueStatus::NotApplicable,
+            (true, false, _) => EstoqueStatus::NotTaxed,
+            (true, true, Some(estimate)) => EstoqueStatus::Estimated { estimate },
+            (true, true, None) => EstoqueStatus::NeedsQuota,
         };
 
         holdings.push(FundHolding {
@@ -347,6 +423,9 @@ pub async fn funds_overview_with(
             cvm_subclass: details.get(&asset.id).and_then(|d| d.cvm_subclass.clone()),
             cvm_status,
             administrator: details.get(&asset.id).and_then(|d| d.administrator.clone()),
+            structure,
+            estoque_option,
+            estoque,
             last_cvm_date,
             quotas,
             deductions,
@@ -388,7 +467,9 @@ pub async fn set_fund_term(
 
 pub async fn set_fund_term_in(db: &DatabaseConnection, asset_id: i32, term: &str) -> Result<(), AppError> {
     if FundTerm::parse(term).is_none() {
-        return Err(AppError::InvalidInput("term must be longo_prazo, curto_prazo or acoes".to_string()));
+        return Err(AppError::InvalidInput(
+            "term must be longo_prazo, curto_prazo, acoes or entidade_investimento".to_string(),
+        ));
     }
     fund_asset(db, asset_id).await?;
     match fund_detail::Entity::find().filter(fund_detail::Column::AssetId.eq(asset_id)).one(db).await? {
@@ -441,6 +522,61 @@ pub async fn set_fund_administrator_in(
     active.administrator = Set(value);
     active.update(db).await?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn set_fund_structure(
+    db: tauri::State<'_, DatabaseConnection>,
+    asset_id: i32,
+    structure: String,
+) -> Result<(), AppError> {
+    set_fund_structure_in(db.inner(), asset_id, &structure).await
+}
+
+/// Grava se o fundo é `aberto`, `fechado` ou `exclusivo` (Lei 14.754). Só os dois últimos têm estoque de 2023. Mora em
+/// `fund_details`, que só existe depois de o usuário escolher o tipo do fundo.
+pub async fn set_fund_structure_in(db: &DatabaseConnection, asset_id: i32, structure: &str) -> Result<(), AppError> {
+    if !STRUCTURES.contains(&structure) {
+        return Err(AppError::InvalidInput("structure must be aberto, fechado or exclusivo".to_string()));
+    }
+    let detail = fund_detail_of(db, asset_id, "structure").await?;
+    let mut active: fund_detail::ActiveModel = detail.into();
+    active.structure = Set(structure.to_string());
+    active.update(db).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_fund_estoque(
+    db: tauri::State<'_, DatabaseConnection>,
+    asset_id: i32,
+    option: Option<String>,
+) -> Result<(), AppError> {
+    set_fund_estoque_in(db.inner(), asset_id, option.as_deref()).await
+}
+
+/// Grava como o estoque de rendimento até 31/12/2023 foi tributado: `geral` (15%, art. 27), `opcao_8` (8%, art. 28) ou
+/// nada (não tributado, ou contestado na Justiça: o app não estima nada).
+pub async fn set_fund_estoque_in(db: &DatabaseConnection, asset_id: i32, option: Option<&str>) -> Result<(), AppError> {
+    let option = option.map(str::trim).filter(|o| !o.is_empty());
+    if option.is_some_and(|o| !ESTOQUE_OPTIONS.contains(&o)) {
+        return Err(AppError::InvalidInput("estoque option must be geral or opcao_8".to_string()));
+    }
+    let detail = fund_detail_of(db, asset_id, "estoque option").await?;
+    let mut active: fund_detail::ActiveModel = detail.into();
+    active.estoque_option = Set(option.map(str::to_string));
+    active.update(db).await?;
+    Ok(())
+}
+
+/// A linha de `fund_details` de um fundo; sem ela o usuário ainda não escolheu o tipo.
+async fn fund_detail_of(db: &DatabaseConnection, asset_id: i32, what: &str) -> Result<fund_detail::Model, AppError> {
+    fund_asset(db, asset_id).await?;
+    fund_detail::Entity::find()
+        .filter(fund_detail::Column::AssetId.eq(asset_id))
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::InvalidInput(format!("choose the fund type before the {what}")))
 }
 
 #[derive(Deserialize)]

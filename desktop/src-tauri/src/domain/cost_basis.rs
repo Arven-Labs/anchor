@@ -44,6 +44,9 @@ pub enum EventKind {
     Split,
     /// `quantity` são as ações novas; `value` é o custo atribuído a elas.
     Bonus,
+    /// Amortização de fundo fechado: devolve capital sem tirar cotas. `value` é o valor recebido e `quantity` é, aqui, o
+    /// valor da cota do dia (não uma quantidade). O custo cai na proporção `valor ÷ (cota × cotas em carteira)`.
+    Amortize,
 }
 
 #[derive(Clone, Debug)]
@@ -123,6 +126,15 @@ pub fn replay(events: &[Event], rate: &dyn Fn(NaiveDate) -> Option<f64>) -> Opti
                 state.quantity += event.quantity;
                 *state.by_custodia.entry(event.custodia_id).or_insert(0.0) += event.quantity;
             }
+            EventKind::Amortize => {
+                let r = rate(event.date)?;
+                // A fração da posição que o valor recebido representa; as cotas ficam e o custo cai nessa fração.
+                let market_value = pos.quantity.max(0.0) * event.quantity;
+                let fraction = if market_value > EPS { (event.value / market_value).min(1.0) } else { 0.0 };
+                let cost_removed = pos.cost * fraction;
+                pos.cost -= cost_removed;
+                state.realized_pl += event.value * r - cost_removed;
+            }
         }
     }
     state.cost = pos.cost;
@@ -148,7 +160,7 @@ pub fn split_factors(events: &[Event]) -> Vec<(NaiveDate, f64)> {
         match event.kind {
             EventKind::Buy => held += event.quantity,
             EventKind::Sell => held -= event.quantity,
-            EventKind::Transfer => {}
+            EventKind::Transfer | EventKind::Amortize => {}
             EventKind::Split => {
                 held *= event.quantity;
                 factors.push((event.date, event.quantity));
@@ -307,6 +319,47 @@ mod tests {
         assert!((state.cost - 250.0).abs() < 1e-9);
         // Recebe 600, custo baixado 250.
         assert!((state.realized_pl - 350.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn an_amortization_lowers_the_cost_but_keeps_the_quantity() {
+        // 100 cotas, custo 1.000; amortização de 600 com a cota a 12,00 (posição de 1.200): fração 0,5, custo baixado 500
+        let state = run(&[
+            event(1, d(2026, 1, 1), EventKind::Buy, 100.0, 1000.0, 0.0),
+            event(2, d(2026, 2, 1), EventKind::Amortize, 12.0, 600.0, 0.0),
+        ]);
+        assert_eq!(state.quantity, 100.0);
+        assert!((state.cost - 500.0).abs() < 1e-9);
+        assert!((state.average_price().unwrap() - 5.0).abs() < 1e-9);
+        // recebeu 600 contra custo de 500
+        assert!((state.realized_pl - 100.0).abs() < 1e-9);
+        assert!(!state.uncovered_sale);
+    }
+
+    #[test]
+    fn an_amortization_above_the_position_value_stops_at_the_whole_cost() {
+        let state = run(&[
+            event(1, d(2026, 1, 1), EventKind::Buy, 100.0, 1000.0, 0.0),
+            event(2, d(2026, 2, 1), EventKind::Amortize, 12.0, 5000.0, 0.0),
+        ]);
+        assert_eq!(state.quantity, 100.0);
+        assert!(state.cost.abs() < 1e-9);
+        assert!((state.realized_pl - 4000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn amortizations_chain_on_the_remaining_cost_and_do_not_count_as_a_split() {
+        // 100 cotas, custo 1.000; amortiza 600 (cota 12): custo 500; depois amortiza 300 com a cota a 6,00 (posição 600):
+        // fração 0,5, custo baixado 250, sobra 250
+        let events = [
+            event(1, d(2026, 1, 1), EventKind::Buy, 100.0, 1000.0, 0.0),
+            event(2, d(2026, 2, 1), EventKind::Amortize, 12.0, 600.0, 0.0),
+            event(3, d(2026, 3, 1), EventKind::Amortize, 6.0, 300.0, 0.0),
+        ];
+        let state = run(&events);
+        assert!((state.cost - 250.0).abs() < 1e-9);
+        assert!((state.realized_pl - (100.0 + 50.0)).abs() < 1e-9);
+        assert!(split_factors(&events).is_empty());
     }
 
     #[test]

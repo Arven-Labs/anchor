@@ -88,8 +88,14 @@ function quantityLabel(type: TransactionType): string {
 }
 
 // Compra, venda e come-cotas: total = quantidade × preço (no come-cotas, o valor da cota; o total é o imposto em reais).
+// Amortização de fundo fechado: o preço é o valor da cota do dia e o total, o valor recebido (sem quantidade: as cotas ficam).
 function needsUnitPrice(type: TransactionType): boolean {
-  return type === "compra" || type === "venda" || type === "come_cotas";
+  return type === "compra" || type === "venda" || type === "come_cotas" || type === "amortizacao";
+}
+
+// Os tipos de fundo sem taxa e só para ativo da classe fundo.
+function isFundOnly(type: TransactionType): boolean {
+  return type === "come_cotas" || type === "amortizacao";
 }
 
 function needsTransferDestination(type: TransactionType): boolean {
@@ -182,7 +188,7 @@ function TransactionSection({
       quantity: needsQuantity(transactionType) && quantity !== "" ? Number(quantity) : null,
       unit_price: needsUnitPrice(transactionType) && unitPrice !== "" ? Number(unitPrice) : null,
       total_value: needsTotalValue(transactionType) ? Number(totalValue) : 0,
-      fee: transactionType !== "come_cotas" && fee !== "" ? Number(fee) : null,
+      fee: !isFundOnly(transactionType) && fee !== "" ? Number(fee) : null,
       foreign_tax_withheld: showForeignWithholding && foreignTaxWithheld !== "" ? Number(foreignTaxWithheld) : null,
       transaction_date: transactionDate,
       notes: notes.trim() === "" ? null : notes,
@@ -252,7 +258,7 @@ function TransactionSection({
                     </SelectTrigger>
                     <SelectContent>
                       {assets
-                        .filter((asset) => transactionType !== "come_cotas" || asset.asset_class === "fundo")
+                        .filter((asset) => !isFundOnly(transactionType) || asset.asset_class === "fundo")
                         .map((asset) => (
                         <SelectItem key={asset.id} value={String(asset.id)}>
                           {asset.ticker} — {asset.name}
@@ -281,7 +287,7 @@ function TransactionSection({
                 </Field>
               )}
               {needsUnitPrice(transactionType) && (
-                <Field label={transactionType === "come_cotas" ? "Quota value" : "Unit price"}>
+                <Field label={isFundOnly(transactionType) ? "Quota value" : "Unit price"}>
                   <Input
                     required
                     type="number"
@@ -302,7 +308,9 @@ function TransactionSection({
                       ? "Cost attributed to the new shares"
                       : transactionType === "come_cotas"
                         ? "Tax withheld (BRL)"
-                        : "Total value"
+                        : transactionType === "amortizacao"
+                          ? "Amount received (BRL)"
+                          : "Total value"
                   }
                 >
                   <Input
@@ -314,7 +322,7 @@ function TransactionSection({
                   />
                 </Field>
               )}
-              {transactionType !== "come_cotas" && (
+              {!isFundOnly(transactionType) && (
                 <Field label="Fee (optional)">
                   <Input
                     type="number"

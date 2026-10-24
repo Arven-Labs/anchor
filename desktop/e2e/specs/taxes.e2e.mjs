@@ -434,6 +434,69 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await snap("taxes-fund-compensation");
   });
 
+  // Fundo fechado (Lei 14.754): estoque de 2023 a 8% e uma amortização. 100 cotas a R$ 10,00 (01/06/2022); cota de 29/12/2023 a
+  // R$ 14,00: ganho de R$ 400,00 e imposto de R$ 32,00 (8%), pago em dinheiro. Amortização de R$ 600,00 com a cota a R$ 12,00
+  // em 01/03/2026: metade da posição (50 cotas equivalentes, as 100 ficam); 1.369 dias (15%): rendimento 50 × 2 = 100 + 200
+  // já tributados = 300, IR devido 45 − 16 pagos do estoque = 29. As datas são fixas, então a conta não depende de "hoje".
+  it("estima o estoque de 2023 e a amortização de um fundo fechado", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('FUNDOC', 'Fundo C', 'fundo', 'BRL', 'pais', 'BR', '2022-01-01T00:00:00Z')",
+    );
+    const fund = sql("SELECT id FROM assets WHERE ticker = 'FUNDOC'");
+    sql(
+      "INSERT INTO fund_details (asset_id, term, structure, estoque_option, created_at) " +
+        `VALUES (${fund}, 'longo_prazo', 'fechado', 'opcao_8', '2022-06-01T00:00:00Z')`,
+    );
+    sql(
+      "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+        `VALUES (${portfolio}, ${fund}, 'compra', 100, 10, 1000, NULL, '2022-06-01', '2022-06-01T00:00:00Z')`,
+    );
+    sql(
+      "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+        `VALUES (${portfolio}, ${fund}, 'amortizacao', NULL, 12, 600, NULL, '2026-03-01', '2026-03-01T00:00:00Z')`,
+    );
+    sql(
+      "INSERT INTO fund_quota_values (asset_id, quota_date, value, source, created_at) " +
+        `VALUES (${fund}, '2023-12-29', 14, 'manual', '2023-12-29T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    // O formatBrl separa "R$" do valor com um espaço inseparável (U+00A0): troca por espaço comum antes de conferir.
+    const waitFor = async (testId, predicate, message) => {
+      let seen = "";
+      try {
+        await browser.waitUntil(
+          async () => {
+            seen = (await textOf(byId(testId))).replace(/ /g, " ");
+            return predicate(seen);
+          },
+          { timeoutMsg: message },
+        );
+      } catch (error) {
+        throw new Error(`${error.message}. Texto na tela: ${seen}`);
+      }
+    };
+    await waitFor(
+      "fund-estoque-status-FUNDOC",
+      (text) => text.includes("gain of R$ 400,00") && text.includes("taxed at 8%") && text.includes("R$ 32,00"),
+      "o estoque de 2023 do FUNDOC deveria mostrar ganho de R$ 400,00 e imposto de R$ 32,00 a 8%",
+    );
+    await waitFor(
+      "fund-redemptions-FUNDOC",
+      (text) =>
+        text.includes("amortization of R$ 600,00") &&
+        text.includes("IR R$ 29,00, net R$ 571,00"),
+      "a amortização do FUNDOC deveria pagar IR de R$ 29,00 e sobrar R$ 571,00",
+    );
+    await byId("fund-structure-FUNDOC").scrollIntoView({ block: "center" });
+    await snap("taxes-fund-closed");
+  });
+
   // Cota da CVM: o E2E roda sem rede (ANCHOR_DISABLE_INGESTION), então a leitura do informe diário não acontece. Aqui
   // confere o que a tela mostra sem CNPJ e, com o CNPJ e uma cota gravada com `source = 'cvm'`, o selo e a data.
   it("mostra de onde vem a cota do fundo: sem CNPJ, e lida da CVM", async () => {

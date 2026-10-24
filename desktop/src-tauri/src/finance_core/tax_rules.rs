@@ -63,6 +63,9 @@ const RULES: &[(&str, f64, (i32, u32, u32), &str, &str)] = &[
     ("fund_ir_short_up_to_180", 0.225, (2005, 1, 1), "IR withheld on the redemption of a short-term open fund, quotas held up to 180 days", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
     ("fund_ir_short_over_180", 0.20, (2005, 1, 1), "IR withheld on the redemption of a short-term open fund, quotas held over 180 days", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
     ("fund_ir_equity", 0.15, (2005, 1, 1), "IR withheld on the redemption of an equity fund, flat on the gain and with no come-cotas", "Lei 11.033/2004, art. 1 (secondary sources; verify on gov.br)"),
+    ("fund_ir_investment_entity", 0.15, (2024, 1, 1), "IR withheld on the distribution, amortization or redemption of an investment entity fund (FIP, FIDC, non fixed income ETF), flat on the gain and with no come-cotas", "Lei 14.754/2023, arts. 18 and 24 (secondary sources; verify on gov.br)"),
+    ("fund_estoque_rate_general", 0.15, (2023, 12, 12), "IR on the income of a closed or exclusive fund accrued up to 31/12/2023 (quota value at 31/12/2023 over the cost), the general rule", "Lei 14.754/2023, art. 27 (secondary sources; verify on gov.br; its constitutionality is disputed in court)"),
+    ("fund_estoque_rate_option", 0.08, (2023, 12, 12), "IR on the same accrued income when the investor opts to anticipate the payment, valid only with the full payment", "Lei 14.754/2023, art. 28 (secondary sources; verify on gov.br)"),
 ];
 
 fn date(ymd: (i32, u32, u32)) -> NaiveDate {

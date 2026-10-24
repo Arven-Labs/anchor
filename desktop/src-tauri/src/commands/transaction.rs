@@ -37,9 +37,13 @@ pub const BONUS: &str = "bonificacao";
 // data, `total_value` = quantity × unit_price (o imposto em reais). Sem caixa. Para o custo médio é uma venda com
 // proceeds zero (reduz a quantidade ao custo médio e consome o custo); só vale para a classe `fundo`.
 pub const COME_COTAS: &str = "come_cotas";
+// Amortização de fundo fechado (Lei 14.754): o fundo devolve capital e as cotas ficam. `unit_price` = valor da cota na data,
+// `total_value` = valor recebido; sem quantidade e sem taxa. Sem caixa. Para o custo médio reduz o custo na fração
+// `valor ÷ (cota × cotas em carteira)` sem tirar cotas; só vale para a classe `fundo`.
+pub const AMORTIZATION: &str = "amortizacao";
 const FUND_CLASS: &str = "fundo";
-const TRANSACTION_TYPES: [&str; 10] =
-    [BUY, SELL, DEPOSIT, WITHDRAWAL, DIVIDEND, TRANSFER, SPLIT, REVERSE_SPLIT, BONUS, COME_COTAS];
+const TRANSACTION_TYPES: [&str; 11] =
+    [BUY, SELL, DEPOSIT, WITHDRAWAL, DIVIDEND, TRANSFER, SPLIT, REVERSE_SPLIT, BONUS, COME_COTAS, AMORTIZATION];
 
 /// Fator multiplicativo da quantidade de um desdobramento (`quantity` = 2 → ×2)
 /// ou grupamento (`quantity` = 10 → ×0,1).
@@ -63,6 +67,7 @@ pub fn cost_events(txs: &[&transactions::Model]) -> Result<Vec<cost_basis::Event
             TRANSFER => EventKind::Transfer,
             SPLIT | REVERSE_SPLIT => EventKind::Split,
             BONUS => EventKind::Bonus,
+            AMORTIZATION => EventKind::Amortize,
             _ => continue,
         };
         let date = NaiveDate::parse_from_str(&tx.transaction_date, "%Y-%m-%d").map_err(|_| {
@@ -73,7 +78,12 @@ pub fn cost_events(txs: &[&transactions::Model]) -> Result<Vec<cost_basis::Event
             date,
             id: tx.id,
             kind,
-            quantity: if kind == EventKind::Split { split_ratio(&tx.transaction_type, quantity) } else { quantity },
+            // Na amortização `quantity` leva o valor da cota do dia (ver `EventKind::Amortize`).
+            quantity: match kind {
+                EventKind::Split => split_ratio(&tx.transaction_type, quantity),
+                EventKind::Amortize => tx.unit_price.unwrap_or(0.0),
+                _ => quantity,
+            },
             value: if tx.transaction_type == COME_COTAS { 0.0 } else { tx.total_value },
             fee: tx.fee.unwrap_or(0.0),
             custodia_id: tx.custodia_id,
@@ -175,6 +185,27 @@ fn validate(request: &CreateTransactionRequest) -> Result<(), AppError> {
                 )));
             }
         }
+        AMORTIZATION => {
+            if request.asset_id.is_none() {
+                return Err(AppError::InvalidGuard("asset_id é obrigatório para 'amortizacao'".to_string()));
+            }
+            if request.quantity.is_some() {
+                return Err(AppError::InvalidGuard(
+                    "amortizacao não tem quantidade: as cotas ficam, informe o valor recebido e a cota do dia".to_string(),
+                ));
+            }
+            if request.fee.is_some() {
+                return Err(AppError::InvalidGuard("amortizacao não tem taxa".to_string()));
+            }
+            if !request.unit_price.is_some_and(|price| price.is_finite() && price > 0.0) {
+                return Err(AppError::InvalidGuard(
+                    "unit_price (o valor da cota na data) é obrigatório e maior que zero para 'amortizacao'".to_string(),
+                ));
+            }
+            if request.total_value <= 0.0 {
+                return Err(AppError::InvalidGuard("o valor recebido na amortizacao deve ser maior que zero".to_string()));
+            }
+        }
         SPLIT | REVERSE_SPLIT | BONUS => {
             if request.asset_id.is_none() || request.quantity.is_none() {
                 return Err(AppError::InvalidGuard(format!(
@@ -262,6 +293,12 @@ pub async fn create_transaction_in<C: ConnectionTrait>(
     };
     if request.transaction_type == COME_COTAS && asset.as_ref().map(|a| a.asset_class.as_str()) != Some(FUND_CLASS) {
         return Err(AppError::InvalidGuard("come_cotas só vale para ativo da classe 'fundo'".to_string()));
+    }
+    if request.transaction_type == AMORTIZATION {
+        if asset.as_ref().map(|a| a.asset_class.as_str()) != Some(FUND_CLASS) {
+            return Err(AppError::InvalidGuard("amortizacao só vale para ativo da classe 'fundo'".to_string()));
+        }
+        ensure_amortization_fits(db, &request).await?;
     }
     if request.transaction_type == SELL || request.transaction_type == COME_COTAS {
         ensure_covered_sale(db, &request).await?;
@@ -436,6 +473,39 @@ pub async fn suggest_crypto_swap_value_in(
     let fresh = NaiveDate::parse_from_str(&close.price_date, "%Y-%m-%d")
         .is_ok_and(|priced| (day - priced).num_days() <= SWAP_PRICE_MAX_AGE_DAYS);
     Ok(fresh.then(|| (quantity * close.adj_close_price * 100.0).round() / 100.0))
+}
+
+/// Recusa a amortização sem cotas em carteira na data ou maior que o valor da posição (cota × cotas). Tolera centavos de
+/// arredondamento. Só olha o histórico até a data: lançamentos posteriores não entram na conta desta amortização.
+async fn ensure_amortization_fits<C: ConnectionTrait>(
+    db: &C,
+    request: &CreateTransactionRequest,
+) -> Result<(), AppError> {
+    let Some(asset_id) = request.asset_id else { return Ok(()) };
+    let date = NaiveDate::parse_from_str(&request.transaction_date, "%Y-%m-%d")
+        .map_err(|_| AppError::InvalidGuard("transaction_date inválida".to_string()))?;
+    let existing = transactions::Entity::find()
+        .filter(transactions::Column::PortfolioId.eq(request.portfolio_id))
+        .filter(transactions::Column::AssetId.eq(asset_id))
+        .all(db)
+        .await?;
+    let until_date: Vec<&transactions::Model> = existing
+        .iter()
+        .filter(|t| NaiveDate::parse_from_str(&t.transaction_date, "%Y-%m-%d").is_ok_and(|d| d <= date))
+        .collect();
+    let state = cost_basis::replay(&cost_events(&until_date)?, &cost_basis::native_rate)
+        .ok_or_else(|| AppError::InvalidGuard("não foi possível apurar a posição do fundo".to_string()))?;
+    if state.quantity <= cost_basis::EPS {
+        return Err(AppError::InvalidGuard("a amortização precisa de cotas em carteira nessa data".to_string()));
+    }
+    let position_value = state.quantity * request.unit_price.unwrap_or(0.0);
+    if request.total_value > position_value + 0.011_f64.max(position_value * 0.001) {
+        return Err(AppError::InvalidGuard(format!(
+            "o valor amortizado ({:.2}) passa do valor da posição nessa data ({position_value:.2})",
+            request.total_value
+        )));
+    }
+    Ok(())
 }
 
 /// Recusa a venda que deixaria o ativo com saldo negativo em algum ponto do

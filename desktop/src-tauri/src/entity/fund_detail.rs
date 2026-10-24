@@ -16,6 +16,10 @@ pub struct Model {
     pub cvm_subclass: Option<String>,
     /// Administradora ou intermediário, em texto livre: agrupa os fundos que compensam prejuízo entre si; `None` = isolado.
     pub administrator: Option<String>,
+    /// `aberto` (padrão), `fechado` ou `exclusivo` (Lei 14.754): só os dois últimos têm estoque de rendimento de 2023.
+    pub structure: String,
+    /// Como o estoque de 2023 foi tributado: `geral` (15%), `opcao_8` (8%) ou nada.
+    pub estoque_option: Option<String>,
     pub created_at: String,
 }
 

@@ -407,6 +407,40 @@ mod tests {
     }
 
     #[test]
+    fn a_loss_on_an_amortization_is_credit_for_a_later_redemption() {
+        // X: 100 cotas a 10,00; amortização de 400 a cota 8,00 em 01/06/2025 (posição 800, fração 0,5, 50 cotas equivalentes):
+        // rendimento 50 × (8 − 10) = −100, perda de 100. Y ganha 200 (IR de 40 a 20%): o crédito de 100 abate 100 × 20% = 20
+        let amortization = FundEvent {
+            date: d("2025-06-01"),
+            id: 2,
+            kind: FundEventKind::Amortize { tx_id: 2, amount: 400.0, quota_value: 8.0 },
+        };
+        let mut set = [
+            fixture(1, "XPTO11", FundTerm::LongTerm, Some("XP"), &[buy(1, "2025-01-01", 100.0, 1_000.0), amortization]),
+            winner(2, "YPTO11", FundTerm::LongTerm, Some("XP"), "2025-09-01"),
+        ];
+        let credits = run(&mut set);
+        let x = &set[0].redemptions[0];
+        assert!(x.is_amortization && close(x.loss_created, 100.0) && close(x.ir, 0.0), "{x:?}");
+        let y = &set[1].redemptions[0];
+        assert!(close(y.loss_credit_used, 100.0) && close(y.ir, 20.0), "{y:?}");
+        assert!(credits.is_empty());
+    }
+
+    #[test]
+    fn an_investment_entity_is_its_own_class_and_does_not_offset_a_long_term_fund() {
+        let mut set = [
+            loser(1, "FIP11", FundTerm::InvestmentEntity, Some("XP"), 8.0),
+            winner(2, "YPTO11", FundTerm::LongTerm, Some("XP"), "2025-09-01"),
+        ];
+        let credits = run(&mut set);
+        assert!(close(set[0].redemptions[0].loss_created, 200.0));
+        assert!(close(set[1].redemptions[0].ir, 40.0) && close(set[1].redemptions[0].loss_credit_used, 0.0));
+        assert_eq!(credits.len(), 1);
+        assert!(credits[0].term == FundTerm::InvestmentEntity && close(credits[0].amount, 200.0));
+    }
+
+    #[test]
     fn without_losses_nothing_changes() {
         let mut set = [
             winner(1, "XPTO11", FundTerm::LongTerm, Some("XP"), "2025-09-01"),

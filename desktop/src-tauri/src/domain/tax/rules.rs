@@ -33,6 +33,9 @@ pub const FUND_IR_LONG_OVER_720: &str = "fund_ir_long_over_720";
 pub const FUND_IR_SHORT_UP_TO_180: &str = "fund_ir_short_up_to_180";
 pub const FUND_IR_SHORT_OVER_180: &str = "fund_ir_short_over_180";
 pub const FUND_IR_EQUITY: &str = "fund_ir_equity";
+pub const FUND_IR_INVESTMENT_ENTITY: &str = "fund_ir_investment_entity";
+pub const FUND_ESTOQUE_RATE_GENERAL: &str = "fund_estoque_rate_general";
+pub const FUND_ESTOQUE_RATE_OPTION: &str = "fund_estoque_rate_option";
 
 /// IR retido no resgate de renda fixa, uma taxa fixa por papel (a tabela
 /// regressiva do IR não é modelada; o IOF mora em `domain::tax::iof`). `None`
@@ -114,6 +117,9 @@ pub(crate) fn test_rule_set() -> RuleSet {
         rule(FUND_IR_SHORT_UP_TO_180, "2005-01-01", 0.225),
         rule(FUND_IR_SHORT_OVER_180, "2005-01-01", 0.20),
         rule(FUND_IR_EQUITY, "2005-01-01", 0.15),
+        rule(FUND_IR_INVESTMENT_ENTITY, "2024-01-01", 0.15),
+        rule(FUND_ESTOQUE_RATE_GENERAL, "2023-12-12", 0.15),
+        rule(FUND_ESTOQUE_RATE_OPTION, "2023-12-12", 0.08),
     ])
 }
 

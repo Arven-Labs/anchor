@@ -4813,6 +4813,169 @@ async fn the_loss_credit_reduces_the_next_come_cotas_estimate_of_the_same_group(
     assert!(close(overview.loss_credits[0].amount, 200.0), "{:?}", overview.loss_credits);
 }
 
+/// Amortização de fundo fechado: o valor recebido e a cota do dia, sem quantidade nem taxa.
+fn amortization_request(
+    portfolio_id: i32,
+    asset_id: i32,
+    amount: f64,
+    quota_value: f64,
+    date: &str,
+) -> crate::commands::transaction::CreateTransactionRequest {
+    let mut request = tx_request(portfolio_id, asset_id, "amortizacao", 1.0, quota_value, date, 0.0);
+    request.quantity = None;
+    request.total_value = amount;
+    request
+}
+
+#[tokio::test]
+async fn an_amortization_returns_capital_without_removing_quotas_and_is_taxed_as_a_share_of_the_fund() {
+    use crate::commands::fund::{funds_overview_in, set_fund_term_in};
+    use crate::commands::transaction::{compute_positions, create_transaction_in};
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Amortização").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDOFIP", "fundo", "BRL").await;
+    let stock = asset_in(&db, "PETR4", "acao_br", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+
+    add(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2025-01-01", 0.0)).await;
+    add(&db, tx_request(pf.id, stock.id, "compra", 10.0, 30.0, "2025-01-01", 0.0)).await;
+
+    // só vale para fundo, sem quantidade nem taxa, com cota e valor positivos, com cotas na data e dentro do valor da posição
+    let on_stock = create_transaction_in(&db, amortization_request(pf.id, stock.id, 100.0, 30.0, "2026-03-01")).await;
+    assert!(matches!(on_stock, Err(AppError::InvalidGuard(_))), "ativo que não é fundo");
+    let mut with_quantity = amortization_request(pf.id, fund.id, 600.0, 12.0, "2026-03-01");
+    with_quantity.quantity = Some(50.0);
+    assert!(matches!(create_transaction_in(&db, with_quantity).await, Err(AppError::InvalidGuard(_))), "com quantidade");
+    let mut with_fee = amortization_request(pf.id, fund.id, 600.0, 12.0, "2026-03-01");
+    with_fee.fee = Some(1.0);
+    assert!(matches!(create_transaction_in(&db, with_fee).await, Err(AppError::InvalidGuard(_))), "com taxa");
+    let no_quota = create_transaction_in(&db, amortization_request(pf.id, fund.id, 600.0, 0.0, "2026-03-01")).await;
+    assert!(matches!(no_quota, Err(AppError::InvalidGuard(_))), "sem valor da cota");
+    let no_amount = create_transaction_in(&db, amortization_request(pf.id, fund.id, 0.0, 12.0, "2026-03-01")).await;
+    assert!(matches!(no_amount, Err(AppError::InvalidGuard(_))), "sem valor recebido");
+    let too_much = create_transaction_in(&db, amortization_request(pf.id, fund.id, 1_300.0, 12.0, "2026-03-01")).await;
+    assert!(matches!(too_much, Err(AppError::InvalidGuard(_))), "passa do valor da posição (100 × 12 = 1.200)");
+    let before_buying = create_transaction_in(&db, amortization_request(pf.id, fund.id, 100.0, 12.0, "2024-12-31")).await;
+    assert!(matches!(before_buying, Err(AppError::InvalidGuard(_))), "sem cotas na data");
+
+    // 600 de 1.200: as 100 cotas ficam, o custo cai pela metade (5,00 por cota) e o ganho de 100 vira resultado realizado
+    add(&db, amortization_request(pf.id, fund.id, 600.0, 12.0, "2026-03-01")).await;
+    let positions = compute_positions(&db, pf.id).await.unwrap();
+    let position = positions.iter().find(|p| p.ticker == "FUNDOFIP").unwrap();
+    assert!(close(position.quantity, 100.0), "{}", position.quantity);
+    assert!(close(position.average_buy_price.unwrap(), 5.0), "{:?}", position.average_buy_price);
+    assert!(close(position.realized_pl, 100.0), "{}", position.realized_pl);
+
+    // o resgate estimado mostra a amortização: 424 dias (17,5%) sobre 100 de rendimento, e as cotas continuam em carteira
+    set_fund_term_in(&db, fund.id, "longo_prazo").await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let r = &overview.funds[0].redemptions[0];
+    assert!(r.is_amortization && close(r.gross, 600.0) && close(r.quotas, 50.0), "{r:?}");
+    assert!(close(r.ir, 17.5) && close(r.net, 582.5), "{r:?}");
+    assert!(close(overview.funds[0].quantity, 100.0));
+}
+
+#[tokio::test]
+async fn the_2023_stock_of_a_closed_fund_needs_the_type_the_option_and_the_quota_of_31_12_2023() {
+    use crate::commands::fund::{
+        funds_overview_in, set_fund_estoque_in, set_fund_structure_in, set_fund_term_in, upsert_fund_quota_in,
+        EstoqueStatus, UpsertFundQuotaRequest,
+    };
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Estoque").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDOE", "fundo", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+    let quota = |date: &str, value: f64| UpsertFundQuotaRequest {
+        asset_id: fund.id,
+        quota_date: date.to_string(),
+        value,
+    };
+
+    // 100 cotas a 10,00 em 01/06/2022 e resgate de todas a 15,00 em 01/03/2026
+    add(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2022-06-01", 0.0)).await;
+    add(&db, tx_request(pf.id, fund.id, "venda", 100.0, 15.0, "2026-03-01", 0.0)).await;
+
+    // estrutura e opção só depois do tipo; valores desconhecidos são recusados
+    assert!(matches!(set_fund_structure_in(&db, fund.id, "fechado").await, Err(AppError::InvalidInput(_))));
+    assert!(matches!(set_fund_estoque_in(&db, fund.id, Some("geral")).await, Err(AppError::InvalidInput(_))));
+    set_fund_term_in(&db, fund.id, "longo_prazo").await.unwrap();
+    assert!(matches!(set_fund_structure_in(&db, fund.id, "mista").await, Err(AppError::InvalidInput(_))));
+    assert!(matches!(set_fund_estoque_in(&db, fund.id, Some("tudo")).await, Err(AppError::InvalidInput(_))));
+
+    // fundo aberto não tem estoque, mesmo com a opção marcada
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    assert!(matches!(overview.funds[0].estoque, EstoqueStatus::NotApplicable));
+    assert_eq!(overview.funds[0].structure, "aberto");
+    set_fund_estoque_in(&db, fund.id, Some("geral")).await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    assert!(matches!(overview.funds[0].estoque, EstoqueStatus::NotApplicable));
+
+    // fechado sem opção: nada é estimado; com opção e sem a cota de 2023 (uma de 21 dias antes não serve): pede a cota
+    set_fund_structure_in(&db, fund.id, "fechado").await.unwrap();
+    set_fund_estoque_in(&db, fund.id, None).await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    assert!(matches!(overview.funds[0].estoque, EstoqueStatus::NotTaxed));
+    // sem o estoque o resgate segue sem crédito: rendimento 500 a 15% = 75
+    assert!(close(overview.funds[0].redemptions[0].ir, 75.0), "{:?}", overview.funds[0].redemptions[0]);
+
+    set_fund_estoque_in(&db, fund.id, Some("geral")).await.unwrap();
+    upsert_fund_quota_in(&db, quota("2023-12-10", 13.0), today).await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    assert!(matches!(overview.funds[0].estoque, EstoqueStatus::NeedsQuota), "a cota de 10/12 está longe demais");
+
+    // com a cota de 29/12/2023 a 14,00: ganho de 400 e imposto de 60 a 15%, que vira crédito no resgate
+    upsert_fund_quota_in(&db, quota("2023-12-29", 14.0), today).await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let EstoqueStatus::Estimated { estimate } = &overview.funds[0].estoque else {
+        panic!("esperava a estimativa do estoque");
+    };
+    assert!(close(estimate.base, 400.0) && close(estimate.tax, 60.0) && close(estimate.rate, 0.15), "{estimate:?}");
+    // nominal 500 + 400 já tributados = 900; IR devido 135 − 60 pagos = 75: a 15% o estoque só antecipa o mesmo imposto,
+    // então o IR final não muda, mas agora 60 dele já foram pagos
+    let r = &overview.funds[0].redemptions[0];
+    assert!(close(r.ir, 75.0) && close(r.come_cotas_credit, 60.0), "{r:?}");
+
+    // a opção de 8%: imposto de 32 e IR final de 103
+    set_fund_estoque_in(&db, fund.id, Some("opcao_8")).await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let EstoqueStatus::Estimated { estimate } = &overview.funds[0].estoque else {
+        panic!("esperava a estimativa do estoque");
+    };
+    assert!(close(estimate.tax, 32.0) && close(estimate.rate, 0.08), "{estimate:?}");
+    assert!(close(overview.funds[0].redemptions[0].ir, 103.0), "{:?}", overview.funds[0].redemptions[0]);
+    assert_eq!(overview.funds[0].estoque_option.as_deref(), Some("opcao_8"));
+}
+
+#[tokio::test]
+async fn an_investment_entity_is_taxed_at_a_flat_15_percent_and_has_no_come_cotas() {
+    use crate::commands::fund::{funds_overview_in, set_fund_term_in};
+    use crate::domain::tax::come_cotas::EstimateStatus;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Entidade").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FIDC11", "fundo", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+
+    add(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2026-03-01", 0.0)).await;
+    add(&db, tx_request(pf.id, fund.id, "venda", 100.0, 12.0, "2026-03-06", 0.0)).await;
+    set_fund_term_in(&db, fund.id, "entidade_investimento").await.unwrap();
+
+    // 5 dias de aplicação: sem IOF e sem tabela por prazo, 15% de 200
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let r = &overview.funds[0].redemptions[0];
+    assert!(close(r.iof, 0.0) && close(r.ir, 30.0), "{r:?}");
+    assert_eq!(overview.funds[0].term.as_deref(), Some("entidade_investimento"));
+    // sem posição não há o que estimar; o importante é que não pede come-cotas
+    assert!(overview.estimates.iter().all(|e| e.status != EstimateStatus::Estimated));
+}
+
 #[tokio::test]
 async fn the_come_cotas_entry_refuses_what_is_not_a_fund_quota_deduction() {
     use crate::error::AppError;

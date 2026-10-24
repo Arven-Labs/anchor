@@ -27,7 +27,19 @@ import {
 // no formulário de lançamentos; esta tela só lista os já registrados. Cada venda do fundo aparece como resgate, com o
 // IOF e o IR estimados (informativo: o imposto sai na fonte).
 
-type FundTerm = "longo_prazo" | "curto_prazo" | "acoes";
+type FundTerm = "longo_prazo" | "curto_prazo" | "acoes" | "entidade_investimento";
+
+type FundStructure = "aberto" | "fechado" | "exclusivo";
+
+type EstoqueOption = "geral" | "opcao_8";
+
+type EstoqueEstimate = { date: string; quota_value: number; rate: number; base: number; tax: number };
+
+type EstoqueStatus =
+  | { kind: "not_applicable" }
+  | { kind: "not_taxed" }
+  | { kind: "needs_quota" }
+  | { kind: "estimated"; estimate: EstoqueEstimate };
 
 type QuotaRow = { id: number; asset_id: number; quota_date: string; value: number; source: "manual" | "cvm" };
 
@@ -60,6 +72,7 @@ type RedemptionRow = {
   loss_created: number;
   loss_credit_used: number;
   ir_before_compensation: number;
+  is_amortization: boolean;
 };
 
 type LossCredit = {
@@ -81,6 +94,9 @@ type FundRow = {
   cvm_subclass: string | null;
   cvm_status: CvmStatus;
   administrator: string | null;
+  structure: FundStructure;
+  estoque_option: EstoqueOption | null;
+  estoque: EstoqueStatus;
   last_cvm_date: string | null;
   quotas: QuotaRow[];
   deductions: DeductionRow[];
@@ -112,6 +128,19 @@ const TERM_LABELS: Record<FundTerm, string> = {
   longo_prazo: "Long term (15%)",
   curto_prazo: "Short term (20%)",
   acoes: "Equity (no come-cotas)",
+  entidade_investimento: "Investment entity: FIP, FIDC, ETF (15%, no come-cotas)",
+};
+
+const STRUCTURE_LABELS: Record<FundStructure, string> = {
+  aberto: "Open fund",
+  fechado: "Closed fund",
+  exclusivo: "Exclusive fund",
+};
+
+const ESTOQUE_LABELS: Record<EstoqueOption | "none", string> = {
+  none: "Not taxed / disputed (not estimated)",
+  geral: "General rule: 15% (art. 27)",
+  opcao_8: "Option: 8% (art. 28)",
 };
 
 function formatBrl(value: number): string {
@@ -136,8 +165,18 @@ function RedemptionLine({ redemption, ticker }: { redemption: RedemptionRow; tic
   return (
     <details className="text-sm" data-testid={`fund-redemption-${ticker}-${redemption.tx_id}`}>
       <summary className="cursor-pointer">
-        {formatDate(redemption.date)}: {formatQuotas(redemption.quotas)} quotas at {formatBrl(redemption.quota_value)} ={" "}
-        {formatBrl(redemption.gross)} gross — IOF {formatBrl(redemption.iof)}, IR{" "}
+        {redemption.is_amortization ? (
+          <>
+            {formatDate(redemption.date)}: amortization of {formatBrl(redemption.gross)} (quota{" "}
+            {formatBrl(redemption.quota_value)}, the quotas stay)
+          </>
+        ) : (
+          <>
+            {formatDate(redemption.date)}: {formatQuotas(redemption.quotas)} quotas at{" "}
+            {formatBrl(redemption.quota_value)} = {formatBrl(redemption.gross)} gross
+          </>
+        )}{" "}
+        — IOF {formatBrl(redemption.iof)}, IR{" "}
         <span className="font-medium">{formatBrl(redemption.ir)}</span>, net{" "}
         <span className="font-medium">{formatBrl(redemption.net)}</span>
         {redemption.uncovered_quotas > 0 && (
@@ -212,7 +251,11 @@ function EstimateLine({ estimate }: { estimate: Estimate }) {
         </p>
       );
     case "exempt":
-      return <p className="text-sm text-muted-foreground">Equity funds have no come-cotas.</p>;
+      return (
+        <p className="text-sm text-muted-foreground">
+          Equity funds and investment entities (FIP, FIDC, ETF) have no come-cotas.
+        </p>
+      );
     case "estimated":
       return (
         <div className="flex flex-col gap-1 text-sm">
@@ -323,6 +366,88 @@ function CvmSource({ fund, onChanged }: { fund: FundRow; onChanged: () => void }
         {status.kind === "error" && `Could not read the CVM report: ${status.message}`}
       </p>
       {saveMutation.isError && <p className="text-sm text-destructive">{saveMutation.error.message}</p>}
+    </div>
+  );
+}
+
+// Fundo fechado ou exclusivo (Lei 14.754/2023): o IR do art. 17 é o mesmo do aberto; o que muda é o estoque de rendimento
+// até 31/12/2023 (arts. 27 e 28), que o usuário diz se foi tributado a 15%, a 8% ou nada. A estimativa precisa da cota de
+// 31/12/2023 (ou de até 10 dias antes), lançada ou lida da CVM.
+function ClosedFundFields({ fund, onChanged }: { fund: FundRow; onChanged: () => void }) {
+  const structureMutation = useMutation<void, AppError, FundStructure>({
+    mutationFn: (structure) => invoke("set_fund_structure", { assetId: fund.asset_id, structure }),
+    onSuccess: onChanged,
+  });
+  const estoqueMutation = useMutation<void, AppError, EstoqueOption | "none">({
+    mutationFn: (option) =>
+      invoke("set_fund_estoque", { assetId: fund.asset_id, option: option === "none" ? null : option }),
+    onSuccess: onChanged,
+  });
+  const showEstoque = fund.estoque.kind !== "not_applicable" || (fund.structure !== "aberto" && fund.term !== null);
+  const status = fund.estoque;
+
+  return (
+    <div className="flex flex-col gap-2" data-testid={`fund-structure-${fund.ticker}`}>
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="Fund structure">
+          <Select
+            value={fund.structure}
+            disabled={fund.term === null}
+            onValueChange={(value) => structureMutation.mutate(value as FundStructure)}
+          >
+            <SelectTrigger className="w-52" data-testid={`fund-structure-select-${fund.ticker}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(STRUCTURE_LABELS) as FundStructure[]).map((structure) => (
+                <SelectItem key={structure} value={structure}>
+                  {STRUCTURE_LABELS[structure]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        {showEstoque && (
+          <Field label="Income accrued up to 2023 (stock)">
+            <Select
+              value={fund.estoque_option ?? "none"}
+              onValueChange={(value) => estoqueMutation.mutate(value as EstoqueOption | "none")}
+            >
+              <SelectTrigger className="w-72" data-testid={`fund-estoque-select-${fund.ticker}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(ESTOQUE_LABELS) as (EstoqueOption | "none")[]).map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {ESTOQUE_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground" data-testid={`fund-estoque-status-${fund.ticker}`}>
+        {fund.term === null && "Choose the fund type first."}
+        {fund.term !== null && status.kind === "not_applicable" && fund.structure === "aberto" &&
+          "Open funds already paid come-cotas: they have no 2023 stock to tax."}
+        {fund.term !== null && status.kind === "not_applicable" && fund.structure !== "aberto" &&
+          "The 2023 stock only applies to long-term and short-term funds."}
+        {status.kind === "not_taxed" && "The 2023 stock is not estimated. Pick how it was taxed to count it."}
+        {status.kind === "needs_quota" &&
+          "Add the fund's quota value for 31/12/2023 (or up to 10 days before) to estimate the 2023 stock."}
+        {status.kind === "estimated" && (
+          <>
+            2023 stock: gain of {formatBrl(status.estimate.base)} up to {formatDate(status.estimate.date)} (quota{" "}
+            {formatBrl(status.estimate.quota_value)}) taxed at {(status.estimate.rate * 100).toFixed(0)}% ={" "}
+            <span className="font-medium">{formatBrl(status.estimate.tax)}</span>, paid by you in cash. It counts as tax
+            already paid when the fund is redeemed. Whether the tax is due is disputed in court.
+          </>
+        )}
+      </p>
+      {(structureMutation.isError || estoqueMutation.isError) && (
+        <p className="text-sm text-destructive">{(structureMutation.error ?? estoqueMutation.error)?.message}</p>
+      )}
     </div>
   );
 }
@@ -526,6 +651,12 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
 
               {/* A chave segue o CNPJ gravado: o campo é estado local e remonta com o valor que chegou do banco. */}
               <CvmSource key={`${fund.asset_id}:${fund.cnpj ?? ""}`} fund={fund} onChanged={cvmChanged} />
+
+              <ClosedFundFields
+                key={`${fund.asset_id}:${fund.term ?? ""}:${fund.structure}:${fund.estoque_option ?? ""}`}
+                fund={fund}
+                onChanged={refresh}
+              />
 
               <AdministratorField
                 key={`${fund.asset_id}:${fund.term ?? ""}:${fund.administrator ?? ""}`}

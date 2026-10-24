@@ -33,6 +33,16 @@ pub enum FundTerm {
     LongTerm,
     ShortTerm,
     Equity,
+    /// Entidade de investimento (FIP, FIDC, ETF que não é de renda fixa; Lei 14.754, art. 18): 15% fixo na distribuição,
+    /// amortização ou resgate e sem come-cotas (art. 24).
+    InvestmentEntity,
+}
+
+impl FundTerm {
+    /// Sem come-cotas: a estimativa fica isenta e o resgate paga uma alíquota fixa, sem IOF.
+    pub fn is_flat_rate(self) -> bool {
+        matches!(self, Self::Equity | Self::InvestmentEntity)
+    }
 }
 
 impl FundTerm {
@@ -41,6 +51,7 @@ impl FundTerm {
             "longo_prazo" => Some(Self::LongTerm),
             "curto_prazo" => Some(Self::ShortTerm),
             "acoes" => Some(Self::Equity),
+            "entidade_investimento" => Some(Self::InvestmentEntity),
             _ => None,
         }
     }
@@ -199,7 +210,7 @@ pub fn estimate(
         estimate.stale_quota = (today - latest.date).num_days() > STALE_QUOTA_DAYS;
 
         let rate_key = match term {
-            FundTerm::Equity => {
+            FundTerm::Equity | FundTerm::InvestmentEntity => {
                 estimate.status = EstimateStatus::Exempt;
                 estimates.push(estimate);
                 continue;
@@ -458,6 +469,20 @@ mod tests {
         assert_eq!(FundTerm::parse("longo_prazo"), Some(FundTerm::LongTerm));
         assert_eq!(FundTerm::parse("curto_prazo"), Some(FundTerm::ShortTerm));
         assert_eq!(FundTerm::parse("acoes"), Some(FundTerm::Equity));
+        assert_eq!(FundTerm::parse("entidade_investimento"), Some(FundTerm::InvestmentEntity));
         assert_eq!(FundTerm::parse("outro"), None);
+    }
+
+    #[test]
+    fn an_investment_entity_has_no_come_cotas() {
+        // FIP, FIDC e ETF que não é de renda fixa: 15% fixo na distribuição, sem come-cotas (Lei 14.754, art. 24)
+        let e = run(
+            fund(Some(FundTerm::InvestmentEntity), 100.0, 10.0, vec![quota("2026-01-05", 12.0)]),
+            "2026-01-10",
+        );
+        assert_eq!(e.status, EstimateStatus::Exempt);
+        assert!(close(e.tax, 0.0));
+        assert!(FundTerm::InvestmentEntity.is_flat_rate() && FundTerm::Equity.is_flat_rate());
+        assert!(!FundTerm::LongTerm.is_flat_rate() && !FundTerm::ShortTerm.is_flat_rate());
     }
 }
