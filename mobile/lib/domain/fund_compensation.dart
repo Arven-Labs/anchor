@@ -19,7 +19,10 @@
 // - O saldo do grupo abate o ganho da estimativa do próximo come-cotas (fundos em ordem
 //   de ticker, sem usar o mesmo crédito duas vezes). Descontos de come-cotas JÁ
 //   registrados não consomem crédito (não dá para saber quanto a administradora
-//   abateu), e o crédito não tem validade modelada (as fontes divergem sobre o prazo).
+//   abateu), mas cada um feito com saldo no grupo (de perdas de datas estritamente
+//   anteriores) gera um `CreditNote`: o crédito pode já ter sido usado ali e o saldo
+//   mostrado pode estar acima do real. O crédito não tem validade modelada (as fontes
+//   divergem sobre o prazo).
 
 import '../models/fund.dart';
 import 'come_cotas.dart';
@@ -34,14 +37,41 @@ class CompFund {
   final String? administrator;
   final List<RedemptionEstimate> redemptions;
 
+  /// Datas dos descontos de come-cotas já registrados do fundo (só servem para o aviso,
+  /// não consomem crédito).
+  final List<DateTime> comeCotasDates;
+
   const CompFund({
     required this.assetId,
     required this.ticker,
     required this.term,
     required this.administrator,
     required this.redemptions,
+    this.comeCotasDates = const [],
   });
 }
+
+/// Aviso de um come-cotas registrado feito com saldo de prejuízo no grupo: a
+/// administradora pode ter usado o crédito.
+class CreditNote {
+  final int assetId;
+
+  /// Data do come-cotas registrado.
+  final DateTime date;
+
+  /// Saldo do grupo imediatamente antes da data (perdas de datas anteriores, já
+  /// descontado o que resgates gastaram), em BRL.
+  final double balance;
+
+  const CreditNote({
+    required this.assetId,
+    required this.date,
+    required this.balance,
+  });
+}
+
+/// Saldo abaixo disto não gera aviso (ruído de arredondamento).
+const _noteMinBalance = 0.005;
 
 /// O saldo de prejuízo a compensar de um grupo.
 class LossCredit {
@@ -65,12 +95,18 @@ class LossCredit {
 }
 
 /// O resultado de [compensate]: os resgates de cada fundo (na ordem de entrada) já
-/// abatidos e o saldo de cada grupo.
+/// abatidos, o saldo de cada grupo e os avisos de come-cotas registrados feitos com
+/// saldo no grupo (em ordem de data).
 class CompensationResult {
   final List<List<RedemptionEstimate>> redemptions;
   final List<LossCredit> credits;
+  final List<CreditNote> notes;
 
-  const CompensationResult({required this.redemptions, required this.credits});
+  const CompensationResult({
+    required this.redemptions,
+    required this.credits,
+    this.notes = const [],
+  });
 }
 
 /// Administradora sem espaços sobrando e em minúsculas; vazia vira `null`.
@@ -170,6 +206,29 @@ CompensationResult compensate(List<CompFund> funds) {
         _Item(funds[f].redemptions[r].date, funds[f].redemptions[r].txId, f, r),
   ]..sort(_compareItems);
 
+  // (data, fundo) de cada come-cotas registrado. O saldo de uma data é o de antes do
+  // bloco dessa data: só perdas de datas estritamente anteriores contam, como no
+  // crédito dos resgates.
+  final cc = <(DateTime, int)>[
+    for (var f = 0; f < funds.length; f++)
+      for (final date in funds[f].comeCotasDates) (date, f),
+  ]..sort((a, b) => a.$1.compareTo(b.$1));
+  final notes = <CreditNote>[];
+  var nextCc = 0;
+  void noteUpTo(DateTime? limit) {
+    while (nextCc < cc.length &&
+        (limit == null || !cc[nextCc].$1.isAfter(limit))) {
+      final (date, f) = cc[nextCc];
+      final balance = pools[keys[f]]!.amount;
+      if (balance > _noteMinBalance) {
+        notes.add(
+          CreditNote(assetId: funds[f].assetId, date: date, balance: balance),
+        );
+      }
+      nextCc++;
+    }
+  }
+
   var start = 0;
   while (start < order.length) {
     final date = order[start].date;
@@ -177,6 +236,7 @@ CompensationResult compensate(List<CompFund> funds) {
     while (end < order.length && order[end].date == date) {
       end++;
     }
+    noteUpTo(date);
     for (final item in order.sublist(start, end)) {
       final pool = pools[keys[item.fund]]!;
       final (updated, used) = _applyCredit(
@@ -191,8 +251,10 @@ CompensationResult compensate(List<CompFund> funds) {
     }
     start = end;
   }
+  noteUpTo(null);
 
   return CompensationResult(
+    notes: notes,
     redemptions: out,
     credits: [
       for (final pool in pools.values)

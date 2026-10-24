@@ -64,6 +64,11 @@ class FundReport {
   /// O imposto do estoque, só quando [estoqueStatus] é `estimated`.
   final EstoqueEstimate? estoque;
 
+  /// Descontos de come-cotas registrados que o grupo de prejuízo já tinha saldo para
+  /// abater: a administradora pode ter usado o crédito ali, e o saldo mostrado pode
+  /// estar acima do real. Só informação.
+  final List<CreditNote> creditNotes;
+
   /// Come-cotas pago acima do IR devido, somado nos resgates e amortizações. Só
   /// informação (possível restituição): não entra no IR nem no líquido.
   double get refundableComeCotas =>
@@ -82,10 +87,13 @@ class FundReport {
     this.estoqueOption,
     this.estoqueStatus = EstoqueStatus.notApplicable,
     this.estoque,
+    this.creditNotes = const [],
   });
 
-  FundReport withRedemptions(List<RedemptionEstimate> redemptions) =>
-      FundReport(
+  FundReport withRedemptions(
+    List<RedemptionEstimate> redemptions, {
+    List<CreditNote> creditNotes = const [],
+  }) => FundReport(
         asset: asset,
         term: term,
         quantity: quantity,
@@ -98,6 +106,7 @@ class FundReport {
         estoqueOption: estoqueOption,
         estoqueStatus: estoqueStatus,
         estoque: estoque,
+        creditNotes: creditNotes,
       );
 }
 
@@ -335,6 +344,10 @@ FundTaxResult buildFundReports({
           term: report.term!,
           administrator: report.administrator,
           redemptions: report.redemptions,
+          comeCotasDates: [
+            for (final d in report.deductions)
+              DateTime.utc(d.date.year, d.date.month, d.date.day),
+          ],
         ),
   ];
   final result = compensate(compFunds);
@@ -346,7 +359,13 @@ FundTaxResult buildFundReports({
     for (final report in reports)
       compensated[report.asset.id] == null
           ? report
-          : report.withRedemptions(compensated[report.asset.id]!),
+          : report.withRedemptions(
+              compensated[report.asset.id]!,
+              creditNotes: [
+                for (final note in result.notes)
+                  if (note.assetId == report.asset.id) note,
+              ],
+            ),
   ];
   applyLossCredit([for (final r in adjusted) r.estimate], result.credits);
   return FundTaxResult(reports: adjusted, lossCredits: result.credits);

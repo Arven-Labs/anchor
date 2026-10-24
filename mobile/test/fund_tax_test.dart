@@ -147,6 +147,45 @@ void main() {
       expect(lossCreditText(result.lossCredits.single), contains('sem administradora'));
     });
 
+    test('um come-cotas registrado depois da perda do grupo gera o aviso na tela', () {
+      // A perde 200 em 01/06/2025. C tem um come-cotas registrado de 5 cotas a 12,00
+      // em 30/11/2025 (depois da perda) e outro de 1 cota a 11,00 em 01/05/2025
+      // (antes dela)
+      FundTaxResult result(Map<int, String> administrators) => buildFundReports(
+        assets: [fundAsset(1, 'AAA11'), fundAsset(3, 'CCC11')],
+        transactions: [
+          txOf(1, 1, TransactionType.compra, '2025-01-01', 100, 10),
+          txOf(1, 2, TransactionType.venda, '2025-06-01', 100, 8),
+          txOf(3, 3, TransactionType.compra, '2025-01-01', 100, 10),
+          txOf(3, 4, TransactionType.comeCotas, '2025-05-01', 1, 11),
+          txOf(3, 5, TransactionType.comeCotas, '2025-11-30', 5, 12),
+        ],
+        terms: {1: FundTerm.longTerm, 3: FundTerm.longTerm},
+        quotas: const [],
+        today: d('2026-01-10'),
+        administrators: administrators,
+      );
+
+      // grupos separados: o saldo é do fundo A, então C não avisa
+      expect(result(const {}).reports[1].creditNotes, isEmpty);
+
+      final grouped = result({1: 'XP', 3: 'XP'});
+      final notes = grouped.reports[1].creditNotes;
+      expect(notes, hasLength(1));
+      expect(notes.single.date, d('2025-11-30'));
+      expect(notes.single.balance, closeTo(200, 1e-6));
+      expect(grouped.reports[0].creditNotes, isEmpty);
+      // o aviso não gasta crédito: o saldo do grupo segue inteiro
+      expect(grouped.lossCredits.single.amount, closeTo(200, 1e-6));
+
+      final warnings = fundWarnings(grouped.reports[1])
+          .where((w) => w.contains('crédito de prejuízo no grupo'))
+          .toList();
+      expect(warnings, hasLength(1));
+      expect(warnings.single, contains('30/11/2025'));
+      expect(warnings.single, contains('pode ter usado parte dele'));
+    });
+
     test('o saldo do grupo abate o come-cotas estimado do outro fundo', () {
       // C: 100 cotas a 10,00 compradas em 01/07/2026, cota a 12,00: ganho 200, 15% = 30
       final result = buildFundReports(

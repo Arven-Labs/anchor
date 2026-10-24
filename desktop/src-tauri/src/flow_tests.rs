@@ -4813,6 +4813,48 @@ async fn the_loss_credit_reduces_the_next_come_cotas_estimate_of_the_same_group(
     assert!(close(overview.loss_credits[0].amount, 200.0), "{:?}", overview.loss_credits);
 }
 
+#[tokio::test]
+async fn a_recorded_come_cotas_after_a_loss_in_the_same_group_gets_a_credit_note() {
+    use crate::commands::fund::{funds_overview_in, set_fund_administrator_in, set_fund_term_in};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Aviso do crédito").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let loser = asset_in(&db, "FUNDOA", "fundo", "BRL").await;
+    let holder = asset_in(&db, "FUNDOC", "fundo", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+
+    // A perde 200 em 01/06/2025. C tem 100 cotas a 10,00 e um come-cotas registrado de 5 cotas a 12,00 em 30/11/2025
+    // (depois da perda); outro, de 1 cota, em 01/05/2025 (antes da perda)
+    add(&db, tx_request(pf.id, loser.id, "compra", 100.0, 10.0, "2025-01-01", 0.0)).await;
+    add(&db, tx_request(pf.id, loser.id, "venda", 100.0, 8.0, "2025-06-01", 0.0)).await;
+    add(&db, tx_request(pf.id, holder.id, "compra", 100.0, 10.0, "2025-01-01", 0.0)).await;
+    add(&db, tx_request(pf.id, holder.id, "come_cotas", 1.0, 11.0, "2025-05-01", 0.0)).await;
+    add(&db, tx_request(pf.id, holder.id, "come_cotas", 5.0, 12.0, "2025-11-30", 0.0)).await;
+    for id in [loser.id, holder.id] {
+        set_fund_term_in(&db, id, "longo_prazo").await.unwrap();
+    }
+    let notes_of = |overview: &crate::commands::fund::FundsOverview, ticker: &str| {
+        overview.funds.iter().find(|f| f.ticker == ticker).unwrap().credit_notes.clone()
+    };
+
+    // grupos separados: o saldo da perda é do fundo A, então o come-cotas de C não avisa
+    let separate = funds_overview_in(&db, ws.id, today).await.unwrap();
+    assert!(notes_of(&separate, "FUNDOC").is_empty(), "{:?}", notes_of(&separate, "FUNDOC"));
+
+    // mesmo grupo: só o come-cotas de 30/11/2025 avisa, com o saldo de 200; o de 01/05/2025 veio antes da perda
+    set_fund_administrator_in(&db, loser.id, Some("XP")).await.unwrap();
+    set_fund_administrator_in(&db, holder.id, Some("XP")).await.unwrap();
+    let grouped = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let notes = notes_of(&grouped, "FUNDOC");
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert_eq!(notes[0].date.to_string(), "2025-11-30");
+    assert!(close(notes[0].balance, 200.0), "{notes:?}");
+    assert!(notes_of(&grouped, "FUNDOA").is_empty());
+    // o aviso não gasta crédito: o saldo do grupo segue inteiro
+    assert!(close(grouped.loss_credits[0].amount, 200.0), "{:?}", grouped.loss_credits);
+}
+
 /// Amortização de fundo fechado: o valor recebido e a cota do dia, sem quantidade nem taxa.
 fn amortization_request(
     portfolio_id: i32,

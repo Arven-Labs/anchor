@@ -16,7 +16,7 @@ use crate::commands::tax::{load_rule_set, workspace_portfolio_ids};
 use crate::commands::transaction::{cost_events, AMORTIZATION, COME_COTAS};
 use crate::domain::cost_basis;
 use crate::domain::tax::come_cotas::{self, ComeCotasEstimate, FundHolding, FundTerm, QuotaValue};
-use crate::domain::tax::fund_compensation::{self, CompFund, LossCredit};
+use crate::domain::tax::fund_compensation::{self, CompFund, CreditNote, LossCredit};
 use crate::domain::tax::fund_redemption::{self, EstoqueEstimate, FundEvent, FundEventKind, RedemptionEstimate};
 use crate::domain::tax::rules;
 use crate::entity::{assets, fund_detail, fund_quota_value, transactions};
@@ -69,6 +69,9 @@ pub struct FundView {
     pub deductions: Vec<DeductionView>,
     /// IR e IOF estimados de cada resgate (venda), do mais antigo ao mais novo; vazio até o fundo ter tipo.
     pub redemptions: Vec<RedemptionEstimate>,
+    /// Descontos de come-cotas registrados que o grupo de prejuízo já tinha saldo para abater: a administradora pode ter
+    /// usado o crédito ali, e o saldo mostrado pode estar acima do real. Só informação.
+    pub credit_notes: Vec<CreditNote>,
 }
 
 #[derive(Serialize)]
@@ -431,12 +434,13 @@ pub async fn funds_overview_with(
             quotas,
             deductions,
             redemptions,
+            credit_notes: Vec::new(),
         });
     }
 
     // Compensação de prejuízo entre fundos do mesmo grupo: ajusta o IR dos resgates e sobra um saldo por grupo, que ainda
     // abate o ganho da estimativa do próximo come-cotas.
-    let loss_credits = {
+    let (loss_credits, credit_notes) = {
         let mut comp: Vec<CompFund<'_>> = funds
             .iter_mut()
             .filter_map(|f| {
@@ -447,11 +451,21 @@ pub async fn funds_overview_with(
                     term,
                     administrator: f.administrator.as_deref(),
                     redemptions: &mut f.redemptions,
+                    come_cotas_dates: f
+                        .deductions
+                        .iter()
+                        .filter_map(|d| NaiveDate::parse_from_str(&d.date, "%Y-%m-%d").ok())
+                        .collect(),
                 })
             })
             .collect();
-        fund_compensation::compensate(&mut comp)
+        fund_compensation::compensate_with_notes(&mut comp)
     };
+    for note in credit_notes {
+        if let Some(fund) = funds.iter_mut().find(|f| f.asset_id == note.asset_id) {
+            fund.credit_notes.push(note);
+        }
+    }
     let mut estimates = come_cotas::estimate(&holdings, &rules, today)?;
     fund_compensation::apply_loss_credit(&mut estimates, &loss_credits);
     Ok(FundsOverview { funds, estimates, loss_credits })

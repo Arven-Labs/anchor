@@ -13,7 +13,9 @@
 //   o que o come-cotas já cobriu não gasta crédito. O IOF não é abatido.
 // - O saldo do grupo abate o ganho da estimativa do próximo come-cotas (fundos em ordem de ticker, sem usar o mesmo crédito
 //   duas vezes). Descontos de come-cotas JÁ registrados não consomem crédito (não dá para saber quanto a administradora
-//   abateu), e o crédito não tem validade modelada (as fontes divergem sobre o prazo).
+//   abateu), mas cada um feito com saldo no grupo (de perdas de datas estritamente anteriores) gera uma `CreditNote`: o
+//   crédito pode já ter sido usado ali e o saldo mostrado pode estar acima do real. O crédito não tem validade modelada
+//   (as fontes divergem sobre o prazo).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -31,6 +33,18 @@ pub struct CompFund<'a> {
     pub term: FundTerm,
     pub administrator: Option<&'a str>,
     pub redemptions: &'a mut [RedemptionEstimate],
+    /// Datas dos descontos de come-cotas já registrados do fundo (só servem para o aviso, não consomem crédito).
+    pub come_cotas_dates: Vec<NaiveDate>,
+}
+
+/// Aviso de um come-cotas registrado feito com saldo de prejuízo no grupo: a administradora pode ter usado o crédito.
+#[derive(Clone, Debug, Serialize)]
+pub struct CreditNote {
+    pub asset_id: i32,
+    /// Data do come-cotas registrado.
+    pub date: NaiveDate,
+    /// Saldo do grupo imediatamente antes da data (perdas de datas anteriores, já descontado o que resgates gastaram), em BRL.
+    pub balance: f64,
 }
 
 /// O saldo de prejuízo a compensar de um grupo.
@@ -90,9 +104,13 @@ fn apply_credit(redemption: &mut RedemptionEstimate, available: &mut f64) -> f64
     used
 }
 
+/// Saldo abaixo disto não gera aviso (ruído de arredondamento).
+const NOTE_MIN_BALANCE: f64 = 0.005;
+
 /// Compensa os prejuízos entre os resgates de `funds` (todos os fundos que têm tipo, mesmo sem resgate) e devolve o saldo
-/// de cada grupo. Cada resgate recebe `loss_created`, `loss_credit_used` e o `ir` já abatido.
-pub fn compensate(funds: &mut [CompFund<'_>]) -> Vec<LossCredit> {
+/// de cada grupo, mais um aviso por come-cotas registrado feito com saldo no grupo. Cada resgate recebe `loss_created`,
+/// `loss_credit_used` e o `ir` já abatido.
+pub fn compensate_with_notes(funds: &mut [CompFund<'_>]) -> (Vec<LossCredit>, Vec<CreditNote>) {
     let keys: Vec<String> = funds.iter().map(group_key).collect();
     let mut pools: BTreeMap<String, Pool> = BTreeMap::new();
     for (fund, key) in funds.iter().zip(&keys) {
@@ -116,10 +134,31 @@ pub fn compensate(funds: &mut [CompFund<'_>]) -> Vec<LossCredit> {
     }
     order.sort();
 
+    // (data, fundo) de cada come-cotas registrado. O saldo de uma data é o de antes do bloco dessa data: só perdas de datas
+    // estritamente anteriores contam, como no crédito dos resgates.
+    let mut cc: Vec<(NaiveDate, usize)> = Vec::new();
+    for (f, fund) in funds.iter().enumerate() {
+        cc.extend(fund.come_cotas_dates.iter().map(|&date| (date, f)));
+    }
+    cc.sort();
+    let mut notes: Vec<CreditNote> = Vec::new();
+    let mut next_cc = 0;
+    let mut note_up_to = |limit: Option<NaiveDate>, pools: &BTreeMap<String, Pool>, funds: &[CompFund<'_>]| {
+        while next_cc < cc.len() && limit.map_or(true, |l| cc[next_cc].0 <= l) {
+            let (date, f) = cc[next_cc];
+            let balance = pools[&keys[f]].amount;
+            if balance > NOTE_MIN_BALANCE {
+                notes.push(CreditNote { asset_id: funds[f].asset_id, date, balance });
+            }
+            next_cc += 1;
+        }
+    };
+
     let mut start = 0;
     while start < order.len() {
         let date = order[start].0;
         let end = start + order[start..].iter().take_while(|o| o.0 == date).count();
+        note_up_to(Some(date), &pools, funds);
         for &(_, _, f, r) in &order[start..end] {
             let pool = pools.get_mut(&keys[f]).expect("o grupo existe");
             apply_credit(&mut funds[f].redemptions[r], &mut pool.amount);
@@ -130,8 +169,9 @@ pub fn compensate(funds: &mut [CompFund<'_>]) -> Vec<LossCredit> {
         }
         start = end;
     }
+    note_up_to(None, &pools, funds);
 
-    pools
+    let credits = pools
         .into_values()
         .filter(|p| p.amount > EPS)
         .map(|p| LossCredit {
@@ -141,7 +181,8 @@ pub fn compensate(funds: &mut [CompFund<'_>]) -> Vec<LossCredit> {
             asset_ids: p.asset_ids,
             amount: p.amount,
         })
-        .collect()
+        .collect();
+    (credits, notes)
 }
 
 /// Abate o ganho das estimativas de come-cotas com o saldo dos grupos em `credits`. Estimativas sem imposto, sem
@@ -201,6 +242,7 @@ mod tests {
         term: FundTerm,
         administrator: Option<&'static str>,
         redemptions: Vec<RedemptionEstimate>,
+        come_cotas_dates: Vec<NaiveDate>,
     }
 
     fn fixture(
@@ -211,10 +253,16 @@ mod tests {
         events: &[FundEvent],
     ) -> Fixture {
         let redemptions = estimate_redemptions(events, term, &test_rule_set()).unwrap();
-        Fixture { asset_id, ticker, term, administrator, redemptions }
+        Fixture { asset_id, ticker, term, administrator, redemptions, come_cotas_dates: Vec::new() }
     }
 
-    fn run(fixtures: &mut [Fixture]) -> Vec<LossCredit> {
+    /// O mesmo fundo com descontos de come-cotas registrados nas `dates`.
+    fn with_come_cotas(mut fixture: Fixture, dates: &[&str]) -> Fixture {
+        fixture.come_cotas_dates = dates.iter().map(|s| d(s)).collect();
+        fixture
+    }
+
+    fn run_with_notes(fixtures: &mut [Fixture]) -> (Vec<LossCredit>, Vec<CreditNote>) {
         let mut funds: Vec<CompFund<'_>> = fixtures
             .iter_mut()
             .map(|f| CompFund {
@@ -223,9 +271,14 @@ mod tests {
                 term: f.term,
                 administrator: f.administrator,
                 redemptions: &mut f.redemptions,
+                come_cotas_dates: f.come_cotas_dates.clone(),
             })
             .collect();
-        compensate(&mut funds)
+        compensate_with_notes(&mut funds)
+    }
+
+    fn run(fixtures: &mut [Fixture]) -> Vec<LossCredit> {
+        run_with_notes(fixtures).0
     }
 
     /// Fundo que perde: 100 cotas a 10,00 resgatadas a `quota` em 01/06/2025 (151 dias, sem IOF).
@@ -516,5 +569,94 @@ mod tests {
 
         assert!(close(estimates[0].loss_credit_used, 0.0) && close(estimates[0].tax, 30.0));
         assert_eq!(estimates[1].status, EstimateStatus::Exempt);
+    }
+
+    #[test]
+    fn a_recorded_come_cotas_after_a_loss_gets_a_note_with_the_group_balance() {
+        // X perde 200 em 01/06/2025; o come-cotas registrado em 30/11/2025 foi feito com 200 de saldo no grupo
+        let mut set = [with_come_cotas(loser(1, "XPTO11", FundTerm::LongTerm, Some("XP"), 8.0), &["2025-11-30"])];
+        let (credits, notes) = run_with_notes(&mut set);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].asset_id == 1 && notes[0].date == d("2025-11-30") && close(notes[0].balance, 200.0), "{notes:?}");
+        // o aviso não muda nada: o saldo continua inteiro e o resgate igual
+        assert!(close(credits.iter().map(|c| c.amount).sum::<f64>(), 200.0), "{credits:?}");
+        assert!(close(set[0].redemptions[0].loss_created, 200.0));
+    }
+
+    #[test]
+    fn a_come_cotas_before_or_on_the_day_of_the_loss_gets_no_note() {
+        // a perda é de 01/06/2025: antes e no mesmo dia não há crédito (só datas estritamente anteriores); no dia seguinte há
+        let mut none = [with_come_cotas(
+            loser(1, "XPTO11", FundTerm::LongTerm, Some("XP"), 8.0),
+            &["2025-05-01", "2025-06-01"],
+        )];
+        assert!(run_with_notes(&mut none).1.is_empty());
+
+        let mut next_day = [with_come_cotas(loser(1, "XPTO11", FundTerm::LongTerm, Some("XP"), 8.0), &["2025-06-02"])];
+        let notes = run_with_notes(&mut next_day).1;
+        assert!(notes.len() == 1 && notes[0].date == d("2025-06-02"), "{notes:?}");
+    }
+
+    #[test]
+    fn a_come_cotas_after_a_redemption_spent_the_whole_credit_gets_no_note() {
+        // X perde 200 (01/06/2025) e Y gasta os 200 num ganho de 01/09/2025. O come-cotas de X em 01/07/2025 ainda via 200 de
+        // saldo (nota); o de Y em 30/11/2025 já não vê nada (sem nota)
+        let mut set = [
+            with_come_cotas(loser(1, "XPTO11", FundTerm::LongTerm, Some("XP"), 8.0), &["2025-07-01"]),
+            with_come_cotas(winner(2, "YPTO11", FundTerm::LongTerm, Some("XP"), "2025-09-01"), &["2025-11-30"]),
+        ];
+        let (credits, notes) = run_with_notes(&mut set);
+        assert!(credits.is_empty(), "{credits:?}");
+        assert!(notes.len() == 1 && notes[0].asset_id == 1 && close(notes[0].balance, 200.0), "{notes:?}");
+    }
+
+    #[test]
+    fn the_note_shows_the_balance_left_after_a_partial_use() {
+        // X perde 200; Y ganha só 100 (11,00 contra 10,00 em 243 dias: IR 20, usa 100 de crédito); sobram 100 para o
+        // come-cotas de 30/11/2025
+        let small_winner = fixture(
+            2,
+            "YPTO11",
+            FundTerm::LongTerm,
+            Some("XP"),
+            &[buy(1, "2025-01-01", 100.0, 1_000.0), redeem(2, "2025-09-01", 100.0, 11.0)],
+        );
+        let mut set = [
+            with_come_cotas(loser(1, "XPTO11", FundTerm::LongTerm, Some("XP"), 8.0), &["2025-11-30"]),
+            small_winner,
+        ];
+        let (credits, notes) = run_with_notes(&mut set);
+        assert!(close(set[1].redemptions[0].loss_credit_used, 100.0), "{:?}", set[1].redemptions[0]);
+        assert!(close(credits[0].amount, 100.0), "{credits:?}");
+        assert!(notes.len() == 1 && close(notes[0].balance, 100.0), "{notes:?}");
+    }
+
+    #[test]
+    fn other_groups_and_funds_without_an_administrator_get_no_note_from_a_loss_that_is_not_theirs() {
+        // X (XP, longo prazo) perde 200; os come-cotas de outra administradora, de outro tipo e de um fundo sem
+        // administradora não são do grupo dele
+        let mut set = [
+            loser(1, "XPTO11", FundTerm::LongTerm, Some("XP"), 8.0),
+            with_come_cotas(winner(2, "BBB11", FundTerm::LongTerm, Some("BTG"), "2025-09-01"), &["2025-11-30"]),
+            with_come_cotas(winner(3, "CCC11", FundTerm::ShortTerm, Some("XP"), "2025-09-01"), &["2025-11-30"]),
+            with_come_cotas(winner(4, "DDD11", FundTerm::LongTerm, None, "2025-09-01"), &["2025-11-30"]),
+        ];
+        assert!(run_with_notes(&mut set).1.is_empty());
+
+        // sem administradora o grupo é o próprio fundo: o come-cotas dele depois da sua perda avisa
+        let mut alone = [with_come_cotas(loser(5, "EEE11", FundTerm::LongTerm, None, 8.0), &["2025-11-30"])];
+        let notes = run_with_notes(&mut alone).1;
+        assert!(notes.len() == 1 && notes[0].asset_id == 5, "{notes:?}");
+    }
+
+    #[test]
+    fn each_recorded_come_cotas_gets_its_own_note_in_date_order() {
+        let mut set = [with_come_cotas(
+            loser(1, "XPTO11", FundTerm::LongTerm, Some("XP"), 8.0),
+            &["2025-12-01", "2025-11-30"],
+        )];
+        let notes = run_with_notes(&mut set).1;
+        let dates: Vec<NaiveDate> = notes.iter().map(|n| n.date).collect();
+        assert_eq!(dates, vec![d("2025-11-30"), d("2025-12-01")]);
     }
 }

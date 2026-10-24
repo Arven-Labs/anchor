@@ -318,4 +318,130 @@ void main() {
     expect(estimates[0].tax, closeTo(30, 1e-6));
     expect(estimates[1].status, EstimateStatus.exempt);
   });
+
+  // Aviso de come-cotas registrado feito com saldo de prejuízo no grupo: porte dos
+  // testes de `CreditNote` do desktop.
+  CompFund withComeCotas(CompFund fund, List<String> dates) => CompFund(
+    assetId: fund.assetId,
+    ticker: fund.ticker,
+    term: fund.term,
+    administrator: fund.administrator,
+    redemptions: fund.redemptions,
+    comeCotasDates: [for (final date in dates) d(date)],
+  );
+
+  group('aviso de come-cotas registrado com saldo no grupo', () {
+    test('um come-cotas depois da perda avisa com o saldo do grupo', () {
+      // X perde 200 em 01/06/2025; o come-cotas registrado em 30/11/2025 foi feito
+      // com 200 de saldo no grupo
+      final result = compensate([
+        withComeCotas(
+          loser(1, 'XPTO11', FundTerm.longTerm, 'XP', 8),
+          ['2025-11-30'],
+        ),
+      ]);
+
+      expect(result.notes, hasLength(1));
+      expect(result.notes.single.assetId, 1);
+      expect(result.notes.single.date, d('2025-11-30'));
+      expect(result.notes.single.balance, closeTo(200, 1e-6));
+      // o aviso não muda nada: o saldo segue inteiro
+      expect(sum(result.credits), closeTo(200, 1e-6));
+    });
+
+    test('antes da perda e no mesmo dia não avisa; no dia seguinte avisa', () {
+      final none = compensate([
+        withComeCotas(
+          loser(1, 'XPTO11', FundTerm.longTerm, 'XP', 8),
+          ['2025-05-01', '2025-06-01'],
+        ),
+      ]);
+      expect(none.notes, isEmpty);
+
+      final nextDay = compensate([
+        withComeCotas(
+          loser(1, 'XPTO11', FundTerm.longTerm, 'XP', 8),
+          ['2025-06-02'],
+        ),
+      ]);
+      expect(nextDay.notes.single.date, d('2025-06-02'));
+    });
+
+    test('depois de um resgate que gastou todo o crédito não avisa', () {
+      // X perde 200 (01/06/2025) e Y gasta os 200 num ganho de 01/09/2025: o
+      // come-cotas de X em 01/07/2025 ainda via 200 de saldo (aviso); o de Y em
+      // 30/11/2025 já não vê nada
+      final result = compensate([
+        withComeCotas(
+          loser(1, 'XPTO11', FundTerm.longTerm, 'XP', 8),
+          ['2025-07-01'],
+        ),
+        withComeCotas(
+          winner(2, 'YPTO11', FundTerm.longTerm, 'XP', '2025-09-01'),
+          ['2025-11-30'],
+        ),
+      ]);
+
+      expect(result.credits, isEmpty);
+      expect(result.notes.single.assetId, 1);
+      expect(result.notes.single.balance, closeTo(200, 1e-6));
+    });
+
+    test('mostra o saldo que sobrou depois de um uso parcial', () {
+      // X perde 200; Y ganha só 100 (11,00 contra 10,00 em 243 dias: IR 20, usa 100
+      // de crédito); sobram 100 para o come-cotas de 30/11/2025
+      final result = compensate([
+        withComeCotas(
+          loser(1, 'XPTO11', FundTerm.longTerm, 'XP', 8),
+          ['2025-11-30'],
+        ),
+        fixture(2, 'YPTO11', FundTerm.longTerm, 'XP', [
+          buy(1, '2025-01-01', 100, 1000),
+          redeem(2, '2025-09-01', 100, 11),
+        ]),
+      ]);
+
+      expect(result.redemptions[1].single.lossCreditUsed, closeTo(100, 1e-6));
+      expect(sum(result.credits), closeTo(100, 1e-6));
+      expect(result.notes.single.balance, closeTo(100, 1e-6));
+    });
+
+    test('outros grupos não avisam; sem administradora o grupo é o próprio fundo', () {
+      final other = compensate([
+        loser(1, 'XPTO11', FundTerm.longTerm, 'XP', 8),
+        withComeCotas(
+          winner(2, 'BBB11', FundTerm.longTerm, 'BTG', '2025-09-01'),
+          ['2025-11-30'],
+        ),
+        withComeCotas(
+          winner(3, 'CCC11', FundTerm.shortTerm, 'XP', '2025-09-01'),
+          ['2025-11-30'],
+        ),
+        withComeCotas(
+          winner(4, 'DDD11', FundTerm.longTerm, null, '2025-09-01'),
+          ['2025-11-30'],
+        ),
+      ]);
+      expect(other.notes, isEmpty);
+
+      final alone = compensate([
+        withComeCotas(
+          loser(5, 'EEE11', FundTerm.longTerm, null, 8),
+          ['2025-11-30'],
+        ),
+      ]);
+      expect(alone.notes.single.assetId, 5);
+    });
+
+    test('cada come-cotas tem o seu aviso, em ordem de data', () {
+      final result = compensate([
+        withComeCotas(
+          loser(1, 'XPTO11', FundTerm.longTerm, 'XP', 8),
+          ['2025-12-01', '2025-11-30'],
+        ),
+      ]);
+
+      expect(result.notes.map((n) => n.date), [d('2025-11-30'), d('2025-12-01')]);
+    });
+  });
 }

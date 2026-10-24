@@ -91,6 +91,11 @@ List<String> fundWarnings(FundReport report) {
       'O come-cotas de ${formatDay(estimate.lastReferenceUnrecorded!)} já '
           'passou sem desconto registrado: lance a transação Come-cotas para a '
           'base ficar certa.',
+    for (final note in report.creditNotes)
+      'O come-cotas de ${formatDay(note.date)} foi registrado com '
+          '${formatBrl(note.balance)} de crédito de prejuízo no grupo: a '
+          'administradora pode ter usado parte dele, então o saldo de crédito '
+          'mostrado pode estar acima do real.',
     for (final redemption in report.redemptions) ...[
       if (redemption.uncoveredQuotas > 1e-9)
         'Resgate de ${formatDay(redemption.date)} maior que as aplicações '

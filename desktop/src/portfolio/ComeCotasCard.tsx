@@ -101,6 +101,8 @@ type FundRow = {
   quotas: QuotaRow[];
   deductions: DeductionRow[];
   redemptions: RedemptionRow[];
+  // Come-cotas registrados feitos com saldo de prejuízo no grupo: a administradora pode ter usado o crédito ali.
+  credit_notes: { asset_id: number; date: string; balance: number }[];
 };
 
 type Estimate = {
@@ -591,8 +593,9 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
           DARF. A loss on a redemption offsets the gains of later redemptions and come-cotas in the same fund or in
           another fund of the same type and the same administrator (or broker): give each fund's administrator so Anchor
           can group them; without it a fund only offsets itself. Come-cotas already recorded do not use up the credit
-          and it has no expiry in this estimate. This is an estimate based on secondary sources — confirm with your fund
-          statement.
+          (Anchor cannot know how much the administrator offset there, so it warns when a recorded come-cotas could have
+          used it) and the credit has no expiry in this estimate. This is an estimate based on secondary sources —
+          confirm with your fund statement.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -686,6 +689,18 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
                   already took the quotas, add a Come-cotas entry in Transactions so the position and the next
                   estimate are right.
                 </p>
+              )}
+
+              {fund.credit_notes.length > 0 && (
+                <div className="flex flex-col gap-1 text-sm text-amber-500" data-testid={`credit-notes-${fund.ticker}`}>
+                  {fund.credit_notes.map((note) => (
+                    <p key={note.date}>
+                      The come-cotas of {formatDate(note.date)} was recorded while the group had {formatBrl(note.balance)}{" "}
+                      of loss credit: the administrator may have used part of it, so the credit balance shown may be
+                      higher than the real one.
+                    </p>
+                  ))}
+                </div>
               )}
 
               {fund.deductions.length > 0 && (
