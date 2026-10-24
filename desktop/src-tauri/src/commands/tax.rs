@@ -77,6 +77,13 @@ pub(crate) async fn workspace_portfolio_ids(db: &DatabaseConnection, workspace_i
 /// Compras e vendas de todas as carteiras do Workspace, já resolvidas com os
 /// dados do ativo (transação sem ativo é ignorada).
 async fn load_trades(db: &DatabaseConnection, workspace_id: i32) -> Result<Vec<Trade>, AppError> {
+    let mut trades = load_raw_trades(db, workspace_id).await?;
+    convert_crypto_to_brl(db, &mut trades).await?;
+    Ok(trades)
+}
+
+/// Como `load_trades`, mas sem converter a cripto em USD para reais (quem baixa a PTAX precisa das moedas originais).
+async fn load_raw_trades(db: &DatabaseConnection, workspace_id: i32) -> Result<Vec<Trade>, AppError> {
     let portfolio_ids = workspace_portfolio_ids(db, workspace_id).await?;
     if portfolio_ids.is_empty() {
         return Ok(Vec::new());
@@ -130,20 +137,25 @@ async fn load_trades(db: &DatabaseConnection, workspace_id: i32) -> Result<Vec<T
         });
     }
 
-    convert_crypto_to_brl(db, &mut trades).await?;
     Ok(trades)
 }
 
+/// Cripto em USD, que o IR apura em reais.
+fn is_usd_crypto(trade: &Trade) -> bool {
+    treatment(&trade.asset_class, &trade.ticker) == TaxTreatment::Crypto && trade.currency == "USD"
+}
+
 /// O IR de cripto é em reais, mas a cripto nasce em USD (a cotação do CoinGecko é em dólar). Converte valor e taxa de
-/// cada operação pelo USDBRL da data dela; sem taxa, a operação fica em USD e a apuração só avisa.
+/// cada operação pela PTAX de venda do dia dela (a cotação que a IN RFB 1.888/2019 manda usar para a operação em moeda
+/// estrangeira; para o cálculo do ganho a Receita não diz qual usar, e a mesma é a premissa daqui) ou, onde a PTAX falta,
+/// pelo câmbio de mercado. Sem nenhuma taxa, a operação fica em USD e a apuração só avisa.
 async fn convert_crypto_to_brl(db: &DatabaseConnection, trades: &mut [Trade]) -> Result<(), AppError> {
-    let is_usd_crypto = |t: &Trade| treatment(&t.asset_class, &t.ticker) == TaxTreatment::Crypto && t.currency == "USD";
     if !trades.iter().any(is_usd_crypto) {
         return Ok(());
     }
-    let fx = load_fx_history(db, "BRL", &HashSet::from(["USD".to_string()])).await?;
+    let fx = ForeignFx::load(db, &HashSet::from(["USD".to_string()])).await?;
     for trade in trades.iter_mut().filter(|t| is_usd_crypto(t)) {
-        if let Some(rate) = fx.rate_on("USD", "BRL", trade.date) {
+        if let Some((rate, _source)) = fx.rate("USD", trade.date, RateKind::Sell) {
             trade.gross_value *= rate;
             trade.fee *= rate;
             trade.currency = "BRL".to_string();
@@ -456,6 +468,30 @@ mod ptax_span_tests {
         assert_eq!(span["EUR"], (d("2025-04-01"), d("2025-04-01")));
         assert!(!span.contains_key("BRL"));
     }
+
+    fn trade(class: &str, ticker: &str, currency: &str) -> Trade {
+        Trade {
+            tx_id: 1,
+            portfolio_id: 1,
+            asset_id: 1,
+            ticker: ticker.to_string(),
+            asset_class: class.to_string(),
+            currency: currency.to_string(),
+            custodia_id: None,
+            date: NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+            side: Side::Buy,
+            quantity: 1.0,
+            gross_value: 100.0,
+            fee: 0.0,
+        }
+    }
+
+    #[test]
+    fn only_crypto_in_usd_counts_as_usd_crypto() {
+        assert!(is_usd_crypto(&trade("cripto", "BTC", "USD")));
+        assert!(!is_usd_crypto(&trade("cripto", "BTC", "BRL")));
+        assert!(!is_usd_crypto(&trade("acao_internacional", "AAPL", "USD")));
+    }
 }
 
 /// Completa a PTAX gravada (`ptax_daily`) para as moedas dos ativos do exterior, do primeiro ao último fato de cada
@@ -466,11 +502,12 @@ async fn refresh_ptax(db: &DatabaseConnection, workspace_id: i32, allow_network:
         return;
     }
     let result: Result<(), AppError> = async {
-        let trades = load_trades(db, workspace_id).await?;
+        // Sem converter a cripto em USD: a conversão usa a PTAX que este passo vai baixar.
+        let trades = load_raw_trades(db, workspace_id).await?;
         let dividends = load_foreign_dividends(db, workspace_id).await?;
         let facts = trades
             .iter()
-            .filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning)
+            .filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning || is_usd_crypto(t))
             .map(|t| (t.currency.clone(), t.date))
             .chain(dividends.iter().map(|d| (d.currency.clone(), d.date)))
             // O dia em que o imposto foi pago no exterior também precisa de PTAX (pode cair fora do primeiro/último fato).
