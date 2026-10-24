@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -45,6 +46,10 @@ type Holding = {
   name: string;
   exchange: string | null;
   custodia_label: string | null;
+  // Grupo, código e país da ficha, como o usuário informou no ativo (null = não informado).
+  dirpf_group: string | null;
+  dirpf_code: string | null;
+  dirpf_country: string | null;
 };
 
 function formatBrl(value: number): string {
@@ -57,10 +62,14 @@ function formatQuantity(value: number): string {
 
 type AssetRow = {
   key: string;
+  assetId: number;
   ticker: string;
   name: string;
   exchange: string | null;
   custodiaLabel: string | null;
+  group: string | null;
+  code: string | null;
+  country: string | null;
   previous?: Holding;
   current?: Holding;
 };
@@ -73,10 +82,14 @@ function rowsOfYear(holdings: Holding[], year: number): AssetRow[] {
     const key = `${h.asset_id}:${h.custodia_id ?? "none"}`;
     const row = byKey.get(key) ?? {
       key,
+      assetId: h.asset_id,
       ticker: h.ticker,
       name: h.name,
       exchange: h.exchange,
       custodiaLabel: h.custodia_label,
+      group: h.dirpf_group,
+      code: h.dirpf_code,
+      country: h.dirpf_country,
     };
     if (h.year === year) row.current = h;
     else row.previous = h;
@@ -87,14 +100,82 @@ function rowsOfYear(holdings: Holding[], year: number): AssetRow[] {
   );
 }
 
+// "Group 03 · Code 01 · Country 249" com o que o usuário informou; vazio quando nenhum dos três foi informado.
+function fichaText(
+  row: { group: string | null; code: string | null; country: string | null },
+  labels = { group: "Group", code: "Code", country: "Country" },
+): string {
+  return [
+    row.group ? `${labels.group} ${row.group}` : null,
+    row.code ? `${labels.code} ${row.code}` : null,
+    row.country ? `${labels.country} ${row.country}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+// Os três campos da ficha de um ativo, que o usuário digita a partir do programa da Receita. O app só completa zeros à
+// esquerda e não confere se o par existe na tabela da Receita.
+function FichaEditor({ workspaceId, row }: { workspaceId: number; row: AssetRow }) {
+  const queryClient = useQueryClient();
+  const [group, setGroup] = useState(row.group ?? "");
+  const [code, setCode] = useState(row.code ?? "");
+  const [country, setCountry] = useState(row.country ?? "");
+  const save = useMutation<unknown, AppError, void>({
+    mutationFn: () =>
+      invoke("update_asset_dirpf", {
+        request: { asset_id: row.assetId, group, code, country },
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["foreign-holdings", workspaceId] }),
+  });
+  const id = `${row.ticker}-${row.custodiaLabel ?? "none"}`;
+  const fields: [string, string, (v: string) => void, string][] = [
+    ["group", group, setGroup, "Group"],
+    ["code", code, setCode, "Code"],
+    ["country", country, setCountry, "Country"],
+  ];
+  return (
+    <div className="mt-1 flex flex-col gap-1">
+      <span className="text-xs text-muted-foreground" data-testid={`foreign-holding-ficha-${row.ticker}`}>
+        {fichaText(row) || "Ficha not filled in"}
+      </span>
+      <div className="flex flex-wrap items-center gap-1">
+        {fields.map(([name, value, set, label]) => (
+          <Input
+            key={name}
+            className="h-7 w-20 text-xs"
+            placeholder={label}
+            aria-label={`${label} of ${row.ticker}`}
+            value={value}
+            data-testid={`foreign-holding-dirpf-${name}-${id}`}
+            onChange={(e) => set(e.target.value)}
+          />
+        ))}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={save.isPending}
+          data-testid={`foreign-holding-dirpf-save-${id}`}
+          onClick={() => save.mutate()}
+        >
+          Save
+        </Button>
+      </div>
+      {save.isError && <span className="text-xs text-destructive">{save.error.message}</span>}
+    </div>
+  );
+}
+
 // Texto para colar no campo "Discriminação" do programa da Receita.
 function descriptionText(year: number, row: AssetRow): string {
   const unit = (h?: Holding) => (h ? `${formatQuantity(h.quantity)} un.` : "sem posição");
   const cost = (h?: Holding) => (h ? formatBrl(h.cost_brl) : formatBrl(0));
   const venue = row.exchange ? ` negociado em ${row.exchange}` : "";
   const custody = row.custodiaLabel ? ` Custódia: ${row.custodiaLabel}.` : "";
+  const ficha = fichaText(row, { group: "Grupo", code: "Código", country: "País" });
   return [
     `${row.ticker} — ${row.name}${venue}.${custody}`,
+    ...(ficha ? [`Ficha: ${ficha}.`] : []),
     `Situação em 31/12/${year - 1}: ${unit(row.previous)}, custo de aquisição ${cost(row.previous)}.`,
     `Situação em 31/12/${year}: ${unit(row.current)}, custo de aquisição ${cost(row.current)}.`,
     "Custo de aquisição convertido em reais pela cotação de fechamento (venda) do Banco Central na data de cada compra.",
@@ -155,8 +236,9 @@ export default function ForeignHoldingsCard({ workspaceId, holdings }: { workspa
           selling rate of its day) — not the market value. One line per custody; the cost of each is its quantity
           times the asset's average cost, so the custodies add up to the whole position. It only counts what is
           recorded in Anchor. The group,
-          code and country of each item are not filled in here: confirm them in the Receita's program, since
-          guides disagree. This is an estimate based on secondary sources.
+          code and country of each item are yours to fill in, from the Receita's program (guides disagree, and Anchor
+          does not check them; it only pads zeros, so 3 becomes 03). They go into the copied description and the CSV.
+          This is an estimate based on secondary sources.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -211,6 +293,7 @@ export default function ForeignHoldingsCard({ workspaceId, holdings }: { workspa
                     <span className="block text-xs text-muted-foreground" data-testid={`foreign-holding-${row.ticker}-custody`}>
                       {row.custodiaLabel ?? "No custody"}
                     </span>
+                    <FichaEditor key={`${row.key}:${row.group}:${row.code}:${row.country}`} workspaceId={workspaceId} row={row} />
                   </TableCell>
                   {[row.previous, row.current].map((h, index) => (
                     <TableCell

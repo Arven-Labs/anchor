@@ -262,6 +262,21 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
       (text) => text.includes("2.600,00") && text.includes("5 un."),
       "o custo de NVDA em reais deveria ser R$ 2.600,00 com 5 unidades",
     );
+    // Grupo, código e país da ficha são do usuário: sem preencher a tela diz isso; "3" é completado para "03".
+    await waitForText(
+      byId("foreign-holding-ficha-NVDA"),
+      (text) => text.includes("not filled in"),
+      "a ficha de NVDA deveria começar sem grupo, código e país",
+    );
+    await byId("foreign-holding-dirpf-group-NVDA-none").setValue("3");
+    await byId("foreign-holding-dirpf-code-NVDA-none").setValue("1");
+    await byId("foreign-holding-dirpf-country-NVDA-none").setValue("249");
+    await byId("foreign-holding-dirpf-save-NVDA-none").click();
+    await waitForText(
+      byId("foreign-holding-ficha-NVDA"),
+      (text) => text.includes("Group 03") && text.includes("Code 01") && text.includes("Country 249"),
+      "depois de salvar, a ficha de NVDA deveria mostrar Group 03, Code 01 e Country 249",
+    );
     await byId("foreign-holdings-card").scrollIntoView({ block: "center" });
     await snap("taxes-holdings");
   });

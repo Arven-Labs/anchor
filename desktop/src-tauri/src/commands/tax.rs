@@ -299,6 +299,10 @@ pub struct ForeignHoldingView {
     pub exchange: Option<String>,
     /// `instituição (titular)`; `None` nas operações sem custódia.
     pub custodia_label: Option<String>,
+    /// Grupo, código e país da ficha, como o usuário informou no ativo (`None` = não informado).
+    pub dirpf_group: Option<String>,
+    pub dirpf_code: Option<String>,
+    pub dirpf_country: Option<String>,
 }
 
 /// Posição de cada ativo do exterior em cada 31/12 (de 2023 até o ano corrente), com custo médio em reais. Só lê o
@@ -353,14 +357,30 @@ pub async fn foreign_holdings_in(
                 name: asset.map(|a| a.name.clone()).unwrap_or_else(|| holding.ticker.clone()),
                 exchange: asset.and_then(|a| a.exchange.clone()),
                 custodia_label: custodia_label(&custodias_map, holding.custodia_id),
+                dirpf_group: asset.and_then(|a| a.dirpf_group.clone()),
+                dirpf_code: asset.and_then(|a| a.dirpf_code.clone()),
+                dirpf_country: asset.and_then(|a| a.dirpf_country.clone()),
                 holding,
             }
         })
         .collect())
 }
 
-const HOLDINGS_CSV_HEADER: [&str; 10] =
-    ["year", "ticker", "name", "exchange", "custodia", "currency", "quantity", "cost_brl", "fx_approximate", "incomplete"];
+const HOLDINGS_CSV_HEADER: [&str; 13] = [
+    "year",
+    "ticker",
+    "name",
+    "exchange",
+    "custodia",
+    "currency",
+    "quantity",
+    "cost_brl",
+    "fx_approximate",
+    "incomplete",
+    "dirpf_group",
+    "dirpf_code",
+    "dirpf_country",
+];
 
 /// CSV do informe: uma linha por ativo, custódia e 31/12, com o custo em reais (duas casas) e a quantidade como está.
 pub fn foreign_holdings_csv_text(rows: &[ForeignHoldingView]) -> Result<String, AppError> {
@@ -381,6 +401,9 @@ pub fn foreign_holdings_csv_text(rows: &[ForeignHoldingView]) -> Result<String, 
                 format!("{:.2}", h.cost_brl).as_str(),
                 h.fx_approximate.to_string().as_str(),
                 h.incomplete.to_string().as_str(),
+                row.dirpf_group.as_deref().unwrap_or(""),
+                row.dirpf_code.as_deref().unwrap_or(""),
+                row.dirpf_country.as_deref().unwrap_or(""),
             ])
             .map_err(csv_error)?;
     }

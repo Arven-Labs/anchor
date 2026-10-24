@@ -98,6 +98,7 @@ mod m20261104_100000_add_administrator_to_funds;
 mod m20261105_100000_seed_closed_fund_rules;
 mod m20261106_100000_add_fund_structure_and_estoque;
 mod m20261107_100000_add_loss_credit_used_to_transactions;
+mod m20261108_100000_add_tax_return_fields_to_assets;
 
 pub struct Migrator;
 
@@ -203,6 +204,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261105_100000_seed_closed_fund_rules::Migration),
             Box::new(m20261106_100000_add_fund_structure_and_estoque::Migration),
             Box::new(m20261107_100000_add_loss_credit_used_to_transactions::Migration),
+            Box::new(m20261108_100000_add_tax_return_fields_to_assets::Migration),
         ]
     }
 }

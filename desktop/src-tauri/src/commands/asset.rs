@@ -281,6 +281,80 @@ pub async fn update_asset_equity(
 }
 
 #[derive(Deserialize)]
+pub struct UpdateAssetDirpfRequest {
+    pub asset_id: i32,
+    pub group: Option<String>,
+    pub code: Option<String>,
+    pub country: Option<String>,
+}
+
+/// Normaliza um campo da ficha "Bens e Direitos": vazio vira `None`; só dígitos, até `max_len`; completa com zeros à esquerda
+/// até `max_len` ("3" → "03"), o que é só formatação. Não confere se o valor existe na tabela da Receita.
+pub fn normalize_dirpf_field(label: &str, raw: Option<&str>, max_len: usize) -> Result<Option<String>, AppError> {
+    let Some(value) = raw.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    if !value.chars().all(|c| c.is_ascii_digit()) || value.len() > max_len {
+        return Err(AppError::InvalidInput(format!("{label} must be up to {max_len} digits")));
+    }
+    Ok(Some(format!("{value:0>max_len$}")))
+}
+
+/// Grava o grupo, o código e o país da ficha "Bens e Direitos" do ativo (informados pelo usuário; vazio apaga o campo).
+#[tauri::command]
+pub async fn update_asset_dirpf(
+    db: tauri::State<'_, DatabaseConnection>,
+    request: UpdateAssetDirpfRequest,
+) -> Result<assets::Model, AppError> {
+    update_asset_dirpf_in(db.inner(), request).await
+}
+
+pub async fn update_asset_dirpf_in(
+    db: &DatabaseConnection,
+    request: UpdateAssetDirpfRequest,
+) -> Result<assets::Model, AppError> {
+    let group = normalize_dirpf_field("group", request.group.as_deref(), 2)?;
+    let code = normalize_dirpf_field("code", request.code.as_deref(), 2)?;
+    let country = normalize_dirpf_field("country", request.country.as_deref(), 3)?;
+    let existing = assets::Entity::find_by_id(request.asset_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("asset {}", request.asset_id)))?;
+    Ok(assets::ActiveModel {
+        id: Unchanged(existing.id),
+        dirpf_group: Set(group),
+        dirpf_code: Set(code),
+        dirpf_country: Set(country),
+        ..Default::default()
+    }
+    .update(db)
+    .await?)
+}
+
+#[cfg(test)]
+mod dirpf_tests {
+    use super::normalize_dirpf_field;
+
+    #[test]
+    fn blank_stays_empty_and_short_digits_are_zero_padded() {
+        assert_eq!(normalize_dirpf_field("group", None, 2).unwrap(), None);
+        assert_eq!(normalize_dirpf_field("group", Some("  "), 2).unwrap(), None);
+        assert_eq!(normalize_dirpf_field("group", Some("3"), 2).unwrap().as_deref(), Some("03"));
+        assert_eq!(normalize_dirpf_field("code", Some(" 01 "), 2).unwrap().as_deref(), Some("01"));
+        assert_eq!(normalize_dirpf_field("country", Some("49"), 3).unwrap().as_deref(), Some("049"));
+        assert_eq!(normalize_dirpf_field("country", Some("249"), 3).unwrap().as_deref(), Some("249"));
+    }
+
+    #[test]
+    fn letters_and_too_many_digits_are_refused_with_the_field_name() {
+        for (label, raw, max) in [("group", "ab", 2), ("group", "123", 2), ("country", "2499", 3), ("code", "1.5", 2)] {
+            let err = normalize_dirpf_field(label, Some(raw), max).unwrap_err().to_string();
+            assert!(err.contains(label), "{err}");
+        }
+    }
+}
+
+#[derive(Deserialize)]
 pub struct UpdateAssetUnderlyingClassRequest {
     pub asset_id: i32,
     pub underlying_asset_class: Option<String>,

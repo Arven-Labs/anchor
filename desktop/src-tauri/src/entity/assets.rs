@@ -24,6 +24,10 @@ pub struct Model {
     #[sea_orm(column_type = "Double", nullable)]
     pub equity_company_valuation: Option<f64>,
     pub underlying_asset_class: Option<String>,
+    /// Grupo, código e país da ficha "Bens e Direitos", informados pelo usuário (com zeros à esquerda: "03", "01", "249").
+    pub dirpf_group: Option<String>,
+    pub dirpf_code: Option<String>,
+    pub dirpf_country: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

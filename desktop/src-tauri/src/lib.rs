@@ -151,6 +151,7 @@ pub fn run() {
             commands::asset::update_asset_cnpj,
             commands::asset::update_asset_equity,
             commands::asset::update_asset_underlying_class,
+            commands::asset::update_asset_dirpf,
             commands::fii::resolve_fii_cnpj,
             commands::fii::run_fii_cvm_collector,
             commands::fii::list_fii_cvm_monthly,

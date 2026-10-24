@@ -4302,9 +4302,55 @@ async fn the_foreign_holdings_report_has_the_cost_in_reais_per_asset_and_decembe
     let mut lines = csv.lines();
     assert_eq!(
         lines.next().unwrap(),
-        "year,ticker,name,exchange,custodia,currency,quantity,cost_brl,fx_approximate,incomplete"
+        "year,ticker,name,exchange,custodia,currency,quantity,cost_brl,fx_approximate,incomplete,dirpf_group,dirpf_code,dirpf_country"
     );
-    assert!(csv.contains("2024,AAPL,AAPL,,,USD,10,5500.00,false,false"), "{csv}");
+    // ativo sem grupo, código e país informados: as três colunas novas saem vazias
+    assert!(csv.contains("2024,AAPL,AAPL,,,USD,10,5500.00,false,false,,,"), "{csv}");
+}
+
+#[tokio::test]
+async fn the_group_code_and_country_of_the_ficha_come_from_the_asset_and_reach_the_holdings_csv() {
+    use crate::commands::asset::{update_asset_dirpf_in, UpdateAssetDirpfRequest};
+    use crate::commands::tax::{foreign_holdings_csv_text, foreign_holdings_in};
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Ficha").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let filled = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    let blank = asset_in(&db, "MSFT", "acao_internacional", "USD").await;
+    seed_ptax(&db, "USD", "2024-12-31", 4.9, 5.0).await;
+    for asset in [&filled, &blank] {
+        add(&db, tx_request(pf.id, asset.id, "compra", 10.0, 100.0, "2024-03-01", 0.0)).await;
+    }
+    let request = |group: &str, code: &str, country: &str| UpdateAssetDirpfRequest {
+        asset_id: filled.id,
+        group: Some(group.to_string()),
+        code: Some(code.to_string()),
+        country: Some(country.to_string()),
+    };
+
+    // valor inválido é recusado, com o nome do campo, e nada é gravado
+    let bad = update_asset_dirpf_in(&db, request("3", "ab", "249")).await;
+    assert!(matches!(&bad, Err(AppError::InvalidInput(m)) if m.contains("code")), "{bad:?}");
+    let rows = foreign_holdings_in(&db, ws.id).await.unwrap();
+    assert!(rows.iter().all(|r| r.dirpf_group.is_none()), "nada gravado");
+
+    // "3" e "1" completam para "03" e "01"; "249" fica
+    let saved = update_asset_dirpf_in(&db, request("3", "1", "249")).await.unwrap();
+    assert_eq!(
+        (saved.dirpf_group.as_deref(), saved.dirpf_code.as_deref(), saved.dirpf_country.as_deref()),
+        (Some("03"), Some("01"), Some("249"))
+    );
+    let rows = foreign_holdings_in(&db, ws.id).await.unwrap();
+    let csv = foreign_holdings_csv_text(&rows).unwrap();
+    assert!(csv.contains("2024,AAPL,AAPL,,,USD,10,5500.00,false,false,03,01,249"), "{csv}");
+    assert!(csv.contains("2024,MSFT,MSFT,,,USD,10,5500.00,false,false,,,"), "{csv}");
+
+    // vazio apaga os três campos
+    let cleared = UpdateAssetDirpfRequest { asset_id: filled.id, group: None, code: Some("  ".to_string()), country: None };
+    let cleared = update_asset_dirpf_in(&db, cleared).await.unwrap();
+    assert!(cleared.dirpf_group.is_none() && cleared.dirpf_code.is_none() && cleared.dirpf_country.is_none());
 }
 
 #[tokio::test]
@@ -4353,7 +4399,7 @@ async fn the_foreign_holdings_report_splits_the_position_by_custody_after_a_tran
     assert_eq!(nomad.custodia_label.as_deref(), Some("Nomad (Eu)"));
 
     let csv = foreign_holdings_csv_text(&rows).unwrap();
-    assert!(csv.contains("2025,AAPL,AAPL,,Nomad (Eu),USD,4,2200.00,false,false"), "{csv}");
+    assert!(csv.contains("2025,AAPL,AAPL,,Nomad (Eu),USD,4,2200.00,false,false,,,"), "{csv}");
 }
 
 #[test]
@@ -4376,10 +4422,13 @@ fn the_holdings_csv_quotes_names_with_commas_and_keeps_two_decimals() {
         name: "Berkshire Hathaway, Inc. \"B\"".to_string(),
         exchange: Some("NYSE".to_string()),
         custodia_label: Some("Avenue (Eu)".to_string()),
+        dirpf_group: Some("03".to_string()),
+        dirpf_code: Some("01".to_string()),
+        dirpf_country: Some("249".to_string()),
     }];
     let csv = foreign_holdings_csv_text(&rows).unwrap();
     assert!(
-        csv.contains("2025,BRK.B,\"Berkshire Hathaway, Inc. \"\"B\"\"\",NYSE,Avenue (Eu),USD,2.5,1234.50,true,false"),
+        csv.contains("2025,BRK.B,\"Berkshire Hathaway, Inc. \"\"B\"\"\",NYSE,Avenue (Eu),USD,2.5,1234.50,true,false,03,01,249"),
         "{csv}"
     );
 }
