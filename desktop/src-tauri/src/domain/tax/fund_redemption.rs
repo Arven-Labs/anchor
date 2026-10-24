@@ -129,12 +129,18 @@ pub struct EstoqueEstimate {
 pub struct FundEstimate {
     pub redemptions: Vec<RedemptionEstimate>,
     pub estoque: Option<EstoqueEstimate>,
+    /// Custo por cota das cotas que restam, somando o estoque de 2023 já tributado (art. 17 §2: preço + parcelas já
+    /// tributadas − parcelas amortizadas). `None` sem o evento do estoque ou sem cotas abertas.
+    pub taxed_basis_per_quota: Option<f64>,
 }
 
 struct Lot {
     date: NaiveDate,
     quantity: f64,
     cost_per_quota: f64,
+    /// Parte de `cc_gain` que veio do estoque de 2023: some na mesma fração das cotas (resgate, come-cotas) e do custo
+    /// (amortização).
+    estoque_gain: f64,
     /// Ganho já tributado pelos come-cotas, ligado às cotas que restam no lote.
     cc_gain: f64,
     /// Come-cotas já pago, ligado às cotas que restam no lote.
@@ -240,6 +246,7 @@ pub fn estimate_fund(events: &[FundEvent], term: FundTerm, rules: &RuleSet) -> R
                         date: event.date,
                         quantity,
                         cost_per_quota: cost / quantity,
+                        estoque_gain: 0.0,
                         cc_gain: 0.0,
                         cc_paid: 0.0,
                     });
@@ -254,6 +261,7 @@ pub fn estimate_fund(events: &[FundEvent], term: FundTerm, rules: &RuleSet) -> R
                 let taken = quantity.min(total);
                 for lot in lots.iter_mut() {
                     let share = taken * lot.quantity / total;
+                    lot.estoque_gain *= 1.0 - share / lot.quantity;
                     lot.cc_gain += share * (quota_value - lot.cost_per_quota);
                     lot.cc_paid += share * quota_value;
                     lot.quantity -= share;
@@ -266,6 +274,7 @@ pub fn estimate_fund(events: &[FundEvent], term: FundTerm, rules: &RuleSet) -> R
                 for lot in lots.iter_mut().filter(|l| l.quantity > EPS) {
                     let gain = lot.quantity * (quota_value - lot.cost_per_quota).max(0.0);
                     base += gain;
+                    lot.estoque_gain += gain;
                     lot.cc_gain += gain;
                     lot.cc_paid += rate * gain;
                 }
@@ -300,6 +309,7 @@ pub fn estimate_fund(events: &[FundEvent], term: FundTerm, rules: &RuleSet) -> R
                         ir: o.ir,
                     });
 
+                    lot.estoque_gain *= 1.0 - take / lot.quantity;
                     lot.quantity -= take;
                     lot.cc_gain -= o.cc_gain;
                     lot.cc_paid -= o.cc_paid;
@@ -361,6 +371,7 @@ pub fn estimate_fund(events: &[FundEvent], term: FundTerm, rules: &RuleSet) -> R
 
                     // O custo e o que já foi tributado caem na mesma fração; a quantidade de cotas não muda.
                     lot.cost_per_quota *= 1.0 - fraction;
+                    lot.estoque_gain *= 1.0 - fraction;
                     lot.cc_gain -= o.cc_gain;
                     lot.cc_paid -= o.cc_paid;
                 }
@@ -387,7 +398,12 @@ pub fn estimate_fund(events: &[FundEvent], term: FundTerm, rules: &RuleSet) -> R
             }
         }
     }
-    Ok(FundEstimate { redemptions: estimates, estoque })
+    let open_quotas: f64 = lots.iter().map(|l| l.quantity).filter(|q| *q > EPS).sum();
+    let taxed_basis_per_quota = (estoque.is_some() && open_quotas > EPS).then(|| {
+        lots.iter().filter(|l| l.quantity > EPS).map(|l| l.quantity * l.cost_per_quota + l.estoque_gain).sum::<f64>()
+            / open_quotas
+    });
+    Ok(FundEstimate { redemptions: estimates, estoque, taxed_basis_per_quota })
 }
 
 #[cfg(test)]
@@ -659,6 +675,34 @@ mod tests {
         // 8% de 400 = 32 pagos; IR devido 135 − 32 = 103
         assert!(close(s.tax, 32.0), "{s:?}");
         assert!(close(result.redemptions[0].ir, 103.0), "{:?}", result.redemptions[0]);
+    }
+
+    #[test]
+    fn the_taxed_basis_adds_the_stock_to_the_cost_and_falls_with_amortizations_only() {
+        // 100 cotas a 10,00 e estoque a 14,00: o ganho tributado em 2023 é 4,00 por cota, então o custo vira 14,00
+        let mut events = vec![buy(1, "2022-06-01", 100.0, 1_000.0), estoque("2023-12-31", 14.0, 0.15)];
+        assert!(close(fund(&events, FundTerm::LongTerm).taxed_basis_per_quota.unwrap(), 14.0));
+
+        // come-cotas de 5 cotas e resgate de 45: as cotas saem com a sua parte, o valor por cota não muda
+        events.push(come_cotas(2, "2024-05-31", 5.0, 15.0));
+        events.push(redeem(3, "2024-08-01", 45.0, 15.0));
+        assert!(close(fund(&events, FundTerm::LongTerm).taxed_basis_per_quota.unwrap(), 14.0));
+
+        // amortização de 300 sobre 50 cotas a 15,00 (posição de 750): fração 0,4, e o custo e o estoque caem 40%
+        events.push(amortize(4, "2025-01-02", 300.0, 15.0));
+        assert!(close(fund(&events, FundTerm::LongTerm).taxed_basis_per_quota.unwrap(), 14.0 * 0.6));
+    }
+
+    #[test]
+    fn the_taxed_basis_only_exists_with_the_stock_event_and_open_quotas() {
+        let buy_only = [buy(1, "2022-06-01", 100.0, 1_000.0)];
+        assert!(fund(&buy_only, FundTerm::LongTerm).taxed_basis_per_quota.is_none());
+        // cota de 2023 abaixo do custo: nada foi tributado, a base é o custo
+        let low = [buy_only[0], estoque("2023-12-31", 8.0, 0.15)];
+        assert!(close(fund(&low, FundTerm::LongTerm).taxed_basis_per_quota.unwrap(), 10.0));
+        // sem cotas abertas depois do resgate total
+        let sold = [buy_only[0], estoque("2023-12-31", 14.0, 0.15), redeem(2, "2024-03-01", 100.0, 15.0)];
+        assert!(fund(&sold, FundTerm::LongTerm).taxed_basis_per_quota.is_none());
     }
 
     #[test]

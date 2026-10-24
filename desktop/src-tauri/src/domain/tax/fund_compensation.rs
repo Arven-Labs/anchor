@@ -469,6 +469,7 @@ mod tests {
             term: Some(FundTerm::LongTerm),
             quantity,
             average_cost: 10.0,
+            taxed_basis_per_quota: None,
             first_buy: Some(d("2026-07-01")),
             quotas: vec![QuotaValue { date: d("2026-10-20"), value: quota }],
             deductions: Vec::new(),

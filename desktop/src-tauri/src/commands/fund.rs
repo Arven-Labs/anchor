@@ -373,12 +373,12 @@ pub async fn funds_overview_with(
         };
 
         // IR e IOF estimados de cada resgate e amortização: precisa do tipo do fundo.
-        let (redemptions, estoque_estimate) = match fund_term {
+        let (redemptions, estoque_estimate, taxed_basis_per_quota) = match fund_term {
             Some(fund_term) => {
                 let estimate = fund_redemption::estimate_fund(&fund_events(&asset_txs, estoque_input), fund_term, &rules)?;
-                (estimate.redemptions, estimate.estoque)
+                (estimate.redemptions, estimate.estoque, estimate.taxed_basis_per_quota)
             }
-            None => (Vec::new(), None),
+            None => (Vec::new(), None, None),
         };
         let estoque = match (has_estoque, estoque_option.is_some(), estoque_estimate) {
             (false, ..) => EstoqueStatus::NotApplicable,
@@ -394,6 +394,7 @@ pub async fn funds_overview_with(
             term: term.as_deref().and_then(FundTerm::parse),
             quantity: state.quantity,
             average_cost: state.average_price().unwrap_or(0.0),
+            taxed_basis_per_quota,
             first_buy,
             quotas: quotas
                 .iter()

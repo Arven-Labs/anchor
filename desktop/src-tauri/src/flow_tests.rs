@@ -4953,6 +4953,49 @@ async fn the_2023_stock_of_a_closed_fund_needs_the_type_the_option_and_the_quota
 }
 
 #[tokio::test]
+async fn the_next_come_cotas_basis_adds_the_taxed_2023_stock_to_the_cost_after_an_amortization() {
+    use crate::commands::fund::{
+        funds_overview_in, set_fund_estoque_in, set_fund_structure_in, set_fund_term_in, upsert_fund_quota_in,
+        UpsertFundQuotaRequest,
+    };
+    use crate::domain::tax::come_cotas::BasisSource;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Estoque e come-cotas").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDOEC", "fundo", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+    let quota = |date: &str, value: f64| UpsertFundQuotaRequest {
+        asset_id: fund.id,
+        quota_date: date.to_string(),
+        value,
+    };
+
+    // 100 cotas a 10,00 em 2022; amortização de 600 a cota 15,00 (posição de 1.500, fração 0,4): o custo médio cai para 6,00
+    add(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2022-06-01", 0.0)).await;
+    add(&db, amortization_request(pf.id, fund.id, 600.0, 15.0, "2026-03-01")).await;
+    set_fund_term_in(&db, fund.id, "longo_prazo").await.unwrap();
+    upsert_fund_quota_in(&db, quota("2026-10-20", 16.0), today).await.unwrap();
+
+    // sem estoque a base é o custo médio (6,00): ganho de 10,00 por cota
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let e = &overview.estimates[0];
+    assert_eq!(e.basis_source, Some(BasisSource::Cost));
+    assert!(close(e.basis_per_quota.unwrap(), 6.0) && close(e.gain, 1_000.0), "{e:?}");
+
+    // fundo fechado com o estoque a 14,00: 4,00 por cota já tributados, que a amortização baixa junto com o custo
+    // (14,00 × 0,6 = 8,40); o ganho do próximo come-cotas é (16 − 8,40) × 100 = 760 e o imposto, 15% = 114
+    set_fund_structure_in(&db, fund.id, "fechado").await.unwrap();
+    set_fund_estoque_in(&db, fund.id, Some("geral")).await.unwrap();
+    upsert_fund_quota_in(&db, quota("2023-12-29", 14.0), today).await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let e = &overview.estimates[0];
+    assert_eq!(e.basis_source, Some(BasisSource::Estoque));
+    assert!(close(e.basis_per_quota.unwrap(), 8.4), "{e:?}");
+    assert!(close(e.gain, 760.0) && close(e.tax, 114.0), "{e:?}");
+}
+
+#[tokio::test]
 async fn an_investment_entity_is_taxed_at_a_flat_15_percent_and_has_no_come_cotas() {
     use crate::commands::fund::{funds_overview_in, set_fund_term_in};
     use crate::domain::tax::come_cotas::EstimateStatus;

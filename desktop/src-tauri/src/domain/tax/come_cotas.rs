@@ -74,6 +74,9 @@ pub struct FundHolding {
     pub quantity: f64,
     /// Custo médio por cota, em BRL.
     pub average_cost: f64,
+    /// Custo por cota somando o estoque de 2023 já tributado (Lei 14.754, art. 17 §2), quando o fundo o tem. Piso da base
+    /// da estimativa: o ganho tributado em dinheiro em 2023 não volta a ser tributado pelo come-cotas.
+    pub taxed_basis_per_quota: Option<f64>,
     /// Data da primeira compra (para saber se a posição já existia no último come-cotas).
     pub first_buy: Option<NaiveDate>,
     /// Valores de cota lançados, em qualquer ordem.
@@ -102,6 +105,8 @@ pub enum BasisSource {
     Cost,
     /// Valor da cota no último come-cotas (maior que o custo).
     LastComeCotas,
+    /// Custo mais o estoque de 2023 já tributado (maior que o custo e, sem come-cotas registrado, que a cota do último).
+    Estoque,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -244,6 +249,10 @@ pub fn estimate(
             }
             _ => (holding.average_cost, BasisSource::Cost),
         };
+        let (basis, basis_source) = match holding.taxed_basis_per_quota {
+            Some(taxed) if taxed > basis => (taxed, BasisSource::Estoque),
+            _ => (basis, basis_source),
+        };
         if recorded.is_none() && held_then {
             estimate.last_reference_unrecorded = Some(last_reference);
         }
@@ -288,6 +297,7 @@ mod tests {
             term,
             quantity,
             average_cost,
+            taxed_basis_per_quota: None,
             first_buy: Some(d("2025-01-10")),
             quotas,
             deductions: Vec::new(),
@@ -342,6 +352,34 @@ mod tests {
     fn a_short_term_fund_pays_20_percent() {
         let e = run(fund(Some(FundTerm::ShortTerm), 100.0, 10.0, vec![quota("2026-01-05", 12.0)]), "2026-01-10");
         assert!(close(e.rate, 0.20) && close(e.tax, 40.0), "{e:?}");
+    }
+
+    #[test]
+    fn the_taxed_stock_lifts_the_basis_above_the_average_cost() {
+        // custo médio 5,00 depois de uma amortização, mas 7,00 contando o estoque de 2023 já tributado; sem come-cotas
+        // registrado nem cota perto da última data, a base era o custo e o ganho saía inflado: 12 − 7 = 5 por cota
+        let mut holding = fund(Some(FundTerm::LongTerm), 100.0, 5.0, vec![quota("2026-10-20", 12.0)]);
+        holding.taxed_basis_per_quota = Some(7.0);
+        let e = run(holding, "2026-10-22");
+        assert_eq!(e.basis_source, Some(BasisSource::Estoque));
+        assert!(close(e.basis_per_quota.unwrap(), 7.0), "{e:?}");
+        assert!(close(e.gain, 500.0) && close(e.tax, 75.0), "{e:?}");
+    }
+
+    #[test]
+    fn the_taxed_stock_does_not_override_a_higher_basis_or_double_count() {
+        // a cota do último come-cotas (11,00) já é maior que o custo com o estoque (7,00): fica a do come-cotas
+        let mut holding = fund(Some(FundTerm::LongTerm), 100.0, 5.0, vec![quota("2026-05-28", 11.0), quota("2026-10-20", 12.0)]);
+        holding.taxed_basis_per_quota = Some(7.0);
+        let e = run(holding, "2026-10-22");
+        assert_eq!(e.basis_source, Some(BasisSource::LastComeCotas));
+        assert!(close(e.basis_per_quota.unwrap(), 11.0) && close(e.gain, 100.0), "{e:?}");
+        // custo com o estoque abaixo do custo médio não rebaixa a base
+        let mut low = fund(Some(FundTerm::LongTerm), 100.0, 10.0, vec![quota("2026-10-20", 12.0)]);
+        low.taxed_basis_per_quota = Some(9.0);
+        let e = run(low, "2026-10-22");
+        assert_eq!(e.basis_source, Some(BasisSource::Cost));
+        assert!(close(e.basis_per_quota.unwrap(), 10.0), "{e:?}");
     }
 
     #[test]

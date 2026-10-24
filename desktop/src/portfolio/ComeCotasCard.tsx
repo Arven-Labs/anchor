@@ -111,7 +111,7 @@ type Estimate = {
   quota_value: number | null;
   quota_date: string | null;
   basis_per_quota: number | null;
-  basis_source: "cost" | "last_come_cotas" | null;
+  basis_source: "cost" | "last_come_cotas" | "estoque" | null;
   gain: number;
   rate: number;
   tax: number;
@@ -275,7 +275,11 @@ function EstimateLine({ estimate }: { estimate: Estimate }) {
             Quota {estimate.quota_value !== null ? formatBrl(estimate.quota_value) : "—"} on{" "}
             {estimate.quota_date ? formatDate(estimate.quota_date) : "—"} against a basis of{" "}
             {estimate.basis_per_quota !== null ? formatBrl(estimate.basis_per_quota) : "—"} per quota (
-            {estimate.basis_source === "last_come_cotas" ? "the quota value at the last come-cotas" : "your average cost"}
+            {estimate.basis_source === "last_come_cotas"
+              ? "the quota value at the last come-cotas"
+              : estimate.basis_source === "estoque"
+                ? "your average cost plus the 2023 stock already taxed"
+                : "your average cost"}
             ).
             {estimate.stale_quota && (
               <Badge variant="outline" className="ml-2" data-testid={`come-cotas-stale-${estimate.asset_id}`}>
