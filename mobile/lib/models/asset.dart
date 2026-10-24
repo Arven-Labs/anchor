@@ -153,6 +153,9 @@ class Asset {
   final double? equityTotalShares;
   final double? equityCompanyValuation;
 
+  /// CNPJ do fundo (formatado) — só `fundo`, para ler a cota no informe da CVM.
+  final String? cnpj;
+
   const Asset({
     this.id,
     required this.ticker,
@@ -164,6 +167,7 @@ class Asset {
     this.equitySharesOwned,
     this.equityTotalShares,
     this.equityCompanyValuation,
+    this.cnpj,
   });
 
   double? get equityPercentual {
@@ -192,6 +196,7 @@ class Asset {
       'equity_shares_owned': equitySharesOwned,
       'equity_total_shares': equityTotalShares,
       'equity_company_valuation': equityCompanyValuation,
+      'cnpj': cnpj,
     };
   }
 
@@ -207,6 +212,7 @@ class Asset {
       equitySharesOwned: map['equity_shares_owned'] as double?,
       equityTotalShares: map['equity_total_shares'] as double?,
       equityCompanyValuation: map['equity_company_valuation'] as double?,
+      cnpj: map['cnpj'] as String?,
     );
   }
 }

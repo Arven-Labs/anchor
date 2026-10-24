@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 
 import '../data/db.dart';
+import '../domain/cvm_inf_diario.dart' show formatCnpj, normalizeCnpj;
 import '../models/asset.dart';
 import '../models/asset_attachment.dart';
 import '../models/asset_valuation.dart';
@@ -214,6 +215,137 @@ class PortfolioRepository {
       limit: 1,
     );
     return rows.isEmpty ? null : FundQuota.fromMap(rows.first);
+  }
+
+  /// Subclasse da CVM escolhida de cada fundo que tem uma, por id do ativo.
+  Future<Map<int, String>> listFundSubclasses() async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query('fund_details');
+    return {
+      for (final row in rows)
+        if ((row['cvm_subclass'] as String?)?.isNotEmpty ?? false)
+          row['asset_id'] as int: row['cvm_subclass'] as String,
+    };
+  }
+
+  /// Grava o CNPJ (no ativo) e a subclasse do fundo para a leitura da CVM. Vazio =
+  /// sem CNPJ. Mudar um dos dois apaga as cotas já lidas da CVM do fundo (eram de
+  /// outra série); as lançadas à mão ficam. A subclasse mora em `fund_details`, que
+  /// só existe depois de o usuário escolher o tipo do fundo.
+  Future<void> setFundCvm(int assetId, {String? cnpj, String? subclass}) async {
+    final db = await AppDatabase.instance();
+    final digits = normalizeCnpj(cnpj ?? '');
+    if (digits.isNotEmpty && digits.length != 14) {
+      throw const FormatException('O CNPJ precisa ter 14 dígitos');
+    }
+    final newCnpj = digits.isEmpty ? null : formatCnpj(digits);
+    final newSubclass = (subclass?.trim().isEmpty ?? true)
+        ? null
+        : subclass!.trim();
+
+    final assets = await db.query(
+      'assets',
+      columns: ['cnpj'],
+      where: 'id = ?',
+      whereArgs: [assetId],
+    );
+    final details = await db.query(
+      'fund_details',
+      where: 'asset_id = ?',
+      whereArgs: [assetId],
+    );
+    if (newSubclass != null && details.isEmpty) {
+      throw const FormatException(
+        'Escolha o tipo do fundo antes da subclasse da CVM',
+      );
+    }
+    final oldCnpj = assets.isEmpty ? null : assets.first['cnpj'] as String?;
+    final oldSubclass = details.isEmpty
+        ? null
+        : details.first['cvm_subclass'] as String?;
+    final changed =
+        normalizeCnpj(oldCnpj ?? '') != digits || oldSubclass != newSubclass;
+
+    await db.transaction((txn) async {
+      await txn.update(
+        'assets',
+        {'cnpj': newCnpj},
+        where: 'id = ?',
+        whereArgs: [assetId],
+      );
+      if (details.isNotEmpty) {
+        await txn.update(
+          'fund_details',
+          {'cvm_subclass': newSubclass},
+          where: 'asset_id = ?',
+          whereArgs: [assetId],
+        );
+      }
+      if (changed) {
+        await txn.delete(
+          'fund_quota_values',
+          where: "asset_id = ? AND source = 'cvm'",
+          whereArgs: [assetId],
+        );
+      }
+    });
+  }
+
+  /// As datas das cotas lidas da CVM do fundo.
+  Future<List<DateTime>> listCvmQuotaDates(int assetId) async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query(
+      'fund_quota_values',
+      columns: ['quota_date'],
+      where: "asset_id = ? AND source = 'cvm'",
+      whereArgs: [assetId],
+    );
+    return [
+      for (final row in rows)
+        DateTime.parse('${row['quota_date']}T00:00:00Z'),
+    ];
+  }
+
+  /// Grava as cotas lidas da CVM, pulando as datas em que o usuário lançou a sua e
+  /// trocando as da CVM que já existiam.
+  Future<void> upsertCvmQuotas(int assetId, Map<DateTime, double> quotas) async {
+    if (quotas.isEmpty) return;
+    final db = await AppDatabase.instance();
+    final createdAt = DateTime.now().toIso8601String();
+    await db.transaction((txn) async {
+      final manual = {
+        for (final row in await txn.query(
+          'fund_quota_values',
+          columns: ['quota_date'],
+          where: "asset_id = ? AND source = 'manual'",
+          whereArgs: [assetId],
+        ))
+          row['quota_date'] as String,
+      };
+      final batch = txn.batch();
+      quotas.forEach((date, value) {
+        final key = FundQuota(
+          assetId: assetId,
+          date: date,
+          value: value,
+          createdAt: DateTime.now(),
+        ).toMap()['quota_date']! as String;
+        if (manual.contains(key)) return;
+        batch.delete(
+          'fund_quota_values',
+          where: 'asset_id = ? AND quota_date = ?',
+          whereArgs: [assetId, key],
+        );
+        batch.insert('fund_quota_values', {
+          'asset_id': assetId,
+          'quota_date': key,
+          'value': value,
+          'source': 'cvm',
+          'created_at': createdAt,
+        });
+      });
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<void> deleteFundQuota(int id) async {

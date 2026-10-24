@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -22,11 +23,19 @@ class AppDatabase {
     return _instance!;
   }
 
+  /// Fecha e esquece a conexão: o próximo `instance()` reabre (e migra) o arquivo
+  /// que `getDatabasesPath()` apontar nesse momento. Só para teste.
+  @visibleForTesting
+  static Future<void> resetForTest() async {
+    await _instance?.close();
+    _instance = null;
+  }
+
   static Future<Database> _open() async {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 9,
+      version: 10,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -39,7 +48,8 @@ class AppDatabase {
             external_id TEXT,
             equity_shares_owned REAL,
             equity_total_shares REAL,
-            equity_company_valuation REAL
+            equity_company_valuation REAL,
+            cnpj TEXT
           )
         ''');
         await db.execute('''
@@ -214,6 +224,17 @@ class AppDatabase {
           // Fundos: tipo do fundo e valor da cota por data.
           await _createFundTables(db);
         }
+        if (oldVersion < 10) {
+          // Leitura da cota pela CVM: CNPJ do fundo (no ativo, como no desktop) e a
+          // subclasse escolhida. Quem veio do v9 já tem `fund_details` sem a coluna;
+          // quem veio de antes acabou de criá-la no passo acima, já com a coluna.
+          await db.execute('ALTER TABLE assets ADD COLUMN cnpj TEXT');
+          if (oldVersion >= 9) {
+            await db.execute(
+              'ALTER TABLE fund_details ADD COLUMN cvm_subclass TEXT',
+            );
+          }
+        }
       },
     );
   }
@@ -224,7 +245,8 @@ class AppDatabase {
     await db.execute('''
       CREATE TABLE fund_details (
         asset_id INTEGER PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
-        term TEXT NOT NULL
+        term TEXT NOT NULL,
+        cvm_subclass TEXT
       )
     ''');
     await db.execute('''

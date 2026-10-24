@@ -4,6 +4,7 @@ import '../domain/come_cotas.dart';
 import '../domain/fund_redemption.dart';
 import '../domain/fund_tax.dart';
 import '../models/fund.dart';
+import '../services/fund_quota_sync.dart';
 import '../services/portfolio_repository.dart';
 import 'crypto_tax_screen.dart' show formatBrl, formatDay;
 
@@ -66,17 +67,59 @@ List<String> fundWarnings(FundReport report) {
 /// próximo come-cotas e resgates. Estimativa informativa: o imposto sai na fonte
 /// e o app não guarda pagamento.
 class FundTaxScreen extends StatefulWidget {
-  const FundTaxScreen({super.key});
+  /// Injetável para teste; o padrão lê a CVM de verdade.
+  final FundQuotaSync? sync;
+
+  const FundTaxScreen({super.key, this.sync});
 
   @override
   State<FundTaxScreen> createState() => _FundTaxScreenState();
 }
 
+/// Aviso antes de baixar: o informe da CVM é um zip de ~12 MB por mês fechado (medido
+/// em setembro/2026; o mês corrente, parcial, é menor).
+@visibleForTesting
+const cvmDownloadWarning =
+    'Baixa da CVM um arquivo de até ~12 MB por mês lido (em geral 4 meses, '
+    'uns 40 MB). Continuar?';
+
+/// Estado da leitura da CVM de um fundo numa frase; vazio se não há o que dizer.
+@visibleForTesting
+String cvmStatusText(CvmStatus? status, DateTime? lastCvmDate) {
+  final latest = lastCvmDate == null
+      ? ''
+      : ' Última cota da CVM: ${formatDay(lastCvmDate)}.';
+  if (status == null) {
+    return lastCvmDate == null ? '' : 'Cotas lidas da CVM.$latest';
+  }
+  switch (status.kind) {
+    case CvmStatusKind.noCnpj:
+      return 'Informe o CNPJ do fundo para ler a cota da CVM.';
+    case CvmStatusKind.pending:
+      return 'Ainda não lida.$latest';
+    case CvmStatusKind.ok:
+      return 'Cotas lidas da CVM.$latest';
+    case CvmStatusKind.notFound:
+      return 'A CVM não trouxe cota para este CNPJ (ou subclasse) nos meses '
+          'lidos. Confira o CNPJ.';
+    case CvmStatusKind.needsSubclass:
+      return 'Este CNPJ só tem subclasses no informe: escolha uma.';
+    case CvmStatusKind.error:
+      return 'Não foi possível ler a CVM agora (${status.message ?? 'erro'}). '
+          'Tente de novo em instantes.$latest';
+  }
+}
+
 class _FundTaxScreenState extends State<FundTaxScreen> {
   final _repository = PortfolioRepository();
+  late final FundQuotaSync _sync = widget.sync ?? FundQuotaSync();
 
   bool _loading = true;
+  bool _refreshing = false;
+  String? _progress;
   List<FundReport> _reports = [];
+  Map<int, String> _subclasses = {};
+  Map<int, CvmStatus> _statuses = {};
 
   @override
   void initState() {
@@ -89,6 +132,7 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
     final transactions = await _repository.listAllTransactions();
     final terms = await _repository.listFundTerms();
     final quotas = await _repository.listAllFundQuotas();
+    final subclasses = await _repository.listFundSubclasses();
     if (!mounted) return;
     setState(() {
       _reports = buildFundReports(
@@ -98,8 +142,77 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
         quotas: quotas,
         today: DateTime.now(),
       );
+      _subclasses = subclasses;
       _loading = false;
     });
+  }
+
+  void _say(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Grava o CNPJ e a subclasse; trocar um deles apaga as cotas já lidas da CVM.
+  Future<void> _setCvm(FundReport report, {String? cnpj, String? subclass}) async {
+    try {
+      await _repository.setFundCvm(
+        report.asset.id!,
+        cnpj: cnpj ?? report.asset.cnpj,
+        // Outro CNPJ é outra série: a subclasse antiga não vale mais.
+        subclass: cnpj != null ? null : subclass ?? _subclasses[report.asset.id],
+      );
+    } on FormatException catch (e) {
+      _say(e.message);
+      return;
+    }
+    _statuses.remove(report.asset.id);
+    await _load();
+  }
+
+  Future<void> _clearSubclass(FundReport report) async {
+    await _repository.setFundCvm(report.asset.id!, cnpj: report.asset.cnpj);
+    _statuses.remove(report.asset.id);
+    await _load();
+  }
+
+  Future<void> _refreshCvm() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Atualizar da CVM'),
+        content: const Text(cvmDownloadWarning),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Baixar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _refreshing = true;
+      _progress = 'Preparando…';
+    });
+    try {
+      final statuses = await _sync.refresh(
+        onProgress: (done, total) {
+          if (mounted) setState(() => _progress = 'Lendo mês $done de $total…');
+        },
+      );
+      _statuses = statuses;
+    } catch (e) {
+      _say('Não foi possível ler a CVM: $e');
+    }
+    if (!mounted) return;
+    setState(() {
+      _refreshing = false;
+      _progress = null;
+    });
+    await _load();
   }
 
   Future<void> _setTerm(FundReport report, FundTerm term) async {
@@ -143,6 +256,23 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
+                if (_reports.any((r) => r.asset.cnpj != null)) ...[
+                  FilledButton.tonalIcon(
+                    onPressed: _refreshing ? null : _refreshCvm,
+                    icon: const Icon(Icons.cloud_download),
+                    label: const Text('Atualizar da CVM'),
+                  ),
+                  if (_progress != null) ...[
+                    const SizedBox(height: 8),
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: 4),
+                    Text(
+                      _progress!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                ],
                 if (_reports.isEmpty)
                   const Padding(
                     padding: EdgeInsets.only(top: 24),
@@ -152,7 +282,13 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
                   for (final report in _reports)
                     _FundCard(
                       report: report,
+                      subclass: _subclasses[report.asset.id],
+                      cvmStatus: _statuses[report.asset.id],
                       onTerm: (term) => _setTerm(report, term),
+                      onCnpj: (cnpj) => _setCvm(report, cnpj: cnpj),
+                      onSubclass: (subclass) => subclass == null
+                          ? _clearSubclass(report)
+                          : _setCvm(report, subclass: subclass),
                       onAddQuota: () => _addQuota(report),
                       onDeleteQuota: _deleteQuota,
                     ),
@@ -164,13 +300,21 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
 
 class _FundCard extends StatelessWidget {
   final FundReport report;
+  final String? subclass;
+  final CvmStatus? cvmStatus;
   final ValueChanged<FundTerm> onTerm;
+  final ValueChanged<String> onCnpj;
+  final ValueChanged<String?> onSubclass;
   final VoidCallback onAddQuota;
   final ValueChanged<FundQuota> onDeleteQuota;
 
   const _FundCard({
     required this.report,
+    required this.subclass,
+    required this.cvmStatus,
     required this.onTerm,
+    required this.onCnpj,
+    required this.onSubclass,
     required this.onAddQuota,
     required this.onDeleteQuota,
   });
@@ -181,6 +325,17 @@ class _FundCard extends StatelessWidget {
     final error = Theme.of(context).colorScheme.error;
     final estimate = report.estimate;
     final basis = comeCotasBasisText(estimate);
+    final cvmDates = [
+      for (final q in report.quotas)
+        if (q.source == 'cvm') q.date,
+    ];
+    final lastCvm = cvmDates.isEmpty
+        ? null
+        : cvmDates.reduce((a, b) => a.isAfter(b) ? a : b);
+    final cvmText = cvmStatusText(cvmStatus, lastCvm);
+    final options = cvmStatus?.kind == CvmStatusKind.needsSubclass
+        ? cvmStatus!.options
+        : [?subclass];
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -202,6 +357,38 @@ class _FundCard extends StatelessWidget {
                 if (value != null) onTerm(value);
               },
             ),
+            const SizedBox(height: 12),
+            _CvmCnpjField(cnpj: report.asset.cnpj, onSave: onCnpj),
+            if (options.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String?>(
+                key: ValueKey('subclass-$subclass-${options.length}'),
+                initialValue: subclass,
+                decoration: const InputDecoration(
+                  labelText: 'Subclasse da CVM',
+                ),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('Classe (sem subclasse)'),
+                  ),
+                  for (final option in options)
+                    DropdownMenuItem<String?>(value: option, child: Text(option)),
+                ],
+                onChanged: onSubclass,
+              ),
+            ],
+            if (cvmText.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  cvmText,
+                  style: cvmStatus?.kind == CvmStatusKind.error ||
+                          cvmStatus?.kind == CvmStatusKind.notFound
+                      ? TextStyle(color: error)
+                      : textTheme.bodySmall,
+                ),
+              ),
             const SizedBox(height: 12),
             Text(
               comeCotasStatusText(estimate),
@@ -225,7 +412,8 @@ class _FundCard extends StatelessWidget {
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     title: Text(
-                      '${formatDay(quota.date)} — ${formatBrl(quota.value)}',
+                      '${formatDay(quota.date)} — ${formatBrl(quota.value)}'
+                      '${quota.source == 'cvm' ? ' · CVM' : ''}',
                     ),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete_outline),
@@ -302,6 +490,48 @@ class _RedemptionTile extends StatelessWidget {
         '${formatBrl(redemption.net)}'
         '${redemption.comeCotasCredit > 0.005 ? '\nCome-cotas já pago abateu ${formatBrl(redemption.comeCotasCredit)} do IR' : ''}',
       ),
+    );
+  }
+}
+
+/// CNPJ do fundo para a leitura da CVM. O texto mora num controller criado na
+/// montagem; o cartão remonta (`key`) quando o CNPJ gravado muda, senão o campo
+/// ficaria com o valor antigo.
+class _CvmCnpjField extends StatefulWidget {
+  final String? cnpj;
+  final ValueChanged<String> onSave;
+
+  const _CvmCnpjField({required this.cnpj, required this.onSave});
+
+  @override
+  State<_CvmCnpjField> createState() => _CvmCnpjFieldState();
+}
+
+class _CvmCnpjFieldState extends State<_CvmCnpjField> {
+  late final _controller = TextEditingController(text: widget.cnpj ?? '');
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      key: ValueKey('cnpj-${widget.cnpj}'),
+      controller: _controller,
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(
+        labelText: 'CNPJ do fundo (cota pela CVM)',
+        hintText: '00.000.000/0000-00',
+        suffixIcon: IconButton(
+          icon: const Icon(Icons.check),
+          tooltip: 'Salvar CNPJ',
+          onPressed: () => widget.onSave(_controller.text),
+        ),
+      ),
+      onSubmitted: widget.onSave,
     );
   }
 }

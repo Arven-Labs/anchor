@@ -6,6 +6,7 @@ import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/fund.dart';
 import 'package:anchor_mobile/models/portfolio_transaction.dart';
 import 'package:anchor_mobile/screens/fund_tax_screen.dart';
+import 'package:anchor_mobile/services/fund_quota_sync.dart';
 import 'package:anchor_mobile/services/portfolio_repository.dart';
 
 void main() {
@@ -228,6 +229,37 @@ void main() {
       expect(warnings, hasLength(2));
       expect(warnings[0], contains('mais de 35 dias'));
       expect(warnings[1], contains('29/05/2026'));
+    });
+
+    test('o estado da CVM diz o que fazer em cada caso', () {
+      expect(cvmStatusText(null, null), isEmpty);
+      expect(
+        cvmStatusText(null, d('2026-10-02')),
+        'Cotas lidas da CVM. Última cota da CVM: 02/10/2026.',
+      );
+      expect(
+        cvmStatusText(const CvmStatus(CvmStatusKind.noCnpj), null),
+        contains('Informe o CNPJ'),
+      );
+      expect(
+        cvmStatusText(const CvmStatus(CvmStatusKind.notFound), null),
+        contains('Confira o CNPJ'),
+      );
+      expect(
+        cvmStatusText(
+          const CvmStatus(CvmStatusKind.needsSubclass, options: ['A', 'B']),
+          null,
+        ),
+        contains('escolha uma'),
+      );
+      expect(
+        cvmStatusText(
+          const CvmStatus(CvmStatusKind.error, message: 'HTTP 503'),
+          d('2026-10-02'),
+        ),
+        allOf(contains('HTTP 503'), contains('02/10/2026')),
+      );
+      expect(cvmDownloadWarning, contains('MB'));
     });
 
     test('avisa resgate maior que as aplicações lançadas', () {
