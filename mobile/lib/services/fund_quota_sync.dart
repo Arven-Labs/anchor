@@ -4,11 +4,14 @@
 // botão (sem espera nem intervalo entre buscas) e só olha a janela necessária à
 // estimativa do come-cotas, não o histórico desde a 1ª compra. Só vão à rede os meses
 // que faltam: o corrente e o anterior sempre, os fechados só se o fundo não tem cota da
-// CVM naquele mês. Uma cota lançada à mão nunca é sobrescrita.
+// CVM naquele mês. Fundo fechado ou exclusivo com estoque de 2023 pede também dez/2023
+// (a cota de 31/12/2023), um zip só. Uma cota lançada à mão nunca é sobrescrita.
 
 import '../domain/come_cotas.dart' show lastReferenceDate;
 import '../domain/cvm_inf_diario.dart';
 import '../models/asset.dart';
+import '../models/fund.dart';
+import '../models/portfolio_transaction.dart';
 import 'cvm_inf_diario_service.dart';
 import 'portfolio_repository.dart';
 
@@ -45,7 +48,15 @@ DateTime _day(DateTime date) => DateTime.utc(date.year, date.month, date.day);
 /// gravadas do fundo: o corrente e o anterior (a cota mais nova) e os que cobrem os 45
 /// dias antes da última data de come-cotas (a base do ganho). Os meses de permeio
 /// ficam de fora: são ~12 MB cada e nada da estimativa os usa.
-List<YearMonth> cvmMonthsToRead(DateTime today, Iterable<DateTime> storedCvmDates) {
+///
+/// [extra] são meses de que o fundo ainda precisa fora dessa janela (hoje: dez/2023, a
+/// cota do estoque). Entram só se já fecharam, caírem a partir da primeira publicação
+/// mensal e o fundo ainda não tiver cota da CVM naquele mês.
+List<YearMonth> cvmMonthsToRead(
+  DateTime today,
+  Iterable<DateTime> storedCvmDates, {
+  List<YearMonth> extra = const [],
+}) {
   final now = _day(today);
   final lastReference = lastReferenceDate(now);
   final baseSince = lastReference.subtract(
@@ -59,10 +70,41 @@ List<YearMonth> cvmMonthsToRead(DateTime today, Iterable<DateTime> storedCvmDate
     for (final month in monthsBetween(baseSince, lastReference))
       if (isRecentMonth(month, now) || !stored.contains(month)) month,
     ...planMonths(previousMonth, now, storedCvmDates),
+    for (final month in extra)
+      if (!_before(month, cvmFirstMonth) &&
+          !_before((now.year, now.month), month) &&
+          !stored.contains(month))
+        month,
   }.toList()
     ..sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
   return months;
 }
+
+bool _before(YearMonth a, YearMonth b) =>
+    a.$1 < b.$1 || (a.$1 == b.$1 && a.$2 < b.$2);
+
+/// O mês da cota do estoque de 2023 (31/12/2023, ou até 10 dias antes).
+const _estoqueMonth = (2023, 12);
+
+/// O fundo tem estoque de 2023 a estimar (fechado ou exclusivo, de longo ou curto prazo,
+/// com a opção de estoque informada) e já tinha cotas em 31/12/2023 (primeira compra até
+/// essa data, ou sem compra): então precisa da cota de dez/2023, que fica fora da janela
+/// do come-cotas. Mesma regra de `wants_estoque_quota` do desktop.
+bool wantsEstoqueQuota({
+  required FundTerm? term,
+  required FundStructure? structure,
+  required EstoqueOption? estoqueOption,
+  required DateTime? firstBuy,
+}) {
+  final hasEstoque =
+      structure != null &&
+      structure != FundStructure.open &&
+      (term == FundTerm.longTerm || term == FundTerm.shortTerm);
+  final heldIn2023 = firstBuy == null || !_day(firstBuy).isAfter(_estoqueDate);
+  return hasEstoque && estoqueOption != null && heldIn2023;
+}
+
+final _estoqueDate = DateTime.utc(2023, 12, 31);
 
 class FundQuotaSync {
   final PortfolioRepository _repository;
@@ -86,6 +128,16 @@ class FundQuotaSync {
   }) async {
     final today = _day(_now());
     final subclasses = await _repository.listFundSubclasses();
+    final terms = await _repository.listFundTerms();
+    final structures = await _repository.listFundStructures();
+    final estoqueOptions = await _repository.listFundEstoqueOptions();
+    final firstBuys = <int, DateTime>{};
+    for (final tx in await _repository.listAllTransactions()) {
+      final assetId = tx.assetId;
+      if (assetId == null || tx.type != TransactionType.compra) continue;
+      final current = firstBuys[assetId];
+      if (current == null || tx.date.isBefore(current)) firstBuys[assetId] = tx.date;
+    }
     final funds = [
       for (final asset in await _repository.listAssets())
         if (asset.assetClass == AssetClass.fundo && asset.id != null) asset,
@@ -104,6 +156,14 @@ class FundQuotaSync {
       monthsByFund[fund.id!] = cvmMonthsToRead(
         today,
         await _repository.listCvmQuotaDates(fund.id!),
+        extra: wantsEstoqueQuota(
+              term: terms[fund.id],
+              structure: structures[fund.id],
+              estoqueOption: estoqueOptions[fund.id],
+              firstBuy: firstBuys[fund.id],
+            )
+            ? const [_estoqueMonth]
+            : const [],
       );
     }
     if (targets.isEmpty) return statuses;

@@ -121,6 +121,66 @@ void main() {
       );
     });
 
+    test('o mês extra do estoque entra fora da janela e some se já há cota da CVM', () {
+      const dec23 = [(2023, 12)];
+      expect(cvmMonthsToRead(d('2026-10-23'), const [], extra: dec23), [
+        (2023, 12),
+        (2026, 4),
+        (2026, 5),
+        (2026, 9),
+        (2026, 10),
+      ]);
+      // já há cota da CVM de dez/2023: não baixa de novo
+      expect(
+        cvmMonthsToRead(d('2026-10-23'), [d('2023-12-29')], extra: dec23),
+        [(2026, 4), (2026, 5), (2026, 9), (2026, 10)],
+      );
+      // o mês já está na janela: não duplica
+      expect(cvmMonthsToRead(d('2023-12-20'), const [], extra: dec23), [
+        (2023, 10),
+        (2023, 11),
+        (2023, 12),
+      ]);
+      // antes da primeira publicação mensal e no futuro: ignorado
+      expect(
+        cvmMonthsToRead(d('2026-10-23'), const [], extra: const [(2020, 12), (2027, 1)]),
+        [(2026, 4), (2026, 5), (2026, 9), (2026, 10)],
+      );
+    });
+
+    test('só fundo fechado ou exclusivo com estoque informado e comprado até 2023 pede dez/2023', () {
+      bool wants({
+        FundTerm? term = FundTerm.longTerm,
+        FundStructure? structure = FundStructure.closed,
+        EstoqueOption? option = EstoqueOption.general,
+        DateTime? firstBuy,
+      }) => wantsEstoqueQuota(
+        term: term,
+        structure: structure,
+        estoqueOption: option,
+        firstBuy: firstBuy ?? d('2022-06-01'),
+      );
+      expect(wants(), isTrue);
+      expect(wants(structure: FundStructure.exclusive, term: FundTerm.shortTerm), isTrue);
+      expect(wants(firstBuy: d('2023-12-31')), isTrue, reason: 'o próprio dia vale');
+      expect(wants(structure: FundStructure.open), isFalse);
+      expect(wants(option: null), isFalse);
+      expect(wants(term: FundTerm.equity), isFalse);
+      expect(wants(term: FundTerm.investmentEntity), isFalse);
+      expect(wants(term: null), isFalse);
+      expect(wants(firstBuy: d('2024-01-02')), isFalse, reason: 'comprou depois');
+      expect(
+        wantsEstoqueQuota(
+          term: FundTerm.longTerm,
+          structure: FundStructure.closed,
+          estoqueOption: EstoqueOption.general,
+          firstBuy: null,
+        ),
+        isTrue,
+        reason: 'sem compra lançada ainda vale',
+      );
+    });
+
     test('em janeiro o mês anterior é dezembro', () {
       // último come-cotas 30/11/2026; base desde 16/10
       expect(cvmMonthsToRead(d('2027-01-10'), const []), [
@@ -606,6 +666,51 @@ void main() {
         today: DateTime(2026, 10, 23),
       );
       expect(latest!.value, 45.01);
+    });
+
+    test('fundo fechado com estoque lê também dez/2023 e grava a cota de 29/12', () async {
+      // 100 cotas a 10,00 em 01/06/2022; a cota da CVM em 29/12/2023 é 14,00, dentro
+      // dos 10 dias antes de 31/12/2023, que é onde o estoque a procura (o cálculo do
+      // estoque em si já tem teste em `fund_tax_test.dart`)
+      final closed = await addFund(term: FundTerm.longTerm);
+      await repository.setFundStructure(closed, FundStructure.closed);
+      await repository.setFundEstoque(closed, EstoqueOption.general);
+      await repository.insertTransaction(
+        PortfolioTransaction(
+          assetId: closed,
+          type: TransactionType.compra,
+          quantity: 100,
+          unitPrice: 10,
+          totalValue: 1000,
+          date: d('2022-06-01'),
+          createdAt: d('2022-06-01'),
+        ),
+      );
+      final cvm = FakeCvm({
+        (2023, 12): [header, row(cnpj, '', '2023-12-29', '14')],
+        (2026, 10): [header, row(cnpj, '', '2026-10-02', '45.01')],
+      });
+
+      await sync(cvm).refresh();
+
+      expect(cvm.requested, contains((2023, 12)));
+      expect(cvm.requested.where((m) => m == (2023, 12)), hasLength(1));
+      expect(await quotasOf(closed, source: 'cvm'), {
+        '2023-12-29': 14,
+        '2026-10-02': 45.01,
+      });
+    });
+
+    test('fundo aberto, mesmo com a opção de estoque, não pede dez/2023', () async {
+      final open = await addFund(term: FundTerm.longTerm);
+      await repository.setFundEstoque(open, EstoqueOption.general);
+      final cvm = FakeCvm({
+        (2026, 10): [header, row(cnpj, '', '2026-10-02', '45.01')],
+      });
+
+      await sync(cvm).refresh();
+
+      expect(cvm.requested, isNot(contains((2023, 12))));
     });
 
     test('numa segunda leitura só os meses recentes voltam à rede', () async {
