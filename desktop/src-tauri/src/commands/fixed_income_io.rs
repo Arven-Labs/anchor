@@ -401,6 +401,7 @@ pub fn parse_fixed_income_positions(rows: &[Vec<String>]) -> HashMap<usize, Resu
                 custody,
                 payment_type: None,
                 notes: Some(notes),
+                ..Default::default()
             }),
         );
     }

@@ -2220,6 +2220,98 @@ async fn exporting_and_importing_into_another_portfolio_reproduces_the_position(
     }
 }
 
+const FUND_CSV: &str = "date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,loss_credit_used,fund_term,fund_structure,fund_estoque_option\n\
+2025-01-02,compra,FUNDO1,fundo,,100,10,1000,,,,,,longo_prazo,fechado,opcao_8\n\
+2025-05-30,come_cotas,FUNDO1,,,2.5,12,30,,,,,5,longo_prazo,fechado,opcao_8\n\
+2025-08-01,amortizacao,FUNDO1,,,,15,600,,,,,,longo_prazo,fechado,opcao_8\n";
+
+async fn fund_detail_of_ticker(db: &sea_orm::DatabaseConnection, ticker: &str) -> Option<crate::entity::fund_detail::Model> {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    let asset = crate::entity::assets::Entity::find()
+        .filter(crate::entity::assets::Column::Ticker.eq(ticker))
+        .one(db)
+        .await
+        .unwrap()?;
+    crate::entity::fund_detail::Entity::find()
+        .filter(crate::entity::fund_detail::Column::AssetId.eq(asset.id))
+        .one(db)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn the_fund_csv_round_trips_credit_and_fund_details_into_a_fresh_database() {
+    use crate::commands::portfolio_io::{
+        commit_rows, export_transactions_csv_text, parse_anchor_csv, preview_rows, proposed_from_portfolio,
+    };
+    use sea_orm::EntityTrait;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Fundos").await;
+    let source = portfolio(&db, ws.id, "Source").await;
+    let rows = preview_csv(&db, source.id, FUND_CSV).await;
+    let result = commit_rows(&db, source.id, commit_items(&rows)).await.unwrap();
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    let detail = fund_detail_of_ticker(&db, "FUNDO1").await.unwrap();
+    assert_eq!((detail.term.as_str(), detail.structure.as_str()), ("longo_prazo", "fechado"));
+    assert_eq!(detail.estoque_option.as_deref(), Some("opcao_8"));
+
+    let exported = export_transactions_csv_text(&proposed_from_portfolio(&db, source.id).await.unwrap()).unwrap();
+    assert!(exported.starts_with("date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,loss_credit_used,fund_term,fund_structure,fund_estoque_option\n"));
+
+    let other = memory_db().await;
+    let other_ws = workspace(&other, "Destino").await;
+    let target = portfolio(&other, other_ws.id, "Target").await;
+    let preview = preview_rows(&other, target.id, parse_anchor_csv(&exported)).await.unwrap();
+    let result = commit_rows(&other, target.id, commit_items(&preview)).await.unwrap();
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+
+    let detail = fund_detail_of_ticker(&other, "FUNDO1").await.unwrap();
+    assert_eq!((detail.term.as_str(), detail.structure.as_str()), ("longo_prazo", "fechado"));
+    assert_eq!(detail.estoque_option.as_deref(), Some("opcao_8"));
+    let txs = crate::entity::transactions::Entity::find().all(&other).await.unwrap();
+    let credit: Vec<_> = txs.iter().filter(|t| t.transaction_type == "come_cotas").map(|t| t.loss_credit_used).collect();
+    assert_eq!(credit, vec![Some(5.0)]);
+    assert_eq!(txs.len(), 3);
+}
+
+#[tokio::test]
+async fn importing_fund_columns_keeps_the_fund_details_the_user_already_set() {
+    use crate::commands::portfolio_io::commit_rows;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Fundos").await;
+    let first = portfolio(&db, ws.id, "A").await;
+    let seed = "date,type,ticker,asset_class,total_value,quantity,unit_price,fund_term,fund_structure\n\
+                2025-01-02,compra,FUNDO1,fundo,1000,100,10,curto_prazo,aberto\n";
+    let rows = preview_csv(&db, first.id, seed).await;
+    commit_rows(&db, first.id, commit_items(&rows)).await.unwrap();
+
+    let second = portfolio(&db, ws.id, "B").await;
+    let rows = preview_csv(&db, second.id, FUND_CSV).await;
+    commit_rows(&db, second.id, commit_items(&rows)).await.unwrap();
+    let detail = fund_detail_of_ticker(&db, "FUNDO1").await.unwrap();
+    assert_eq!((detail.term.as_str(), detail.structure.as_str()), ("curto_prazo", "aberto"));
+    assert_eq!(detail.estoque_option, None);
+}
+
+#[tokio::test]
+async fn bad_fund_columns_fail_the_import_with_the_line() {
+    use crate::commands::portfolio_io::commit_rows;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Fundos").await;
+    let p = portfolio(&db, ws.id, "A").await;
+    let bad = "date,type,ticker,asset_class,total_value,quantity,unit_price,fund_term,fund_structure\n\
+               2025-01-02,compra,FUNDO1,fundo,1000,100,10,longo_prazo,semiaberto\n";
+    let rows = preview_csv(&db, p.id, bad).await;
+    let result = commit_rows(&db, p.id, commit_items(&rows)).await.unwrap();
+    assert_eq!(result.created, 0);
+    assert_eq!(result.errors.len(), 1);
+    assert!(result.errors[0].message.contains("fund_structure"));
+    assert!(fund_detail_of_ticker(&db, "FUNDO1").await.is_none());
+}
+
 // ---------------------------------------------------------------------------
 // Arquivo portátil de um Workspace (Fase 34)
 // ---------------------------------------------------------------------------

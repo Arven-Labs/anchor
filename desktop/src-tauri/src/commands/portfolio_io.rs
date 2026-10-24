@@ -6,7 +6,7 @@
 // sabe de onde as linhas vieram: CSV do Anchor, planilha da B3 ou qualquer outra
 // origem entram só como mais um leitor na frente dele.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{Datelike, NaiveDate};
 use sea_orm::{
@@ -21,11 +21,13 @@ use crate::domain::proventos::{
     jscp_gross_from_net, PAYMENT_TYPE_ALUGUEL, PAYMENT_TYPE_DIVIDENDO, PAYMENT_TYPE_REEMBOLSO,
 };
 use crate::domain::tax::rules::{RuleSet, JCP_IRRF_RATE};
+use crate::commands::fund::{ESTOQUE_OPTIONS, STRUCTURES};
 use crate::commands::transaction::{create_transaction_in, CreateTransactionRequest};
-use crate::entity::{assets, custodia, import_pending, transactions};
+use crate::domain::tax::come_cotas::FundTerm;
+use crate::entity::{assets, custodia, fund_detail, import_pending, transactions};
 use crate::error::AppError;
 
-const CSV_HEADER: [&str; 12] = [
+const CSV_HEADER: [&str; 16] = [
     "date",
     "type",
     "ticker",
@@ -38,6 +40,10 @@ const CSV_HEADER: [&str; 12] = [
     "custody",
     "payment_type",
     "notes",
+    "loss_credit_used",
+    "fund_term",
+    "fund_structure",
+    "fund_estoque_option",
 ];
 
 /// Classes que o importador sabe criar sozinho, com a moeda e a exposição padrão.
@@ -61,7 +67,7 @@ const CLASS_DEFAULTS: [(&str, &str, &str); 15] = [
 
 /// Um lançamento proposto por qualquer origem (arquivo, planilha, IA no futuro),
 /// ainda não gravado.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ProposedTransaction {
     /// Linha de origem (1 = primeira linha de dados), pra mensagens de erro.
     pub line: usize,
@@ -78,6 +84,17 @@ pub struct ProposedTransaction {
     pub custody: Option<String>,
     pub payment_type: Option<String>,
     pub notes: Option<String>,
+    /// Só no come-cotas: rendimento abatido por crédito de prejuízo. Vazio = não informado; 0 = nenhum usado.
+    #[serde(default)]
+    pub loss_credit_used: Option<f64>,
+    /// Configuração do fundo (`fund_details`), repetida em cada linha do mesmo ticker. Só aplicada onde o fundo ainda
+    /// não tem o campo.
+    #[serde(default)]
+    pub fund_term: Option<String>,
+    #[serde(default)]
+    pub fund_structure: Option<String>,
+    #[serde(default)]
+    pub fund_estoque_option: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -225,6 +242,10 @@ fn build_row(line: usize, cell: &dyn Fn(&str) -> String) -> Result<ProposedTrans
         custody: non_empty(&cell("custody")),
         payment_type: non_empty(&cell("payment_type")),
         notes: non_empty(&cell("notes")),
+        loss_credit_used: number("loss_credit_used")?,
+        fund_term: non_empty(&cell("fund_term")).map(|v| v.to_lowercase()),
+        fund_structure: non_empty(&cell("fund_structure")).map(|v| v.to_lowercase()),
+        fund_estoque_option: non_empty(&cell("fund_estoque_option")).map(|v| v.to_lowercase()),
     })
 }
 
@@ -247,6 +268,10 @@ pub fn export_transactions_csv_text(rows: &[ProposedTransaction]) -> Result<Stri
                 row.custody.as_deref().unwrap_or(""),
                 row.payment_type.as_deref().unwrap_or(""),
                 row.notes.as_deref().unwrap_or(""),
+                num(row.loss_credit_used).as_str(),
+                row.fund_term.as_deref().unwrap_or(""),
+                row.fund_structure.as_deref().unwrap_or(""),
+                row.fund_estoque_option.as_deref().unwrap_or(""),
             ])
             .map_err(csv_error)?;
     }
@@ -381,6 +406,7 @@ pub fn parse_b3_rows(rows: &[Vec<String>]) -> Parsed {
             custody: non_empty(get(c_inst)),
             payment_type: None,
             notes: Some("Importado da B3 (Negociação)".to_string()),
+            ..Default::default()
         }));
     }
     out
@@ -575,6 +601,7 @@ pub fn parse_b3_movimentacao_rows(rows: &[Vec<String>], rules: &RuleSet) -> Pars
             custody: non_empty(get(c_inst)),
             payment_type: Some(payment_type.to_string()),
             notes: Some(notes),
+            ..Default::default()
         }));
     }
     out
@@ -829,6 +856,47 @@ async fn resolve_custody<C: ConnectionTrait>(
     Ok(id)
 }
 
+/// Cria o `fund_details` do fundo a partir das colunas `fund_*` da linha. Se o fundo já tem `fund_details`, a configuração
+/// do usuário vale e o arquivo não mexe nela. Quem chama só passa linhas com alguma coluna `fund_*`.
+async fn apply_fund_details<C: ConnectionTrait>(db: &C, asset_id: i32, p: &ProposedTransaction) -> Result<(), String> {
+    let term = p.fund_term.as_deref().ok_or("fund_structure e fund_estoque_option precisam de fund_term")?;
+    if FundTerm::parse(term).is_none() {
+        return Err(format!("fund_term inválido: '{term}' (longo_prazo, curto_prazo, acoes ou entidade_investimento)"));
+    }
+    let structure = p.fund_structure.as_deref().unwrap_or("aberto");
+    if !STRUCTURES.contains(&structure) {
+        return Err(format!("fund_structure inválido: '{structure}' (aberto, fechado ou exclusivo)"));
+    }
+    let estoque = p.fund_estoque_option.as_deref();
+    if estoque.is_some_and(|o| !ESTOQUE_OPTIONS.contains(&o)) {
+        return Err(format!("fund_estoque_option inválido: '{}' (geral ou opcao_8)", estoque.unwrap_or("")));
+    }
+    let asset = assets::Entity::find_by_id(asset_id).one(db).await.map_err(|e| e.to_string())?;
+    if asset.is_none_or(|a| a.asset_class != "fundo") {
+        return Err("as colunas fund_* só valem para ativos da classe fundo".to_string());
+    }
+    let existing = fund_detail::Entity::find()
+        .filter(fund_detail::Column::AssetId.eq(asset_id))
+        .one(db)
+        .await
+        .map_err(|e| e.to_string())?;
+    if existing.is_some() {
+        return Ok(());
+    }
+    fund_detail::ActiveModel {
+        asset_id: Set(asset_id),
+        term: Set(term.to_string()),
+        structure: Set(structure.to_string()),
+        estoque_option: Set(estoque.map(str::to_string)),
+        created_at: Set(chrono::Utc::now().to_rfc3339()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Grava os itens confirmados. Tudo ou nada: se qualquer linha falhar, nada fica
 /// gravado e `errors` diz quais. Duplicatas (conferidas de novo aqui) são puladas.
 pub async fn commit_rows(
@@ -847,6 +915,7 @@ pub async fn commit_rows(
     let mut known = known_tickers(&txn).await?;
     let mut remaining = existing_keys(&txn, portfolio_id).await?;
     let mut custody_cache: HashMap<String, i32> = HashMap::new();
+    let mut fund_details_done: HashSet<i32> = HashSet::new();
     let mut created = 0;
     let mut skipped = 0;
     let mut errors: Vec<ParseIssue> = Vec::new();
@@ -879,7 +948,7 @@ pub async fn commit_rows(
                     total_value: p.total_value,
                     fee: p.fee,
                     foreign_tax_withheld: None,
-                    loss_credit_used: None,
+                    loss_credit_used: p.loss_credit_used,
                     transaction_date: p.transaction_date.clone(),
                     notes: p.notes.clone(),
                     fi_emissor: None,
@@ -891,6 +960,13 @@ pub async fn commit_rows(
             )
             .await
             .map_err(|e| e.to_string())?;
+            if let Some(asset_id) = asset_id {
+                let has_fund_columns =
+                    p.fund_term.is_some() || p.fund_structure.is_some() || p.fund_estoque_option.is_some();
+                if has_fund_columns && fund_details_done.insert(asset_id) {
+                    apply_fund_details(&txn, asset_id, p).await?;
+                }
+            }
             Ok::<(), String>(())
         }
         .await;
@@ -923,11 +999,14 @@ pub async fn proposed_from_portfolio(
         assets::Entity::find().all(db).await?.into_iter().map(|a| (a.id, a)).collect();
     let custodias: HashMap<i32, String> =
         custodia::Entity::find().all(db).await?.into_iter().map(|c| (c.id, c.instituicao)).collect();
+    let fund_details: HashMap<i32, fund_detail::Model> =
+        fund_detail::Entity::find().all(db).await?.into_iter().map(|d| (d.asset_id, d)).collect();
     Ok(txs
         .into_iter()
         .enumerate()
         .map(|(index, tx)| {
             let asset = tx.asset_id.and_then(|id| assets_by_id.get(&id));
+            let detail = tx.asset_id.and_then(|id| fund_details.get(&id));
             ProposedTransaction {
                 line: index + 1,
                 transaction_date: tx.transaction_date,
@@ -942,6 +1021,10 @@ pub async fn proposed_from_portfolio(
                 custody: tx.custodia_id.and_then(|id| custodias.get(&id).cloned()),
                 payment_type: tx.payment_type,
                 notes: tx.notes,
+                loss_credit_used: tx.loss_credit_used,
+                fund_term: detail.map(|d| d.term.clone()),
+                fund_structure: detail.map(|d| d.structure.clone()),
+                fund_estoque_option: detail.and_then(|d| d.estoque_option.clone()),
             }
         })
         .collect())
@@ -1453,11 +1536,53 @@ mod tests {
             custody: Some("XP".to_string()),
             payment_type: None,
             notes: Some("com vírgula, e \"aspas\"".to_string()),
+            ..Default::default()
         }];
         let text = export_transactions_csv_text(&original).unwrap();
         let parsed = parse_anchor_csv(&text);
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].as_ref().unwrap(), &original[0]);
+    }
+
+    #[test]
+    fn the_fund_columns_round_trip_and_zero_credit_differs_from_blank() {
+        let come_cotas = |credit: Option<f64>| ProposedTransaction {
+            line: 1,
+            transaction_date: "2025-05-30".to_string(),
+            transaction_type: "come_cotas".to_string(),
+            ticker: "FUNDO1".to_string(),
+            asset_class: Some("fundo".to_string()),
+            currency: Some("BRL".to_string()),
+            quantity: Some(2.5),
+            unit_price: Some(12.0),
+            total_value: 30.0,
+            loss_credit_used: credit,
+            fund_term: Some("longo_prazo".to_string()),
+            fund_structure: Some("fechado".to_string()),
+            fund_estoque_option: Some("opcao_8".to_string()),
+            ..Default::default()
+        };
+        for credit in [None, Some(0.0), Some(5.0)] {
+            let original = vec![come_cotas(credit)];
+            let parsed = parse_anchor_csv(&export_transactions_csv_text(&original).unwrap());
+            assert_eq!(parsed[0].as_ref().unwrap(), &original[0], "crédito {credit:?}");
+        }
+    }
+
+    #[test]
+    fn a_csv_from_before_the_fund_columns_still_parses() {
+        let old = "date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes\n\
+                   2026-01-05,compra,PETR4,,,100,30.5,3050,4.9,XP,,\n";
+        let row = parse_anchor_csv(old).remove(0).unwrap();
+        assert_eq!((row.loss_credit_used, row.fund_term, row.fund_structure, row.fund_estoque_option), (None, None, None, None));
+    }
+
+    #[test]
+    fn a_non_numeric_loss_credit_reports_the_line() {
+        let text = "date,type,total_value,loss_credit_used\n2026-01-05,come_cotas,30,abc\n";
+        let issue = parse_anchor_csv(text).remove(0).unwrap_err();
+        assert_eq!(issue.line, 1);
+        assert!(issue.message.contains("abc"));
     }
 
     #[test]

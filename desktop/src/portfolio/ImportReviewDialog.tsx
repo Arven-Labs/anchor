@@ -36,6 +36,10 @@ export type ProposedTransaction = {
   custody: string | null;
   payment_type: string | null;
   notes: string | null;
+  loss_credit_used?: number | null;
+  fund_term?: string | null;
+  fund_structure?: string | null;
+  fund_estoque_option?: string | null;
 };
 
 export type PendingItem = {
