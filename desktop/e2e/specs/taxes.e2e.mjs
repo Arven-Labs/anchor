@@ -415,12 +415,20 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
       (text) => text.includes("loss") && text.includes("200,00") && text.includes("to offset"),
       "o resgate com prejuízo do FUNDOL deveria mostrar R$ 200,00 a compensar",
     );
-    await waitForText(
-      byId("fund-redemptions-FUNDOG"),
-      // O formatBrl separa "R$" do valor com um espaço inseparável, então o texto confere só os números.
-      (text) => text.includes("loss credit") && text.includes("200,00") && text.includes("used") && text.includes("IR") && text.includes(" 0,00"),
-      "o resgate do FUNDOG deveria usar o crédito de R$ 200,00 e ficar com IR de R$ 0,00",
-    );
+    // O formatBrl separa "R$" do valor com um espaço inseparável (U+00A0): troca por espaço comum antes de conferir. Se
+    // não casar, o erro leva o texto que a tela mostrou.
+    let seen = "";
+    try {
+      await browser.waitUntil(
+        async () => {
+          seen = (await textOf(byId("fund-redemptions-FUNDOG"))).replace(/ /g, " ");
+          return seen.includes("IR R$ 0,00, net R$ 1.200,00") && seen.includes("loss credit R$ 200,00 used");
+        },
+        { timeoutMsg: "o resgate do FUNDOG deveria usar o crédito de R$ 200,00 e ficar com IR de R$ 0,00" },
+      );
+    } catch (error) {
+      throw new Error(`${error.message}. Texto na tela: ${seen}`);
+    }
     await byId("fund-administrator-input-FUNDOG").waitForDisplayed({ timeout: 20_000 });
     await byId("fund-redemptions-FUNDOG").scrollIntoView({ block: "center" });
     await snap("taxes-fund-compensation");
