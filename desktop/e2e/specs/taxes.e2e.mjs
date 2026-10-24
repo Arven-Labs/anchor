@@ -573,7 +573,7 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     try {
       await browser.waitUntil(
         async () => {
-          seen = (await textOf(byId("fund-record-note-Zeta"))).replace(/ /g, " ");
+          seen = (await textOf(byId("fund-record-note-Zeta"))).replace(/ /g, " ");
           return (
             seen.includes("with Zeta were redeemed by 01/06/2025") &&
             seen.includes("R$ 200,00") &&
