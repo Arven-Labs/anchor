@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 
 import '../data/db.dart';
 import '../domain/cvm_inf_diario.dart' show formatCnpj, normalizeCnpj;
+import '../domain/fund_compensation.dart' show collapseAdministrator;
 import '../models/asset.dart';
 import '../models/asset_attachment.dart';
 import '../models/asset_valuation.dart';
@@ -134,12 +134,22 @@ class PortfolioRepository {
     return rows.isEmpty ? null : FundTerm.parse(rows.first['term'] as String?);
   }
 
+  /// Só o tipo muda: a subclasse da CVM e a administradora, na mesma linha, ficam (um
+  /// `INSERT OR REPLACE` as apagaria, como o `set_fund_term` do desktop nunca faz).
   Future<void> setFundTerm(int assetId, FundTerm term) async {
     final db = await AppDatabase.instance();
-    await db.insert('fund_details', {
-      'asset_id': assetId,
-      'term': term.value,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    final updated = await db.update(
+      'fund_details',
+      {'term': term.value},
+      where: 'asset_id = ?',
+      whereArgs: [assetId],
+    );
+    if (updated == 0) {
+      await db.insert('fund_details', {
+        'asset_id': assetId,
+        'term': term.value,
+      });
+    }
   }
 
   /// Tipo de todos os fundos que já têm um, por id do ativo.
@@ -226,6 +236,42 @@ class PortfolioRepository {
         if ((row['cvm_subclass'] as String?)?.isNotEmpty ?? false)
           row['asset_id'] as int: row['cvm_subclass'] as String,
     };
+  }
+
+  /// Administradora (ou intermediário) de cada fundo que tem uma, por id do ativo.
+  Future<Map<int, String>> listFundAdministrators() async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query('fund_details');
+    return {
+      for (final row in rows)
+        if ((row['administrator'] as String?)?.isNotEmpty ?? false)
+          row['asset_id'] as int: row['administrator'] as String,
+    };
+  }
+
+  /// Grava a administradora (ou o intermediário) do fundo, em texto livre: fundos do
+  /// mesmo tipo com a mesma administradora compensam prejuízo entre si. Vazio apaga (o
+  /// fundo fica isolado). Mora em `fund_details`, que só existe depois de o usuário
+  /// escolher o tipo do fundo.
+  Future<void> setFundAdministrator(int assetId, String? administrator) async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query(
+      'fund_details',
+      columns: ['asset_id'],
+      where: 'asset_id = ?',
+      whereArgs: [assetId],
+    );
+    if (rows.isEmpty) {
+      throw const FormatException(
+        'Escolha o tipo do fundo antes da administradora',
+      );
+    }
+    await db.update(
+      'fund_details',
+      {'administrator': collapseAdministrator(administrator)},
+      where: 'asset_id = ?',
+      whereArgs: [assetId],
+    );
   }
 
   /// Grava o CNPJ (no ativo) e a subclasse do fundo para a leitura da CVM. Vazio =

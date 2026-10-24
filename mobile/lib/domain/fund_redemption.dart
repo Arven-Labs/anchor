@@ -102,6 +102,17 @@ class LotPart {
     required this.iof,
     required this.ir,
   });
+
+  /// Só o IR muda: é o que a compensação de prejuízo abate (`fund_compensation.dart`).
+  LotPart copyWith({double? ir}) => LotPart(
+    lotDate: lotDate,
+    quotas: quotas,
+    days: days,
+    rate: rate,
+    gain: gain,
+    iof: iof,
+    ir: ir ?? this.ir,
+  );
 }
 
 class RedemptionEstimate {
@@ -125,8 +136,19 @@ class RedemptionEstimate {
   /// Cotas do resgate sem lote de compra conhecido (o custo está incompleto).
   final double uncoveredQuotas;
 
-  /// Come-cotas pago acima do IR devido: a compensação não é modelada.
+  /// Come-cotas pago acima do IR devido: o reembolso não é modelado.
   final double excessComeCotas;
+
+  /// Prejuízo deste resgate: a soma dos lotes com rendimento negativo depois do IOF. É
+  /// crédito para resgates e come-cotas posteriores do mesmo grupo.
+  final double lossCreated;
+
+  /// Crédito de prejuízo de resgates anteriores que abateu o IR deste resgate (zero até
+  /// `compensate` rodar).
+  final double lossCreditUsed;
+
+  /// IR antes de descontar esse crédito (igual a [ir] até `compensate` rodar).
+  final double irBeforeCompensation;
 
   const RedemptionEstimate({
     required this.txId,
@@ -141,7 +163,32 @@ class RedemptionEstimate {
     required this.lots,
     required this.uncoveredQuotas,
     required this.excessComeCotas,
+    required this.lossCreated,
+    this.lossCreditUsed = 0,
+    required this.irBeforeCompensation,
   });
+
+  /// O resgate com os lotes (e o IR total) já abatidos pelo crédito de prejuízo.
+  RedemptionEstimate withLossCredit({
+    required List<LotPart> lots,
+    required double lossCreditUsed,
+  }) => RedemptionEstimate(
+    txId: txId,
+    date: date,
+    quotas: quotas,
+    quotaValue: quotaValue,
+    gross: gross,
+    cost: cost,
+    iof: iof,
+    ir: lots.fold<double>(0, (sum, lot) => sum + lot.ir),
+    comeCotasCredit: comeCotasCredit,
+    lots: lots,
+    uncoveredQuotas: uncoveredQuotas,
+    excessComeCotas: excessComeCotas,
+    lossCreated: lossCreated,
+    lossCreditUsed: lossCreditUsed,
+    irBeforeCompensation: irBeforeCompensation,
+  );
 
   /// Bruto − IOF − IR.
   double get net => gross - iof - ir;
@@ -224,6 +271,7 @@ List<RedemptionEstimate> estimateRedemptions(
         final parts = <LotPart>[];
         var cost = 0.0, iofTotal = 0.0, irTotal = 0.0;
         var creditTotal = 0.0, excessTotal = 0.0;
+        var lossTotal = 0.0;
         for (final lot in lots.where((l) => l.quantity > costEps)) {
           if (remaining <= costEps) break;
           final take = _min(remaining, lot.quantity);
@@ -247,6 +295,7 @@ List<RedemptionEstimate> estimateRedemptions(
           irTotal += ir;
           creditTotal += _min(ccPaid, irDue);
           excessTotal += _positive(ccPaid - irDue);
+          lossTotal += _positive(iof - nominal);
           parts.add(
             LotPart(
               lotDate: lot.date,
@@ -278,6 +327,8 @@ List<RedemptionEstimate> estimateRedemptions(
             lots: parts,
             uncoveredQuotas: _positive(remaining),
             excessComeCotas: excessTotal,
+            lossCreated: lossTotal,
+            irBeforeCompensation: irTotal,
           ),
         );
     }

@@ -54,7 +54,7 @@ void main() {
     terms: {1: ?term},
     quotas: quotas,
     today: d(today),
-  );
+  ).reports;
 
   test('só ativos da classe fundo entram no relatório', () {
     final stock = Asset(
@@ -72,7 +72,114 @@ void main() {
       quotas: const [],
       today: d('2026-01-10'),
     );
-    expect(result.map((r) => r.asset.ticker), ['FUNDO']);
+    expect(result.reports.map((r) => r.asset.ticker), ['FUNDO']);
+  });
+
+  group('compensação entre fundos', () {
+    Asset fundAsset(int id, String ticker) => Asset(
+      id: id,
+      ticker: ticker,
+      name: 'Fundo $ticker',
+      assetClass: AssetClass.fundo,
+      currency: 'BRL',
+      createdAt: DateTime(2026, 1, 1),
+    );
+
+    PortfolioTransaction txOf(
+      int assetId,
+      int id,
+      TransactionType type,
+      String date,
+      double quantity,
+      double unitPrice,
+    ) => PortfolioTransaction(
+      id: id,
+      assetId: assetId,
+      type: type,
+      quantity: quantity,
+      unitPrice: unitPrice,
+      totalValue: quantity * unitPrice,
+      date: d(date),
+      createdAt: d(date),
+    );
+
+    // A perde 100 × (8 − 10) = 200 em 01/06/2025; B ganha 200 em 01/09/2025 (243 dias,
+    // 20%: IR de 40).
+    final transactions = [
+      txOf(1, 1, TransactionType.compra, '2025-01-01', 100, 10),
+      txOf(1, 2, TransactionType.venda, '2025-06-01', 100, 8),
+      txOf(2, 3, TransactionType.compra, '2025-01-01', 100, 10),
+      txOf(2, 4, TransactionType.venda, '2025-09-01', 100, 12),
+    ];
+
+    FundTaxResult twoFunds(Map<int, String> administrators) => buildFundReports(
+      assets: [fundAsset(1, 'AAA11'), fundAsset(2, 'BBB11')],
+      transactions: transactions,
+      terms: {1: FundTerm.longTerm, 2: FundTerm.longTerm},
+      quotas: const [],
+      today: d('2026-01-10'),
+      administrators: administrators,
+    );
+
+    test('a mesma administradora zera o IR do resgate que ganhou', () {
+      final result = twoFunds({1: 'XP', 2: '  xp '});
+      final a = result.reports[0].redemptions.single;
+      final b = result.reports[1].redemptions.single;
+
+      expect(a.lossCreated, closeTo(200, 1e-6));
+      expect(b.irBeforeCompensation, closeTo(40, 1e-6));
+      expect(b.ir, closeTo(0, 1e-6));
+      expect(b.lossCreditUsed, closeTo(200, 1e-6));
+      expect(b.net, closeTo(1200, 1e-6));
+      expect(result.lossCredits, isEmpty, reason: 'o crédito foi todo usado');
+      expect(result.reports[0].administrator, 'XP');
+    });
+
+    test('sem administradora cada fundo é um grupo e o saldo fica no que perdeu', () {
+      final result = twoFunds(const {});
+
+      expect(result.reports[1].redemptions.single.ir, closeTo(40, 1e-6));
+      expect(result.reports[1].redemptions.single.lossCreditUsed, 0);
+      expect(result.lossCredits, hasLength(1));
+      expect(result.lossCredits.single.amount, closeTo(200, 1e-6));
+      expect(result.lossCredits.single.tickers, ['AAA11']);
+      expect(lossCreditText(result.lossCredits.single), contains('sem administradora'));
+    });
+
+    test('o saldo do grupo abate o come-cotas estimado do outro fundo', () {
+      // C: 100 cotas a 10,00 compradas em 01/07/2026, cota a 12,00: ganho 200, 15% = 30
+      final result = buildFundReports(
+        assets: [fundAsset(1, 'AAA11'), fundAsset(3, 'CCC11')],
+        transactions: [
+          transactions[0],
+          transactions[1],
+          txOf(3, 5, TransactionType.compra, '2026-07-01', 100, 10),
+        ],
+        terms: {1: FundTerm.longTerm, 3: FundTerm.longTerm},
+        quotas: [
+          FundQuota(assetId: 3, date: d('2026-10-20'), value: 12, createdAt: d('2026-10-20')),
+        ],
+        today: d('2026-10-22'),
+        administrators: {1: 'XP', 3: 'XP'},
+      );
+      final estimate = result.reports[1].estimate;
+
+      expect(estimate.lossCreditUsed, closeTo(200, 1e-6));
+      expect(estimate.tax, closeTo(0, 1e-6));
+      expect(estimate.taxBeforeCompensation, closeTo(30, 1e-6));
+      expect(result.lossCredits.single.amount, closeTo(200, 1e-6));
+      expect(comeCotasCreditText(estimate), contains('R\$ 30,00'));
+    });
+
+    test('os textos do resgate dizem o prejuízo e o crédito usado', () {
+      final result = twoFunds({1: 'XP', 2: 'XP'});
+
+      final loss = redemptionCompensationLines(result.reports[0].redemptions.single);
+      expect(loss.single, contains('perdeu R\$ 200,00'));
+      final used = redemptionCompensationLines(result.reports[1].redemptions.single);
+      expect(used.single, allOf(contains('R\$ 200,00'), contains('R\$ 0,00 em vez de R\$ 40,00')));
+      expect(comeCotasCreditText(result.reports[0].estimate), isEmpty);
+    });
   });
 
   test('o come-cotas registrado tira cotas e vira a base do ganho', () {

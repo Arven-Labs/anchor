@@ -8,6 +8,7 @@ import '../models/fund.dart';
 import '../models/portfolio_transaction.dart';
 import 'come_cotas.dart';
 import 'cost_basis.dart';
+import 'fund_compensation.dart';
 import 'fund_redemption.dart';
 
 class FundReport {
@@ -24,8 +25,13 @@ class FundReport {
   final List<PortfolioTransaction> deductions;
   final ComeCotasEstimate estimate;
 
-  /// Resgates estimados, em ordem de data. Vazio enquanto o fundo não tem tipo.
+  /// Resgates estimados, em ordem de data, já com o crédito de prejuízo abatido. Vazio
+  /// enquanto o fundo não tem tipo.
   final List<RedemptionEstimate> redemptions;
+
+  /// Administradora ou intermediário informado, como o usuário escreveu; agrupa os
+  /// fundos que compensam prejuízo entre si.
+  final String? administrator;
 
   const FundReport({
     required this.asset,
@@ -35,7 +41,28 @@ class FundReport {
     required this.deductions,
     required this.estimate,
     required this.redemptions,
+    this.administrator,
   });
+
+  FundReport withRedemptions(List<RedemptionEstimate> redemptions) => FundReport(
+    asset: asset,
+    term: term,
+    quantity: quantity,
+    quotas: quotas,
+    deductions: deductions,
+    estimate: estimate,
+    redemptions: redemptions,
+    administrator: administrator,
+  );
+}
+
+/// O que a tela de IR de fundos mostra: um relatório por fundo e o prejuízo que sobrou
+/// a compensar em cada grupo.
+class FundTaxResult {
+  final List<FundReport> reports;
+  final List<LossCredit> lossCredits;
+
+  const FundTaxResult({required this.reports, required this.lossCredits});
 }
 
 /// Valor da cota de uma transação de fundo: o preço unitário (o guard do desktop
@@ -52,13 +79,15 @@ int _byDateThenId(PortfolioTransaction a, PortfolioTransaction b) {
   return byDate != 0 ? byDate : (a.id ?? 0).compareTo(b.id ?? 0);
 }
 
-/// Um relatório por ativo da classe `fundo`, na ordem de [assets].
-List<FundReport> buildFundReports({
+/// Um relatório por ativo da classe `fundo`, na ordem de [assets], com o prejuízo dos
+/// resgates compensado entre os fundos do mesmo grupo ([administrators] e o tipo).
+FundTaxResult buildFundReports({
   required List<Asset> assets,
   required List<PortfolioTransaction> transactions,
   required Map<int, FundTerm> terms,
   required List<FundQuota> quotas,
   required DateTime today,
+  Map<int, String> administrators = const {},
 }) {
   final reports = <FundReport>[];
   for (final asset in assets.where((a) => a.assetClass == AssetClass.fundo)) {
@@ -142,8 +171,36 @@ List<FundReport> buildFundReports({
         deductions: deductions.reversed.toList(),
         estimate: estimateComeCotas([holding], today).first,
         redemptions: term == null ? const [] : estimateRedemptions(events, term),
+        administrator: administrators[id],
       ),
     );
   }
-  return reports;
+
+  // Compensação de prejuízo entre os fundos do mesmo grupo: ajusta o IR dos resgates e
+  // sobra um saldo por grupo, que ainda abate o ganho da estimativa do próximo
+  // come-cotas (as estimativas são as mesmas dos relatórios e mudam no lugar).
+  final compFunds = [
+    for (final report in reports)
+      if (report.term != null)
+        CompFund(
+          assetId: report.asset.id!,
+          ticker: report.asset.ticker,
+          term: report.term!,
+          administrator: report.administrator,
+          redemptions: report.redemptions,
+        ),
+  ];
+  final result = compensate(compFunds);
+  final compensated = {
+    for (var i = 0; i < compFunds.length; i++)
+      compFunds[i].assetId: result.redemptions[i],
+  };
+  final adjusted = [
+    for (final report in reports)
+      compensated[report.asset.id] == null
+          ? report
+          : report.withRedemptions(compensated[report.asset.id]!),
+  ];
+  applyLossCredit([for (final r in adjusted) r.estimate], result.credits);
+  return FundTaxResult(reports: adjusted, lossCredits: result.credits);
 }

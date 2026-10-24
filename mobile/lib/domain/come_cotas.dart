@@ -128,6 +128,14 @@ class ComeCotasEstimate {
   /// transação `come_cotas`.
   DateTime? lastReferenceUnrecorded;
 
+  /// Crédito de prejuízo de resgates anteriores que abateu o ganho desta estimativa
+  /// (`applyLossCredit`); zero até a compensação rodar. [gain] e [tax] já vêm com o
+  /// abatimento.
+  double lossCreditUsed = 0;
+
+  /// Imposto antes do crédito de prejuízo (igual a [tax] até a compensação rodar).
+  double taxBeforeCompensation = 0;
+
   ComeCotasEstimate({
     required this.assetId,
     required this.ticker,
@@ -262,6 +270,7 @@ List<ComeCotasEstimate> estimateComeCotas(
       ..gain = gain
       ..rate = rate
       ..tax = tax
+      ..taxBeforeCompensation = tax
       ..quotasDeducted = latest.value > 0 ? tax / latest.value : 0;
   }
   return estimates;

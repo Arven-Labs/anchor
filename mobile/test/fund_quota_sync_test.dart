@@ -178,6 +178,51 @@ void main() {
       await repository.setFundCvm(1, cnpj: cnpj, subclass: 'ABC');
       expect((await repository.listAssets()).single.cnpj, cnpj);
       expect(await repository.listFundSubclasses(), {1: 'ABC'});
+      await repository.setFundAdministrator(1, 'XP');
+      expect(await repository.listFundAdministrators(), {1: 'XP'});
+      // e o tipo e a subclasse seguem lá depois de gravar a administradora
+      expect(await repository.getFundTerm(1), FundTerm.longTerm);
+      expect(await repository.listFundSubclasses(), {1: 'ABC'});
+    });
+
+    test('migra do v10 sem perder o CNPJ, a subclasse e o tipo', () async {
+      final old = await openDatabase(
+        '${dir.path}/anchor_mobile.db',
+        version: 10,
+        onCreate: (db, _) async {
+          await db.execute('''
+            CREATE TABLE assets (
+              id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,
+              name TEXT NOT NULL, asset_class TEXT NOT NULL, currency TEXT NOT NULL,
+              created_at TEXT NOT NULL, external_id TEXT, equity_shares_owned REAL,
+              equity_total_shares REAL, equity_company_valuation REAL, cnpj TEXT)''');
+          await db.execute('''
+            CREATE TABLE fund_details (
+              asset_id INTEGER PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+              term TEXT NOT NULL, cvm_subclass TEXT)''');
+          await db.insert('assets', {
+            'ticker': 'FUNDO',
+            'name': 'Fundo v10',
+            'asset_class': 'fundo',
+            'currency': 'BRL',
+            'created_at': '2026-01-01T00:00:00.000',
+            'cnpj': cnpj,
+          });
+          await db.insert('fund_details', {
+            'asset_id': 1,
+            'term': 'curto_prazo',
+            'cvm_subclass': 'ABC',
+          });
+        },
+      );
+      await old.close();
+
+      expect((await repository.listAssets()).single.cnpj, cnpj);
+      expect(await repository.getFundTerm(1), FundTerm.shortTerm);
+      expect(await repository.listFundSubclasses(), {1: 'ABC'});
+      expect(await repository.listFundAdministrators(), isEmpty);
+      await repository.setFundAdministrator(1, 'BTG');
+      expect(await repository.listFundAdministrators(), {1: 'BTG'});
     });
 
     test('migra do v8: cria as tabelas de fundo já com a subclasse e o CNPJ', () async {
@@ -197,8 +242,46 @@ void main() {
 
       final id = await addFund(term: FundTerm.shortTerm);
       await repository.setFundCvm(id, cnpj: cnpj, subclass: 'XYZ');
+      await repository.setFundAdministrator(id, 'XP');
+      expect(await repository.listFundAdministrators(), {id: 'XP'});
       expect(await repository.listFundSubclasses(), {id: 'XYZ'});
       expect((await repository.listAssets()).single.cnpj, cnpj);
+    });
+  });
+
+  group('setFundAdministrator', () {
+    test('exige o tipo do fundo antes', () async {
+      final id = await addFund();
+
+      await expectLater(
+        repository.setFundAdministrator(id, 'XP'),
+        throwsA(isA<FormatException>()),
+      );
+      await repository.setFundTerm(id, FundTerm.longTerm);
+      await repository.setFundAdministrator(id, 'XP');
+      expect(await repository.listFundAdministrators(), {id: 'XP'});
+    });
+
+    test('guarda o texto com os espaços colapsados e vazio apaga', () async {
+      final id = await addFund(term: FundTerm.longTerm);
+
+      await repository.setFundAdministrator(id, '  XP   Investimentos ');
+      expect(await repository.listFundAdministrators(), {id: 'XP Investimentos'});
+
+      await repository.setFundAdministrator(id, '   ');
+      expect(await repository.listFundAdministrators(), isEmpty);
+    });
+
+    test('trocar o tipo do fundo não apaga a administradora nem a subclasse', () async {
+      final id = await addFund(term: FundTerm.longTerm);
+      await repository.setFundAdministrator(id, 'XP');
+      await repository.setFundCvm(id, cnpj: cnpj, subclass: 'ABC');
+
+      await repository.setFundTerm(id, FundTerm.shortTerm);
+
+      expect(await repository.listFundAdministrators(), {id: 'XP'});
+      expect(await repository.listFundSubclasses(), {id: 'ABC'});
+      expect(await repository.getFundTerm(id), FundTerm.shortTerm);
     });
   });
 

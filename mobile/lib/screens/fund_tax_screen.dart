@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/come_cotas.dart';
+import '../domain/fund_compensation.dart' show LossCredit;
 import '../domain/fund_redemption.dart';
 import '../domain/fund_tax.dart';
 import '../models/fund.dart';
@@ -57,11 +58,43 @@ List<String> fundWarnings(FundReport report) {
             'lançadas: o custo considera só a parte conhecida.',
       if (redemption.excessComeCotas > 0.005)
         'No resgate de ${formatDay(redemption.date)} o come-cotas pago passou '
-            'do IR devido em ${formatBrl(redemption.excessComeCotas)}: a '
-            'compensação não é modelada.',
+            'do IR devido em ${formatBrl(redemption.excessComeCotas)}: o '
+            'reembolso não é modelado.',
     ],
   ];
 }
+
+/// Quanto do ganho da estimativa o crédito de prejuízo já abateu; vazio sem crédito.
+@visibleForTesting
+String comeCotasCreditText(ComeCotasEstimate estimate) {
+  if (estimate.lossCreditUsed <= 0.005) return '';
+  return 'Crédito de prejuízo de ${formatBrl(estimate.lossCreditUsed)} já '
+      'reduziu o ganho: o imposto seria '
+      '${formatBrl(estimate.taxBeforeCompensation)} sem ele.';
+}
+
+/// O que o resgate tem de compensação, uma frase por linha; vazio sem prejuízo nem
+/// crédito.
+@visibleForTesting
+List<String> redemptionCompensationLines(RedemptionEstimate redemption) {
+  return [
+    if (redemption.lossCreditUsed > 0.005)
+      'Prejuízo de resgates anteriores do grupo abateu '
+          '${formatBrl(redemption.lossCreditUsed)} do ganho: IR '
+          '${formatBrl(redemption.ir)} em vez de '
+          '${formatBrl(redemption.irBeforeCompensation)}.',
+    if (redemption.lossCreated > 0.005)
+      'Este resgate perdeu ${formatBrl(redemption.lossCreated)}: compensa o '
+          'ganho de resgates e come-cotas posteriores do mesmo grupo '
+          '(mesma administradora e mesmo tipo).',
+  ];
+}
+
+/// Uma linha por grupo com prejuízo ainda a compensar.
+@visibleForTesting
+String lossCreditText(LossCredit credit) =>
+    '${formatBrl(credit.amount)} — ${credit.tickers.join(', ')} '
+    '(${credit.administrator ?? 'sem administradora'}, ${credit.term.label})';
 
 /// IR e IOF de fundos (ver `buildFundReports`): cota por data, estimativa do
 /// próximo come-cotas e resgates. Estimativa informativa: o imposto sai na fonte
@@ -118,6 +151,7 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
   bool _refreshing = false;
   String? _progress;
   List<FundReport> _reports = [];
+  List<LossCredit> _lossCredits = [];
   Map<int, String> _subclasses = {};
   Map<int, CvmStatus> _statuses = {};
 
@@ -133,15 +167,19 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
     final terms = await _repository.listFundTerms();
     final quotas = await _repository.listAllFundQuotas();
     final subclasses = await _repository.listFundSubclasses();
+    final administrators = await _repository.listFundAdministrators();
     if (!mounted) return;
+    final result = buildFundReports(
+      assets: assets,
+      transactions: transactions,
+      terms: terms,
+      quotas: quotas,
+      today: DateTime.now(),
+      administrators: administrators,
+    );
     setState(() {
-      _reports = buildFundReports(
-        assets: assets,
-        transactions: transactions,
-        terms: terms,
-        quotas: quotas,
-        today: DateTime.now(),
-      );
+      _reports = result.reports;
+      _lossCredits = result.lossCredits;
       _subclasses = subclasses;
       _loading = false;
     });
@@ -165,6 +203,16 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
       return;
     }
     _statuses.remove(report.asset.id);
+    await _load();
+  }
+
+  Future<void> _setAdministrator(FundReport report, String administrator) async {
+    try {
+      await _repository.setFundAdministrator(report.asset.id!, administrator);
+    } on FormatException catch (e) {
+      _say(e.message);
+      return;
+    }
     await _load();
   }
 
@@ -273,6 +321,15 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
                   ],
                   const SizedBox(height: 12),
                 ],
+                if (_lossCredits.isNotEmpty) ...[
+                  Text(
+                    'Prejuízo a compensar em ganhos e come-cotas posteriores '
+                    '(mesma administradora e mesmo tipo)',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  for (final credit in _lossCredits) Text(lossCreditText(credit)),
+                  const SizedBox(height: 12),
+                ],
                 if (_reports.isEmpty)
                   const Padding(
                     padding: EdgeInsets.only(top: 24),
@@ -285,6 +342,7 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
                       subclass: _subclasses[report.asset.id],
                       cvmStatus: _statuses[report.asset.id],
                       onTerm: (term) => _setTerm(report, term),
+                      onAdministrator: (text) => _setAdministrator(report, text),
                       onCnpj: (cnpj) => _setCvm(report, cnpj: cnpj),
                       onSubclass: (subclass) => subclass == null
                           ? _clearSubclass(report)
@@ -303,6 +361,7 @@ class _FundCard extends StatelessWidget {
   final String? subclass;
   final CvmStatus? cvmStatus;
   final ValueChanged<FundTerm> onTerm;
+  final ValueChanged<String> onAdministrator;
   final ValueChanged<String> onCnpj;
   final ValueChanged<String?> onSubclass;
   final VoidCallback onAddQuota;
@@ -313,6 +372,7 @@ class _FundCard extends StatelessWidget {
     required this.subclass,
     required this.cvmStatus,
     required this.onTerm,
+    required this.onAdministrator,
     required this.onCnpj,
     required this.onSubclass,
     required this.onAddQuota,
@@ -358,6 +418,14 @@ class _FundCard extends StatelessWidget {
               },
             ),
             const SizedBox(height: 12),
+            _AdministratorField(
+              // Remonta quando o texto gravado ou o tipo mudam: o campo é estado local.
+              key: ValueKey('administrator-${report.administrator}-${report.term}'),
+              administrator: report.administrator,
+              enabled: report.term != null,
+              onSave: onAdministrator,
+            ),
+            const SizedBox(height: 12),
             _CvmCnpjField(cnpj: report.asset.cnpj, onSave: onCnpj),
             if (options.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -395,6 +463,8 @@ class _FundCard extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             if (basis.isNotEmpty) Text(basis, style: textTheme.bodySmall),
+            if (comeCotasCreditText(estimate).isNotEmpty)
+              Text(comeCotasCreditText(estimate), style: textTheme.bodySmall),
             for (final warning in fundWarnings(report))
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -488,8 +558,66 @@ class _RedemptionTile extends StatelessWidget {
         'Bruto ${formatBrl(redemption.gross)} · IOF ${formatBrl(redemption.iof)}'
         ' · IR ${formatBrl(redemption.ir)} · líquido '
         '${formatBrl(redemption.net)}'
-        '${redemption.comeCotasCredit > 0.005 ? '\nCome-cotas já pago abateu ${formatBrl(redemption.comeCotasCredit)} do IR' : ''}',
+        '${redemption.comeCotasCredit > 0.005 ? '\nCome-cotas já pago abateu ${formatBrl(redemption.comeCotasCredit)} do IR' : ''}'
+        '${[for (final line in redemptionCompensationLines(redemption)) '\n$line'].join()}',
       ),
+    );
+  }
+}
+
+/// Administradora (ou intermediário) do fundo, para agrupar quem compensa prejuízo com
+/// quem. O texto mora num controller criado na montagem; o cartão remonta (`key`)
+/// quando o gravado muda.
+class _AdministratorField extends StatefulWidget {
+  final String? administrator;
+  final bool enabled;
+  final ValueChanged<String> onSave;
+
+  const _AdministratorField({
+    super.key,
+    required this.administrator,
+    required this.enabled,
+    required this.onSave,
+  });
+
+  @override
+  State<_AdministratorField> createState() => _AdministratorFieldState();
+}
+
+class _AdministratorFieldState extends State<_AdministratorField> {
+  late final _controller = TextEditingController(
+    text: widget.administrator ?? '',
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      enabled: widget.enabled,
+      decoration: InputDecoration(
+        labelText: 'Administradora / intermediário (compensa prejuízo)',
+        hintText: 'ex.: XP, BTG',
+        helperText: !widget.enabled
+            ? 'Escolha o tipo do fundo primeiro.'
+            : widget.administrator == null
+            ? 'Sem isso, o fundo só compensa prejuízo com ele mesmo.'
+            : 'Fundos do mesmo tipo e da mesma administradora compensam entre si.',
+        helperMaxLines: 2,
+        suffixIcon: IconButton(
+          icon: const Icon(Icons.check),
+          tooltip: 'Salvar administradora',
+          onPressed: widget.enabled
+              ? () => widget.onSave(_controller.text)
+              : null,
+        ),
+      ),
+      onSubmitted: widget.enabled ? widget.onSave : null,
     );
   }
 }

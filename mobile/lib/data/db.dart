@@ -35,7 +35,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 10,
+      version: 11,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -235,6 +235,16 @@ class AppDatabase {
             );
           }
         }
+        if (oldVersion < 11) {
+          // Compensação de prejuízo entre fundos: a administradora (ou intermediário)
+          // agrupa os fundos que se compensam. Quem veio de antes do v9 acabou de criar
+          // `fund_details` já com a coluna.
+          if (oldVersion >= 9) {
+            await db.execute(
+              'ALTER TABLE fund_details ADD COLUMN administrator TEXT',
+            );
+          }
+        }
       },
     );
   }
@@ -246,7 +256,8 @@ class AppDatabase {
       CREATE TABLE fund_details (
         asset_id INTEGER PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
         term TEXT NOT NULL,
-        cvm_subclass TEXT
+        cvm_subclass TEXT,
+        administrator TEXT
       )
     ''');
     await db.execute('''
