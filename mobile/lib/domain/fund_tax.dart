@@ -64,6 +64,11 @@ class FundReport {
   /// O imposto do estoque, só quando [estoqueStatus] é `estimated`.
   final EstoqueEstimate? estoque;
 
+  /// Come-cotas pago acima do IR devido, somado nos resgates e amortizações. Só
+  /// informação (possível restituição): não entra no IR nem no líquido.
+  double get refundableComeCotas =>
+      redemptions.fold(0.0, (sum, r) => sum + r.excessComeCotas);
+
   const FundReport({
     required this.asset,
     required this.term,

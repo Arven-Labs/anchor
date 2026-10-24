@@ -65,6 +65,20 @@ String estoqueText(FundReport report) {
   }
 }
 
+/// O come-cotas pago acima do IR devido, somado, como possível restituição; vazio sem
+/// excesso. A regra (PER/DCOMP, 5 anos do pagamento) não foi confirmada para o
+/// come-cotas.
+@visibleForTesting
+String refundableText(FundReport report) {
+  final total = report.refundableComeCotas;
+  if (total <= 0.005) return '';
+  return 'Come-cotas pago acima do IR devido, possivelmente restituível: '
+      '${formatBrl(total)}. O imposto retido a maior pode ser pedido por '
+      'PER/DCOMP em até 5 anos da data do pagamento; essa regra não foi '
+      'confirmada para o come-cotas, então confira com a administradora ou um '
+      'contador. Não está incluído nos líquidos.';
+}
+
 /// Avisos do cartão do fundo, em frases.
 @visibleForTesting
 List<String> fundWarnings(FundReport report) {
@@ -83,8 +97,8 @@ List<String> fundWarnings(FundReport report) {
             'lançadas: o custo considera só a parte conhecida.',
       if (redemption.excessComeCotas > 0.005)
         'No resgate de ${formatDay(redemption.date)} o come-cotas pago passou '
-            'do IR devido em ${formatBrl(redemption.excessComeCotas)}: o '
-            'reembolso não é modelado.',
+            'do IR devido em ${formatBrl(redemption.excessComeCotas)}: fica '
+            'fora do líquido (veja a possível restituição).',
     ],
   ];
 }
@@ -562,6 +576,8 @@ class _FundCard extends StatelessWidget {
             if (basis.isNotEmpty) Text(basis, style: textTheme.bodySmall),
             if (estoqueText(report).isNotEmpty)
               Text(estoqueText(report), style: textTheme.bodySmall),
+            if (refundableText(report).isNotEmpty)
+              Text(refundableText(report), style: textTheme.bodySmall),
             if (comeCotasCreditText(estimate).isNotEmpty)
               Text(comeCotasCreditText(estimate), style: textTheme.bodySmall),
             for (final warning in fundWarnings(report))

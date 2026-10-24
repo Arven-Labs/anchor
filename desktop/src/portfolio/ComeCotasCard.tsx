@@ -160,6 +160,11 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Come-cotas pago acima do IR devido, somado nos resgates e amortizações do fundo. É só informação: não entra no líquido.
+function refundableTotal(redemptions: RedemptionRow[]): number {
+  return redemptions.reduce((sum, r) => sum + r.excess_come_cotas, 0);
+}
+
 // IR e IOF estimados de um resgate (venda do fundo), com o detalhe por lote numa área expansível.
 function RedemptionLine({ redemption, ticker }: { redemption: RedemptionRow; ticker: string }) {
   return (
@@ -212,7 +217,8 @@ function RedemptionLine({ redemption, ticker }: { redemption: RedemptionRow; tic
         )}
         {redemption.excess_come_cotas > 0 && (
           <span>
-            Come-cotas paid above the IR due: {formatBrl(redemption.excess_come_cotas)} (a refund of it is not handled).
+            Come-cotas paid above the IR due: {formatBrl(redemption.excess_come_cotas)} (not in the net value; see the
+            refund note above).
           </span>
         )}
         {redemption.loss_credit_used > 0 && (
@@ -697,6 +703,15 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
               {fund.redemptions.length > 0 && (
                 <div className="flex flex-col gap-1" data-testid={`fund-redemptions-${fund.ticker}`}>
                   <span className="text-xs text-muted-foreground">Redemptions (estimated IR and IOF)</span>
+                  {refundableTotal(fund.redemptions) > 0.005 && (
+                    <span className="text-xs" data-testid={`fund-refundable-${fund.ticker}`}>
+                      Come-cotas paid above the IR due, possibly refundable:{" "}
+                      <span className="font-medium">{formatBrl(refundableTotal(fund.redemptions))}</span>. Tax withheld in
+                      excess may be recovered through PER/DCOMP within 5 years of the payment date; this rule was not
+                      confirmed for come-cotas, so check with the fund administrator or an accountant. It is not
+                      included in the net values below.
+                    </span>
+                  )}
                   {[...fund.redemptions].reverse().map((r) => (
                     <RedemptionLine key={r.tx_id} redemption={r} ticker={fund.ticker} />
                   ))}

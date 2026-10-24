@@ -375,6 +375,11 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
       (text) => text.includes("20 quotas") && text.includes("260,00") && text.includes("excess come-cotas"),
       "o resgate de 20 cotas por R$ 260,00 deveria aparecer com o aviso de come-cotas em excesso",
     );
+    await waitForText(
+      byId("fund-refundable-FUNDOX"),
+      (text) => text.includes("possibly refundable") && text.includes("PER/DCOMP"),
+      "o excesso de come-cotas deveria aparecer somado como possível restituição",
+    );
     await byId("come-cotas-card").scrollIntoView({ block: "center" });
     await snap("taxes-fund-redemption");
   });

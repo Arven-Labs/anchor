@@ -22,7 +22,8 @@
 //   proporcionalmente à quantidade de cada lote aberto (aproximação). Rendimento
 //   nominal = rendimento do resgate + a parte do ganho que os come-cotas do lote já
 //   tributaram. IR = max(0, (nominal − IOF) × alíquota − come-cotas pago); o excesso
-//   de come-cotas vira aviso (compensação não modelada).
+//   de come-cotas é só informação (possível restituição por PER/DCOMP, regra não
+//   confirmada): não entra no IR nem no líquido.
 //
 // ATENÇÃO: as regras vêm de fontes secundárias; conferir na Receita antes de confiar.
 

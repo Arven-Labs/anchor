@@ -790,5 +790,60 @@ void main() {
         contains('maior que as aplicações lançadas'),
       );
     });
+
+    group('come-cotas pago acima do IR devido', () {
+      // 100 cotas a 10,00; come-cotas de 2,5 cotas a 12,00 (30 pagos); os resgates saem
+      // a 9,00 e o rendimento fica negativo, então o IR é zero e o come-cotas pago
+      // inteiro (30) é excesso, repartido entre os resgates na proporção das cotas
+      // (50 de 97,5 = 15,3846 e 47,5 de 97,5 = 14,6154).
+      List<PortfolioTransaction> history(List<PortfolioTransaction> sells) => [
+        tx(1, TransactionType.compra, '2024-01-02', 100, 10),
+        tx(2, TransactionType.comeCotas, '2024-05-31', 2.5, 12),
+        ...sells,
+      ];
+
+      test('soma o excesso dos resgates e avisa em cada um', () {
+        final report = reports(
+          history([
+            tx(3, TransactionType.venda, '2026-03-01', 50, 9),
+            tx(4, TransactionType.venda, '2026-03-02', 47.5, 9),
+          ]),
+        ).single;
+
+        expect(report.refundableComeCotas, closeTo(30, 1e-6));
+        // o excesso não entra no líquido nem no IR
+        expect(report.redemptions.every((r) => r.ir == 0), isTrue);
+        expect(
+          report.redemptions.first.net,
+          closeTo(report.redemptions.first.gross, 1e-6),
+        );
+        final warnings = fundWarnings(report)
+            .where((w) => w.contains('passou do IR devido'))
+            .toList();
+        expect(warnings, hasLength(2));
+        expect(warnings.first, contains('fora do líquido'));
+        expect(warnings.first, isNot(contains('não é modelado')));
+
+        final text = refundableText(report);
+        expect(text, contains('possivelmente restituível'));
+        expect(text, contains('PER/DCOMP'));
+        expect(text, contains('em até 5 anos'));
+        expect(text, contains('não foi confirmada'));
+      });
+
+      test('sem excesso não há frase nem soma', () {
+        final report = reports([
+          tx(1, TransactionType.compra, '2025-01-01', 100, 10),
+          tx(2, TransactionType.venda, '2026-06-01', 100, 12),
+        ]).single;
+
+        expect(report.refundableComeCotas, 0);
+        expect(refundableText(report), isEmpty);
+        expect(
+          fundWarnings(report).where((w) => w.contains('passou do IR devido')),
+          isEmpty,
+        );
+      });
+    });
   });
 }
