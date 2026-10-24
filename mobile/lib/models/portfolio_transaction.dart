@@ -96,6 +96,11 @@ class PortfolioTransaction {
   /// crédito da apuração da Lei 14.754 (`foreign_tax.dart`), como no desktop.
   final double? foreignTaxWithheld;
 
+  /// Dia em que esse imposto foi pago no exterior: o crédito converte pela PTAX de compra
+  /// dele (Lei 14.754, art. 15). Só com [foreignTaxWithheld] maior que zero; `null` = o dia
+  /// do provento. O crédito entra no ano do provento de qualquer jeito.
+  final DateTime? foreignTaxPaidOn;
+
   /// Crédito de prejuízo que a administradora usou no come-cotas, em BRL de rendimento
   /// abatido — só em `come_cotas`. `null` = não informado; 0 = nenhum crédito usado.
   final double? lossCreditUsed;
@@ -128,6 +133,7 @@ class PortfolioTransaction {
     required this.totalValue,
     this.fee,
     this.foreignTaxWithheld,
+    this.foreignTaxPaidOn,
     this.lossCreditUsed,
     this.custodiaId,
     this.transferToCustodiaId,
@@ -151,6 +157,7 @@ class PortfolioTransaction {
       'total_value': totalValue,
       'fee': fee,
       'foreign_tax_withheld': foreignTaxWithheld,
+      'foreign_tax_paid_on': foreignTaxPaidOn?.toIso8601String(),
       'loss_credit_used': lossCreditUsed,
       'custodia_id': custodiaId,
       'transfer_to_custodia_id': transferToCustodiaId,
@@ -175,6 +182,9 @@ class PortfolioTransaction {
       totalValue: map['total_value'] as double,
       fee: map['fee'] as double?,
       foreignTaxWithheld: map['foreign_tax_withheld'] as double?,
+      foreignTaxPaidOn: map['foreign_tax_paid_on'] != null
+          ? DateTime.parse(map['foreign_tax_paid_on'] as String)
+          : null,
       lossCreditUsed: map['loss_credit_used'] as double?,
       custodiaId: map['custodia_id'] as int?,
       transferToCustodiaId: map['transfer_to_custodia_id'] as int?,

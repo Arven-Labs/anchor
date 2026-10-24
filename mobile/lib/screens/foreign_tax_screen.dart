@@ -206,9 +206,12 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
               t.type != TransactionType.provento)) {
         continue;
       }
+      // A data de pagamento do imposto retido também precisa de câmbio (pode cair antes
+      // do primeiro fato); a busca vai até hoje, então a data de depois não importa.
+      final needed = fxStartDate(t);
       final first = firstDateOf[currency];
-      if (first == null || t.date.isBefore(first)) {
-        firstDateOf[currency] = t.date;
+      if (first == null || needed.isBefore(first)) {
+        firstDateOf[currency] = needed;
       }
     }
 

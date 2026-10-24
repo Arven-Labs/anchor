@@ -45,6 +45,29 @@ void main() {
     expect(tx().toMap()['foreign_tax_withheld'], isNull);
   });
 
+  test('a data de pagamento do imposto retido vai e volta; sem ela lê como nula', () {
+    final paid = PortfolioTransaction(
+      id: 6,
+      assetId: 1,
+      type: TransactionType.provento,
+      totalValue: 100,
+      foreignTaxWithheld: 30,
+      foreignTaxPaidOn: DateTime(2026, 2, 12),
+      date: DateTime(2026, 2, 10),
+      createdAt: DateTime(2026, 2, 10),
+    );
+    final map = paid.toMap();
+
+    expect(map['foreign_tax_paid_on'], DateTime(2026, 2, 12).toIso8601String());
+    expect(PortfolioTransaction.fromMap(map).foreignTaxPaidOn, DateTime(2026, 2, 12));
+    expect(
+      PortfolioTransaction.fromMap(map..remove('foreign_tax_paid_on')).foreignTaxPaidOn,
+      isNull,
+      reason: 'linha antiga sem a coluna lê como o dia do provento',
+    );
+    expect(tx().toMap()['foreign_tax_paid_on'], isNull);
+  });
+
   test('o crédito de prejuízo usado vai e volta; nulo e 0 são respostas diferentes', () {
     PortfolioTransaction comeCotas(double? used) => PortfolioTransaction(
       id: 5,

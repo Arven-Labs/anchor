@@ -218,6 +218,13 @@ class ForeignTaxAssessment {
 
 DateTime _day(DateTime date) => DateTime(date.year, date.month, date.day);
 
+/// O dia mais antigo de que a transação precisa de câmbio: o dela ou, num provento com
+/// imposto retido, o do pagamento do imposto, se for anterior.
+DateTime fxStartDate(PortfolioTransaction tx) {
+  final paid = tx.foreignTaxPaidOn;
+  return paid != null && paid.isBefore(tx.date) ? paid : tx.date;
+}
+
 /// Posição de um ativo do exterior em 31/12 de `year`, para o informe de Bens e
 /// Direitos: quantidade e custo de aquisição em reais (convertido pela cotação
 /// de venda do dia de cada compra).
@@ -555,9 +562,12 @@ ForeignTaxAssessment assessForeignTax(
       continue;
     }
     final (rate, source) = converted;
-    // O imposto retido usa a cotação para compra; sem ela, a de venda do mesmo dia.
+    // O imposto retido usa a cotação para compra do dia do pagamento (o do provento, se
+    // não foi informado); sem cotação nenhuma, a de venda do dia do provento. O crédito
+    // entra no ano do provento de qualquer jeito.
+    final taxDate = tx.foreignTaxPaidOn ?? tx.date;
     final (withheldRate, withheldSource) =
-        _rateToBrl(asset.currency, tx.date, RateKind.buy, ptax, fx) ??
+        _rateToBrl(asset.currency, taxDate, RateKind.buy, ptax, fx) ??
         converted;
     if (source == RateSource.market ||
         ((tx.foreignTaxWithheld ?? 0) > 0 &&

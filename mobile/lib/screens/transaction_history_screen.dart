@@ -121,6 +121,11 @@ class _TransactionTile extends StatelessWidget {
     final dateLabel =
         '${date.day.toString().padLeft(2, '0')}/'
         '${date.month.toString().padLeft(2, '0')}/${date.year}';
+    final paidOn = transaction.foreignTaxPaidOn;
+    final paidLabel = paidOn == null
+        ? ''
+        : ' (pago em ${paidOn.day.toString().padLeft(2, '0')}/'
+              '${paidOn.month.toString().padLeft(2, '0')}/${paidOn.year})';
     final quantity = transaction.quantity;
     final custodiaLabel = _custodiaLabel;
 
@@ -134,7 +139,7 @@ class _TransactionTile extends StatelessWidget {
           '${custodiaLabel != null ? ' · $custodiaLabel' : ''}'
           ' · ${transaction.totalValue.toStringAsFixed(2)}'
           '${transaction.fee != null && transaction.fee! > 0 ? ' · taxa ${transaction.fee!.toStringAsFixed(2)}' : ''}'
-          '${transaction.foreignTaxWithheld != null && transaction.foreignTaxWithheld! > 0 ? ' · retido ${transaction.foreignTaxWithheld!.toStringAsFixed(2)}' : ''}'
+          '${transaction.foreignTaxWithheld != null && transaction.foreignTaxWithheld! > 0 ? ' · retido ${transaction.foreignTaxWithheld!.toStringAsFixed(2)}$paidLabel' : ''}'
           '${transaction.lossCreditUsed != null ? ' · crédito usado ${transaction.lossCreditUsed!.toStringAsFixed(2)}' : ''}',
         ),
         onTap: onTap,

@@ -377,6 +377,59 @@ void main() {
   });
 
   group('crédito de prejuízo usado no come-cotas', () {
+    test('migra do v14: a transação ganha a data de pagamento do imposto, nula nas antigas', () async {
+      final old = await openDatabase(
+        '${dir.path}/anchor_mobile.db',
+        version: 14,
+        onCreate: (db, _) async {
+          await createOldTransactions(db);
+          await db.execute('ALTER TABLE portfolio_transactions ADD COLUMN loss_credit_used REAL');
+          await db.execute('''
+            CREATE TABLE assets (
+              id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,
+              name TEXT NOT NULL, asset_class TEXT NOT NULL, currency TEXT NOT NULL,
+              created_at TEXT NOT NULL, external_id TEXT, equity_shares_owned REAL,
+              equity_total_shares REAL, equity_company_valuation REAL, cnpj TEXT,
+              dirpf_group TEXT, dirpf_code TEXT, dirpf_country TEXT)''');
+          await db.insert('assets', {
+            'ticker': 'AAPL',
+            'name': 'Apple v14',
+            'asset_class': 'acao_internacional',
+            'currency': 'USD',
+            'created_at': '2026-01-01T00:00:00.000',
+          });
+          await db.insert('portfolio_transactions', {
+            'asset_id': 1,
+            'transaction_type': 'provento',
+            'total_value': 100.0,
+            'foreign_tax_withheld': 10.0,
+            'transaction_date': '2025-03-10T00:00:00.000',
+            'created_at': '2025-03-10T00:00:00.000',
+          });
+        },
+      );
+      await old.close();
+
+      final before = (await repository.listAllTransactions()).single;
+      expect(before.foreignTaxWithheld, 10);
+      expect(before.foreignTaxPaidOn, isNull);
+
+      // com a data: grava e volta (a data vai como ISO e volta como a mesma data)
+      await repository.insertTransaction(
+        PortfolioTransaction(
+          assetId: 1,
+          type: TransactionType.provento,
+          totalValue: 100,
+          foreignTaxWithheld: 10,
+          foreignTaxPaidOn: DateTime(2025, 3, 14),
+          date: DateTime(2025, 3, 10),
+          createdAt: DateTime(2025, 3, 10),
+        ),
+      );
+      final all = await repository.listAllTransactions();
+      expect(all.where((t) => t.foreignTaxPaidOn == DateTime(2025, 3, 14)), hasLength(1));
+    });
+
     test('migra do v13: o ativo ganha a ficha vazia e setAssetDirpf grava, recusa e apaga', () async {
       final old = await openDatabase(
         '${dir.path}/anchor_mobile.db',

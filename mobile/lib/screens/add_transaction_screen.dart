@@ -36,6 +36,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   String _fiIndexador = fiIndexadores.first;
   String _fiLiquidez = fiLiquidezOptions.first;
   DateTime? _fiDataVencimento;
+  DateTime? _foreignTaxPaidOn;
   bool _loading = true;
   bool _saving = false;
 
@@ -73,6 +74,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         _totalValueController.text = tx.totalValue.toString();
         _feeController.text = tx.fee?.toString() ?? '';
         _withheldController.text = tx.foreignTaxWithheld?.toString() ?? '';
+        _foreignTaxPaidOn = tx.foreignTaxPaidOn;
         _lossCreditController.text = tx.lossCreditUsed?.toString() ?? '';
         _fiEmissorController.text = tx.fiEmissor ?? '';
         _fiIndexador = tx.fiIndexador ?? fiIndexadores.first;
@@ -160,6 +162,21 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     );
     if (picked != null) setState(() => _fiDataVencimento = picked);
   }
+
+  Future<void> _pickForeignTaxPaidOn() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _foreignTaxPaidOn ?? _date,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _foreignTaxPaidOn = picked);
+  }
+
+  /// A retenção digitada, ou `null` se vazia ou inválida (a data de pagamento do imposto
+  /// só aparece e só vale com retenção maior que zero).
+  double? get _withheldValue =>
+      double.tryParse(_withheldController.text.trim().replaceAll(',', '.'));
 
   Future<void> _save() async {
     final needsAsset = _type.needsAsset;
@@ -253,6 +270,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       totalValue: totalValue,
       fee: fee,
       foreignTaxWithheld: foreignTaxWithheld,
+      foreignTaxPaidOn: (foreignTaxWithheld ?? 0) > 0 ? _foreignTaxPaidOn : null,
       lossCreditUsed: lossCreditUsed,
       custodiaId: _custodia?.id,
       transferToCustodiaId: _type.needsTransferDestination
@@ -459,6 +477,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
+                  onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
                     labelText:
                         'Imposto retido no exterior '
@@ -466,6 +485,20 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                if ((_withheldValue ?? 0) > 0) ...[
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _foreignTaxPaidOn != null
+                          ? 'Imposto pago em: ${_foreignTaxPaidOn!.day.toString().padLeft(2, '0')}/'
+                                '${_foreignTaxPaidOn!.month.toString().padLeft(2, '0')}/${_foreignTaxPaidOn!.year}'
+                          : 'Data do pagamento do imposto (opcional; padrão: a do provento)',
+                    ),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: _pickForeignTaxPaidOn,
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ],
               if (_showLossCreditUsed) ...[
                 TextField(

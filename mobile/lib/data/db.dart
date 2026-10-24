@@ -35,7 +35,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 14,
+      version: 15,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -83,7 +83,8 @@ class AppDatabase {
             fi_liquidez TEXT,
             fee REAL,
             foreign_tax_withheld REAL,
-            loss_credit_used REAL
+            loss_credit_used REAL,
+            foreign_tax_paid_on TEXT
           )
         ''');
         await db.execute('''
@@ -276,6 +277,14 @@ class AppDatabase {
           for (final column in ['dirpf_group', 'dirpf_code', 'dirpf_country']) {
             await db.execute('ALTER TABLE assets ADD COLUMN $column TEXT');
           }
+        }
+        if (oldVersion < 15) {
+          // Dia em que o imposto retido no exterior foi pago (o crédito converte pela
+          // PTAX de compra dele); linhas antigas ficam sem valor (nulo = o dia do
+          // provento).
+          await db.execute(
+            'ALTER TABLE portfolio_transactions ADD COLUMN foreign_tax_paid_on TEXT',
+          );
         }
       },
     );

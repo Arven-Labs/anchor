@@ -32,6 +32,7 @@ void main() {
     double gross, {
     double? fee,
     double? withheld,
+    String? paidOn,
   }) => PortfolioTransaction(
     id: ++nextId,
     assetId: assetId,
@@ -41,6 +42,7 @@ void main() {
     totalValue: gross,
     fee: fee,
     foreignTaxWithheld: withheld,
+    foreignTaxPaidOn: paidOn == null ? null : DateTime.parse(paidOn),
     date: DateTime.parse(date),
     createdAt: DateTime(2024, 1, 1),
   );
@@ -49,8 +51,8 @@ void main() {
       tx(asset, date, TransactionType.compra, quantity, gross, fee: fee);
   PortfolioTransaction sell(int asset, String date, double quantity, double gross, {double? fee}) =>
       tx(asset, date, TransactionType.venda, quantity, gross, fee: fee);
-  PortfolioTransaction dividend(int asset, String date, double gross, {double? withheld}) =>
-      tx(asset, date, TransactionType.provento, 1, gross, withheld: withheld);
+  PortfolioTransaction dividend(int asset, String date, double gross, {double? withheld, String? paidOn}) =>
+      tx(asset, date, TransactionType.provento, 1, gross, withheld: withheld, paidOn: paidOn);
 
   // PTAX do dólar a R$ 5 em 2024, R$ 6 em 2025 e R$ 4 em 2026, com um ponto
   // por mês e dia 15 (um fato mais de 10 dias depois do último ponto, ou antes
@@ -329,6 +331,39 @@ void main() {
       expect(year.dividendItems.single.fxRate, 6.0);
       expect(year.dividendItems.single.fxSource, RateSource.ptax);
       expect(result.warnings, isEmpty);
+    });
+
+    test('o imposto retido usa a compra do dia do pagamento e o ano segue o do provento', () {
+      // spread 0,1: compra = venda − 0,1. Provento de US$ 100 em 15/05/2025 (venda 6,00
+      // = 600); retido US$ 10. Sem data de pagamento: compra de 15/05/2025 (5,90) = 59.
+      // Pago em 20/01/2026 (último ponto, 15/01/2026, venda 4,00, compra 3,90) = 39; o
+      // crédito segue no ano de 2025, o do provento, e 2026 não ganha nada.
+      final ptax = {'USD': yearlyPtax(spread: 0.1)};
+      final same = run([dividend(1, '2025-05-15', 100, withheld: 10)], ptax: ptax);
+      expect(same.years.single.withheld, near(59));
+
+      final later = run(
+        [dividend(1, '2025-05-15', 100, withheld: 10, paidOn: '2026-01-20')],
+        ptax: ptax,
+      );
+      final year = later.years.single;
+      expect(year.year, 2025);
+      expect(year.dividends, near(600));
+      expect(year.withheld, near(39));
+      expect(year.dividendItems.single.date, DateTime.parse('2025-05-15'));
+      expect(later.warnings, isEmpty);
+    });
+
+    test('fxStartDate pega o dia do pagamento do imposto só se for anterior ao da transação', () {
+      expect(fxStartDate(dividend(1, '2025-05-15', 100, withheld: 10)), DateTime.parse('2025-05-15'));
+      expect(
+        fxStartDate(dividend(1, '2025-05-15', 100, withheld: 10, paidOn: '2025-05-10')),
+        DateTime.parse('2025-05-10'),
+      );
+      expect(
+        fxStartDate(dividend(1, '2025-05-15', 100, withheld: 10, paidOn: '2025-05-20')),
+        DateTime.parse('2025-05-15'),
+      );
     });
 
     test('dia sem cotação vale a última PTAX antes dele, até 10 dias', () {
