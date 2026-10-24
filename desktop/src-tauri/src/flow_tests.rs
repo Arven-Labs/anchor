@@ -4319,9 +4319,10 @@ async fn the_group_code_and_country_of_the_ficha_come_from_the_asset_and_reach_t
     let pf = portfolio(&db, ws.id, "Main").await;
     let filled = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
     let blank = asset_in(&db, "MSFT", "acao_internacional", "USD").await;
-    seed_ptax(&db, "USD", "2024-12-31", 4.9, 5.0).await;
+    // compra de 10 cotas por US$ 1.000 em 15/03/2024, PTAX de venda 5,5: custo de R$ 5.500,00 nos dois ativos
+    seed_ptax(&db, "USD", "2024-03-15", 5.49, 5.5).await;
     for asset in [&filled, &blank] {
-        add(&db, tx_request(pf.id, asset.id, "compra", 10.0, 100.0, "2024-03-01", 0.0)).await;
+        trade(&db, pf.id, asset.id, "compra", 10.0, 1000.0, "2024-03-15").await;
     }
     let request = |group: &str, code: &str, country: &str| UpdateAssetDirpfRequest {
         asset_id: filled.id,
