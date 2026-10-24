@@ -97,6 +97,7 @@ mod m20261103_100000_add_cvm_fields_to_funds;
 mod m20261104_100000_add_administrator_to_funds;
 mod m20261105_100000_seed_closed_fund_rules;
 mod m20261106_100000_add_fund_structure_and_estoque;
+mod m20261107_100000_add_loss_credit_used_to_transactions;
 
 pub struct Migrator;
 
@@ -201,6 +202,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261104_100000_add_administrator_to_funds::Migration),
             Box::new(m20261105_100000_seed_closed_fund_rules::Migration),
             Box::new(m20261106_100000_add_fund_structure_and_estoque::Migration),
+            Box::new(m20261107_100000_add_loss_credit_used_to_transactions::Migration),
         ]
     }
 }

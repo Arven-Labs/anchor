@@ -879,6 +879,7 @@ pub async fn commit_rows(
                     total_value: p.total_value,
                     fee: p.fee,
                     foreign_tax_withheld: None,
+                    loss_credit_used: None,
                     transaction_date: p.transaction_date.clone(),
                     notes: p.notes.clone(),
                     fi_emissor: None,

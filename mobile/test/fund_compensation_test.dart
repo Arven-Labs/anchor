@@ -327,8 +327,20 @@ void main() {
     term: fund.term,
     administrator: fund.administrator,
     redemptions: fund.redemptions,
-    comeCotasDates: [for (final date in dates) d(date)],
+    comeCotas: [for (final date in dates) ComeCotasMark(d(date))],
   );
+
+  /// O mesmo fundo com come-cotas em que o usuário informou o crédito usado:
+  /// `(data, rendimento coberto)`.
+  CompFund withCreditUsed(CompFund fund, List<(String, double)> marks) =>
+      CompFund(
+        assetId: fund.assetId,
+        ticker: fund.ticker,
+        term: fund.term,
+        administrator: fund.administrator,
+        redemptions: fund.redemptions,
+        comeCotas: [for (final (date, used) in marks) ComeCotasMark(d(date), used)],
+      );
 
   group('aviso de come-cotas registrado com saldo no grupo', () {
     test('um come-cotas depois da perda avisa com o saldo do grupo', () {
@@ -442,6 +454,86 @@ void main() {
       ]);
 
       expect(result.notes.map((n) => n.date), [d('2025-11-30'), d('2025-12-01')]);
+    });
+  });
+
+  // Crédito de prejuízo informado no come-cotas: porte dos testes de `ComeCotasMark`
+  // do desktop.
+  group('crédito de prejuízo informado no come-cotas', () {
+    test('sai do saldo do grupo e o resgate posterior recebe menos crédito', () {
+      // X perde 200 (01/06/2025). No come-cotas de 01/07/2025 o usuário informou 150
+      // de rendimento coberto: o saldo cai para 50, sem aviso. O ganho de Y de
+      // 01/09/2025 (200 a 20% = IR 40) só recebe os 50 restantes:
+      // (200 − 50) × 20% = 30
+      final result = compensate([
+        withCreditUsed(
+          loser(1, 'XPTO11', FundTerm.longTerm, 'XP', 8),
+          [('2025-07-01', 150)],
+        ),
+        winner(2, 'YPTO11', FundTerm.longTerm, 'XP', '2025-09-01'),
+      ]);
+
+      expect(result.notes, isEmpty);
+      final y = result.redemptions[1].single;
+      expect(y.lossCreditUsed, closeTo(50, 1e-6));
+      expect(y.ir, closeTo(30, 1e-6));
+      expect(result.credits, isEmpty);
+    });
+
+    test('zero informado é uma resposta: sem aviso e o saldo fica inteiro', () {
+      final result = compensate([
+        withCreditUsed(
+          loser(1, 'XPTO11', FundTerm.longTerm, 'XP', 8),
+          [('2025-07-01', 0)],
+        ),
+        winner(2, 'YPTO11', FundTerm.longTerm, 'XP', '2025-09-01'),
+      ]);
+
+      expect(result.notes, isEmpty);
+      expect(result.redemptions[1].single.ir, closeTo(0, 1e-6));
+      expect(result.redemptions[1].single.lossCreditUsed, closeTo(200, 1e-6));
+    });
+
+    test('acima do saldo leva só o saldo e avisa com o valor informado', () {
+      // saldo de 200 e o usuário informou 300: o saldo zera (não fica negativo), Y não
+      // recebe crédito (IR 40) e o aviso traz o saldo de 200 e o valor informado
+      final result = compensate([
+        withCreditUsed(
+          loser(1, 'XPTO11', FundTerm.longTerm, 'XP', 8),
+          [('2025-07-01', 300)],
+        ),
+        winner(2, 'YPTO11', FundTerm.longTerm, 'XP', '2025-09-01'),
+      ]);
+
+      expect(result.notes, hasLength(1));
+      expect(result.notes.single.balance, closeTo(200, 1e-6));
+      expect(result.notes.single.informed, 300);
+      expect(result.redemptions[1].single.ir, closeTo(40, 1e-6));
+      expect(result.redemptions[1].single.lossCreditUsed, 0);
+      expect(result.credits, isEmpty);
+
+      // sem nenhum saldo (o come-cotas é de antes da perda), qualquer valor acima de
+      // zero também avisa
+      final early = compensate([
+        withCreditUsed(
+          loser(1, 'XPTO11', FundTerm.longTerm, 'XP', 8),
+          [('2025-05-01', 100)],
+        ),
+      ]);
+      expect(early.notes.single.balance, closeTo(0, 1e-9));
+      expect(early.notes.single.informed, 100);
+    });
+
+    test('sem valor informado o aviso original continua, com informed nulo', () {
+      final result = compensate([
+        withComeCotas(
+          loser(1, 'XPTO11', FundTerm.longTerm, 'XP', 8),
+          ['2025-11-30'],
+        ),
+      ]);
+
+      expect(result.notes.single.informed, isNull);
+      expect(result.notes.single.balance, closeTo(200, 1e-6));
     });
   });
 }

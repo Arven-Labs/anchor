@@ -92,10 +92,16 @@ List<String> fundWarnings(FundReport report) {
           'passou sem desconto registrado: lance a transação Come-cotas para a '
           'base ficar certa.',
     for (final note in report.creditNotes)
-      'O come-cotas de ${formatDay(note.date)} foi registrado com '
-          '${formatBrl(note.balance)} de crédito de prejuízo no grupo: a '
-          'administradora pode ter usado parte dele, então o saldo de crédito '
-          'mostrado pode estar acima do real.',
+      if (note.informed == null)
+        'O come-cotas de ${formatDay(note.date)} foi registrado com '
+            '${formatBrl(note.balance)} de crédito de prejuízo no grupo: a '
+            'administradora pode ter usado parte dele, então o saldo de crédito '
+            'mostrado pode estar acima do real. Preencha o crédito de prejuízo '
+            'usado nessa transação para resolver.'
+      else
+        'O come-cotas de ${formatDay(note.date)} diz que ${formatBrl(note.informed!)} '
+            'de crédito de prejuízo foram usados, mas o grupo só tinha '
+            '${formatBrl(note.balance)}: só esse saldo foi abatido. Confira o valor.',
     for (final redemption in report.redemptions) ...[
       if (redemption.uncoveredQuotas > 1e-9)
         'Resgate de ${formatDay(redemption.date)} maior que as aplicações '
@@ -636,7 +642,8 @@ class _FundCard extends StatelessWidget {
                       title: Text(formatDay(tx.date)),
                       subtitle: Text(
                         '${tx.quantity} cotas a ${formatBrl(tx.unitPrice ?? 0)}'
-                        ' · imposto ${formatBrl(tx.totalValue)}',
+                        ' · imposto ${formatBrl(tx.totalValue)}'
+                        '${tx.lossCreditUsed != null ? ' · crédito usado ${formatBrl(tx.lossCreditUsed!)}' : ''}',
                       ),
                     ),
                 ],

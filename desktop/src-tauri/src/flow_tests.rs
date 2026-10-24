@@ -1875,6 +1875,7 @@ fn tx_request(
         total_value: quantity * unit_price,
         fee: (fee > 0.0).then_some(fee),
         foreign_tax_withheld: None,
+        loss_credit_used: None,
         transaction_date: date.to_string(),
         notes: None,
         fi_emissor: None,
@@ -4853,6 +4854,71 @@ async fn a_recorded_come_cotas_after_a_loss_in_the_same_group_gets_a_credit_note
     assert!(notes_of(&grouped, "FUNDOA").is_empty());
     // o aviso não gasta crédito: o saldo do grupo segue inteiro
     assert!(close(grouped.loss_credits[0].amount, 200.0), "{:?}", grouped.loss_credits);
+}
+
+#[tokio::test]
+async fn a_loss_credit_used_on_a_recorded_come_cotas_comes_off_the_group_balance() {
+    use crate::commands::fund::{funds_overview_in, set_fund_administrator_in, set_fund_term_in};
+    use crate::commands::transaction::create_transaction_in;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Crédito usado").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let loser = asset_in(&db, "FUNDOA", "fundo", "BRL").await;
+    let holder = asset_in(&db, "FUNDOC", "fundo", "BRL").await;
+    let stock = asset_in(&db, "PETR4", "acao_br", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+
+    // A perde 200 em 01/06/2025. C tem 100 cotas a 10,00 e um come-cotas de 5 cotas a 12,00 em 30/11/2025 em que o usuário
+    // informou 150 de rendimento coberto pelo crédito
+    add(&db, tx_request(pf.id, loser.id, "compra", 100.0, 10.0, "2025-01-01", 0.0)).await;
+    add(&db, tx_request(pf.id, loser.id, "venda", 100.0, 8.0, "2025-06-01", 0.0)).await;
+    add(&db, tx_request(pf.id, holder.id, "compra", 100.0, 10.0, "2025-01-01", 0.0)).await;
+    let mut come_cotas = tx_request(pf.id, holder.id, "come_cotas", 5.0, 12.0, "2025-11-30", 0.0);
+    come_cotas.loss_credit_used = Some(150.0);
+    add(&db, come_cotas).await;
+    for id in [loser.id, holder.id] {
+        set_fund_term_in(&db, id, "longo_prazo").await.unwrap();
+        set_fund_administrator_in(&db, id, Some("XP")).await.unwrap();
+    }
+
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let holder_view = overview.funds.iter().find(|f| f.ticker == "FUNDOC").unwrap();
+    // o valor chega à linha do come-cotas registrado, e como foi informado e cabe no saldo, não há aviso
+    assert_eq!(holder_view.deductions[0].loss_credit_used, Some(150.0));
+    assert!(holder_view.credit_notes.is_empty(), "{:?}", holder_view.credit_notes);
+    // o saldo do grupo caiu de 200 para 50
+    assert_eq!(overview.loss_credits.len(), 1);
+    assert!(close(overview.loss_credits[0].amount, 50.0), "{:?}", overview.loss_credits);
+
+    // um valor acima do saldo avisa (saldo 200, informado 300 num segundo fundo do grupo sem saldo restante)
+    let extra = asset_in(&db, "FUNDOD", "fundo", "BRL").await;
+    add(&db, tx_request(pf.id, extra.id, "compra", 100.0, 10.0, "2025-01-01", 0.0)).await;
+    let mut over = tx_request(pf.id, extra.id, "come_cotas", 5.0, 12.0, "2025-12-15", 0.0);
+    over.loss_credit_used = Some(300.0);
+    add(&db, over).await;
+    set_fund_term_in(&db, extra.id, "longo_prazo").await.unwrap();
+    set_fund_administrator_in(&db, extra.id, Some("XP")).await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let notes = &overview.funds.iter().find(|f| f.ticker == "FUNDOD").unwrap().credit_notes;
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(close(notes[0].balance, 50.0) && notes[0].informed == Some(300.0), "{notes:?}");
+    assert!(overview.loss_credits.is_empty(), "o saldo foi todo usado: {:?}", overview.loss_credits);
+
+    // o campo só vale para come_cotas e não pode ser negativo
+    let mut on_purchase = tx_request(pf.id, loser.id, "compra", 1.0, 10.0, "2026-01-02", 0.0);
+    on_purchase.loss_credit_used = Some(1.0);
+    assert!(create_transaction_in(&db, on_purchase).await.is_err(), "fora do come_cotas");
+    let mut negative = tx_request(pf.id, holder.id, "come_cotas", 1.0, 12.0, "2026-01-02", 0.0);
+    negative.loss_credit_used = Some(-1.0);
+    assert!(create_transaction_in(&db, negative).await.is_err(), "negativo");
+    let mut not_finite = tx_request(pf.id, holder.id, "come_cotas", 1.0, 12.0, "2026-01-02", 0.0);
+    not_finite.loss_credit_used = Some(f64::NAN);
+    assert!(create_transaction_in(&db, not_finite).await.is_err(), "não finito");
+    // (o guard de ativo de fundo vale como antes; a ação só serve para provar que o campo não abre exceção)
+    let mut on_stock = tx_request(pf.id, stock.id, "come_cotas", 1.0, 12.0, "2026-01-02", 0.0);
+    on_stock.loss_credit_used = Some(1.0);
+    assert!(create_transaction_in(&db, on_stock).await.is_err(), "ativo que não é fundo");
 }
 
 /// Amortização de fundo fechado: o valor recebido e a cota do dia, sem quantidade nem taxa.

@@ -33,8 +33,9 @@ use crate::error::AppError;
 pub enum FundEventKind {
     /// Aplicação: cotas compradas e o custo total (valor + taxa).
     Buy { quantity: f64, cost: f64 },
-    /// Cotas retiradas pelo come-cotas e o valor da cota do dia.
-    ComeCotas { quantity: f64, quota_value: f64 },
+    /// Cotas retiradas pelo come-cotas e o valor da cota do dia; `loss_credit_used` é o rendimento que o crédito de prejuízo
+    /// cobriu ali, em BRL (`None` = não informado, o mesmo que 0 para a conta).
+    ComeCotas { quantity: f64, quota_value: f64, loss_credit_used: Option<f64> },
     /// Resgate (venda): cotas e o valor da cota no resgate.
     Redeem { tx_id: i32, quantity: f64, quota_value: f64 },
     /// Amortização de fundo fechado: o valor recebido e o valor da cota do dia. As cotas ficam; o custo (e o ganho já
@@ -253,17 +254,24 @@ pub fn estimate_fund(events: &[FundEvent], term: FundTerm, rules: &RuleSet) -> R
                     });
                 }
             }
-            FundEventKind::ComeCotas { quantity, quota_value } => {
+            FundEventKind::ComeCotas { quantity, quota_value, loss_credit_used } => {
                 // Retira as cotas dos lotes abertos na proporção da quantidade de cada um.
                 let total: f64 = lots.iter().map(|l| l.quantity).sum();
                 if total <= EPS {
                     continue;
                 }
                 let taken = quantity.min(total);
+                // O rendimento que o crédito de prejuízo cobriu não foi tributado agora e não pode voltar no resgate: sai do
+                // ganho já tributado, repartido como as cotas, e no máximo até o ganho das cotas retiradas. O imposto pago
+                // (`cc_paid`) segue sendo o valor das cotas retiradas.
+                let taxed_gain: f64 =
+                    lots.iter().map(|l| (taken * l.quantity / total) * (quota_value - l.cost_per_quota)).sum();
+                let credit = loss_credit_used.unwrap_or(0.0).min(taxed_gain.max(0.0));
                 for lot in lots.iter_mut() {
                     let share = taken * lot.quantity / total;
                     lot.estoque_gain *= 1.0 - share / lot.quantity;
-                    lot.cc_gain += share * (quota_value - lot.cost_per_quota);
+                    let credit_share = if taken > EPS { credit * share / taken } else { 0.0 };
+                    lot.cc_gain += share * (quota_value - lot.cost_per_quota) - credit_share;
                     lot.cc_paid += share * quota_value;
                     lot.quantity -= share;
                 }
@@ -426,7 +434,16 @@ mod tests {
     }
 
     fn come_cotas(id: i32, date: &str, quantity: f64, quota_value: f64) -> FundEvent {
-        FundEvent { date: d(date), id, kind: FundEventKind::ComeCotas { quantity, quota_value } }
+        FundEvent { date: d(date), id, kind: FundEventKind::ComeCotas { quantity, quota_value, loss_credit_used: None } }
+    }
+
+    /// Come-cotas em que a administradora usou `credit` de crédito de prejuízo (rendimento abatido, em BRL).
+    fn come_cotas_with_credit(id: i32, date: &str, quantity: f64, quota_value: f64, credit: f64) -> FundEvent {
+        FundEvent {
+            date: d(date),
+            id,
+            kind: FundEventKind::ComeCotas { quantity, quota_value, loss_credit_used: Some(credit) },
+        }
     }
 
     fn redeem(id: i32, date: &str, quantity: f64, quota_value: f64) -> FundEvent {
@@ -714,5 +731,38 @@ mod tests {
         // sem o evento não há estimativa de estoque e os resgates seguem como antes
         let none = fund(&[buy(1, "2022-06-01", 100.0, 1_000.0), redeem(2, "2026-03-01", 100.0, 15.0)], FundTerm::LongTerm);
         assert!(none.estoque.is_none() && close(none.redemptions[0].ir, 75.0), "{:?}", none.redemptions[0]);
+    }
+
+    /// 100 cotas a 10,00; come-cotas de 2,5 cotas a 12,00 (ganho das cotas retiradas 2,5 × 2 = 5, imposto pago 30), com o
+    /// crédito de prejuízo informado (ou não); resgate das 97,5 cotas a 15,00 em 01/03/2026 (789 dias, 15%).
+    fn redemption_after_come_cotas(credit: Option<f64>) -> RedemptionEstimate {
+        let come_cotas = match credit {
+            Some(used) => come_cotas_with_credit(2, "2024-05-31", 2.5, 12.0, used),
+            None => come_cotas(2, "2024-05-31", 2.5, 12.0),
+        };
+        run(&[buy(1, "2024-01-02", 100.0, 1_000.0), come_cotas, redeem(3, "2026-03-01", 97.5, 15.0)], FundTerm::LongTerm)
+            .remove(0)
+    }
+
+    #[test]
+    fn a_loss_credit_used_in_the_come_cotas_is_not_taxed_again_on_the_redemption() {
+        // sem crédito: rendimento 97,5 × 5 = 487,5 + 5 já tributados = 492,5; IR devido 73,875; menos os 30 pagos = 43,875
+        let without = redemption_after_come_cotas(None);
+        assert!(close(without.lots[0].gain, 492.5) && close(without.ir, 43.875), "{without:?}");
+        // com 5 de crédito usado: o ganho já tributado cai de 5 para 0 (nominal 487,5); IR devido 73,125; menos 30 = 43,125,
+        // 0,75 a menos = 15% × 5, o imposto que o crédito poupou. O imposto pago (30) segue o mesmo
+        let with = redemption_after_come_cotas(Some(5.0));
+        assert!(close(with.lots[0].gain, 487.5) && close(with.ir, 43.125), "{with:?}");
+        assert!(close(with.come_cotas_credit, 30.0) && close(with.excess_come_cotas, 0.0), "{with:?}");
+    }
+
+    #[test]
+    fn a_loss_credit_used_is_capped_at_the_gain_taxed_and_zero_changes_nothing() {
+        // 100 de crédito informado, mas as cotas retiradas só tinham 5 de ganho: vale 5
+        let capped = redemption_after_come_cotas(Some(100.0));
+        assert!(close(capped.lots[0].gain, 487.5) && close(capped.ir, 43.125), "{capped:?}");
+        // 0 (nenhum crédito usado) e não informado dão a mesma conta
+        let zero = redemption_after_come_cotas(Some(0.0));
+        assert!(close(zero.ir, 43.875) && close(zero.lots[0].gain, 492.5), "{zero:?}");
     }
 }

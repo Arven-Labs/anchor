@@ -35,7 +35,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 12,
+      version: 13,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -79,7 +79,8 @@ class AppDatabase {
             fi_data_vencimento TEXT,
             fi_liquidez TEXT,
             fee REAL,
-            foreign_tax_withheld REAL
+            foreign_tax_withheld REAL,
+            loss_credit_used REAL
           )
         ''');
         await db.execute('''
@@ -257,6 +258,14 @@ class AppDatabase {
               'ALTER TABLE fund_details ADD COLUMN estoque_option TEXT',
             );
           }
+        }
+        if (oldVersion < 13) {
+          // Crédito de prejuízo que a administradora usou num come-cotas registrado
+          // (rendimento abatido, em BRL); linhas antigas ficam sem valor (nulo =
+          // não informado). `portfolio_transactions` existe em toda versão antiga.
+          await db.execute(
+            'ALTER TABLE portfolio_transactions ADD COLUMN loss_credit_used REAL',
+          );
         }
       },
     );

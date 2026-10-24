@@ -238,6 +238,7 @@ FundTaxResult buildFundReports({
               id: tx.id ?? 0,
               quantity: quantity,
               quotaValue: _quotaOf(tx),
+              lossCreditUsed: tx.lossCreditUsed,
             ),
           );
         case TransactionType.venda:
@@ -344,9 +345,12 @@ FundTaxResult buildFundReports({
           term: report.term!,
           administrator: report.administrator,
           redemptions: report.redemptions,
-          comeCotasDates: [
+          comeCotas: [
             for (final d in report.deductions)
-              DateTime.utc(d.date.year, d.date.month, d.date.day),
+              ComeCotasMark(
+                DateTime.utc(d.date.year, d.date.month, d.date.day),
+                d.lossCreditUsed,
+              ),
           ],
         ),
   ];

@@ -107,6 +107,9 @@ pub struct CreateTransactionRequest {
     pub fee: Option<f64>,
     /// Imposto retido no exterior sobre o provento, na moeda do ativo (crédito da Lei 14.754). Só em `provento`.
     pub foreign_tax_withheld: Option<f64>,
+    /// Crédito de prejuízo que a administradora usou no come-cotas, em BRL de rendimento abatido. Só em `come_cotas`;
+    /// ausente = não informado, 0 = nenhum crédito foi usado.
+    pub loss_credit_used: Option<f64>,
     pub transaction_date: String,
     pub notes: Option<String>,
     pub fi_emissor: Option<String>,
@@ -150,6 +153,14 @@ fn validate(request: &CreateTransactionRequest) -> Result<(), AppError> {
         }
         if request.transaction_type != DIVIDEND {
             return Err(AppError::InvalidGuard("foreign_tax_withheld só vale para 'provento'".to_string()));
+        }
+    }
+    if let Some(used) = request.loss_credit_used {
+        if !used.is_finite() || used < 0.0 {
+            return Err(AppError::InvalidGuard("loss_credit_used não pode ser negativo".to_string()));
+        }
+        if request.transaction_type != COME_COTAS {
+            return Err(AppError::InvalidGuard("loss_credit_used só vale para 'come_cotas'".to_string()));
         }
     }
     if request.quantity.is_some_and(|qty| !qty.is_finite() || qty <= 0.0) {
@@ -316,6 +327,7 @@ pub async fn create_transaction_in<C: ConnectionTrait>(
         total_value: Set(request.total_value),
         fee: Set(request.fee),
         foreign_tax_withheld: Set(request.foreign_tax_withheld),
+        loss_credit_used: Set(request.loss_credit_used),
         transaction_date: Set(request.transaction_date),
         notes: Set(request.notes),
         fi_emissor: Set(request.fi_emissor),
@@ -413,6 +425,7 @@ pub async fn record_crypto_swap_in(
         total_value: request.value,
         fee,
         foreign_tax_withheld: None,
+        loss_credit_used: None,
         transaction_date: request.transaction_date.clone(),
         notes: Some(notes.clone()),
         fi_emissor: None,
@@ -587,6 +600,7 @@ pub struct TransactionView {
     pub total_value: f64,
     pub fee: Option<f64>,
     pub foreign_tax_withheld: Option<f64>,
+    pub loss_credit_used: Option<f64>,
     pub transaction_date: String,
     pub notes: Option<String>,
     pub fi_emissor: Option<String>,
@@ -701,6 +715,7 @@ pub async fn list_transactions_in(
             total_value: tx.total_value,
             fee: tx.fee,
             foreign_tax_withheld: tx.foreign_tax_withheld,
+            loss_credit_used: tx.loss_credit_used,
             transaction_date: tx.transaction_date,
             notes: tx.notes,
             fi_emissor: tx.fi_emissor,

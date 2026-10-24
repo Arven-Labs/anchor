@@ -46,6 +46,8 @@ type CreateTransactionRequest = {
   total_value: number;
   fee: number | null;
   foreign_tax_withheld: number | null;
+  // Só em come_cotas: rendimento, em BRL, que o crédito de prejuízo cobriu nesse desconto (vazio = não informado).
+  loss_credit_used: number | null;
   transaction_date: string;
   notes: string | null;
   fi_emissor: string | null;
@@ -123,6 +125,7 @@ function TransactionSection({
   const [totalValue, setTotalValue] = useState("");
   const [fee, setFee] = useState("");
   const [foreignTaxWithheld, setForeignTaxWithheld] = useState("");
+  const [lossCreditUsed, setLossCreditUsed] = useState("");
   const [transactionDate, setTransactionDate] = useState(todayIso());
   const [notes, setNotes] = useState("");
   const [fiEmissor, setFiEmissor] = useState("");
@@ -166,6 +169,7 @@ function TransactionSection({
       setTotalValue("");
       setFee("");
       setForeignTaxWithheld("");
+      setLossCreditUsed("");
       setNotes("");
       setFiTaxaPercentual("");
       setFiDataVencimento("");
@@ -190,6 +194,7 @@ function TransactionSection({
       total_value: needsTotalValue(transactionType) ? Number(totalValue) : 0,
       fee: !isFundOnly(transactionType) && fee !== "" ? Number(fee) : null,
       foreign_tax_withheld: showForeignWithholding && foreignTaxWithheld !== "" ? Number(foreignTaxWithheld) : null,
+      loss_credit_used: transactionType === "come_cotas" && lossCreditUsed !== "" ? Number(lossCreditUsed) : null,
       transaction_date: transactionDate,
       notes: notes.trim() === "" ? null : notes,
       fi_emissor: showFixedIncomeFields && fiEmissor.trim() !== "" ? fiEmissor : null,
@@ -342,6 +347,19 @@ function TransactionSection({
                     data-testid="tx-foreign-tax-withheld"
                     value={foreignTaxWithheld}
                     onChange={(e) => setForeignTaxWithheld(e.currentTarget.value)}
+                  />
+                </Field>
+              )}
+              {transactionType === "come_cotas" && (
+                <Field label="Loss credit used (gain offset, BRL, optional)">
+                  <Input
+                    type="number"
+                    step="any"
+                    min="0"
+                    data-testid="tx-loss-credit-used"
+                    placeholder="empty = unknown; 0 = none used"
+                    value={lossCreditUsed}
+                    onChange={(e) => setLossCreditUsed(e.currentTarget.value)}
                   />
                 </Field>
               )}

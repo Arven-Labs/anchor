@@ -186,6 +186,54 @@ void main() {
       expect(warnings.single, contains('pode ter usado parte dele'));
     });
 
+    test('o crédito informado no come-cotas abate o saldo e muda o aviso', () {
+      // A perde 200 em 01/06/2025. C tem um come-cotas de 5 cotas a 12,00 em
+      // 30/11/2025 com o crédito de prejuízo usado informado
+      FundTaxResult result(double used) => buildFundReports(
+        assets: [fundAsset(1, 'AAA11'), fundAsset(3, 'CCC11')],
+        transactions: [
+          txOf(1, 1, TransactionType.compra, '2025-01-01', 100, 10),
+          txOf(1, 2, TransactionType.venda, '2025-06-01', 100, 8),
+          txOf(3, 3, TransactionType.compra, '2025-01-01', 100, 10),
+          PortfolioTransaction(
+            id: 4,
+            assetId: 3,
+            type: TransactionType.comeCotas,
+            quantity: 5,
+            unitPrice: 12,
+            totalValue: 60,
+            lossCreditUsed: used,
+            date: d('2025-11-30'),
+            createdAt: d('2025-11-30'),
+          ),
+        ],
+        terms: {1: FundTerm.longTerm, 3: FundTerm.longTerm},
+        quotas: const [],
+        today: d('2026-01-10'),
+        administrators: {1: 'XP', 3: 'XP'},
+      );
+
+      // 150 dos 200 do saldo: sem aviso e sobram 50
+      final within = result(150);
+      expect(within.reports[1].creditNotes, isEmpty);
+      expect(within.lossCredits.single.amount, closeTo(50, 1e-6));
+      expect(
+        fundWarnings(within.reports[1]).where((w) => w.contains('crédito de prejuízo')),
+        isEmpty,
+      );
+
+      // 300 passa do saldo de 200: só 200 saem (o saldo zera) e o aviso traz o valor
+      final over = result(300);
+      expect(over.lossCredits, isEmpty);
+      final note = over.reports[1].creditNotes.single;
+      expect(note.informed, 300);
+      expect(note.balance, closeTo(200, 1e-6));
+      final warning = fundWarnings(over.reports[1])
+          .singleWhere((w) => w.contains('crédito de prejuízo'));
+      expect(warning, contains('30/11/2025'));
+      expect(warning, contains('só esse saldo foi abatido'));
+    });
+
     test('o saldo do grupo abate o come-cotas estimado do outro fundo', () {
       // C: 100 cotas a 10,00 compradas em 01/07/2026, cota a 12,00: ganho 200, 15% = 30
       final result = buildFundReports(

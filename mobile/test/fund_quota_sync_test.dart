@@ -33,6 +33,20 @@ class FakeCvm extends CvmInfDiarioService {
   }
 }
 
+/// A tabela de transações como estava antes do v13 (sem `loss_credit_used`): os bancos
+/// velhos dos testes de migração precisam dela, porque o v13 faz `ALTER` nela, e num
+/// banco real ela existe desde o v1.
+Future<void> createOldTransactions(Database db) => db.execute('''
+  CREATE TABLE portfolio_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id INTEGER REFERENCES assets(id) ON DELETE CASCADE,
+    custodia_id INTEGER, transfer_to_custodia_id INTEGER,
+    transaction_type TEXT NOT NULL, quantity REAL, unit_price REAL,
+    total_value REAL NOT NULL, transaction_date TEXT NOT NULL, notes TEXT,
+    created_at TEXT NOT NULL, fi_emissor TEXT, fi_indexador TEXT,
+    fi_taxa_percentual REAL, fi_data_vencimento TEXT, fi_liquidez TEXT,
+    fee REAL, foreign_tax_withheld REAL)''');
+
 void main() {
   DateTime d(String s) => DateTime.parse('${s}T00:00:00Z');
 
@@ -135,6 +149,7 @@ void main() {
         path,
         version: 9,
         onCreate: (db, _) async {
+          await createOldTransactions(db);
           await db.execute('''
             CREATE TABLE assets (
               id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,
@@ -191,6 +206,7 @@ void main() {
         '${dir.path}/anchor_mobile.db',
         version: 10,
         onCreate: (db, _) async {
+          await createOldTransactions(db);
           await db.execute('''
             CREATE TABLE assets (
               id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,
@@ -231,6 +247,7 @@ void main() {
         '${dir.path}/anchor_mobile.db',
         version: 8,
         onCreate: (db, _) async {
+          await createOldTransactions(db);
           await db.execute('''
             CREATE TABLE assets (
               id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,
@@ -255,6 +272,7 @@ void main() {
         '${dir.path}/anchor_mobile.db',
         version: 11,
         onCreate: (db, _) async {
+          await createOldTransactions(db);
           await db.execute(
             '''
             CREATE TABLE assets (
@@ -295,6 +313,98 @@ void main() {
         1: EstoqueOption.option8,
       });
       expect(await repository.listFundAdministrators(), {1: 'XP'});
+    });
+  });
+
+  group('crédito de prejuízo usado no come-cotas', () {
+    test('migra do v12: linha antiga lê nulo e o valor novo grava e volta', () async {
+      final old = await openDatabase(
+        '${dir.path}/anchor_mobile.db',
+        version: 12,
+        onCreate: (db, _) async {
+          await createOldTransactions(db);
+          await db.execute('''
+            CREATE TABLE assets (
+              id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,
+              name TEXT NOT NULL, asset_class TEXT NOT NULL, currency TEXT NOT NULL,
+              created_at TEXT NOT NULL, external_id TEXT, equity_shares_owned REAL,
+              equity_total_shares REAL, equity_company_valuation REAL, cnpj TEXT)''');
+          await db.insert('assets', {
+            'ticker': 'FUNDO',
+            'name': 'Fundo v12',
+            'asset_class': 'fundo',
+            'currency': 'BRL',
+            'created_at': '2026-01-01T00:00:00.000',
+          });
+          await db.insert('portfolio_transactions', {
+            'asset_id': 1,
+            'transaction_type': 'come_cotas',
+            'quantity': 5.0,
+            'unit_price': 12.0,
+            'total_value': 60.0,
+            'transaction_date': '2025-11-30T00:00:00.000',
+            'created_at': '2025-11-30T00:00:00.000',
+          });
+        },
+      );
+      await old.close();
+
+      // a linha antiga continua lá, sem o valor (não informado)
+      final before = await repository.listAllTransactions();
+      expect(before.single.type, TransactionType.comeCotas);
+      expect(before.single.lossCreditUsed, isNull);
+
+      // com o valor: 150 grava e volta; 0 volta como 0 (é uma resposta), não como nulo
+      Future<PortfolioTransaction> save(double? used) async {
+        await repository.insertTransaction(
+          PortfolioTransaction(
+            assetId: 1,
+            type: TransactionType.comeCotas,
+            quantity: 1,
+            unitPrice: 12,
+            totalValue: 12,
+            lossCreditUsed: used,
+            date: d('2025-12-01'),
+            createdAt: d('2025-12-01'),
+          ),
+        );
+        return (await repository.listAllTransactions()).first;
+      }
+
+      expect((await save(150)).lossCreditUsed, 150);
+      expect((await repository.listAllTransactions()).length, 2);
+      // outra linha, agora com 0
+      await repository.insertTransaction(
+        PortfolioTransaction(
+          assetId: 1,
+          type: TransactionType.comeCotas,
+          quantity: 1,
+          unitPrice: 12,
+          totalValue: 12,
+          lossCreditUsed: 0,
+          date: d('2025-12-02'),
+          createdAt: d('2025-12-02'),
+        ),
+      );
+      final all = await repository.listAllTransactions();
+      expect(all.map((t) => t.lossCreditUsed), [0.0, 150.0, null]);
+    });
+
+    test('uma instalação nova já nasce com a coluna', () async {
+      final id = await addFund(term: FundTerm.longTerm);
+      await repository.insertTransaction(
+        PortfolioTransaction(
+          assetId: id,
+          type: TransactionType.comeCotas,
+          quantity: 1,
+          unitPrice: 12,
+          totalValue: 12,
+          lossCreditUsed: 7.5,
+          date: d('2025-12-01'),
+          createdAt: d('2025-12-01'),
+        ),
+      );
+      expect((await repository.listAllTransactions()).single.lossCreditUsed, 7.5);
     });
   });
 

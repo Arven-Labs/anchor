@@ -9,6 +9,9 @@
 // - Tabela por tipo: longo prazo 22,5% até 180 dias, 20% de 181 a 360, 17,5% de 361 a
 //   720, 15% acima; curto prazo 22,5% até 180 e 20% acima; ações e entidade de
 //   investimento 15% fixo (sem come-cotas e sem IOF).
+// - Crédito de prejuízo usado num come-cotas registrado (campo opcional da transação):
+//   o rendimento que ele cobriu sai do ganho já tributado do lote, para não ser
+//   tributado de novo no resgate; o imposto pago segue o valor das cotas retiradas.
 // - Fundos fechados e exclusivos (Lei 14.754/2023): a amortização devolve capital sem
 //   tirar cotas: cada lote devolve a fração `valor ÷ (cota × cotas em carteira)` e é
 //   tributado como um resgate dessa fração; o custo por cota e o ganho já tributado do
@@ -87,6 +90,10 @@ class FundEvent {
   /// A alíquota do estoque (zero nos outros fatos).
   final double rate;
 
+  /// No come-cotas, o rendimento (BRL) que o crédito de prejuízo cobriu ali; `null` =
+  /// não informado, o mesmo que 0 para a conta (nulo nos outros fatos).
+  final double? lossCreditUsed;
+
   const FundEvent.buy({
     required this.date,
     required this.id,
@@ -95,13 +102,15 @@ class FundEvent {
   }) : kind = FundEventKind.buy,
        amount = cost,
        quotaValue = 0,
-       rate = 0;
+       rate = 0,
+       lossCreditUsed = null;
 
   const FundEvent.comeCotas({
     required this.date,
     required this.id,
     required this.quantity,
     required double quotaValue,
+    this.lossCreditUsed,
   }) : kind = FundEventKind.comeCotas,
        amount = quotaValue,
        quotaValue = 0,
@@ -115,7 +124,8 @@ class FundEvent {
   }) : kind = FundEventKind.redeem,
        amount = quotaValue,
        quotaValue = 0,
-       rate = 0;
+       rate = 0,
+       lossCreditUsed = null;
 
   const FundEvent.amortize({
     required this.date,
@@ -124,7 +134,8 @@ class FundEvent {
     required this.quotaValue,
   }) : kind = FundEventKind.amortize,
        quantity = 0,
-       rate = 0;
+       rate = 0,
+       lossCreditUsed = null;
 
   const FundEvent.estoque({
     required this.date,
@@ -133,7 +144,8 @@ class FundEvent {
   }) : kind = FundEventKind.estoque,
        id = 0,
        quantity = 0,
-       amount = 0;
+       amount = 0,
+       lossCreditUsed = null;
 }
 
 /// A parte de um resgate que saiu de um lote.
@@ -456,10 +468,23 @@ FundEstimate estimateFund(List<FundEvent> events, FundTerm term) {
         final total = lots.fold<double>(0, (sum, lot) => sum + lot.quantity);
         if (total <= costEps) continue;
         final taken = _min(event.quantity, total);
+        // O rendimento que o crédito de prejuízo cobriu não foi tributado agora e não
+        // pode voltar no resgate: sai do ganho já tributado, repartido como as cotas, e
+        // no máximo até o ganho das cotas retiradas. O imposto pago (`ccPaid`) segue
+        // sendo o valor das cotas retiradas.
+        final taxedGain = lots.fold<double>(
+          0,
+          (sum, lot) =>
+              sum +
+              (taken * lot.quantity / total) * (event.amount - lot.costPerQuota),
+        );
+        final credit = _min(event.lossCreditUsed ?? 0, _positive(taxedGain));
         for (final lot in lots) {
           final share = taken * lot.quantity / total;
           lot.estoqueGain *= 1 - share / lot.quantity;
-          lot.ccGain += share * (event.amount - lot.costPerQuota);
+          lot.ccGain +=
+              share * (event.amount - lot.costPerQuota) -
+              (taken > costEps ? credit * share / taken : 0);
           lot.ccPaid += share * event.amount;
           lot.quantity -= share;
         }

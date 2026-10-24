@@ -22,6 +22,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   final _totalValueController = TextEditingController();
   final _feeController = TextEditingController();
   final _withheldController = TextEditingController();
+  final _lossCreditController = TextEditingController();
   final _fiEmissorController = TextEditingController();
   final _fiTaxaController = TextEditingController();
 
@@ -72,6 +73,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         _totalValueController.text = tx.totalValue.toString();
         _feeController.text = tx.fee?.toString() ?? '';
         _withheldController.text = tx.foreignTaxWithheld?.toString() ?? '';
+        _lossCreditController.text = tx.lossCreditUsed?.toString() ?? '';
         _fiEmissorController.text = tx.fiEmissor ?? '';
         _fiIndexador = tx.fiIndexador ?? fiIndexadores.first;
         _fiTaxaController.text = tx.fiTaxaPercentual?.toString() ?? '';
@@ -135,6 +137,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       _type == TransactionType.provento &&
       _selectedAsset != null &&
       _selectedAsset!.currency != 'BRL';
+
+  /// Crédito de prejuízo que a administradora usou no come-cotas: só nesse tipo.
+  bool get _showLossCreditUsed => _type == TransactionType.comeCotas;
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -205,6 +210,19 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       }
     }
 
+    // Crédito de prejuízo usado só no come-cotas; vazio = não informado, 0 = nenhum
+    // crédito usado, negativo ou inválido bloqueia.
+    final lossCreditText = _lossCreditController.text.trim().replaceAll(',', '.');
+    double? lossCreditUsed;
+    if (_showLossCreditUsed && lossCreditText.isNotEmpty) {
+      lossCreditUsed = double.tryParse(lossCreditText);
+      if (lossCreditUsed == null ||
+          !lossCreditUsed.isFinite ||
+          lossCreditUsed < 0) {
+        return;
+      }
+    }
+
     if (_type == TransactionType.amortizacao) {
       final problem = amortizationProblem(
         await _repository.listTransactionsForAsset(asset!.id!),
@@ -235,6 +253,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       totalValue: totalValue,
       fee: fee,
       foreignTaxWithheld: foreignTaxWithheld,
+      lossCreditUsed: lossCreditUsed,
       custodiaId: _custodia?.id,
       transferToCustodiaId: _type.needsTransferDestination
           ? _transferToCustodia?.id
@@ -270,6 +289,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     _totalValueController.dispose();
     _feeController.dispose();
     _withheldController.dispose();
+    _lossCreditController.dispose();
     _fiEmissorController.dispose();
     _fiTaxaController.dispose();
     super.dispose();
@@ -443,6 +463,20 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     labelText:
                         'Imposto retido no exterior '
                         '(${_selectedAsset?.currency}, opcional)',
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (_showLossCreditUsed) ...[
+                TextField(
+                  controller: _lossCreditController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Crédito de prejuízo usado (rendimento, R\$, opcional)',
+                    helperText: 'Vazio = não sei; 0 = nenhum crédito foi usado.',
+                    helperMaxLines: 2,
                   ),
                 ),
                 const SizedBox(height: 16),

@@ -16,7 +16,7 @@ use crate::commands::tax::{load_rule_set, workspace_portfolio_ids};
 use crate::commands::transaction::{cost_events, AMORTIZATION, COME_COTAS};
 use crate::domain::cost_basis;
 use crate::domain::tax::come_cotas::{self, ComeCotasEstimate, FundHolding, FundTerm, QuotaValue};
-use crate::domain::tax::fund_compensation::{self, CompFund, CreditNote, LossCredit};
+use crate::domain::tax::fund_compensation::{self, CompFund, ComeCotasMark, CreditNote, LossCredit};
 use crate::domain::tax::fund_redemption::{self, EstoqueEstimate, FundEvent, FundEventKind, RedemptionEstimate};
 use crate::domain::tax::rules;
 use crate::entity::{assets, fund_detail, fund_quota_value, transactions};
@@ -38,6 +38,8 @@ pub struct DeductionView {
     pub quota_value: f64,
     /// O imposto em reais (cotas × valor da cota).
     pub tax: f64,
+    /// O rendimento, em reais, que o crédito de prejuízo cobriu nesse desconto; `None` = não informado.
+    pub loss_credit_used: Option<f64>,
 }
 
 /// Um fundo com a posição do Workspace e os valores de cota lançados (do mais antigo ao mais novo).
@@ -103,7 +105,11 @@ fn fund_events(txs: &[&transactions::Model], estoque: Option<(f64, f64)>) -> Vec
             let quantity = t.quantity.unwrap_or(0.0);
             let kind = match t.transaction_type.as_str() {
                 BUY => FundEventKind::Buy { quantity, cost: t.total_value + t.fee.unwrap_or(0.0) },
-                COME_COTAS => FundEventKind::ComeCotas { quantity, quota_value: t.unit_price.unwrap_or(0.0) },
+                COME_COTAS => FundEventKind::ComeCotas {
+                    quantity,
+                    quota_value: t.unit_price.unwrap_or(0.0),
+                    loss_credit_used: t.loss_credit_used,
+                },
                 SELL => FundEventKind::Redeem { tx_id: t.id, quantity, quota_value: t.unit_price.unwrap_or(0.0) },
                 AMORTIZATION => FundEventKind::Amortize {
                     tx_id: t.id,
@@ -354,6 +360,7 @@ pub async fn funds_overview_with(
                     quotas,
                     quota_value: t.unit_price.unwrap_or(0.0),
                     tax: t.total_value,
+                    loss_credit_used: t.loss_credit_used,
                 }
             })
             .collect();
@@ -451,10 +458,13 @@ pub async fn funds_overview_with(
                     term,
                     administrator: f.administrator.as_deref(),
                     redemptions: &mut f.redemptions,
-                    come_cotas_dates: f
+                    come_cotas: f
                         .deductions
                         .iter()
-                        .filter_map(|d| NaiveDate::parse_from_str(&d.date, "%Y-%m-%d").ok())
+                        .filter_map(|d| {
+                            let date = NaiveDate::parse_from_str(&d.date, "%Y-%m-%d").ok()?;
+                            Some(ComeCotasMark { date, loss_credit_used: d.loss_credit_used })
+                        })
                         .collect(),
                 })
             })

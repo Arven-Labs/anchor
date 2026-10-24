@@ -17,12 +17,15 @@
 //   só até zerar o IR a pagar do lote: o que o come-cotas já cobriu não gasta crédito.
 //   O IOF não é abatido.
 // - O saldo do grupo abate o ganho da estimativa do próximo come-cotas (fundos em ordem
-//   de ticker, sem usar o mesmo crédito duas vezes). Descontos de come-cotas JÁ
-//   registrados não consomem crédito (não dá para saber quanto a administradora
-//   abateu), mas cada um feito com saldo no grupo (de perdas de datas estritamente
-//   anteriores) gera um `CreditNote`: o crédito pode já ter sido usado ali e o saldo
-//   mostrado pode estar acima do real. O crédito não tem validade modelada (as fontes
-//   divergem sobre o prazo).
+//   de ticker, sem usar o mesmo crédito duas vezes).
+// - Descontos de come-cotas JÁ registrados: o usuário informa (campo opcional da
+//   transação) quanto rendimento o crédito de prejuízo cobriu ali, e isso abate o saldo
+//   do grupo na data (no máximo o saldo). Sem o valor (nulo), o app não sabe quanto a
+//   administradora abateu e só avisa (`CreditNote`, `informed == null`) quando o grupo
+//   tinha saldo de perdas de datas estritamente anteriores: o saldo mostrado pode estar
+//   acima do real. Valor informado acima do saldo também avisa (`informed` com o
+//   valor). Valor informado dentro do saldo, inclusive 0, não avisa.
+// - O crédito não tem validade modelada (as fontes divergem sobre o prazo).
 
 import '../models/fund.dart';
 import 'come_cotas.dart';
@@ -37,9 +40,8 @@ class CompFund {
   final String? administrator;
   final List<RedemptionEstimate> redemptions;
 
-  /// Datas dos descontos de come-cotas já registrados do fundo (só servem para o aviso,
-  /// não consomem crédito).
-  final List<DateTime> comeCotasDates;
+  /// Os descontos de come-cotas já registrados do fundo.
+  final List<ComeCotasMark> comeCotas;
 
   const CompFund({
     required this.assetId,
@@ -47,12 +49,24 @@ class CompFund {
     required this.term,
     required this.administrator,
     required this.redemptions,
-    this.comeCotasDates = const [],
+    this.comeCotas = const [],
   });
 }
 
-/// Aviso de um come-cotas registrado feito com saldo de prejuízo no grupo: a
-/// administradora pode ter usado o crédito.
+/// Um desconto de come-cotas registrado: a data e o crédito de prejuízo que o usuário
+/// disse ter sido usado nele.
+class ComeCotasMark {
+  final DateTime date;
+
+  /// Rendimento coberto pelo crédito, em BRL; `null` = não informado (0 = nenhum
+  /// crédito usado).
+  final double? lossCreditUsed;
+
+  const ComeCotasMark(this.date, [this.lossCreditUsed]);
+}
+
+/// Aviso de um come-cotas registrado em que o crédito de prejuízo do grupo pode não
+/// estar certo.
 class CreditNote {
   final int assetId;
 
@@ -63,10 +77,15 @@ class CreditNote {
   /// descontado o que resgates gastaram), em BRL.
   final double balance;
 
+  /// `null`: o usuário não informou o crédito usado e o grupo tinha saldo (a
+  /// administradora pode ter usado parte). Valor: o que ele informou, acima do saldo.
+  final double? informed;
+
   const CreditNote({
     required this.assetId,
     required this.date,
     required this.balance,
+    this.informed,
   });
 }
 
@@ -206,24 +225,43 @@ CompensationResult compensate(List<CompFund> funds) {
         _Item(funds[f].redemptions[r].date, funds[f].redemptions[r].txId, f, r),
   ]..sort(_compareItems);
 
-  // (data, fundo) de cada come-cotas registrado. O saldo de uma data é o de antes do
-  // bloco dessa data: só perdas de datas estritamente anteriores contam, como no
-  // crédito dos resgates.
-  final cc = <(DateTime, int)>[
+  // (data, fundo, crédito informado) de cada come-cotas registrado. O saldo de uma data
+  // é o de antes do bloco dessa data: só perdas de datas estritamente anteriores
+  // contam, como no crédito dos resgates. O crédito informado sai do saldo (no máximo o
+  // saldo) e um valor acima do saldo, ou nenhum valor com saldo no grupo, gera aviso.
+  final cc = <(DateTime, int, double?)>[
     for (var f = 0; f < funds.length; f++)
-      for (final date in funds[f].comeCotasDates) (date, f),
-  ]..sort((a, b) => a.$1.compareTo(b.$1));
+      for (final mark in funds[f].comeCotas) (mark.date, f, mark.lossCreditUsed),
+  ]..sort((a, b) {
+      final byDate = a.$1.compareTo(b.$1);
+      return byDate != 0 ? byDate : a.$2.compareTo(b.$2);
+    });
   final notes = <CreditNote>[];
   var nextCc = 0;
   void noteUpTo(DateTime? limit) {
     while (nextCc < cc.length &&
         (limit == null || !cc[nextCc].$1.isAfter(limit))) {
-      final (date, f) = cc[nextCc];
-      final balance = pools[keys[f]]!.amount;
-      if (balance > _noteMinBalance) {
-        notes.add(
-          CreditNote(assetId: funds[f].assetId, date: date, balance: balance),
-        );
+      final (date, f, used) = cc[nextCc];
+      final pool = pools[keys[f]]!;
+      final balance = pool.amount;
+      if (used == null) {
+        if (balance > _noteMinBalance) {
+          notes.add(
+            CreditNote(assetId: funds[f].assetId, date: date, balance: balance),
+          );
+        }
+      } else {
+        if (used > balance + _noteMinBalance) {
+          notes.add(
+            CreditNote(
+              assetId: funds[f].assetId,
+              date: date,
+              balance: balance,
+              informed: used,
+            ),
+          );
+        }
+        pool.amount = balance - used > 0 ? balance - used : 0;
       }
       nextCc++;
     }

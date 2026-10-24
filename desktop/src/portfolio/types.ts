@@ -316,6 +316,7 @@ export type TransactionView = {
   unit_price: number | null;
   total_value: number;
   fee: number | null;
+  loss_credit_used: number | null;
   transaction_date: string;
   notes: string | null;
   fi_emissor: string | null;

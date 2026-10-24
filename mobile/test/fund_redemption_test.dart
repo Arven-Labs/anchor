@@ -396,4 +396,48 @@ void main() {
       expect(fund(sold, FundTerm.longTerm).taxedBasisPerQuota, isNull);
     });
   });
+
+  group('crédito de prejuízo usado no come-cotas', () {
+    // 100 cotas a 10,00; come-cotas de 2,5 cotas a 12,00 (ganho das cotas retiradas
+    // 2,5 × 2 = 5, imposto pago 30), com o crédito de prejuízo informado (ou não);
+    // resgate das 97,5 cotas a 15,00 em 01/03/2026 (789 dias, 15%).
+    RedemptionEstimate redemptionAfterComeCotas(double? credit) => run([
+      buy(1, '2024-01-02', 100, 1000),
+      FundEvent.comeCotas(
+        date: d('2024-05-31'),
+        id: 2,
+        quantity: 2.5,
+        quotaValue: 12,
+        lossCreditUsed: credit,
+      ),
+      redeem(3, '2026-03-01', 97.5, 15),
+    ], FundTerm.longTerm).first;
+
+    test('o rendimento coberto pelo crédito não é tributado de novo no resgate', () {
+      // sem crédito: rendimento 97,5 × 5 = 487,5 + 5 já tributados = 492,5; IR devido
+      // 73,875; menos os 30 pagos = 43,875
+      final without = redemptionAfterComeCotas(null);
+      expect(without.lots[0].gain, closeTo(492.5, 1e-6));
+      expect(without.ir, closeTo(43.875, 1e-6));
+      // com 5 de crédito usado: o ganho já tributado cai de 5 para 0 (nominal 487,5);
+      // IR devido 73,125; menos 30 = 43,125, 0,75 a menos = 15% × 5, o imposto que o
+      // crédito poupou. O imposto pago (30) segue o mesmo
+      final withCredit = redemptionAfterComeCotas(5);
+      expect(withCredit.lots[0].gain, closeTo(487.5, 1e-6));
+      expect(withCredit.ir, closeTo(43.125, 1e-6));
+      expect(withCredit.comeCotasCredit, closeTo(30, 1e-6));
+      expect(withCredit.excessComeCotas, closeTo(0, 1e-6));
+    });
+
+    test('é limitado ao ganho tributado e zero não muda nada', () {
+      // 100 de crédito informado, mas as cotas retiradas só tinham 5 de ganho: vale 5
+      final capped = redemptionAfterComeCotas(100);
+      expect(capped.lots[0].gain, closeTo(487.5, 1e-6));
+      expect(capped.ir, closeTo(43.125, 1e-6));
+      // 0 (nenhum crédito usado) e não informado dão a mesma conta
+      final zero = redemptionAfterComeCotas(0);
+      expect(zero.ir, closeTo(43.875, 1e-6));
+      expect(zero.lots[0].gain, closeTo(492.5, 1e-6));
+    });
+  });
 }

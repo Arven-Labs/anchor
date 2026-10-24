@@ -51,7 +51,15 @@ type CvmStatus =
   | { kind: "needs_subclass"; options: string[] }
   | { kind: "error"; message: string };
 
-type DeductionRow = { tx_id: number; date: string; quotas: number; quota_value: number; tax: number };
+type DeductionRow = {
+  tx_id: number;
+  date: string;
+  quotas: number;
+  quota_value: number;
+  tax: number;
+  // Rendimento, em BRL, que o crédito de prejuízo cobriu nesse desconto; null = não informado.
+  loss_credit_used: number | null;
+};
 
 type LotPart = { lot_date: string; quotas: number; days: number; rate: number; gain: number; iof: number; ir: number };
 
@@ -102,7 +110,8 @@ type FundRow = {
   deductions: DeductionRow[];
   redemptions: RedemptionRow[];
   // Come-cotas registrados feitos com saldo de prejuízo no grupo: a administradora pode ter usado o crédito ali.
-  credit_notes: { asset_id: number; date: string; balance: number }[];
+  // informed: null = o crédito usado não foi informado; número = o valor informado, acima do saldo.
+  credit_notes: { asset_id: number; date: string; balance: number; informed: number | null }[];
 };
 
 type Estimate = {
@@ -592,10 +601,10 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
           come-cotas already paid. It is informational: the tax leaves the redemption at the source, so there is no
           DARF. A loss on a redemption offsets the gains of later redemptions and come-cotas in the same fund or in
           another fund of the same type and the same administrator (or broker): give each fund's administrator so Anchor
-          can group them; without it a fund only offsets itself. Come-cotas already recorded do not use up the credit
-          (Anchor cannot know how much the administrator offset there, so it warns when a recorded come-cotas could have
-          used it) and the credit has no expiry in this estimate. This is an estimate based on secondary sources —
-          confirm with your fund statement.
+          can group them; without it a fund only offsets itself. A recorded come-cotas only uses up the credit if you
+          fill in the loss credit used in its transaction (Anchor cannot know how much the administrator offset there:
+          without the value it only warns when the come-cotas could have used it) and the credit has no expiry in this
+          estimate. This is an estimate based on secondary sources — confirm with your fund statement.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -695,9 +704,20 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
                 <div className="flex flex-col gap-1 text-sm text-amber-500" data-testid={`credit-notes-${fund.ticker}`}>
                   {fund.credit_notes.map((note) => (
                     <p key={note.date}>
-                      The come-cotas of {formatDate(note.date)} was recorded while the group had {formatBrl(note.balance)}{" "}
-                      of loss credit: the administrator may have used part of it, so the credit balance shown may be
-                      higher than the real one.
+                      {note.informed === null ? (
+                        <>
+                          The come-cotas of {formatDate(note.date)} was recorded while the group had{" "}
+                          {formatBrl(note.balance)} of loss credit: the administrator may have used part of it, so the
+                          credit balance shown may be higher than the real one. Fill in the loss credit used in that
+                          transaction to settle it.
+                        </>
+                      ) : (
+                        <>
+                          The come-cotas of {formatDate(note.date)} says {formatBrl(note.informed)} of loss credit was
+                          used, but the group only had {formatBrl(note.balance)}: only that balance was taken off.
+                          Check the value.
+                        </>
+                      )}
                     </p>
                   ))}
                 </div>
@@ -710,6 +730,7 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
                     <span key={d.tx_id}>
                       {formatDate(d.date)}: {formatQuotas(d.quotas)} quotas at {formatBrl(d.quota_value)} ={" "}
                       <span className="font-medium">{formatBrl(d.tax)}</span>
+                      {d.loss_credit_used !== null && <> · loss credit used {formatBrl(d.loss_credit_used)}</>}
                     </span>
                   ))}
                 </div>
