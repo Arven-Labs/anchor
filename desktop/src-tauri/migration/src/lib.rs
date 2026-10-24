@@ -94,6 +94,7 @@ mod m20261101_100000_create_funds;
 mod m20261101_110000_seed_come_cotas_rules;
 mod m20261102_100000_seed_fund_redemption_rules;
 mod m20261103_100000_add_cvm_fields_to_funds;
+mod m20261104_100000_add_administrator_to_funds;
 
 pub struct Migrator;
 
@@ -195,6 +196,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261101_110000_seed_come_cotas_rules::Migration),
             Box::new(m20261102_100000_seed_fund_redemption_rules::Migration),
             Box::new(m20261103_100000_add_cvm_fields_to_funds::Migration),
+            Box::new(m20261104_100000_add_administrator_to_funds::Migration),
         ]
     }
 }

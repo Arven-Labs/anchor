@@ -172,6 +172,7 @@ pub fn run() {
             commands::fund::get_funds_overview,
             commands::fund::set_fund_term,
             commands::fund::set_fund_cvm,
+            commands::fund::set_fund_administrator,
             commands::fund::refresh_fund_quotas_now,
             commands::fund::upsert_fund_quota,
             commands::fund::delete_fund_quota,

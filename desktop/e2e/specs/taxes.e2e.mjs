@@ -379,6 +379,53 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await snap("taxes-fund-redemption");
   });
 
+  // Compensação de prejuízo entre fundos: dois fundos de longo prazo da mesma administradora. O FUNDOL perde R$ 200,00 num
+  // resgate de 01/06/2025; o FUNDOG ganha R$ 200,00 num resgate de 01/09/2025 (243 dias, 20%: IR de R$ 40,00) e, com o
+  // crédito, não paga IR. As datas são fixas, então a conta não depende de "hoje".
+  it("compensa o prejuízo de um fundo no IR do resgate de outro da mesma administradora", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    const trade = (fundId, type, quantity, price, date) =>
+      sql(
+        "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+          `VALUES (${portfolio}, ${fundId}, '${type}', ${quantity}, ${price}, ${quantity * price}, NULL, '${date}', '${date}T00:00:00Z')`,
+      );
+    for (const [ticker, name] of [
+      ["FUNDOL", "Fundo L"],
+      ["FUNDOG", "Fundo G"],
+    ]) {
+      sql(
+        "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+          `VALUES ('${ticker}', '${name}', 'fundo', 'BRL', 'pais', 'BR', '2025-01-01T00:00:00Z')`,
+      );
+      const id = sql(`SELECT id FROM assets WHERE ticker = '${ticker}'`);
+      sql(
+        "INSERT INTO fund_details (asset_id, term, administrator, created_at) " +
+          `VALUES (${id}, 'longo_prazo', '${ticker === "FUNDOL" ? "XP" : " xp "}', '2025-01-10T00:00:00Z')`,
+      );
+      trade(id, "compra", 100, 10, "2025-01-01");
+      trade(id, "venda", 100, ticker === "FUNDOL" ? 8 : 12, ticker === "FUNDOL" ? "2025-06-01" : "2025-09-01");
+    }
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await waitForText(
+      byId("fund-redemptions-FUNDOL"),
+      (text) => text.includes("loss") && text.includes("200,00") && text.includes("to offset"),
+      "o resgate com prejuízo do FUNDOL deveria mostrar R$ 200,00 a compensar",
+    );
+    await waitForText(
+      byId("fund-redemptions-FUNDOG"),
+      // O formatBrl separa "R$" do valor com um espaço inseparável, então o texto confere só os números.
+      (text) => text.includes("loss credit") && text.includes("200,00") && text.includes("used") && text.includes("IR") && text.includes(" 0,00"),
+      "o resgate do FUNDOG deveria usar o crédito de R$ 200,00 e ficar com IR de R$ 0,00",
+    );
+    await byId("fund-administrator-input-FUNDOG").waitForDisplayed({ timeout: 20_000 });
+    await byId("fund-redemptions-FUNDOG").scrollIntoView({ block: "center" });
+    await snap("taxes-fund-compensation");
+  });
+
   // Cota da CVM: o E2E roda sem rede (ANCHOR_DISABLE_INGESTION), então a leitura do informe diário não acontece. Aqui
   // confere o que a tela mostra sem CNPJ e, com o CNPJ e uma cota gravada com `source = 'cvm'`, o selo e a data.
   it("mostra de onde vem a cota do fundo: sem CNPJ, e lida da CVM", async () => {

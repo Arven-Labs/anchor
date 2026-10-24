@@ -12,6 +12,7 @@ pub mod classify;
 pub mod come_cotas;
 pub mod crypto;
 pub mod foreign;
+pub mod fund_compensation;
 pub mod fund_redemption;
 pub mod iof;
 pub mod offshore;

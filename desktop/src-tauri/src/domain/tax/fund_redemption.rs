@@ -86,8 +86,15 @@ pub struct RedemptionEstimate {
     pub lots: Vec<LotPart>,
     /// Cotas do resgate sem lote de compra conhecido (o custo está incompleto).
     pub uncovered_quotas: f64,
-    /// Come-cotas pago acima do IR devido: a compensação não é modelada.
+    /// Come-cotas pago acima do IR devido: o reembolso não é modelado.
     pub excess_come_cotas: f64,
+    /// Prejuízo deste resgate: a soma dos lotes com rendimento negativo depois do IOF. É crédito para resgates e
+    /// come-cotas posteriores do mesmo grupo (`fund_compensation`).
+    pub loss_created: f64,
+    /// Crédito de prejuízo de resgates anteriores que abateu a base deste resgate (zero até `fund_compensation` rodar).
+    pub loss_credit_used: f64,
+    /// IR antes de descontar esse crédito (igual a `ir` até `fund_compensation` rodar).
+    pub ir_before_compensation: f64,
 }
 
 struct Lot {
@@ -164,6 +171,7 @@ pub fn estimate_redemptions(
                 let mut parts = Vec::new();
                 let (mut cost, mut iof_total, mut ir_total) = (0.0, 0.0, 0.0);
                 let (mut credit_total, mut excess_total) = (0.0, 0.0);
+                let mut loss_total = 0.0;
                 for lot in lots.iter_mut().filter(|l| l.quantity > EPS) {
                     if remaining <= EPS {
                         break;
@@ -188,6 +196,7 @@ pub fn estimate_redemptions(
                     ir_total += ir;
                     credit_total += credit_used;
                     excess_total += (cc_paid - ir_due).max(0.0);
+                    loss_total += (iof - nominal).max(0.0);
                     parts.push(LotPart { lot_date: lot.date, quotas: take, days, rate, gain: nominal, iof, ir });
 
                     lot.quantity -= take;
@@ -210,6 +219,9 @@ pub fn estimate_redemptions(
                     lots: parts,
                     uncovered_quotas: remaining.max(0.0),
                     excess_come_cotas: excess_total,
+                    loss_created: loss_total,
+                    loss_credit_used: 0.0,
+                    ir_before_compensation: ir_total,
                 });
             }
         }

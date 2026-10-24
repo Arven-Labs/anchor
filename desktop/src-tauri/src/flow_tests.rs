@@ -4714,6 +4714,106 @@ async fn a_fund_redemption_estimates_the_iof_and_the_ir_with_the_come_cotas_cred
 }
 
 #[tokio::test]
+async fn a_loss_in_one_fund_offsets_the_later_ir_of_another_fund_of_the_same_administrator() {
+    use crate::commands::fund::{funds_overview_in, set_fund_administrator_in, set_fund_term_in};
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Compensação").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let loser = asset_in(&db, "FUNDOA", "fundo", "BRL").await;
+    let winner = asset_in(&db, "FUNDOB", "fundo", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+
+    // A: 100 cotas a 10,00 resgatadas a 8,00 em 01/06/2025 (perda de 200). B: 100 cotas a 10,00 resgatadas a 12,00 em
+    // 01/09/2025 (243 dias, 20%: ganho de 200, IR de 40)
+    add(&db, tx_request(pf.id, loser.id, "compra", 100.0, 10.0, "2025-01-01", 0.0)).await;
+    add(&db, tx_request(pf.id, loser.id, "venda", 100.0, 8.0, "2025-06-01", 0.0)).await;
+    add(&db, tx_request(pf.id, winner.id, "compra", 100.0, 10.0, "2025-01-01", 0.0)).await;
+    add(&db, tx_request(pf.id, winner.id, "venda", 100.0, 12.0, "2025-09-01", 0.0)).await;
+
+    // a administradora só se informa depois do tipo do fundo
+    let early = set_fund_administrator_in(&db, loser.id, Some("XP")).await;
+    assert!(matches!(early, Err(AppError::InvalidInput(_))), "sem o tipo do fundo");
+    set_fund_term_in(&db, loser.id, "longo_prazo").await.unwrap();
+    set_fund_term_in(&db, winner.id, "longo_prazo").await.unwrap();
+
+    // sem administradora cada fundo é um grupo: nada se compensa e o saldo da perda fica no fundo A
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let b = &overview.funds.iter().find(|f| f.ticker == "FUNDOB").unwrap().redemptions[0];
+    assert!(close(b.ir, 40.0) && close(b.loss_credit_used, 0.0), "{b:?}");
+    assert_eq!(overview.loss_credits.len(), 1);
+    assert!(close(overview.loss_credits[0].amount, 200.0) && overview.loss_credits[0].tickers == ["FUNDOA"]);
+
+    // mesma administradora (sem diferença de caixa nem de espaços): a perda zera o IR do outro fundo
+    set_fund_administrator_in(&db, loser.id, Some("XP")).await.unwrap();
+    set_fund_administrator_in(&db, winner.id, Some("  xp ")).await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let a = &overview.funds.iter().find(|f| f.ticker == "FUNDOA").unwrap().redemptions[0];
+    let b = &overview.funds.iter().find(|f| f.ticker == "FUNDOB").unwrap().redemptions[0];
+    assert!(close(a.loss_created, 200.0), "{a:?}");
+    assert!(close(b.ir, 0.0) && close(b.ir_before_compensation, 40.0) && close(b.loss_credit_used, 200.0), "{b:?}");
+    assert!(close(b.net, 1200.0), "{b:?}");
+    assert!(overview.loss_credits.is_empty(), "o crédito foi todo usado: {:?}", overview.loss_credits);
+    let administrator_of = |ticker: &str| {
+        overview.funds.iter().find(|f| f.ticker == ticker).unwrap().administrator.clone()
+    };
+    assert_eq!(administrator_of("FUNDOA").as_deref(), Some("XP"));
+    assert_eq!(administrator_of("FUNDOB").as_deref(), Some("xp"), "guarda o texto sem espaços sobrando");
+
+    // apagar a administradora volta ao fundo isolado
+    set_fund_administrator_in(&db, winner.id, None).await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let b = &overview.funds.iter().find(|f| f.ticker == "FUNDOB").unwrap().redemptions[0];
+    assert!(close(b.ir, 40.0), "{b:?}");
+}
+
+#[tokio::test]
+async fn the_loss_credit_reduces_the_next_come_cotas_estimate_of_the_same_group() {
+    use crate::commands::fund::{funds_overview_in, set_fund_administrator_in, set_fund_term_in, upsert_fund_quota_in, UpsertFundQuotaRequest};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Compensação come-cotas").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let loser = asset_in(&db, "FUNDOA", "fundo", "BRL").await;
+    let holder = asset_in(&db, "FUNDOC", "fundo", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+
+    // A perde 200 em 01/06/2025; C tem 100 cotas a 10,00 compradas em 01/07/2026, cota a 12,00 (ganho 200, 15% = 30)
+    add(&db, tx_request(pf.id, loser.id, "compra", 100.0, 10.0, "2025-01-01", 0.0)).await;
+    add(&db, tx_request(pf.id, loser.id, "venda", 100.0, 8.0, "2025-06-01", 0.0)).await;
+    add(&db, tx_request(pf.id, holder.id, "compra", 100.0, 10.0, "2026-07-01", 0.0)).await;
+    for id in [loser.id, holder.id] {
+        set_fund_term_in(&db, id, "longo_prazo").await.unwrap();
+    }
+    upsert_fund_quota_in(
+        &db,
+        UpsertFundQuotaRequest { asset_id: holder.id, quota_date: "2026-10-20".to_string(), value: 12.0 },
+        today,
+    )
+    .await
+    .unwrap();
+
+    let estimate_of = |overview: &crate::commands::fund::FundsOverview| {
+        overview.estimates.iter().find(|e| e.asset_id == holder.id).unwrap().clone()
+    };
+
+    // grupos separados: o crédito não chega ao come-cotas de C
+    let separate = estimate_of(&funds_overview_in(&db, ws.id, today).await.unwrap());
+    assert!(close(separate.tax, 30.0) && close(separate.loss_credit_used, 0.0), "{separate:?}");
+
+    // mesmo grupo: a perda de 200 zera o ganho de 200 da estimativa, e o saldo some
+    set_fund_administrator_in(&db, loser.id, Some("XP")).await.unwrap();
+    set_fund_administrator_in(&db, holder.id, Some("XP")).await.unwrap();
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let grouped = estimate_of(&overview);
+    assert!(close(grouped.loss_credit_used, 200.0) && close(grouped.tax, 0.0), "{grouped:?}");
+    assert!(close(grouped.tax_before_compensation, 30.0) && close(grouped.quotas_deducted, 0.0), "{grouped:?}");
+    // o saldo exibido é o disponível antes do come-cotas estimado (que ainda não aconteceu)
+    assert!(close(overview.loss_credits[0].amount, 200.0), "{:?}", overview.loss_credits);
+}
+
+#[tokio::test]
 async fn the_come_cotas_entry_refuses_what_is_not_a_fund_quota_deduction() {
     use crate::error::AppError;
 

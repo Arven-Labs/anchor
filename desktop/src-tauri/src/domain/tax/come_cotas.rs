@@ -116,6 +116,11 @@ pub struct ComeCotasEstimate {
     /// A última data de come-cotas passou com a posição já existente e sem nenhum desconto registrado em volta dela:
     /// o usuário provavelmente ainda não lançou a transação `come_cotas`.
     pub last_reference_unrecorded: Option<NaiveDate>,
+    /// Crédito de prejuízo de resgates anteriores que abateu o ganho desta estimativa (`fund_compensation`); zero até a
+    /// compensação rodar. `gain` e `tax` já vêm com o abatimento.
+    pub loss_credit_used: f64,
+    /// Imposto antes do crédito de prejuízo (igual a `tax` até a compensação rodar).
+    pub tax_before_compensation: f64,
 }
 
 /// Datas de come-cotas de um ano: última data útil de maio e de novembro.
@@ -171,6 +176,8 @@ pub fn estimate(
             quotas_deducted: 0.0,
             stale_quota: false,
             last_reference_unrecorded: None,
+            loss_credit_used: 0.0,
+            tax_before_compensation: 0.0,
         };
         if holding.quantity <= EPS {
             estimates.push(estimate);
@@ -238,6 +245,7 @@ pub fn estimate(
         estimate.gain = gain;
         estimate.rate = rate;
         estimate.tax = tax;
+        estimate.tax_before_compensation = tax;
         estimate.quotas_deducted = if latest.value > 0.0 { tax / latest.value } else { 0.0 };
         estimates.push(estimate);
     }

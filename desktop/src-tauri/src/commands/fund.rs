@@ -16,6 +16,7 @@ use crate::commands::tax::{load_rule_set, workspace_portfolio_ids};
 use crate::commands::transaction::{cost_events, COME_COTAS};
 use crate::domain::cost_basis;
 use crate::domain::tax::come_cotas::{self, ComeCotasEstimate, FundHolding, FundTerm, QuotaValue};
+use crate::domain::tax::fund_compensation::{self, CompFund, LossCredit};
 use crate::domain::tax::fund_redemption::{self, FundEvent, FundEventKind, RedemptionEstimate};
 use crate::entity::{assets, fund_detail, fund_quota_value, transactions};
 use crate::error::AppError;
@@ -53,6 +54,8 @@ pub struct FundView {
     /// Subclasse do informe da CVM; `None` = a linha da classe.
     pub cvm_subclass: Option<String>,
     pub cvm_status: CvmStatus,
+    /// Administradora ou intermediário informado; agrupa os fundos que compensam prejuízo entre si.
+    pub administrator: Option<String>,
     /// Data da cota mais recente lida da CVM.
     pub last_cvm_date: Option<String>,
     pub quotas: Vec<fund_quota_value::Model>,
@@ -67,6 +70,8 @@ pub struct FundsOverview {
     pub funds: Vec<FundView>,
     /// Estimativa do próximo come-cotas, um item por fundo (com o motivo quando não há imposto a estimar).
     pub estimates: Vec<ComeCotasEstimate>,
+    /// Prejuízo a compensar que sobrou em cada grupo (mesma administradora e mesmo tipo), depois dos resgates.
+    pub loss_credits: Vec<LossCredit>,
 }
 
 #[derive(Deserialize)]
@@ -233,7 +238,7 @@ pub async fn funds_overview_with(
         .all(db)
         .await?;
     if fund_assets.is_empty() {
-        return Ok(FundsOverview { funds: Vec::new(), estimates: Vec::new() });
+        return Ok(FundsOverview { funds: Vec::new(), estimates: Vec::new(), loss_credits: Vec::new() });
     }
     let ids: Vec<i32> = fund_assets.iter().map(|a| a.id).collect();
 
@@ -341,6 +346,7 @@ pub async fn funds_overview_with(
             cnpj: asset.cnpj.clone(),
             cvm_subclass: details.get(&asset.id).and_then(|d| d.cvm_subclass.clone()),
             cvm_status,
+            administrator: details.get(&asset.id).and_then(|d| d.administrator.clone()),
             last_cvm_date,
             quotas,
             deductions,
@@ -348,8 +354,27 @@ pub async fn funds_overview_with(
         });
     }
 
-    let estimates = come_cotas::estimate(&holdings, &rules, today)?;
-    Ok(FundsOverview { funds, estimates })
+    // Compensação de prejuízo entre fundos do mesmo grupo: ajusta o IR dos resgates e sobra um saldo por grupo, que ainda
+    // abate o ganho da estimativa do próximo come-cotas.
+    let loss_credits = {
+        let mut comp: Vec<CompFund<'_>> = funds
+            .iter_mut()
+            .filter_map(|f| {
+                let term = f.term.as_deref().and_then(FundTerm::parse)?;
+                Some(CompFund {
+                    asset_id: f.asset_id,
+                    ticker: &f.ticker,
+                    term,
+                    administrator: f.administrator.as_deref(),
+                    redemptions: &mut f.redemptions,
+                })
+            })
+            .collect();
+        fund_compensation::compensate(&mut comp)
+    };
+    let mut estimates = come_cotas::estimate(&holdings, &rules, today)?;
+    fund_compensation::apply_loss_credit(&mut estimates, &loss_credits);
+    Ok(FundsOverview { funds, estimates, loss_credits })
 }
 
 #[tauri::command]
@@ -383,6 +408,38 @@ pub async fn set_fund_term_in(db: &DatabaseConnection, asset_id: i32, term: &str
             .await?;
         }
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_fund_administrator(
+    db: tauri::State<'_, DatabaseConnection>,
+    asset_id: i32,
+    administrator: Option<String>,
+) -> Result<(), AppError> {
+    set_fund_administrator_in(db.inner(), asset_id, administrator.as_deref()).await
+}
+
+/// Grava a administradora (ou o intermediário) do fundo, em texto livre: fundos do mesmo tipo com a mesma administradora
+/// compensam prejuízo entre si. Vazio ou ausente apaga (o fundo fica isolado). Mora em `fund_details`, que só existe depois
+/// de o usuário escolher o tipo do fundo.
+pub async fn set_fund_administrator_in(
+    db: &DatabaseConnection,
+    asset_id: i32,
+    administrator: Option<&str>,
+) -> Result<(), AppError> {
+    fund_asset(db, asset_id).await?;
+    let detail = fund_detail::Entity::find()
+        .filter(fund_detail::Column::AssetId.eq(asset_id))
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::InvalidInput("choose the fund type before the administrator".to_string()))?;
+    let value = administrator
+        .map(|a| a.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|a| !a.is_empty());
+    let mut active: fund_detail::ActiveModel = detail.into();
+    active.administrator = Set(value);
+    active.update(db).await?;
     Ok(())
 }
 

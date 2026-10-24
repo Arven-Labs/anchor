@@ -57,6 +57,17 @@ type RedemptionRow = {
   lots: LotPart[];
   uncovered_quotas: number;
   excess_come_cotas: number;
+  loss_created: number;
+  loss_credit_used: number;
+  ir_before_compensation: number;
+};
+
+type LossCredit = {
+  administrator: string | null;
+  term: FundTerm;
+  tickers: string[];
+  asset_ids: number[];
+  amount: number;
 };
 
 type FundRow = {
@@ -69,6 +80,7 @@ type FundRow = {
   cnpj: string | null;
   cvm_subclass: string | null;
   cvm_status: CvmStatus;
+  administrator: string | null;
   last_cvm_date: string | null;
   quotas: QuotaRow[];
   deductions: DeductionRow[];
@@ -90,9 +102,11 @@ type Estimate = {
   quotas_deducted: number;
   stale_quota: boolean;
   last_reference_unrecorded: string | null;
+  loss_credit_used: number;
+  tax_before_compensation: number;
 };
 
-type FundsOverview = { funds: FundRow[]; estimates: Estimate[] };
+type FundsOverview = { funds: FundRow[]; estimates: Estimate[]; loss_credits: LossCredit[] };
 
 const TERM_LABELS: Record<FundTerm, string> = {
   longo_prazo: "Long term (15%)",
@@ -136,6 +150,16 @@ function RedemptionLine({ redemption, ticker }: { redemption: RedemptionRow; tic
             excess come-cotas
           </Badge>
         )}
+        {redemption.loss_created > 0 && (
+          <Badge variant="outline" className="ml-2" data-testid={`fund-loss-${ticker}-${redemption.tx_id}`}>
+            loss {formatBrl(redemption.loss_created)} to offset
+          </Badge>
+        )}
+        {redemption.loss_credit_used > 0 && (
+          <Badge variant="outline" className="ml-2" data-testid={`fund-credit-${ticker}-${redemption.tx_id}`}>
+            loss credit {formatBrl(redemption.loss_credit_used)} used
+          </Badge>
+        )}
       </summary>
       <div className="mt-1 flex flex-col gap-1 pl-4 text-xs text-muted-foreground">
         {redemption.lots.map((lot, index) => (
@@ -149,7 +173,19 @@ function RedemptionLine({ redemption, ticker }: { redemption: RedemptionRow; tic
         )}
         {redemption.excess_come_cotas > 0 && (
           <span>
-            Come-cotas paid above the IR due: {formatBrl(redemption.excess_come_cotas)} (the offset is not handled).
+            Come-cotas paid above the IR due: {formatBrl(redemption.excess_come_cotas)} (a refund of it is not handled).
+          </span>
+        )}
+        {redemption.loss_credit_used > 0 && (
+          <span>
+            Loss from earlier redemptions in the same group offset {formatBrl(redemption.loss_credit_used)} of the
+            gain: IR {formatBrl(redemption.ir)} instead of {formatBrl(redemption.ir_before_compensation)}.
+          </span>
+        )}
+        {redemption.loss_created > 0 && (
+          <span>
+            This redemption lost {formatBrl(redemption.loss_created)}: it can offset the gains of later redemptions and
+            come-cotas in the same group (same administrator and fund type).
           </span>
         )}
         {redemption.uncovered_quotas > 0 && (
@@ -186,6 +222,12 @@ function EstimateLine({ estimate }: { estimate: Estimate }) {
             gain of {formatBrl(estimate.gain)} ({formatQuotas(estimate.quotas_deducted)} quotas of{" "}
             {formatQuotas(estimate.quotas)}).
           </p>
+          {estimate.loss_credit_used > 0 && (
+            <p className="text-xs text-muted-foreground" data-testid={`come-cotas-credit-${estimate.asset_id}`}>
+              A loss credit of {formatBrl(estimate.loss_credit_used)} already reduced the gain: the tax would be{" "}
+              {formatBrl(estimate.tax_before_compensation)} without it.
+            </p>
+          )}
           <p className="text-xs text-muted-foreground">
             Quota {estimate.quota_value !== null ? formatBrl(estimate.quota_value) : "—"} on{" "}
             {estimate.quota_date ? formatDate(estimate.quota_date) : "—"} against a basis of{" "}
@@ -285,6 +327,57 @@ function CvmSource({ fund, onChanged }: { fund: FundRow; onChanged: () => void }
   );
 }
 
+// Quem compensa prejuízo com quem: a lei só deixa entre fundos da mesma administradora (ou do mesmo intermediário), do mesmo
+// tipo. O texto é livre; fundos com o mesmo texto (sem diferença de caixa ou de espaços) formam um grupo.
+function AdministratorField({ fund, onChanged }: { fund: FundRow; onChanged: () => void }) {
+  const [administrator, setAdministrator] = useState(fund.administrator ?? "");
+
+  const saveMutation = useMutation<void, AppError, string>({
+    mutationFn: (value) => invoke("set_fund_administrator", { assetId: fund.asset_id, administrator: value }),
+    onSuccess: onChanged,
+  });
+
+  return (
+    <div className="flex flex-col gap-1" data-testid={`fund-administrator-${fund.ticker}`}>
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          saveMutation.mutate(administrator);
+        }}
+      >
+        <Field label="Administrator / broker (to offset losses)">
+          <Input
+            value={administrator}
+            placeholder="e.g. XP, BTG"
+            disabled={fund.term === null}
+            onChange={(e) => setAdministrator(e.currentTarget.value)}
+            className="w-56"
+            data-testid={`fund-administrator-input-${fund.ticker}`}
+          />
+        </Field>
+        <Button
+          type="submit"
+          variant="outline"
+          size="sm"
+          disabled={fund.term === null || saveMutation.isPending}
+          data-testid={`fund-administrator-save-${fund.ticker}`}
+        >
+          Save
+        </Button>
+      </form>
+      <p className="text-xs text-muted-foreground">
+        {fund.term === null
+          ? "Choose the fund type first."
+          : fund.administrator === null
+            ? "Without it, this fund only offsets losses against its own later gains."
+            : "Funds of the same type with the same administrator offset losses against each other's later gains."}
+      </p>
+      {saveMutation.isError && <p className="text-sm text-destructive">{saveMutation.error.message}</p>}
+    </div>
+  );
+}
+
 export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) {
   const queryClient = useQueryClient();
   const [quotaFundId, setQuotaFundId] = useState<number | null>(null);
@@ -338,6 +431,7 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
 
   const funds = overviewQuery.data?.funds ?? [];
   const estimates = new Map((overviewQuery.data?.estimates ?? []).map((e) => [e.asset_id, e]));
+  const lossCredits = overviewQuery.data?.loss_credits ?? [];
   if (funds.length === 0) return null;
 
   function onSubmitQuota(event: FormEvent) {
@@ -359,7 +453,11 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
           read as a redemption: enter the gross value (before IR and IOF) as the total, and Anchor estimates what the
           fund withheld — IR by the regressive table on each purchase lot (oldest first), IOF under 30 days, minus the
           come-cotas already paid. It is informational: the tax leaves the redemption at the source, so there is no
-          DARF. This is an estimate based on secondary sources — confirm with your fund statement.
+          DARF. A loss on a redemption offsets the gains of later redemptions and come-cotas in the same fund or in
+          another fund of the same type and the same administrator (or broker): give each fund's administrator so Anchor
+          can group them; without it a fund only offsets itself. Come-cotas already recorded do not use up the credit
+          and it has no expiry in this estimate. This is an estimate based on secondary sources — confirm with your fund
+          statement.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -379,6 +477,19 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
             </span>
           )}
         </div>
+        {lossCredits.length > 0 && (
+          <div className="flex flex-col gap-1 rounded-md border border-dashed p-3 text-sm" data-testid="fund-loss-credits">
+            <span className="text-xs text-muted-foreground">
+              Loss to offset against later gains and come-cotas (same administrator and fund type)
+            </span>
+            {lossCredits.map((credit) => (
+              <span key={`${credit.administrator ?? ""}:${credit.term}:${credit.tickers.join(",")}`}>
+                <span className="font-medium">{formatBrl(credit.amount)}</span> — {credit.tickers.join(", ")} (
+                {credit.administrator ?? "no administrator"}, {TERM_LABELS[credit.term]})
+              </span>
+            ))}
+          </div>
+        )}
         {funds.map((fund) => {
           const estimate = estimates.get(fund.asset_id);
           return (
@@ -415,6 +526,12 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
 
               {/* A chave segue o CNPJ gravado: o campo é estado local e remonta com o valor que chegou do banco. */}
               <CvmSource key={`${fund.asset_id}:${fund.cnpj ?? ""}`} fund={fund} onChanged={cvmChanged} />
+
+              <AdministratorField
+                key={`${fund.asset_id}:${fund.term ?? ""}:${fund.administrator ?? ""}`}
+                fund={fund}
+                onChanged={refresh}
+              />
 
               {estimate && (
                 <div data-testid={`come-cotas-estimate-${fund.ticker}`}>

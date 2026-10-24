@@ -14,6 +14,8 @@ pub struct Model {
     pub term: String,
     /// Subclasse do informe diário da CVM; `None` = a linha da classe (sem subclasse).
     pub cvm_subclass: Option<String>,
+    /// Administradora ou intermediário, em texto livre: agrupa os fundos que compensam prejuízo entre si; `None` = isolado.
+    pub administrator: Option<String>,
     pub created_at: String,
 }
 
