@@ -4807,6 +4807,40 @@ async fn a_fund_redemption_estimates_the_iof_and_the_ir_with_the_come_cotas_cred
 }
 
 #[tokio::test]
+async fn a_fall_after_a_come_cotas_is_credited_at_the_updated_cost_through_the_overview() {
+    use crate::commands::fund::{funds_overview_in, set_fund_administrator_in, set_fund_term_in};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Perda legal").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let loser = asset_in(&db, "FUNDOA", "fundo", "BRL").await;
+    let winner = asset_in(&db, "FUNDOB", "fundo", "BRL").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+
+    // A: 100 cotas a 10,00; come-cotas de 2,5 cotas a 12,00 em 31/03/2025 (30 pagos); resgate de 97,5 a 9,00 em 01/06/2025.
+    // Perda legal 97,5 × (12 − 9) = 292,50 (pelo custo original seriam 92,50); o come-cotas pago vira excesso de 30.
+    // B: 100 cotas a 10,00 resgatadas a 12,00 em 01/09/2025 (243 dias, 20%): ganho 200, IR 40. O crédito de A zera o IR de B
+    // (gasta 200) e sobram 292,50 − 200 = 92,50 no grupo XP.
+    add(&db, tx_request(pf.id, loser.id, "compra", 100.0, 10.0, "2025-01-01", 0.0)).await;
+    add(&db, tx_request(pf.id, loser.id, "come_cotas", 2.5, 12.0, "2025-03-31", 0.0)).await;
+    add(&db, tx_request(pf.id, loser.id, "venda", 97.5, 9.0, "2025-06-01", 0.0)).await;
+    add(&db, tx_request(pf.id, winner.id, "compra", 100.0, 10.0, "2025-01-01", 0.0)).await;
+    add(&db, tx_request(pf.id, winner.id, "venda", 100.0, 12.0, "2025-09-01", 0.0)).await;
+    for fund in [&loser, &winner] {
+        set_fund_term_in(&db, fund.id, "longo_prazo").await.unwrap();
+        set_fund_administrator_in(&db, fund.id, Some("XP")).await.unwrap();
+    }
+
+    let overview = funds_overview_in(&db, ws.id, today).await.unwrap();
+    let a = &overview.funds.iter().find(|f| f.ticker == "FUNDOA").unwrap().redemptions[0];
+    let b = &overview.funds.iter().find(|f| f.ticker == "FUNDOB").unwrap().redemptions[0];
+    assert!(close(a.loss_created, 292.5) && close(a.ir, 0.0) && close(a.excess_come_cotas, 30.0), "{a:?}");
+    assert!(close(b.ir_before_compensation, 40.0) && close(b.loss_credit_used, 200.0) && close(b.ir, 0.0), "{b:?}");
+    assert_eq!(overview.loss_credits.len(), 1, "{:?}", overview.loss_credits);
+    assert!(close(overview.loss_credits[0].amount, 92.5), "{:?}", overview.loss_credits[0]);
+}
+
+#[tokio::test]
 async fn leaving_an_administrator_with_a_loss_balance_warns_until_the_record_guarantee_ends() {
     use crate::commands::fund::{funds_overview_in, set_fund_administrator_in, set_fund_term_in};
 
