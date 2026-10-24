@@ -537,4 +537,56 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await byId("come-cotas-card").scrollIntoView({ block: "center" });
     await snap("taxes-fund-cvm");
   });
+
+  // Aviso da guarda do registro das perdas (IN RFB 1.585, art. 15 §2): a Zeta tem um único fundo, zerado por um resgate com
+  // perda de R$ 200,00 em 01/06/2025 (100 cotas a 10,00 vendidas a 8,00). O saldo fica no grupo e todos os fundos dela estão
+  // zerados, então a tela avisa. A guarda vai até 31/12/2026: o texto depende de "hoje" estar antes ou depois dessa data,
+  // por isso o teste aceita as duas versões, e confere o que não muda (administradora, data do resgate, saldo e a norma).
+  it("avisa a guarda do registro das perdas quando todos os fundos da administradora foram resgatados", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('FUNDOZ', 'Fundo Z', 'fundo', 'BRL', 'pais', 'BR', '2025-01-01T00:00:00Z')",
+    );
+    const fund = sql("SELECT id FROM assets WHERE ticker = 'FUNDOZ'");
+    sql(
+      "INSERT INTO fund_details (asset_id, term, administrator, created_at) " +
+        `VALUES (${fund}, 'longo_prazo', 'Zeta', '2025-01-10T00:00:00Z')`,
+    );
+    for (const [type, price, date] of [
+      ["compra", 10, "2025-01-01"],
+      ["venda", 8, "2025-06-01"],
+    ]) {
+      sql(
+        "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+          `VALUES (${portfolio}, ${fund}, '${type}', 100, ${price}, ${100 * price}, NULL, '${date}', '${date}T00:00:00Z')`,
+      );
+    }
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    // O formatBrl separa "R$" do valor com um espaço inseparável (U+00A0): troca por espaço comum antes de conferir. Se não
+    // casar, o erro leva o texto que a tela mostrou.
+    let seen = "";
+    try {
+      await browser.waitUntil(
+        async () => {
+          seen = (await textOf(byId("fund-record-note-Zeta"))).replace(/ /g, " ");
+          return (
+            seen.includes("with Zeta were redeemed by 01/06/2025") &&
+            seen.includes("R$ 200,00") &&
+            seen.includes("IN RFB 1.585, art. 15 §2") &&
+            (seen.includes("is only required to keep the loss record") || seen.includes("ended on 31/12/2026"))
+          );
+        },
+        { timeoutMsg: "o aviso da Zeta deveria dizer a data do resgate, o saldo de R$ 200,00 e a norma" },
+      );
+    } catch (error) {
+      throw new Error(`${error.message}. Texto na tela: ${seen}`);
+    }
+    await byId("fund-record-notes").scrollIntoView({ block: "center" });
+    await snap("taxes-fund-record-note");
+  });
 });
