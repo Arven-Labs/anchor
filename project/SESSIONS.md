@@ -4016,4 +4016,9 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Verificado**: `flutter analyze` limpo; `fund_quota_sync_test` (33) passando local. CIs do commit `5567e55`: Mobile e Private Files passaram **de primeira** (só mudou `mobile/`).
 - **Tropeço meu**: o primeiro título do teste de `refresh` dizia que a cota "serve ao estoque", mas o teste só confere a leitura e a gravação; corrigi o título antes do push (o cálculo do estoque tem teste próprio em `fund_tax_test.dart`).
 - **Não verificado**: o download real do zip de dez/2023 pelo app no aparelho (só o `FakeCvm`); o custo de dados móveis dos ~10 MB a mais na primeira busca; a tela com a cota recém-lida (sem teste de widget).
-- **Pendente**: teste de fluxo da perda legal por `funds_overview`; ler a IN pela fonte oficial; conferir o custo atualizado por lote contra um extrato real.
+- **Pendente**: teste de fluxo da perda legal por `funds_overview`; ler a IN pela fonte oficial; conferir o custo atualizado por lote contra um extrato real. (O teste de fluxo foi feito na Sessão 217.)
+
+## Sessão 217 — teste de fluxo da perda legal por `funds_overview` (desktop)
+- **Feito**: um teste em `flow_tests.rs`, `a_fall_after_a_come_cotas_is_credited_at_the_updated_cost_through_the_overview`, que fecha o pendente da Sessão 213 (os testes de motor e de compensação já existiam; faltava o caminho pelas transações e pelo banco). Fundo A da XP: 100 cotas a 10,00, come-cotas de 2,5 cotas a 12,00 (30 pagos), resgate de 97,5 a 9,00; fundo B da XP: 100 cotas a 10,00 resgatadas a 12,00 (ganho 200, IR 40 a 20%). Afirma perda de A = 292,50 (e não 92,50), IR de A zero com excesso de 30, o crédito zerando o IR de B (gasta 200) e o saldo de 92,50 no grupo.
+- **Verificado**: `./dev.sh check` limpo. CIs do commit `cc89c40`: Desktop Rust, E2E e Private Files passaram **de primeira**; o Frontend e o Mobile não rodaram (só mudou um teste Rust). Nenhum código de produção mudou.
+- **Pendente**: ler a IN pela fonte oficial; conferir o custo atualizado por lote contra um extrato real; E2E e teste de widget das telas novas (aviso de guarda, texto do excesso).
