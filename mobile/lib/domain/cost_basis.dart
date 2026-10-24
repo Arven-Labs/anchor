@@ -30,4 +30,16 @@ class CostPosition {
     }
     return (taken, covered);
   }
+
+  /// Amortização de fundo (Lei 14.754, art. 17): as cotas ficam e o custo cai na
+  /// fração `valor ÷ (cota × cotas)`, no máximo todo ele. Posição vazia ou sem valor
+  /// não muda. Devolve o custo devolvido (porta do `Amortize` de `cost_basis.rs`).
+  double amortize(double value, double quotaValue) {
+    final marketValue = quantity * quotaValue;
+    if (quantity <= costEps || marketValue <= costEps) return 0;
+    final fraction = value / marketValue < 1 ? value / marketValue : 1.0;
+    final removed = cost * fraction;
+    cost -= removed;
+    return removed;
+  }
 }

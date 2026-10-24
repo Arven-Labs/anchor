@@ -7,8 +7,14 @@
 //   primeiro. O prazo de cada lote é a data do resgate menos a da compra, e o
 //   come-cotas não o reinicia.
 // - Tabela por tipo: longo prazo 22,5% até 180 dias, 20% de 181 a 360, 17,5% de 361 a
-//   720, 15% acima; curto prazo 22,5% até 180 e 20% acima; ações 15% fixo (sem
-//   come-cotas e sem IOF).
+//   720, 15% acima; curto prazo 22,5% até 180 e 20% acima; ações e entidade de
+//   investimento 15% fixo (sem come-cotas e sem IOF).
+// - Fundos fechados e exclusivos (Lei 14.754/2023): a amortização devolve capital sem
+//   tirar cotas: cada lote devolve a fração `valor ÷ (cota × cotas em carteira)` e é
+//   tributado como um resgate dessa fração; o custo por cota e o ganho já tributado do
+//   lote caem nessa fração. O estoque de 2023 (arts. 27 e 28) entra como um "come-cotas
+//   em dinheiro" em 31/12/2023: sobe o ganho já tributado do lote e o imposto pago vira
+//   crédito no resgate.
 // - IOF (longo e curto prazo): `iofRateForDays` sobre o rendimento do lote com menos
 //   de 30 dias, antes do IR.
 // - Crédito do come-cotas (pressuposto): o IR da vida do lote é `rendimento nominal ×
@@ -33,6 +39,14 @@ const fundIrShortUpTo180 = 0.225;
 const fundIrShortOver180 = 0.20;
 const fundIrEquity = 0.15;
 
+/// Entidade de investimento (Lei 14.754, arts. 18 e 24): 15% fixo, sem IOF.
+const fundIrInvestmentEntity = 0.15;
+
+/// Estoque de rendimento até 31/12/2023 (Lei 14.754, arts. 27 e 28): 15% pela regra
+/// geral, 8% pela opção. Espelham `FUND_ESTOQUE_RATE_*` de `rules.rs` do desktop.
+const fundEstoqueRateGeneral = 0.15;
+const fundEstoqueRateOption = 0.08;
+
 enum FundEventKind {
   /// Aplicação: cotas compradas e o custo total (valor + taxa).
   buy,
@@ -42,10 +56,21 @@ enum FundEventKind {
 
   /// Resgate (venda): cotas e o valor da cota no resgate.
   redeem,
+
+  /// Amortização de fundo fechado ou exclusivo: o valor recebido e o valor da cota do
+  /// dia. As cotas ficam; o custo (e o ganho já tributado) de cada lote cai na fração
+  /// `valor ÷ (cota × cotas em carteira)`.
+  amortize,
+
+  /// Estoque de rendimento até 31/12/2023: o imposto saiu em dinheiro, sobre a alta da
+  /// cota (o valor patrimonial em 31/12/2023) contra o custo de cada lote aberto. Não
+  /// tira cotas.
+  estoque,
 }
 
 /// Um fato do fundo, em qualquer ordem (a ordenação é feita aqui). [amount] é o
-/// custo total na aplicação e o valor da cota no come-cotas e no resgate.
+/// custo total na aplicação e o valor da cota no come-cotas e no resgate; na
+/// amortização é o valor recebido (a cota fica em [quotaValue]).
 class FundEvent {
   final DateTime date;
 
@@ -55,13 +80,21 @@ class FundEvent {
   final double quantity;
   final double amount;
 
+  /// A cota do dia, na amortização e no estoque (zero nos outros fatos).
+  final double quotaValue;
+
+  /// A alíquota do estoque (zero nos outros fatos).
+  final double rate;
+
   const FundEvent.buy({
     required this.date,
     required this.id,
     required this.quantity,
     required double cost,
   }) : kind = FundEventKind.buy,
-       amount = cost;
+       amount = cost,
+       quotaValue = 0,
+       rate = 0;
 
   const FundEvent.comeCotas({
     required this.date,
@@ -69,7 +102,9 @@ class FundEvent {
     required this.quantity,
     required double quotaValue,
   }) : kind = FundEventKind.comeCotas,
-       amount = quotaValue;
+       amount = quotaValue,
+       quotaValue = 0,
+       rate = 0;
 
   const FundEvent.redeem({
     required this.date,
@@ -77,7 +112,27 @@ class FundEvent {
     required this.quantity,
     required double quotaValue,
   }) : kind = FundEventKind.redeem,
-       amount = quotaValue;
+       amount = quotaValue,
+       quotaValue = 0,
+       rate = 0;
+
+  const FundEvent.amortize({
+    required this.date,
+    required this.id,
+    required this.amount,
+    required this.quotaValue,
+  }) : kind = FundEventKind.amortize,
+       quantity = 0,
+       rate = 0;
+
+  const FundEvent.estoque({
+    required this.date,
+    required this.quotaValue,
+    required this.rate,
+  }) : kind = FundEventKind.estoque,
+       id = 0,
+       quantity = 0,
+       amount = 0;
 }
 
 /// A parte de um resgate que saiu de um lote.
@@ -150,6 +205,10 @@ class RedemptionEstimate {
   /// IR antes de descontar esse crédito (igual a [ir] até `compensate` rodar).
   final double irBeforeCompensation;
 
+  /// É uma amortização (as cotas ficam): [quotas] são as cotas equivalentes ao valor
+  /// recebido e [gross] é esse valor.
+  final bool isAmortization;
+
   const RedemptionEstimate({
     required this.txId,
     required this.date,
@@ -166,6 +225,7 @@ class RedemptionEstimate {
     required this.lossCreated,
     this.lossCreditUsed = 0,
     required this.irBeforeCompensation,
+    this.isAmortization = false,
   });
 
   /// O resgate com os lotes (e o IR total) já abatidos pelo crédito de prejuízo.
@@ -188,16 +248,64 @@ class RedemptionEstimate {
     lossCreated: lossCreated,
     lossCreditUsed: lossCreditUsed,
     irBeforeCompensation: irBeforeCompensation,
+    isAmortization: isAmortization,
   );
 
   /// Bruto − IOF − IR.
   double get net => gross - iof - ir;
 }
 
+/// O imposto do estoque de rendimento até 31/12/2023 (Lei 14.754, arts. 27 e 28),
+/// pago em dinheiro pelo cotista.
+class EstoqueEstimate {
+  final DateTime date;
+
+  /// Valor patrimonial da cota em 31/12/2023.
+  final double quotaValue;
+
+  /// 15% (regra geral) ou 8% (opção).
+  final double rate;
+
+  /// Ganho acumulado até a data: soma, por lote aberto, de `cotas × max(0, cota −
+  /// custo por cota)`.
+  final double base;
+  final double tax;
+
+  const EstoqueEstimate({
+    required this.date,
+    required this.quotaValue,
+    required this.rate,
+    required this.base,
+    required this.tax,
+  });
+}
+
+/// O que o motor devolve para um fundo: os resgates e amortizações, e o estoque quando
+/// houve o evento.
+class FundEstimate {
+  final List<RedemptionEstimate> redemptions;
+  final EstoqueEstimate? estoque;
+
+  /// Custo por cota das cotas que restam, somando o estoque de 2023 já tributado (art.
+  /// 17 §2: preço + parcelas já tributadas − parcelas amortizadas). `null` sem o evento
+  /// do estoque ou sem cotas abertas.
+  final double? taxedBasisPerQuota;
+
+  const FundEstimate({
+    required this.redemptions,
+    this.estoque,
+    this.taxedBasisPerQuota,
+  });
+}
+
 class _Lot {
   final DateTime date;
   double quantity;
-  final double costPerQuota;
+  double costPerQuota;
+
+  /// Parte de [ccGain] que veio do estoque de 2023: some na mesma fração das cotas
+  /// (resgate, come-cotas) e do custo (amortização).
+  double estoqueGain = 0;
 
   /// Ganho já tributado pelos come-cotas, ligado às cotas que restam no lote.
   double ccGain = 0;
@@ -213,6 +321,8 @@ double _tableRate(FundTerm term, int days) {
   switch (term) {
     case FundTerm.equity:
       return fundIrEquity;
+    case FundTerm.investmentEntity:
+      return fundIrInvestmentEntity;
     case FundTerm.longTerm:
       if (days <= 180) return fundIrLongUpTo180;
       if (days <= 360) return fundIrLong181To360;
@@ -225,11 +335,25 @@ double _tableRate(FundTerm term, int days) {
 
 DateTime _day(DateTime date) => DateTime.utc(date.year, date.month, date.day);
 
-/// No mesmo dia: aplicação, come-cotas, resgate.
+/// No mesmo dia: aplicação, estoque, come-cotas, resgate ou amortização.
+int _rank(FundEventKind kind) {
+  switch (kind) {
+    case FundEventKind.buy:
+      return 0;
+    case FundEventKind.estoque:
+      return 1;
+    case FundEventKind.comeCotas:
+      return 2;
+    case FundEventKind.redeem:
+    case FundEventKind.amortize:
+      return 3;
+  }
+}
+
 int _compare(FundEvent a, FundEvent b) {
   final byDate = _day(a.date).compareTo(_day(b.date));
   if (byDate != 0) return byDate;
-  final byKind = a.kind.index.compareTo(b.kind.index);
+  final byKind = _rank(a.kind).compareTo(_rank(b.kind));
   if (byKind != 0) return byKind;
   return a.id.compareTo(b.id);
 }
@@ -237,14 +361,86 @@ int _compare(FundEvent a, FundEvent b) {
 double _min(double a, double b) => a < b ? a : b;
 double _positive(double value) => value > 0 ? value : 0;
 
-/// Estima o IOF e o IR de cada resgate do fundo.
+/// O resultado de realizar `take` cotas de um lote a uma cota: prazo, alíquota,
+/// rendimento nominal, IOF, IR e o que o come-cotas (ou o estoque) já pago fez com ele.
+class _LotOutcome {
+  final int days;
+  final double rate;
+  final double nominal;
+  final double iof;
+  final double ir;
+  final double creditUsed;
+  final double excess;
+  final double loss;
+  final double cost;
+
+  /// A parte do ganho já tributado e do imposto já pago que sai junto com estas cotas.
+  final double ccGain;
+  final double ccPaid;
+
+  const _LotOutcome({
+    required this.days,
+    required this.rate,
+    required this.nominal,
+    required this.iof,
+    required this.ir,
+    required this.creditUsed,
+    required this.excess,
+    required this.loss,
+    required this.cost,
+    required this.ccGain,
+    required this.ccPaid,
+  });
+}
+
+_LotOutcome _settleLot(
+  _Lot lot,
+  double take,
+  double quotaValue,
+  DateTime on,
+  FundTerm term,
+) {
+  final fraction = take / lot.quantity;
+  final days = _day(on).difference(lot.date).inDays;
+
+  final redeemGain = take * (quotaValue - lot.costPerQuota);
+  final ccGain = lot.ccGain * fraction;
+  final ccPaid = lot.ccPaid * fraction;
+  final nominal = redeemGain + ccGain;
+  // Sem IOF em fundo de ações nem em entidade de investimento (alíquota fixa).
+  final iof = term.isFlatRate
+      ? 0.0
+      : iofRateForDays(days) * _positive(redeemGain);
+  final rate = _tableRate(term, days);
+  final irDue = _positive(nominal - iof) * rate;
+  return _LotOutcome(
+    days: days,
+    rate: rate,
+    nominal: nominal,
+    iof: iof,
+    ir: _positive(irDue - ccPaid),
+    creditUsed: _min(ccPaid, irDue),
+    excess: _positive(ccPaid - irDue),
+    loss: _positive(iof - nominal),
+    cost: take * lot.costPerQuota,
+    ccGain: ccGain,
+    ccPaid: ccPaid,
+  );
+}
+
+/// Estima o IOF e o IR de cada resgate e amortização do fundo (ver [estimateFund]).
 List<RedemptionEstimate> estimateRedemptions(
   List<FundEvent> events,
   FundTerm term,
-) {
+) => estimateFund(events, term).redemptions;
+
+/// Estima o IOF e o IR de cada resgate e amortização do fundo, e o imposto do estoque
+/// de 2023 quando há o evento.
+FundEstimate estimateFund(List<FundEvent> events, FundTerm term) {
   final ordered = [...events]..sort(_compare);
   final lots = <_Lot>[];
   final estimates = <RedemptionEstimate>[];
+  EstoqueEstimate? estoque;
 
   for (final event in ordered) {
     switch (event.kind) {
@@ -261,10 +457,31 @@ List<RedemptionEstimate> estimateRedemptions(
         final taken = _min(event.quantity, total);
         for (final lot in lots) {
           final share = taken * lot.quantity / total;
+          lot.estoqueGain *= 1 - share / lot.quantity;
           lot.ccGain += share * (event.amount - lot.costPerQuota);
           lot.ccPaid += share * event.amount;
           lot.quantity -= share;
         }
+      case FundEventKind.estoque:
+        // O imposto saiu em dinheiro, sem tirar cotas: o ganho já tributado e o
+        // imposto pago ficam no lote, como no come-cotas, e o resgate futuro os conta
+        // (rendimento nominal e crédito).
+        var base = 0.0;
+        for (final lot in lots.where((l) => l.quantity > costEps)) {
+          final gain =
+              lot.quantity * _positive(event.quotaValue - lot.costPerQuota);
+          base += gain;
+          lot.estoqueGain += gain;
+          lot.ccGain += gain;
+          lot.ccPaid += event.rate * gain;
+        }
+        estoque = EstoqueEstimate(
+          date: _day(event.date),
+          quotaValue: event.quotaValue,
+          rate: event.rate,
+          base: base,
+          tax: event.rate * base,
+        );
       case FundEventKind.redeem:
         final quotaValue = event.amount;
         var remaining = event.quantity;
@@ -275,42 +492,30 @@ List<RedemptionEstimate> estimateRedemptions(
         for (final lot in lots.where((l) => l.quantity > costEps)) {
           if (remaining <= costEps) break;
           final take = _min(remaining, lot.quantity);
-          final fraction = take / lot.quantity;
-          final days = _day(event.date).difference(lot.date).inDays;
+          final o = _settleLot(lot, take, quotaValue, event.date, term);
 
-          final redeemGain = take * (quotaValue - lot.costPerQuota);
-          final ccGain = lot.ccGain * fraction;
-          final ccPaid = lot.ccPaid * fraction;
-          final nominal = redeemGain + ccGain;
-          // O IOF não existe em fundo de ações.
-          final iof = term == FundTerm.equity
-              ? 0.0
-              : iofRateForDays(days) * _positive(redeemGain);
-          final rate = _tableRate(term, days);
-          final irDue = _positive(nominal - iof) * rate;
-          final ir = _positive(irDue - ccPaid);
-
-          cost += take * lot.costPerQuota;
-          iofTotal += iof;
-          irTotal += ir;
-          creditTotal += _min(ccPaid, irDue);
-          excessTotal += _positive(ccPaid - irDue);
-          lossTotal += _positive(iof - nominal);
+          cost += o.cost;
+          iofTotal += o.iof;
+          irTotal += o.ir;
+          creditTotal += o.creditUsed;
+          excessTotal += o.excess;
+          lossTotal += o.loss;
           parts.add(
             LotPart(
               lotDate: lot.date,
               quotas: take,
-              days: days,
-              rate: rate,
-              gain: nominal,
-              iof: iof,
-              ir: ir,
+              days: o.days,
+              rate: o.rate,
+              gain: o.nominal,
+              iof: o.iof,
+              ir: o.ir,
             ),
           );
 
+          lot.estoqueGain *= 1 - take / lot.quantity;
           lot.quantity -= take;
-          lot.ccGain -= ccGain;
-          lot.ccPaid -= ccPaid;
+          lot.ccGain -= o.ccGain;
+          lot.ccPaid -= o.ccPaid;
           remaining -= take;
         }
         estimates.add(
@@ -331,7 +536,82 @@ List<RedemptionEstimate> estimateRedemptions(
             irBeforeCompensation: irTotal,
           ),
         );
+      case FundEventKind.amortize:
+        // As cotas ficam: cada lote devolve a mesma fração do que tem, calculada sobre
+        // o valor da posição.
+        final total = lots.fold<double>(0, (sum, lot) => sum + lot.quantity);
+        final positionValue = total * event.quotaValue;
+        if (total <= costEps || positionValue <= costEps) continue;
+        final fraction = _min(event.amount / positionValue, 1);
+        final parts = <LotPart>[];
+        var cost = 0.0, iofTotal = 0.0, irTotal = 0.0;
+        var creditTotal = 0.0, excessTotal = 0.0, lossTotal = 0.0;
+        var equivalentQuotas = 0.0;
+        for (final lot in lots.where((l) => l.quantity > costEps)) {
+          final take = fraction * lot.quantity;
+          final o = _settleLot(lot, take, event.quotaValue, event.date, term);
+
+          cost += o.cost;
+          iofTotal += o.iof;
+          irTotal += o.ir;
+          creditTotal += o.creditUsed;
+          excessTotal += o.excess;
+          lossTotal += o.loss;
+          equivalentQuotas += take;
+          parts.add(
+            LotPart(
+              lotDate: lot.date,
+              quotas: take,
+              days: o.days,
+              rate: o.rate,
+              gain: o.nominal,
+              iof: o.iof,
+              ir: o.ir,
+            ),
+          );
+
+          // O custo e o que já foi tributado caem na mesma fração; a quantidade de
+          // cotas não muda.
+          lot.costPerQuota *= 1 - fraction;
+          lot.estoqueGain *= 1 - fraction;
+          lot.ccGain -= o.ccGain;
+          lot.ccPaid -= o.ccPaid;
+        }
+        estimates.add(
+          RedemptionEstimate(
+            txId: event.id,
+            date: _day(event.date),
+            quotas: equivalentQuotas,
+            quotaValue: event.quotaValue,
+            gross: equivalentQuotas * event.quotaValue,
+            cost: cost,
+            iof: iofTotal,
+            ir: irTotal,
+            comeCotasCredit: creditTotal,
+            lots: parts,
+            uncoveredQuotas: 0,
+            excessComeCotas: excessTotal,
+            lossCreated: lossTotal,
+            irBeforeCompensation: irTotal,
+            isAmortization: true,
+          ),
+        );
     }
   }
-  return estimates;
+
+  final open = lots.where((l) => l.quantity > costEps).toList();
+  final openQuotas = open.fold<double>(0, (sum, lot) => sum + lot.quantity);
+  final double? taxedBasis = estoque != null && openQuotas > costEps
+      ? open.fold<double>(
+              0,
+              (sum, lot) =>
+                  sum + lot.quantity * lot.costPerQuota + lot.estoqueGain,
+            ) /
+            openQuotas
+      : null;
+  return FundEstimate(
+    redemptions: estimates,
+    estoque: estoque,
+    taxedBasisPerQuota: taxedBasis,
+  );
 }

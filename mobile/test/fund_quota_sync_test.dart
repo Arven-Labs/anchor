@@ -7,6 +7,7 @@ import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/cvm_inf_diario.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/fund.dart';
+import 'package:anchor_mobile/models/portfolio_transaction.dart';
 import 'package:anchor_mobile/services/cvm_inf_diario_service.dart';
 import 'package:anchor_mobile/services/fund_quota_sync.dart';
 import 'package:anchor_mobile/services/portfolio_repository.dart';
@@ -236,16 +237,126 @@ void main() {
               name TEXT NOT NULL, asset_class TEXT NOT NULL, currency TEXT NOT NULL,
               created_at TEXT NOT NULL, external_id TEXT, equity_shares_owned REAL,
               equity_total_shares REAL, equity_company_valuation REAL)''');
+          },
+        );
+        await old.close();
+
+        final id = await addFund(term: FundTerm.shortTerm);
+        await repository.setFundCvm(id, cnpj: cnpj, subclass: 'XYZ');
+        await repository.setFundAdministrator(id, 'XP');
+        expect(await repository.listFundAdministrators(), {id: 'XP'});
+        expect(await repository.listFundSubclasses(), {id: 'XYZ'});
+        expect((await repository.listAssets()).single.cnpj, cnpj);
+      },
+    );
+
+    test('migra do v11 sem perder a administradora e o tipo', () async {
+      final old = await openDatabase(
+        '${dir.path}/anchor_mobile.db',
+        version: 11,
+        onCreate: (db, _) async {
+          await db.execute(
+            '''
+            CREATE TABLE assets (
+              id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,
+              name TEXT NOT NULL, asset_class TEXT NOT NULL, currency TEXT NOT NULL,
+              created_at TEXT NOT NULL, external_id TEXT, equity_shares_owned REAL,
+              equity_total_shares REAL, equity_company_valuation REAL, cnpj TEXT)''',
+          );
+          await db.execute('''
+            CREATE TABLE fund_details (
+              asset_id INTEGER PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+              term TEXT NOT NULL, cvm_subclass TEXT, administrator TEXT)''');
+          await db.insert('assets', {
+            'ticker': 'FUNDO',
+            'name': 'Fundo v11',
+            'asset_class': 'fundo',
+            'currency': 'BRL',
+            'created_at': '2026-01-01T00:00:00.000',
+          });
+          await db.insert('fund_details', {
+            'asset_id': 1,
+            'term': 'longo_prazo',
+            'administrator': 'XP',
+          });
         },
       );
       await old.close();
 
-      final id = await addFund(term: FundTerm.shortTerm);
-      await repository.setFundCvm(id, cnpj: cnpj, subclass: 'XYZ');
-      await repository.setFundAdministrator(id, 'XP');
-      expect(await repository.listFundAdministrators(), {id: 'XP'});
-      expect(await repository.listFundSubclasses(), {id: 'XYZ'});
-      expect((await repository.listAssets()).single.cnpj, cnpj);
+      expect(await repository.getFundTerm(1), FundTerm.longTerm);
+      expect(await repository.listFundAdministrators(), {1: 'XP'});
+      // quem já existia é um fundo aberto, sem estoque informado
+      expect(await repository.listFundStructures(), {1: FundStructure.open});
+      expect(await repository.listFundEstoqueOptions(), isEmpty);
+      await repository.setFundStructure(1, FundStructure.closed);
+      await repository.setFundEstoque(1, EstoqueOption.option8);
+      expect(await repository.listFundStructures(), {1: FundStructure.closed});
+      expect(await repository.listFundEstoqueOptions(), {
+        1: EstoqueOption.option8,
+      });
+      expect(await repository.listFundAdministrators(), {1: 'XP'});
+    });
+  });
+
+  group('estrutura e estoque do fundo', () {
+    test('exigem o tipo do fundo antes', () async {
+      final id = await addFund();
+
+      await expectLater(
+        repository.setFundStructure(id, FundStructure.closed),
+        throwsA(isA<FormatException>()),
+      );
+      await expectLater(
+        repository.setFundEstoque(id, EstoqueOption.general),
+        throwsA(isA<FormatException>()),
+      );
+      await repository.setFundTerm(id, FundTerm.longTerm);
+      await repository.setFundStructure(id, FundStructure.exclusive);
+      await repository.setFundEstoque(id, EstoqueOption.general);
+      expect(await repository.listFundStructures(), {
+        id: FundStructure.exclusive,
+      });
+      expect(await repository.listFundEstoqueOptions(), {
+        id: EstoqueOption.general,
+      });
+    });
+
+    test('vazio apaga o estoque e trocar o tipo preserva os dois', () async {
+      final id = await addFund(term: FundTerm.longTerm);
+      await repository.setFundStructure(id, FundStructure.closed);
+      await repository.setFundEstoque(id, EstoqueOption.option8);
+
+      await repository.setFundTerm(id, FundTerm.shortTerm);
+      expect(await repository.listFundStructures(), {id: FundStructure.closed});
+      expect(await repository.listFundEstoqueOptions(), {
+        id: EstoqueOption.option8,
+      });
+
+      await repository.setFundEstoque(id, null);
+      expect(await repository.listFundEstoqueOptions(), isEmpty);
+    });
+  });
+
+  group('transações de tipo desconhecido', () {
+    test('a listagem pula a linha em vez de quebrar', () async {
+      final id = await addFund(term: FundTerm.longTerm);
+      final db = await AppDatabase.instance();
+      for (final type in ['compra', 'tipo_so_do_desktop']) {
+        await db.insert('portfolio_transactions', {
+          'asset_id': id,
+          'transaction_type': type,
+          'quantity': 1.0,
+          'unit_price': 10.0,
+          'total_value': 10.0,
+          'transaction_date': '2026-01-02T00:00:00.000',
+          'created_at': '2026-01-02T00:00:00.000',
+        });
+      }
+
+      final all = await repository.listAllTransactions();
+      expect(all.map((t) => t.type), [TransactionType.compra]);
+      final ofAsset = await repository.listTransactionsForAsset(id);
+      expect(ofAsset.map((t) => t.type), [TransactionType.compra]);
     });
   });
 

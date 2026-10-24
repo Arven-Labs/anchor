@@ -249,6 +249,64 @@ class PortfolioRepository {
     };
   }
 
+  /// Estrutura (fechado ou exclusivo) dos fundos que não são abertos, por id do ativo.
+  Future<Map<int, FundStructure>> listFundStructures() async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query('fund_details');
+    return {
+      for (final row in rows)
+        row['asset_id'] as int: ?FundStructure.parse(
+          row['structure'] as String?,
+        ),
+    };
+  }
+
+  /// Como o estoque de 2023 foi tributado, dos fundos em que o usuário informou.
+  Future<Map<int, EstoqueOption>> listFundEstoqueOptions() async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query('fund_details');
+    return {
+      for (final row in rows)
+        row['asset_id'] as int: ?EstoqueOption.parse(
+          row['estoque_option'] as String?,
+        ),
+    };
+  }
+
+  /// Grava se o fundo é aberto, fechado ou exclusivo (Lei 14.754); só os dois últimos
+  /// têm estoque de 2023. Mora em `fund_details`, que só existe depois de o usuário
+  /// escolher o tipo do fundo.
+  Future<void> setFundStructure(int assetId, FundStructure structure) async {
+    await _updateFundDetail(assetId, {
+      'structure': structure.value,
+    }, 'da estrutura');
+  }
+
+  /// Grava como o estoque de rendimento até 31/12/2023 foi tributado (`null` = não
+  /// informado, nada é estimado). Mesma regra do tipo do fundo: precisa existir.
+  Future<void> setFundEstoque(int assetId, EstoqueOption? option) async {
+    await _updateFundDetail(assetId, {
+      'estoque_option': option?.value,
+    }, 'do estoque');
+  }
+
+  Future<void> _updateFundDetail(
+    int assetId,
+    Map<String, Object?> values,
+    String what,
+  ) async {
+    final db = await AppDatabase.instance();
+    final updated = await db.update(
+      'fund_details',
+      values,
+      where: 'asset_id = ?',
+      whereArgs: [assetId],
+    );
+    if (updated == 0) {
+      throw FormatException('Escolha o tipo do fundo antes $what');
+    }
+  }
+
   /// Grava a administradora (ou o intermediário) do fundo, em texto livre: fundos do
   /// mesmo tipo com a mesma administradora compensam prejuízo entre si. Vazio apaga (o
   /// fundo fica isolado). Mora em `fund_details`, que só existe depois de o usuário
@@ -553,7 +611,7 @@ class PortfolioRepository {
       whereArgs: [assetId],
       orderBy: 'transaction_date',
     );
-    return rows.map(PortfolioTransaction.fromMap).toList();
+    return _decodeTransactions(rows);
   }
 
   Future<List<PortfolioTransaction>> listAllTransactions() async {
@@ -562,7 +620,19 @@ class PortfolioRepository {
       'portfolio_transactions',
       orderBy: 'transaction_date DESC',
     );
-    return rows.map(PortfolioTransaction.fromMap).toList();
+    return _decodeTransactions(rows);
+  }
+
+  /// Pula a linha de um tipo que o app não conhece, em vez de derrubar a listagem toda.
+  static List<PortfolioTransaction> _decodeTransactions(
+    List<Map<String, Object?>> rows,
+  ) {
+    return [
+      for (final row in rows)
+        if (TransactionType.tryParse(row['transaction_type'] as String?) !=
+            null)
+          PortfolioTransaction.fromMap(row),
+    ];
   }
 
   Future<void> updateTransaction(PortfolioTransaction transaction) async {
@@ -627,9 +697,10 @@ class PortfolioRepository {
           case TransactionType.aporte:
           case TransactionType.retirada:
           case TransactionType.provento:
-            // Fluxo de caixa (aporte/retirada) ou dividendo (provento) —
-            // nenhum dos 3 move quantidade nem entra no preço médio, mesma
-            // regra do desktop (`get_portfolio_positions`).
+          case TransactionType.amortizacao:
+            // Fluxo de caixa (aporte/retirada), dividendo (provento) ou
+            // amortização de fundo — nenhum move quantidade nem entra no preço
+            // médio, mesma regra do desktop (`get_portfolio_positions`).
             break;
         }
       }

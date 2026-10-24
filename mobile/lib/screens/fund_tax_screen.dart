@@ -20,7 +20,7 @@ String comeCotasStatusText(ComeCotasEstimate estimate) {
     case EstimateStatus.noQuota:
       return 'Lance o valor da cota para estimar o come-cotas.';
     case EstimateStatus.exempt:
-      return 'Fundo de ações: sem come-cotas.';
+      return 'Fundo de ações ou entidade de investimento: sem come-cotas.';
     case EstimateStatus.estimated:
       return 'Próximo come-cotas em ${formatDay(estimate.referenceDate)}: '
           '${formatBrl(estimate.tax)} '
@@ -33,11 +33,36 @@ String comeCotasStatusText(ComeCotasEstimate estimate) {
 String comeCotasBasisText(ComeCotasEstimate estimate) {
   final basis = estimate.basisPerQuota;
   if (estimate.status != EstimateStatus.estimated || basis == null) return '';
-  final origin = estimate.basisSource == BasisSource.lastComeCotas
-      ? 'valor da cota no último come-cotas'
-      : 'custo médio';
+  final origin = switch (estimate.basisSource) {
+    BasisSource.lastComeCotas => 'valor da cota no último come-cotas',
+    BasisSource.estoque => 'custo médio mais o estoque de 2023 já tributado',
+    _ => 'custo médio',
+  };
   return 'Base por cota ${formatBrl(basis)} ($origin) · ganho '
       '${formatBrl(estimate.gain)} × ${(estimate.rate * 100).toStringAsFixed(1)}%';
+}
+
+/// O estoque de 2023 (Lei 14.754, arts. 27 e 28) numa frase; vazio quando o fundo não
+/// tem estoque.
+@visibleForTesting
+String estoqueText(FundReport report) {
+  final estoque = report.estoque;
+  switch (report.estoqueStatus) {
+    case EstoqueStatus.notApplicable:
+      return '';
+    case EstoqueStatus.notTaxed:
+      return 'Diga como o estoque de 2023 foi tributado para estimar o imposto '
+          'e o custo do come-cotas.';
+    case EstoqueStatus.needsQuota:
+      return 'Lance a cota de 31/12/2023 (ou de até 10 dias antes) para estimar '
+          'o estoque.';
+    case EstoqueStatus.estimated:
+      if (estoque == null) return '';
+      return 'Estoque de 2023: ganho de ${formatBrl(estoque.base)} até '
+          '${formatDay(estoque.date)} (cota ${formatBrl(estoque.quotaValue)}) a '
+          '${(estoque.rate * 100).toStringAsFixed(0)}% = '
+          '${formatBrl(estoque.tax)}';
+  }
 }
 
 /// Avisos do cartão do fundo, em frases.
@@ -168,6 +193,8 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
     final quotas = await _repository.listAllFundQuotas();
     final subclasses = await _repository.listFundSubclasses();
     final administrators = await _repository.listFundAdministrators();
+    final structures = await _repository.listFundStructures();
+    final estoqueOptions = await _repository.listFundEstoqueOptions();
     if (!mounted) return;
     final result = buildFundReports(
       assets: assets,
@@ -176,6 +203,8 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
       quotas: quotas,
       today: DateTime.now(),
       administrators: administrators,
+      structures: structures,
+      estoqueOptions: estoqueOptions,
     );
     setState(() {
       _reports = result.reports;
@@ -209,6 +238,26 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
   Future<void> _setAdministrator(FundReport report, String administrator) async {
     try {
       await _repository.setFundAdministrator(report.asset.id!, administrator);
+    } on FormatException catch (e) {
+      _say(e.message);
+      return;
+    }
+    await _load();
+  }
+
+  Future<void> _setStructure(FundReport report, FundStructure structure) async {
+    try {
+      await _repository.setFundStructure(report.asset.id!, structure);
+    } on FormatException catch (e) {
+      _say(e.message);
+      return;
+    }
+    await _load();
+  }
+
+  Future<void> _setEstoque(FundReport report, EstoqueOption? option) async {
+    try {
+      await _repository.setFundEstoque(report.asset.id!, option);
     } on FormatException catch (e) {
       _say(e.message);
       return;
@@ -342,7 +391,10 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
                       subclass: _subclasses[report.asset.id],
                       cvmStatus: _statuses[report.asset.id],
                       onTerm: (term) => _setTerm(report, term),
-                      onAdministrator: (text) => _setAdministrator(report, text),
+                      onStructure: (value) => _setStructure(report, value),
+                      onEstoque: (value) => _setEstoque(report, value),
+                      onAdministrator: (text) =>
+                          _setAdministrator(report, text),
                       onCnpj: (cnpj) => _setCvm(report, cnpj: cnpj),
                       onSubclass: (subclass) => subclass == null
                           ? _clearSubclass(report)
@@ -361,6 +413,8 @@ class _FundCard extends StatelessWidget {
   final String? subclass;
   final CvmStatus? cvmStatus;
   final ValueChanged<FundTerm> onTerm;
+  final ValueChanged<FundStructure> onStructure;
+  final ValueChanged<EstoqueOption?> onEstoque;
   final ValueChanged<String> onAdministrator;
   final ValueChanged<String> onCnpj;
   final ValueChanged<String?> onSubclass;
@@ -372,6 +426,8 @@ class _FundCard extends StatelessWidget {
     required this.subclass,
     required this.cvmStatus,
     required this.onTerm,
+    required this.onStructure,
+    required this.onEstoque,
     required this.onAdministrator,
     required this.onCnpj,
     required this.onSubclass,
@@ -417,6 +473,47 @@ class _FundCard extends StatelessWidget {
                 if (value != null) onTerm(value);
               },
             ),
+            if (report.term != null) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<FundStructure>(
+                key: ValueKey('structure-${report.structure}'),
+                initialValue: report.structure,
+                decoration: const InputDecoration(
+                  labelText: 'Estrutura do fundo (Lei 14.754)',
+                ),
+                items: FundStructure.values
+                    .map(
+                      (s) => DropdownMenuItem(value: s, child: Text(s.label)),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) onStructure(value);
+                },
+              ),
+              if (report.structure != FundStructure.open &&
+                  report.estoqueStatus != EstoqueStatus.notApplicable) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<EstoqueOption?>(
+                  key: ValueKey('estoque-${report.estoqueOption}'),
+                  initialValue: report.estoqueOption,
+                  decoration: const InputDecoration(
+                    labelText: 'Estoque de 2023 (arts. 27 e 28)',
+                  ),
+                  items: [
+                    const DropdownMenuItem<EstoqueOption?>(
+                      value: null,
+                      child: Text('Não tributado / não informado'),
+                    ),
+                    for (final option in EstoqueOption.values)
+                      DropdownMenuItem<EstoqueOption?>(
+                        value: option,
+                        child: Text(option.label),
+                      ),
+                  ],
+                  onChanged: onEstoque,
+                ),
+              ],
+            ],
             const SizedBox(height: 12),
             _AdministratorField(
               // Remonta quando o texto gravado ou o tipo mudam: o campo é estado local.
@@ -463,6 +560,8 @@ class _FundCard extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             if (basis.isNotEmpty) Text(basis, style: textTheme.bodySmall),
+            if (estoqueText(report).isNotEmpty)
+              Text(estoqueText(report), style: textTheme.bodySmall),
             if (comeCotasCreditText(estimate).isNotEmpty)
               Text(comeCotasCreditText(estimate), style: textTheme.bodySmall),
             for (final warning in fundWarnings(report))
@@ -525,7 +624,7 @@ class _FundCard extends StatelessWidget {
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 title: Text(
-                  'Resgates estimados (${report.redemptions.length})',
+                  'Resgates e amortizações estimados (${report.redemptions.length})',
                   style: textTheme.bodyMedium,
                 ),
                 children: [
@@ -551,8 +650,11 @@ class _RedemptionTile extends StatelessWidget {
       dense: true,
       contentPadding: EdgeInsets.zero,
       title: Text(
-        '${formatDay(redemption.date)} — ${redemption.quotas} cotas a '
-        '${formatBrl(redemption.quotaValue)}',
+        redemption.isAmortization
+            ? '${formatDay(redemption.date)} — amortização (cota a '
+                  '${formatBrl(redemption.quotaValue)}; as cotas ficam)'
+            : '${formatDay(redemption.date)} — ${redemption.quotas} cotas a '
+                  '${formatBrl(redemption.quotaValue)}',
       ),
       subtitle: Text(
         'Bruto ${formatBrl(redemption.gross)} · IOF ${formatBrl(redemption.iof)}'

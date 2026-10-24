@@ -65,6 +65,10 @@ class FundHolding {
   /// da cota de cada um.
   final List<QuotaValue> deductions;
 
+  /// Custo por cota somado ao estoque de 2023 já tributado (`FundEstimate`); `null`
+  /// sem estoque. Serve de piso da base.
+  final double? taxedBasisPerQuota;
+
   const FundHolding({
     required this.assetId,
     required this.ticker,
@@ -75,6 +79,7 @@ class FundHolding {
     required this.firstBuy,
     required this.quotas,
     this.deductions = const [],
+    this.taxedBasisPerQuota,
   });
 }
 
@@ -98,6 +103,9 @@ enum BasisSource {
 
   /// Valor da cota no último come-cotas (maior que o custo).
   lastComeCotas,
+
+  /// Custo médio somado ao estoque de 2023 já tributado (maior que as outras bases).
+  estoque,
 }
 
 class ComeCotasEstimate {
@@ -218,7 +226,7 @@ List<ComeCotasEstimate> estimateComeCotas(
     estimate.quotaDate = _day(latest.date);
     estimate.staleQuota = _daysBetween(now, latest.date) > staleQuotaDays;
 
-    if (term == FundTerm.equity) {
+    if (term.isFlatRate) {
       estimate.status = EstimateStatus.exempt;
       continue;
     }
@@ -245,8 +253,8 @@ List<ComeCotasEstimate> estimateComeCotas(
       }),
     );
     final lastValue = (recorded ?? tableQuota)?.value;
-    final BasisSource basisSource;
-    final double basis;
+    BasisSource basisSource;
+    double basis;
     if (lastValue != null &&
         (recorded != null || heldThen) &&
         lastValue > holding.averageCost) {
@@ -255,6 +263,13 @@ List<ComeCotasEstimate> estimateComeCotas(
     } else {
       basis = holding.averageCost;
       basisSource = BasisSource.cost;
+    }
+    // O estoque de 2023 já tributado entra no custo (art. 17 §2). É piso, não soma: o
+    // que o come-cotas registrado já cobre não conta duas vezes.
+    final taxed = holding.taxedBasisPerQuota;
+    if (taxed != null && taxed > basis) {
+      basis = taxed;
+      basisSource = BasisSource.estoque;
     }
     if (recorded == null && heldThen) {
       estimate.lastReferenceUnrecorded = lastReference;

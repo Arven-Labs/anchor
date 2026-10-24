@@ -10,7 +10,13 @@ enum TransactionType {
 
   /// Desconto real do come-cotas de um fundo: cotas retiradas, valor da cota do dia e
   /// total = imposto em reais. Só vale para ativo `fundo`, sem taxa e sem caixa.
-  comeCotas('come_cotas', 'Come-cotas');
+  comeCotas('come_cotas', 'Come-cotas'),
+
+  /// Amortização de fundo fechado ou exclusivo (Lei 14.754, art. 17): valor recebido
+  /// em `totalValue` e valor da cota do dia em `unitPrice`, sem quantidade nem taxa. As
+  /// cotas ficam e o custo cai na fração `valor ÷ (cota × cotas)`. Só vale para ativo
+  /// `fundo`.
+  amortizacao('amortizacao', 'Amortização');
 
   final String value;
   final String label;
@@ -19,6 +25,15 @@ enum TransactionType {
 
   static TransactionType fromValue(String value) {
     return TransactionType.values.firstWhere((t) => t.value == value);
+  }
+
+  /// `null` para valor desconhecido (um tipo que só o desktop tem, por exemplo), para
+  /// quem lê o banco poder pular a linha em vez de quebrar a listagem inteira.
+  static TransactionType? tryParse(String? value) {
+    for (final type in TransactionType.values) {
+      if (type.value == value) return type;
+    }
+    return null;
   }
 }
 
@@ -42,7 +57,12 @@ extension TransactionTypeMeta on TransactionType {
   bool get needsUnitPrice =>
       this == TransactionType.compra ||
       this == TransactionType.venda ||
-      this == TransactionType.comeCotas;
+      this == TransactionType.comeCotas ||
+      this == TransactionType.amortizacao;
+
+  /// Tipos que só valem para ativo da classe `fundo`.
+  bool get isFundOnly =>
+      this == TransactionType.comeCotas || this == TransactionType.amortizacao;
 
   bool get needsTransferDestination => this == TransactionType.transferencia;
 }

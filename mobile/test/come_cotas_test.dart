@@ -18,6 +18,7 @@ void main() {
     List<QuotaValue> quotas, {
     String? firstBuy = '2025-01-10',
     List<QuotaValue> deductions = const [],
+    double? taxedBasisPerQuota,
   }) => FundHolding(
     assetId: 1,
     ticker: 'FUNDO',
@@ -28,6 +29,7 @@ void main() {
     firstBuy: firstBuy == null ? null : d(firstBuy),
     quotas: quotas,
     deductions: deductions,
+    taxedBasisPerQuota: taxedBasisPerQuota,
   );
 
   ComeCotasEstimate run(FundHolding holding, String today) =>
@@ -267,7 +269,64 @@ void main() {
     expect(FundTerm.parse('longo_prazo'), FundTerm.longTerm);
     expect(FundTerm.parse('curto_prazo'), FundTerm.shortTerm);
     expect(FundTerm.parse('acoes'), FundTerm.equity);
+    expect(FundTerm.parse('entidade_investimento'), FundTerm.investmentEntity);
     expect(FundTerm.parse('outro'), isNull);
     expect(FundTerm.parse(null), isNull);
+  });
+
+  test('entidade de investimento não tem come-cotas', () {
+    // FIP, FIDC e ETF que não é de renda fixa: 15% fixo na distribuição, sem
+    // come-cotas (Lei 14.754, art. 24)
+    final e = run(
+      fund(FundTerm.investmentEntity, 100, 10, [quota('2026-01-05', 12)]),
+      '2026-01-10',
+    );
+    expect(e.status, EstimateStatus.exempt);
+    expect(e.tax, closeTo(0, 1e-9));
+    expect(FundTerm.investmentEntity.isFlatRate, isTrue);
+    expect(FundTerm.equity.isFlatRate, isTrue);
+    expect(FundTerm.longTerm.isFlatRate, isFalse);
+    expect(FundTerm.shortTerm.isFlatRate, isFalse);
+  });
+
+  test('o estoque já tributado sobe a base acima do custo médio', () {
+    // custo médio 5,00 depois de uma amortização, mas 7,00 contando o estoque de 2023
+    // já tributado; sem come-cotas registrado nem cota perto da última data, a base
+    // era o custo e o ganho saía inflado: 12 − 7 = 5 por cota
+    final e = run(
+      fund(FundTerm.longTerm, 100, 5, [
+        quota('2026-10-20', 12),
+      ], taxedBasisPerQuota: 7),
+      '2026-10-22',
+    );
+    expect(e.basisSource, BasisSource.estoque);
+    expect(e.basisPerQuota, closeTo(7, 1e-9));
+    expect(e.gain, closeTo(500, 1e-6));
+    expect(e.tax, closeTo(75, 1e-6));
+  });
+
+  test('o estoque não passa por cima de uma base maior nem conta em dobro', () {
+    // a cota do último come-cotas (11,00) já é maior que o custo com o estoque
+    // (7,00): fica a do come-cotas
+    final e = run(
+      fund(FundTerm.longTerm, 100, 5, [
+        quota('2026-05-28', 11),
+        quota('2026-10-20', 12),
+      ], taxedBasisPerQuota: 7),
+      '2026-10-22',
+    );
+    expect(e.basisSource, BasisSource.lastComeCotas);
+    expect(e.basisPerQuota, closeTo(11, 1e-9));
+    expect(e.gain, closeTo(100, 1e-6));
+
+    // custo com o estoque abaixo do custo médio não rebaixa a base
+    final low = run(
+      fund(FundTerm.longTerm, 100, 10, [
+        quota('2026-10-20', 12),
+      ], taxedBasisPerQuota: 9),
+      '2026-10-22',
+    );
+    expect(low.basisSource, BasisSource.cost);
+    expect(low.basisPerQuota, closeTo(10, 1e-9));
   });
 }

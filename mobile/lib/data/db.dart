@@ -6,9 +6,9 @@ import 'package:sqflite/sqflite.dart';
 /// automática via `QuoteDispatcher`, mais Tesouro Direto/Renda Fixa — sem
 /// cotação, só campos `fi_*` na transação de compra — e Imóvel/Empresa não
 /// listada — cadastro manual, histórico de avaliação em `asset_valuations`,
-/// ver `AssetClassMeta`), 6 tipos de transação
-/// (compra/venda/aporte/retirada/provento/transferencia — ver
-/// `TransactionTypeMeta`) e custódia (conta/corretora, sem `workspace_id` —
+/// ver `AssetClassMeta`), 8 tipos de transação
+/// (compra/venda/aporte/retirada/provento/transferencia/come_cotas/amortizacao —
+/// ver `TransactionTypeMeta`) e custódia (conta/corretora, sem `workspace_id` —
 /// diferente do desktop, o mobile não tem Workspace).
 ///
 /// Ao contrário do desktop (que exige `sea-orm-cli migrate up` manual), as
@@ -35,7 +35,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 11,
+      version: 12,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -245,6 +245,19 @@ class AppDatabase {
             );
           }
         }
+        if (oldVersion < 12) {
+          // Fundos fechados e exclusivos (Lei 14.754): a estrutura do fundo e a opção
+          // do estoque de 2023. Mesma regra do v10 e do v11: quem veio de antes do v9
+          // acabou de criar `fund_details` já com as colunas.
+          if (oldVersion >= 9) {
+            await db.execute(
+              "ALTER TABLE fund_details ADD COLUMN structure TEXT NOT NULL DEFAULT 'aberto'",
+            );
+            await db.execute(
+              'ALTER TABLE fund_details ADD COLUMN estoque_option TEXT',
+            );
+          }
+        }
       },
     );
   }
@@ -257,7 +270,9 @@ class AppDatabase {
         asset_id INTEGER PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
         term TEXT NOT NULL,
         cvm_subclass TEXT,
-        administrator TEXT
+        administrator TEXT,
+        structure TEXT NOT NULL DEFAULT 'aberto',
+        estoque_option TEXT
       )
     ''');
     await db.execute('''

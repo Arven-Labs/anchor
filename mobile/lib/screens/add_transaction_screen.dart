@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../domain/fund_tax.dart' show amortizationProblem;
 import '../models/asset.dart';
 import '../models/custodia.dart';
 import '../models/portfolio_transaction.dart';
@@ -104,9 +105,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   bool get _showFee =>
       _type == TransactionType.compra || _type == TransactionType.venda;
 
-  /// `come_cotas` só vale para ativo da classe `fundo` (guard do desktop); os
-  /// outros tipos aceitam qualquer ativo.
-  List<Asset> get _eligibleAssets => _type == TransactionType.comeCotas
+  /// `come_cotas` e `amortizacao` só valem para ativo da classe `fundo` (guard do
+  /// desktop); os outros tipos aceitam qualquer ativo.
+  List<Asset> get _eligibleAssets => _type.isFundOnly
       ? _assets.where((a) => a.assetClass == AssetClass.fundo).toList()
       : _assets;
 
@@ -159,8 +160,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     final needsAsset = _type.needsAsset;
     final asset = _selectedAsset;
     if (needsAsset && asset?.id == null) return;
-    if (_type == TransactionType.comeCotas &&
-        asset?.assetClass != AssetClass.fundo) {
+    if (_type.isFundOnly && asset?.assetClass != AssetClass.fundo) {
       return;
     }
 
@@ -201,6 +201,23 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       if (foreignTaxWithheld == null ||
           !foreignTaxWithheld.isFinite ||
           foreignTaxWithheld < 0) {
+        return;
+      }
+    }
+
+    if (_type == TransactionType.amortizacao) {
+      final problem = amortizationProblem(
+        await _repository.listTransactionsForAsset(asset!.id!),
+        date: _date,
+        quotaValue: unitPrice!,
+        amount: totalValue,
+        ignoreId: widget.transaction?.id,
+      );
+      if (problem != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(problem)));
+        }
         return;
       }
     }
@@ -293,7 +310,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             const SizedBox(height: 16),
             if (blockedByMissingAsset)
               Text(
-                _type == TransactionType.comeCotas
+                _type.isFundOnly
                     ? 'Cadastre um ativo da classe Fundo primeiro.'
                     : 'Cadastre um ativo primeiro, na aba Portfolio.',
               )
@@ -301,7 +318,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               if (needsAsset) ...[
                 DropdownButtonFormField<Asset>(
                   // Recria ao trocar o tipo: a lista de ativos muda.
-                  key: ValueKey(_type == TransactionType.comeCotas),
+                  key: ValueKey(_type.isFundOnly),
                   initialValue: _selectedAsset,
                   decoration: const InputDecoration(labelText: 'Ativo'),
                   items: _eligibleAssets
@@ -386,7 +403,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     decimal: true,
                   ),
                   decoration: InputDecoration(
-                    labelText: _type == TransactionType.comeCotas
+                    labelText: _type.isFundOnly
                         ? 'Valor da cota'
                         : 'Preço unitário',
                   ),
