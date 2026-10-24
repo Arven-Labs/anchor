@@ -8,6 +8,7 @@ import Field from "../components/Field";
 import ForeignHoldingsCard, { useForeignHoldings } from "./ForeignHoldingsCard";
 import ComeCotasCard from "./ComeCotasCard";
 import OffshoreCard, { type OffshoreYear } from "./OffshoreCard";
+import OffshoreHoldingsCard, { useOffshoreCredits } from "./OffshoreHoldingsCard";
 import SaleSimulationCard from "./SaleSimulationCard";
 import { Badge } from "@/components/ui/badge";
 import { BUCKET_LABELS, type Bucket, type LossBalance } from "./taxLosses";
@@ -318,6 +319,7 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
   const foreignYears = assessmentQuery.data?.assessment.foreign_years ?? [];
   const offshoreYears = assessmentQuery.data?.assessment.offshore_years ?? [];
   const foreignHoldings = useForeignHoldings(workspaceId, assessmentQuery.isSuccess);
+  const offshoreCredits = useOffshoreCredits(workspaceId, assessmentQuery.isSuccess);
   const payments = assessmentQuery.data?.payments ?? [];
   // Um pagamento por mês e por tipo: a B3 e a cripto pagam DARFs diferentes.
   const paymentByPeriod = new Map(payments.filter((p) => p.kind === "b3").map((p) => [p.period, p]));
@@ -721,6 +723,8 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
       <ForeignHoldingsCard workspaceId={workspaceId} holdings={foreignHoldings} />
 
       <OffshoreCard workspaceId={workspaceId} years={offshoreYears} />
+
+      <OffshoreHoldingsCard workspaceId={workspaceId} credits={offshoreCredits} />
 
       <ComeCotasCard workspaceId={workspaceId} />
 

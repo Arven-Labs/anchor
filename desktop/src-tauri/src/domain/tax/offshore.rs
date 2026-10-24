@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use serde::Serialize;
 
 use super::assessment::TaxWarning;
@@ -181,6 +181,112 @@ pub fn assess_offshore(
     Ok((years, warnings))
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Bens e Direitos das controladas (Lei 14.754, art. 5º §§10 a 12)
+// ---------------------------------------------------------------------------------------------------------------------
+//
+// O lucro tributado em 31/12 entra na ficha Bens e Direitos como custo de aquisição de um "crédito de dividendo a receber"
+// da controlada, por ano de origem (§10 IV). A distribuição desse lucro reduz o crédito "pelo valor originalmente declarado
+// em moeda nacional" e não é tributada de novo (§11); a variação cambial entre o declarado e o recebido não é tributada nem
+// deduzida (§12). Premissas do app (a conferir): o crédito de um ano é a base efetivamente tributada (`taxable_base`, depois
+// do prejuízo do §14); a distribuição vem na moeda da entidade e reduz o crédito pela taxa de venda de 31/12 do ano de
+// origem (a mesma da apuração); só vale para recebimento a partir de 31/12 do ano de origem.
+
+/// Uma distribuição de lucros que o usuário recebeu de uma controlada, na moeda da entidade.
+#[derive(Clone, Debug)]
+pub struct OffshoreDistribution {
+    pub id: i32,
+    pub entity_id: i32,
+    /// Ano do lucro distribuído.
+    pub origin_year: i32,
+    pub received_on: NaiveDate,
+    pub amount: f64,
+}
+
+/// O que uma distribuição reduziu do crédito, em BRL; `None` quando o ano de origem não tem lucro apurado (sem resultado,
+/// ano aberto ou sem câmbio), e então ela não reduz nada.
+#[derive(Clone, Debug, Serialize)]
+pub struct OffshoreDistributionView {
+    pub id: i32,
+    pub entity_id: i32,
+    pub origin_year: i32,
+    pub received_on: NaiveDate,
+    pub amount: f64,
+    pub reduction_brl: Option<f64>,
+}
+
+/// O crédito de dividendo a receber de uma entidade, de um ano de origem, em 31/12 de `as_of_year`.
+#[derive(Clone, Debug, Serialize)]
+pub struct OffshoreCreditRow {
+    pub entity_id: i32,
+    pub entity_name: String,
+    pub country: String,
+    pub currency: String,
+    pub origin_year: i32,
+    pub as_of_year: i32,
+    /// Base tributada do ano de origem × câmbio: o valor declarado, em BRL.
+    pub taxed_brl: f64,
+    /// Quanto as distribuições recebidas até 31/12 de `as_of_year` já reduziram, em BRL.
+    pub distributed_brl: f64,
+    /// `max(0, taxed − distributed)`.
+    pub balance_brl: f64,
+    /// O que as distribuições reduziram além do crédito do ano (o saldo trava em zero).
+    pub over_distributed_brl: f64,
+}
+
+/// Os créditos de dividendo a receber por entidade, ano de origem e 31/12 (de `origin_year` até o ano de `today`), a partir
+/// da apuração (`years`) e das distribuições lançadas; e o que cada distribuição reduziu.
+pub fn offshore_credits(
+    years: &[OffshoreYear],
+    distributions: &[OffshoreDistribution],
+    today: NaiveDate,
+) -> (Vec<OffshoreCreditRow>, Vec<OffshoreDistributionView>) {
+    // (entidade, ano de origem) -> a linha apurada.
+    let lines: BTreeMap<(i32, i32), &OffshoreLine> =
+        years.iter().flat_map(|y| y.lines.iter().map(move |l| ((l.entity_id, y.year), l))).collect();
+
+    let views: Vec<OffshoreDistributionView> = distributions
+        .iter()
+        .map(|d| OffshoreDistributionView {
+            id: d.id,
+            entity_id: d.entity_id,
+            origin_year: d.origin_year,
+            received_on: d.received_on,
+            amount: d.amount,
+            reduction_brl: lines.get(&(d.entity_id, d.origin_year)).map(|l| d.amount * l.fx_rate),
+        })
+        .collect();
+
+    let mut rows = Vec::new();
+    for (&(entity_id, origin_year), line) in &lines {
+        let targeted = views.iter().any(|v| v.entity_id == entity_id && v.origin_year == origin_year);
+        if line.taxable_base <= 0.0 && !targeted {
+            continue;
+        }
+        for as_of_year in origin_year..=today.year().max(origin_year) {
+            let year_end = NaiveDate::from_ymd_opt(as_of_year, 12, 31).expect("ano válido");
+            let distributed = views
+                .iter()
+                .filter(|v| v.entity_id == entity_id && v.origin_year == origin_year && v.received_on <= year_end)
+                .fold(0.0, |acc, v| acc + v.reduction_brl.unwrap_or(0.0));
+            rows.push(OffshoreCreditRow {
+                entity_id,
+                entity_name: line.entity_name.clone(),
+                country: line.country.clone(),
+                currency: line.currency.clone(),
+                origin_year,
+                as_of_year,
+                taxed_brl: line.taxable_base,
+                distributed_brl: distributed,
+                balance_brl: (line.taxable_base - distributed).max(0.0),
+                over_distributed_brl: (distributed - line.taxable_base).max(0.0),
+            });
+        }
+    }
+    rows.sort_by_key(|r| (r.entity_id, r.origin_year, r.as_of_year));
+    (rows, views)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,5 +424,90 @@ mod tests {
     fn a_result_of_an_unknown_entity_is_ignored() {
         let (years, warnings) = run(&[entity(1, "USD", 100.0)], &[result(9, 2024, 1_000.0, 0.0)]);
         assert!(years.is_empty() && warnings.is_empty());
+    }
+
+    fn distribution(id: i32, entity_id: i32, origin_year: i32, received: &str, amount: f64) -> OffshoreDistribution {
+        OffshoreDistribution { id, entity_id, origin_year, received_on: d(received), amount }
+    }
+
+    fn credits(
+        entities: &[OffshoreEntity],
+        results: &[OffshoreResult],
+        distributions: &[OffshoreDistribution],
+    ) -> (Vec<OffshoreCreditRow>, Vec<OffshoreDistributionView>) {
+        let (years, _) = run(entities, results);
+        offshore_credits(&years, distributions, d("2026-10-22"))
+    }
+
+    fn balance(rows: &[OffshoreCreditRow], entity_id: i32, origin: i32, as_of: i32) -> f64 {
+        rows.iter().find(|r| r.entity_id == entity_id && r.origin_year == origin && r.as_of_year == as_of).unwrap().balance_brl
+    }
+
+    #[test]
+    fn the_taxed_profit_is_the_dividend_credit_and_a_distribution_reduces_it_at_the_origin_rate() {
+        // 50% de US$ 2.000 em 2025 × 6,00 = R$ 6.000 de crédito. Distribuição de US$ 500 em 10/03/2026 reduz 500 × 6,00 =
+        // R$ 3.000, pela taxa de 31/12/2025 (a declarada), não pela do recebimento
+        let (rows, views) = credits(
+            &[entity(1, "USD", 50.0)],
+            &[result(1, 2025, 2_000.0, 0.0)],
+            &[distribution(7, 1, 2025, "2026-03-10", 500.0)],
+        );
+        assert!(close(balance(&rows, 1, 2025, 2025), 6_000.0), "{rows:?}");
+        assert!(close(balance(&rows, 1, 2025, 2026), 3_000.0), "{rows:?}");
+        let r = rows.iter().find(|r| r.as_of_year == 2026).unwrap();
+        assert!(close(r.taxed_brl, 6_000.0) && close(r.distributed_brl, 3_000.0) && close(r.over_distributed_brl, 0.0), "{r:?}");
+        assert!(close(views[0].reduction_brl.unwrap(), 3_000.0));
+    }
+
+    #[test]
+    fn the_credit_is_the_taxed_base_after_the_loss_of_the_entity_not_the_gross_profit() {
+        // 2024: prejuízo de US$ 400 (−2.000 a 5,00). 2025: lucro de US$ 1.500 (9.000 a 6,00), base 7.000 depois do prejuízo
+        let (rows, _) = credits(
+            &[entity(1, "USD", 100.0)],
+            &[result(1, 2024, -400.0, 0.0), result(1, 2025, 1_500.0, 0.0)],
+            &[],
+        );
+        assert!(close(balance(&rows, 1, 2025, 2025), 7_000.0), "{rows:?}");
+        // o ano de prejuízo não gera crédito (e sem distribuição nem aparece)
+        assert!(rows.iter().all(|r| r.origin_year == 2025), "{rows:?}");
+    }
+
+    #[test]
+    fn a_distribution_larger_than_the_credit_stops_at_zero_and_reports_the_excess() {
+        // crédito 6.000; distribuição de US$ 1.500 × 6,00 = 9.000: saldo zero, excesso 3.000
+        let (rows, _) = credits(
+            &[entity(1, "USD", 50.0)],
+            &[result(1, 2025, 2_000.0, 0.0)],
+            &[distribution(1, 1, 2025, "2026-03-10", 1_500.0)],
+        );
+        let r = rows.iter().find(|r| r.as_of_year == 2026).unwrap();
+        assert!(close(r.balance_brl, 0.0) && close(r.over_distributed_brl, 3_000.0), "{r:?}");
+    }
+
+    #[test]
+    fn a_distribution_without_a_taxed_origin_year_reduces_nothing() {
+        // não há resultado de 2024: a distribuição de lucro de 2024 não tem crédito para reduzir
+        let (rows, views) = credits(
+            &[entity(1, "USD", 50.0)],
+            &[result(1, 2025, 2_000.0, 0.0)],
+            &[distribution(1, 1, 2024, "2026-03-10", 500.0)],
+        );
+        assert_eq!(views[0].reduction_brl, None);
+        assert!(close(balance(&rows, 1, 2025, 2026), 6_000.0), "{rows:?}");
+        assert!(rows.iter().all(|r| r.origin_year == 2025));
+    }
+
+    #[test]
+    fn entities_have_independent_credits_and_only_distributions_up_to_each_31_12_count() {
+        // entidade 1: crédito 5.000 (US$ 1.000 a 5,00 em 2024); entidade 2: 6.000 (US$ 1.000 a 6,00 em 2025). Distribuição
+        // de 100 dólares da entidade 1 em 31/12/2024 (conta no 31/12/2024) e outra de 200 em 05/01/2025 (só em 2025)
+        let (rows, _) = credits(
+            &[entity(1, "USD", 100.0), entity(2, "USD", 100.0)],
+            &[result(1, 2024, 1_000.0, 0.0), result(2, 2025, 1_000.0, 0.0)],
+            &[distribution(1, 1, 2024, "2024-12-31", 100.0), distribution(2, 1, 2024, "2025-01-05", 200.0)],
+        );
+        assert!(close(balance(&rows, 1, 2024, 2024), 4_500.0), "{rows:?}");
+        assert!(close(balance(&rows, 1, 2024, 2025), 3_500.0), "{rows:?}");
+        assert!(close(balance(&rows, 2, 2025, 2025), 6_000.0), "{rows:?}");
     }
 }

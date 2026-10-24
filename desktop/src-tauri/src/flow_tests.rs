@@ -4527,6 +4527,71 @@ async fn an_offshore_entity_is_taxed_on_the_ptax_of_31_12_and_an_open_year_waits
 }
 
 #[tokio::test]
+async fn offshore_distributions_reduce_the_dividend_credit_and_the_commands_refuse_bad_input() {
+    use crate::commands::offshore::{
+        add_offshore_distribution_in, create_offshore_entity_in, offshore_credits_in, upsert_offshore_result_in,
+        AddOffshoreDistributionRequest, CreateOffshoreEntityRequest, OffshoreEntityRequest, UpsertOffshoreResultRequest,
+    };
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Distribuições").await;
+    seed_ptax(&db, "USD", "2025-12-31", 5.9, 6.0).await;
+    let entity = create_offshore_entity_in(
+        &db,
+        CreateOffshoreEntityRequest {
+            workspace_id: ws.id,
+            entity: OffshoreEntityRequest {
+                name: "Holding LLC".to_string(),
+                country: "US".to_string(),
+                currency: "USD".to_string(),
+                ownership_percent: 50.0,
+                notes: None,
+            },
+        },
+    )
+    .await
+    .unwrap();
+    // 50% de US$ 2.000 × 6,00 (PTAX de venda de 31/12/2025) = R$ 6.000 de lucro tributado
+    upsert_offshore_result_in(
+        &db,
+        UpsertOffshoreResultRequest { entity_id: entity.id, year: 2025, profit: 2000.0, tax_paid_abroad: 0.0 },
+    )
+    .await
+    .unwrap();
+    let request = |year: i32, received_on: &str, amount: f64, entity_id: i32| AddOffshoreDistributionRequest {
+        entity_id,
+        origin_year: year,
+        received_on: received_on.to_string(),
+        amount,
+    };
+
+    // recusas: antes de 31/12 do ano de origem, valor zero ou negativo, data inválida, ano anterior a 2024, entidade inexistente
+    for bad in [
+        request(2025, "2025-12-30", 100.0, entity.id),
+        request(2025, "2026-03-10", 0.0, entity.id),
+        request(2025, "2026-03-10", -5.0, entity.id),
+        request(2025, "10/03/2026", 100.0, entity.id),
+        request(2023, "2026-03-10", 100.0, entity.id),
+    ] {
+        let result = add_offshore_distribution_in(&db, bad).await;
+        assert!(matches!(result, Err(AppError::InvalidInput(_))), "{result:?}");
+    }
+    let unknown = add_offshore_distribution_in(&db, request(2025, "2026-03-10", 100.0, 9999)).await;
+    assert!(matches!(unknown, Err(AppError::NotFound(_))), "{unknown:?}");
+
+    // US$ 500 recebidos em 10/03/2026 reduzem 500 × 6,00 = R$ 3.000; no próprio 31/12/2025 pode-se receber (31/12 vale)
+    add_offshore_distribution_in(&db, request(2025, "2026-03-10", 500.0, entity.id)).await.unwrap();
+    let credits = offshore_credits_in(&db, ws.id).await.unwrap();
+    let balance = |as_of: i32| {
+        credits.rows.iter().find(|r| r.origin_year == 2025 && r.as_of_year == as_of).map(|r| r.balance_brl)
+    };
+    assert!(close(balance(2025).unwrap(), 6000.0) && close(balance(2026).unwrap(), 3000.0), "{:?}", credits.rows);
+    assert_eq!(credits.distributions.len(), 1);
+    assert!(close(credits.distributions[0].reduction_brl.unwrap(), 3000.0));
+}
+
+#[tokio::test]
 async fn the_offshore_commands_refuse_invalid_input() {
     use crate::commands::offshore::{
         create_offshore_entity_in, upsert_offshore_result_in, CreateOffshoreEntityRequest, OffshoreEntityRequest,

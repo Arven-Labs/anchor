@@ -107,6 +107,7 @@ export default function OffshoreCard({ workspaceId, years }: { workspaceId: numb
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["offshore-entities", workspaceId] });
     void queryClient.invalidateQueries({ queryKey: ["tax-assessment", workspaceId] });
+    void queryClient.invalidateQueries({ queryKey: ["offshore-credits", workspaceId] });
   };
 
   const saveEntityMutation = useMutation<unknown, AppError, void>({

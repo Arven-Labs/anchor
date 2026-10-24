@@ -553,6 +553,38 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await snap("taxes-fund-cvm");
   });
 
+  // Bens e Direitos das controladas (Lei 14.754, art. 5º §§10 a 12): reaproveita a 'Holding LLC' do caso das offshore (50%, lucro de
+  // US$ 2.000 em 2025 a R$ 6,00 = R$ 6.000 de crédito de dividendo a receber). Uma distribuição de US$ 500 recebida em 10/03/2026
+  // reduz 500 × 6,00 = R$ 3.000 pela taxa de 31/12/2025. As colunas por data dependem do ano de "hoje", então o teste confere a
+  // redução da distribuição, que não depende dele.
+  it("mostra o crédito de dividendo a receber da controlada e o que a distribuição reduz", async () => {
+    const entity = sql("SELECT id FROM offshore_entities WHERE name = 'Holding LLC'");
+    sql(
+      "INSERT INTO offshore_distributions (entity_id, origin_year, received_on, amount, created_at) " +
+        `VALUES (${entity}, 2025, '2026-03-10', 500, '2026-03-10T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await byId("offshore-holdings-card").waitForDisplayed({ timeout: 30_000 });
+    let seen = "";
+    try {
+      await browser.waitUntil(
+        async () => {
+          seen = (await textOf(byId("offshore-distributions"))).replace(/ /g, " ");
+          return seen.includes("Holding LLC") && seen.includes("10/03/2026") && seen.includes("R$ 3.000,00");
+        },
+        { timeoutMsg: "a distribuição de US$ 500 deveria reduzir o crédito em R$ 3.000,00" },
+      );
+    } catch (error) {
+      throw new Error(`${error.message}. Texto na tela: ${seen}`);
+    }
+    await byId("offshore-holdings-card").scrollIntoView({ block: "center" });
+    await snap("taxes-offshore-holdings");
+  });
+
   // Aviso da guarda do registro das perdas (IN RFB 1.585, art. 15 §2): a Zeta tem um único fundo, zerado por um resgate com
   // perda de R$ 200,00 em 01/06/2025 (100 cotas a 10,00 vendidas a 8,00). O saldo fica no grupo e todos os fundos dela estão
   // zerados, então a tela avisa. A guarda vai até 31/12/2026: o texto depende de "hoje" estar antes ou depois dessa data,

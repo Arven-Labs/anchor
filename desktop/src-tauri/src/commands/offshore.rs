@@ -2,15 +2,17 @@
 // informa o resultado de cada exercício; a apuração (`domain::tax::offshore`, chamada por `commands::tax`) converte pela PTAX
 // de 31/12. Aqui só mora o cadastro.
 
-use chrono::Utc;
+use chrono::{Datelike, NaiveDate, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::domain::tax::foreign::FIRST_YEAR;
-use crate::domain::tax::offshore::{OffshoreEntity, OffshoreResult};
-use crate::entity::{offshore_entity, offshore_result};
+use crate::domain::tax::offshore::{
+    offshore_credits, OffshoreCreditRow, OffshoreDistribution, OffshoreDistributionView, OffshoreEntity, OffshoreResult,
+};
+use crate::entity::{offshore_distribution, offshore_entity, offshore_result};
 use crate::error::AppError;
 
 /// Uma entidade com os resultados que o usuário já informou, do ano mais antigo ao mais novo.
@@ -243,6 +245,121 @@ pub async fn delete_offshore_result(
 ) -> Result<(), AppError> {
     offshore_result::Entity::delete_by_id(result_id).exec(db.inner()).await?;
     Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct AddOffshoreDistributionRequest {
+    pub entity_id: i32,
+    pub origin_year: i32,
+    /// `AAAA-MM-DD`.
+    pub received_on: String,
+    /// Valor recebido, na moeda da entidade.
+    pub amount: f64,
+}
+
+#[tauri::command]
+pub async fn add_offshore_distribution(
+    db: tauri::State<'_, DatabaseConnection>,
+    request: AddOffshoreDistributionRequest,
+) -> Result<offshore_distribution::Model, AppError> {
+    add_offshore_distribution_in(db.inner(), request).await
+}
+
+/// Lança uma distribuição de lucros de uma controlada (art. 5º §11). O lucro só estava tributado em 31/12 do ano de origem,
+/// então o recebimento não pode ser anterior a essa data.
+pub async fn add_offshore_distribution_in(
+    db: &DatabaseConnection,
+    request: AddOffshoreDistributionRequest,
+) -> Result<offshore_distribution::Model, AppError> {
+    if request.origin_year < FIRST_YEAR || request.origin_year > 2100 {
+        return Err(AppError::InvalidInput(format!("origin year must be {FIRST_YEAR} or later (Lei 14.754)")));
+    }
+    if !request.amount.is_finite() || request.amount <= 0.0 {
+        return Err(AppError::InvalidInput("amount must be above zero".to_string()));
+    }
+    let received_on = NaiveDate::parse_from_str(&request.received_on, "%Y-%m-%d")
+        .ok()
+        .filter(|d| request.received_on.len() == 10 && d.year() >= 1900)
+        .ok_or_else(|| AppError::InvalidInput(format!("received_on '{}' is not a date (YYYY-MM-DD)", request.received_on)))?;
+    let year_end = NaiveDate::from_ymd_opt(request.origin_year, 12, 31)
+        .ok_or_else(|| AppError::InvalidInput(format!("invalid year {}", request.origin_year)))?;
+    if received_on < year_end {
+        return Err(AppError::InvalidInput(format!(
+            "the profit of {} was only taxed on 31/12/{}: the distribution cannot be received before that",
+            request.origin_year, request.origin_year
+        )));
+    }
+    offshore_entity::Entity::find_by_id(request.entity_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("offshore entity {}", request.entity_id)))?;
+    Ok(offshore_distribution::ActiveModel {
+        entity_id: Set(request.entity_id),
+        origin_year: Set(request.origin_year),
+        received_on: Set(request.received_on),
+        amount: Set(request.amount),
+        created_at: Set(Utc::now().to_rfc3339()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await?)
+}
+
+#[tauri::command]
+pub async fn delete_offshore_distribution(
+    db: tauri::State<'_, DatabaseConnection>,
+    distribution_id: i32,
+) -> Result<(), AppError> {
+    offshore_distribution::Entity::delete_by_id(distribution_id).exec(db.inner()).await?;
+    Ok(())
+}
+
+/// Os créditos de dividendo a receber das controladas (ficha Bens e Direitos) e o que cada distribuição reduziu.
+#[derive(Serialize)]
+pub struct OffshoreCredits {
+    pub rows: Vec<OffshoreCreditRow>,
+    pub distributions: Vec<OffshoreDistributionView>,
+}
+
+#[tauri::command]
+pub async fn get_offshore_credits(
+    db: tauri::State<'_, DatabaseConnection>,
+    workspace_id: i32,
+) -> Result<OffshoreCredits, AppError> {
+    offshore_credits_in(db.inner(), workspace_id).await
+}
+
+pub async fn offshore_credits_in(db: &DatabaseConnection, workspace_id: i32) -> Result<OffshoreCredits, AppError> {
+    let assessment = crate::commands::tax::assess_workspace(db, workspace_id).await?;
+    let entity_ids: Vec<i32> = offshore_entity::Entity::find()
+        .filter(offshore_entity::Column::WorkspaceId.eq(workspace_id))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|e| e.id)
+        .collect();
+    let rows = if entity_ids.is_empty() {
+        Vec::new()
+    } else {
+        offshore_distribution::Entity::find()
+            .filter(offshore_distribution::Column::EntityId.is_in(entity_ids))
+            .order_by_asc(offshore_distribution::Column::ReceivedOn)
+            .all(db)
+            .await?
+    };
+    let mut distributions = Vec::with_capacity(rows.len());
+    for row in rows {
+        distributions.push(OffshoreDistribution {
+            id: row.id,
+            entity_id: row.entity_id,
+            origin_year: row.origin_year,
+            received_on: NaiveDate::parse_from_str(&row.received_on, "%Y-%m-%d")
+                .map_err(|_| AppError::InvalidInput(format!("invalid date '{}'", row.received_on)))?,
+            amount: row.amount,
+        });
+    }
+    let (rows, views) = offshore_credits(&assessment.offshore_years, &distributions, Utc::now().date_naive());
+    Ok(OffshoreCredits { rows, distributions: views })
 }
 
 /// As entidades e os resultados do Workspace no formato da apuração.
