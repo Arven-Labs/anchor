@@ -5167,10 +5167,15 @@ async fn the_cvm_quota_of_december_2023_feeds_the_stock_only_of_funds_that_have_
     let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
     // 100 cotas a 10,00 em 01/06/2022 (antes de 31/12/2023); a cota da CVM em 29/12/2023 é 14,00
     let zips = |dec23: bool| {
-        let mut months = vec![(
+        // A janela de 730 dias pede todo mês de 2024-10 a 2026-10: os que não importam vêm só com o cabeçalho.
+        let mut months: Vec<((i32, u32), String)> = (0..25_u32)
+            .map(|i| ((2024 + ((9 + i) / 12) as i32, (9 + i) % 12 + 1), csv_of(&[])))
+            .filter(|(month, _)| *month != (2026, 10))
+            .collect();
+        months.push((
             (2026, 10),
             csv_of(&["CLASSES - FIF;00.017.024/0001-53;;2026-10-01;1119426.37;44.990762600000;1221524.87;0.00;0.00;1"]),
-        )];
+        ));
         if dec23 {
             months.push((
                 (2023, 12),
