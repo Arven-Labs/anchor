@@ -8,9 +8,11 @@
 // Premissas (todas a conferir na Receita; as regras vêm de fontes secundárias):
 // - Grupo = (administradora normalizada, tipo do fundo). Fundo sem administradora
 //   informada fica isolado: compensa só consigo.
-// - Perda de um resgate = soma, por lote, de `max(0, IOF − rendimento nominal)`. Os
-//   lotes seguem independentes, como em `estimateRedemptions`: ganho e perda do mesmo
-//   resgate não se anulam.
+// - Perda de um resgate = soma, por lote, da perda legal medida contra o custo
+//   atualizado (cotas × max(0, custo atualizado − cota do resgate), IN 1.585 art. 15
+//   §1) ou de `max(0, IOF − rendimento nominal)`, o que for maior (ver
+//   `fund_redemption`). Os lotes seguem independentes, como em
+//   `estimateRedemptions`: ganho e perda do mesmo resgate não se anulam.
 // - O crédito de um resgate é o das perdas de datas ESTRITAMENTE anteriores do grupo
 //   ("posteriores", na lei); no mesmo dia não compensa.
 // - O crédito abate o rendimento dos lotes do resgate, do mais antigo ao mais novo, mas

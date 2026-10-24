@@ -26,7 +26,13 @@
 //   nominal = rendimento do resgate + a parte do ganho que os come-cotas do lote já
 //   tributaram. IR = max(0, (nominal − IOF) × alíquota − come-cotas pago); o excesso
 //   de come-cotas é só informação (a lei não prevê restituição: é perda a compensar,
-//   IN 1.585 art. 15; o app ainda não a soma ao crédito): não entra no IR nem no líquido.
+//   IN 1.585 art. 15): não entra no IR nem no líquido.
+// - Perda (IN 1.585, art. 15 §1): o resgate contra a aplicação mais o rendimento já
+//   tributado, isto é, contra o custo atualizado por cota do lote (a maior cota entre a
+//   compra, os come-cotas e o estoque de 2023; Lei 14.754, art. 17 §2). `perda = cotas
+//   × max(0, custo atualizado − cota do resgate)`, nunca abaixo da medida pelo custo
+//   original. É o que vira crédito do grupo em `fund_compensation`, e é a parte da
+//   perda que o "excesso" de come-cotas já pagou em imposto.
 //
 // ATENÇÃO: as regras vêm de fontes secundárias; conferir na Receita antes de confiar.
 
@@ -316,6 +322,12 @@ class _Lot {
   double quantity;
   double costPerQuota;
 
+  /// Custo atualizado por cota (Lei 14.754, art. 17 §2): o custo mais o rendimento já
+  /// tributado, que na prática é a maior cota entre a compra, os come-cotas e o
+  /// estoque de 2023. Só serve para medir a perda do resgate (IN 1.585, art. 15 §1); o
+  /// IR continua saindo do rendimento nominal.
+  double updatedCostPerQuota;
+
   /// Parte de [ccGain] que veio do estoque de 2023: some na mesma fração das cotas
   /// (resgate, come-cotas) e do custo (amortização).
   double estoqueGain = 0;
@@ -326,7 +338,8 @@ class _Lot {
   /// Come-cotas já pago, ligado às cotas que restam no lote.
   double ccPaid = 0;
 
-  _Lot(this.date, this.quantity, this.costPerQuota);
+  _Lot(this.date, this.quantity, this.costPerQuota)
+    : updatedCostPerQuota = costPerQuota;
 }
 
 /// Alíquota da tabela para [days] dias de aplicação.
@@ -372,6 +385,7 @@ int _compare(FundEvent a, FundEvent b) {
 }
 
 double _min(double a, double b) => a < b ? a : b;
+double _max(double a, double b) => a > b ? a : b;
 double _positive(double value) => value > 0 ? value : 0;
 
 /// O resultado de realizar `take` cotas de um lote a uma cota: prazo, alíquota,
@@ -426,6 +440,9 @@ _LotOutcome _settleLot(
       : iofRateForDays(days) * _positive(redeemGain);
   final rate = _tableRate(term, days);
   final irDue = _positive(nominal - iof) * rate;
+  // Perda legal: o resgate contra a aplicação mais o rendimento já tributado. Nunca
+  // fica abaixo da medida pelo custo original, porque o custo atualizado só sobe.
+  final legalLoss = take * _positive(lot.updatedCostPerQuota - quotaValue);
   return _LotOutcome(
     days: days,
     rate: rate,
@@ -434,7 +451,7 @@ _LotOutcome _settleLot(
     ir: _positive(irDue - ccPaid),
     creditUsed: _min(ccPaid, irDue),
     excess: _positive(ccPaid - irDue),
-    loss: _positive(iof - nominal),
+    loss: _max(_positive(iof - nominal), legalLoss),
     cost: take * lot.costPerQuota,
     ccGain: ccGain,
     ccPaid: ccPaid,
@@ -487,6 +504,7 @@ FundEstimate estimateFund(List<FundEvent> events, FundTerm term) {
               (taken > costEps ? credit * share / taken : 0);
           lot.ccPaid += share * event.amount;
           lot.quantity -= share;
+          lot.updatedCostPerQuota = _max(lot.updatedCostPerQuota, event.amount);
         }
       case FundEventKind.estoque:
         // O imposto saiu em dinheiro, sem tirar cotas: o ganho já tributado e o
@@ -500,6 +518,10 @@ FundEstimate estimateFund(List<FundEvent> events, FundTerm term) {
           lot.estoqueGain += gain;
           lot.ccGain += gain;
           lot.ccPaid += event.rate * gain;
+          lot.updatedCostPerQuota = _max(
+            lot.updatedCostPerQuota,
+            event.quotaValue,
+          );
         }
         estoque = EstoqueEstimate(
           date: _day(event.date),
@@ -599,6 +621,7 @@ FundEstimate estimateFund(List<FundEvent> events, FundTerm term) {
           // O custo e o que já foi tributado caem na mesma fração; a quantidade de
           // cotas não muda.
           lot.costPerQuota *= 1 - fraction;
+          lot.updatedCostPerQuota *= 1 - fraction;
           lot.estoqueGain *= 1 - fraction;
           lot.ccGain -= o.ccGain;
           lot.ccPaid -= o.ccPaid;

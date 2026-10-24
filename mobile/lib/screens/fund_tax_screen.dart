@@ -75,9 +75,9 @@ String refundableText(FundReport report) {
   return 'Come-cotas pago acima do IR devido: ${formatBrl(total)}. A lei não '
       'prevê restituição desse excesso (IN RFB 1.585/2015, art. 15; Lei '
       '14.754/2023, art. 17, §6). É imposto pago sobre rendimento que depois '
-      'sumiu, e ele volta como perda a compensar em ganhos posteriores. O app '
-      'ainda não soma isso ao crédito de prejuízo, e o valor não está incluído '
-      'nos líquidos.';
+      'sumiu, e ele volta como perda a compensar em ganhos posteriores. O app já '
+      'soma essa perda ao crédito de prejuízo; o valor do excesso em si não '
+      'está incluído nos líquidos.';
 }
 
 /// Avisos do cartão do fundo, em frases.

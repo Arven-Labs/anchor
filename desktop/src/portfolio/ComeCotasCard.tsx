@@ -744,8 +744,8 @@ export default function ComeCotasCard({ workspaceId }: { workspaceId: number }) 
                       Come-cotas paid above the IR due:{" "}
                       <span className="font-medium">{formatBrl(refundableTotal(fund.redemptions))}</span>. The law
                       provides no refund of this excess (IN RFB 1.585/2015, art. 15; Lei 14.754/2023, art. 17, §6). It
-                      is tax paid on income that later vanished, and it comes back as a loss to offset later gains.
-                      The app does not add it to the loss credit yet, and it is not included in the net values below.
+                      is tax paid on income that later vanished, and it comes back as a loss to offset later gains. The
+                      app already adds that loss to the loss credit; the amount itself is not in the net values below.
                     </span>
                   )}
                   {[...fund.redemptions].reverse().map((r) => (

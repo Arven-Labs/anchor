@@ -224,6 +224,31 @@ void main() {
     expect(result.credits.single.amount, closeTo(180, 1e-6));
   });
 
+  test('a queda depois de um come-cotas dá a perda legal como crédito ao grupo', () {
+    // X: 100 cotas a 10,00; come-cotas de 2,5 cotas a 12,00 em 31/03/2025; resgate de
+    // 97,5 a 9,00 em 01/06/2025. Perda legal 97,5 × (12 − 9) = 292,50 (pelo custo
+    // original seria 92,50). Y ganha 200 (IR de 40 a 20%): o crédito zera o IR de Y,
+    // gastando 200, e sobram 292,50 − 200 = 92,50 no grupo
+    final result = compensate([
+      fixture(1, 'XPTO11', FundTerm.longTerm, 'XP', [
+        buy(1, '2025-01-01', 100, 1000),
+        FundEvent.comeCotas(
+          date: d('2025-03-31'),
+          id: 3,
+          quantity: 2.5,
+          quotaValue: 12,
+        ),
+        redeem(2, '2025-06-01', 97.5, 9),
+      ]),
+      winner(2, 'YPTO11', FundTerm.longTerm, 'XP', '2025-09-01'),
+    ]);
+    expect(result.redemptions[0].single.lossCreated, closeTo(292.5, 1e-6));
+    final y = result.redemptions[1].single;
+    expect(y.lossCreditUsed, closeTo(200, 1e-6));
+    expect(y.ir, closeTo(0, 1e-6));
+    expect(result.credits.single.amount, closeTo(92.5, 1e-6));
+  });
+
   test('sem prejuízo nada muda', () {
     final result = compensate([
       winner(1, 'XPTO11', FundTerm.longTerm, 'XP', '2025-09-01'),

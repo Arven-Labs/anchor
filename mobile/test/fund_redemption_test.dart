@@ -149,6 +149,10 @@ void main() {
     expect(e.ir, 0);
     expect(e.comeCotasCredit, closeTo(0, 1e-6));
     expect(e.excessComeCotas, closeTo(30, 1e-6));
+    // perda legal: o custo das 97,5 cotas subiu a 12,00 (a cota do come-cotas);
+    // 97,5 × (12 − 9) = 292,50. Pelo custo original seria 92,50 (−97,5 + 5); a
+    // diferença, 200, é o excesso ÷ 15%
+    expect(e.lossCreated, closeTo(292.5, 1e-6));
   });
 
   test('prejuízo não paga IR nem IOF', () {
@@ -195,6 +199,77 @@ void main() {
 
   FundEstimate fund(List<FundEvent> events, FundTerm term) =>
       estimateFund(events, term);
+
+  group('perda legal (custo atualizado)', () {
+    test('queda depois do come-cotas é perda mesmo acima do custo original', () {
+      // 100 cotas a 10,00; come-cotas de 2,5 cotas a 12,00 (30 pagos); resgate de
+      // 97,5 a 11,00. Rendimento nominal 97,5 + 5 = 102,5 a 15% = 15,375; menos 30
+      // pagos: IR zero, excesso 14,625. Perda legal 97,5 × (12 − 11) = 97,5, e
+      // 97,5 × 15% = 14,625, o mesmo valor do excesso
+      final e = fund([
+        buy(1, '2024-01-02', 100, 1000),
+        comeCotas(2, '2024-05-31', 2.5, 12),
+        redeem(3, '2026-03-01', 97.5, 11),
+      ], FundTerm.longTerm).redemptions.first;
+      expect(e.ir, closeTo(0, 1e-6));
+      expect(e.excessComeCotas, closeTo(14.625, 1e-6));
+      expect(e.lossCreated, closeTo(97.5, 1e-6));
+    });
+
+    test('resgate acima do custo atualizado não cria perda', () {
+      final e = fund([
+        buy(1, '2024-01-02', 100, 1000),
+        comeCotas(2, '2024-05-31', 2.5, 12),
+        redeem(3, '2026-03-01', 97.5, 13),
+      ], FundTerm.longTerm).redemptions.first;
+      expect(e.lossCreated, closeTo(0, 1e-6));
+    });
+
+    test('sem come-cotas a perda é a de antes', () {
+      // 100 cotas a 10,00 resgatadas a 9,00: 100 pelo custo original e pelo atualizado
+      final e = fund([
+        buy(1, '2024-01-02', 100, 1000),
+        redeem(2, '2026-03-01', 100, 9),
+      ], FundTerm.longTerm).redemptions.first;
+      expect(e.lossCreated, closeTo(100, 1e-6));
+    });
+
+    test('um come-cotas a cota menor não baixa o custo atualizado', () {
+      // come-cotas de 2,5 a 12,00 e outro de 2,5 a 11,00: o custo atualizado fica
+      // 12,00 (só sobe); restam 95 cotas e o resgate a 9,50 dá 95 × (12 − 9,5) =
+      // 237,50 (pelo custo original seriam só 40: −47,5 + 5 + 2,5)
+      final e = fund([
+        buy(1, '2024-01-02', 100, 1000),
+        comeCotas(2, '2024-05-31', 2.5, 12),
+        comeCotas(3, '2024-11-29', 2.5, 11),
+        redeem(4, '2026-03-01', 95, 9.5),
+      ], FundTerm.longTerm).redemptions.first;
+      expect(e.lossCreated, closeTo(237.5, 1e-6));
+    });
+
+    test('a amortização baixa o custo atualizado na mesma fração', () {
+      // 100 cotas a 10,00; estoque a 14,00 (custo atualizado 14,00); amortização de
+      // 300 a 15,00 devolve 300 ÷ 1.500 = 20%: o custo atualizado cai a 14 × 0,8 =
+      // 11,20; resgate das 100 cotas a 10,00: 100 × 1,20 = 120
+      final r = fund([
+        buy(1, '2022-06-01', 100, 1000),
+        estoque('2023-12-31', 14, 0.15),
+        amortize(2, '2025-01-10', 300, 15),
+        redeem(3, '2026-03-01', 100, 10),
+      ], FundTerm.longTerm).redemptions;
+      expect(r[1].lossCreated, closeTo(120, 1e-6));
+    });
+
+    test('o estoque de 2023 sobe o custo atualizado: queda depois é perda', () {
+      // 100 cotas a 10,00; estoque a 14,00; resgate a 12,00: 100 × (14 − 12) = 200
+      final r = fund([
+        buy(1, '2022-06-01', 100, 1000),
+        estoque('2023-12-31', 14, 0.15),
+        redeem(2, '2026-03-01', 100, 12),
+      ], FundTerm.longTerm).redemptions;
+      expect(r[0].lossCreated, closeTo(200, 1e-6));
+    });
+  });
 
   group('amortização', () {
     test('devolve capital, tributa a fração do ganho e mantém as cotas', () {

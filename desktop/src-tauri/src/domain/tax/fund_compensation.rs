@@ -5,8 +5,10 @@
 //
 // Premissas (todas a conferir na Receita; as regras vêm de fontes secundárias):
 // - Grupo = (administradora normalizada, tipo do fundo). Fundo sem administradora informada fica isolado: compensa só consigo.
-// - Perda de um resgate = soma, por lote, de `max(0, IOF − rendimento nominal)`. Os lotes seguem independentes, como em
-//   `estimate_redemptions`: ganho e perda do mesmo resgate não se anulam.
+// - Perda de um resgate = soma, por lote, da perda legal medida contra o custo atualizado (cotas × max(0, custo atualizado −
+//   cota do resgate), IN 1.585 art. 15 §1) ou de `max(0, IOF − rendimento nominal)`, o que for maior (ver
+//   `fund_redemption`). Os lotes seguem independentes, como em `estimate_redemptions`: ganho e perda do mesmo resgate não
+//   se anulam.
 // - O crédito de um resgate é o das perdas de datas ESTRITAMENTE anteriores do grupo ("posteriores", na lei); no mesmo dia
 //   não compensa.
 // - O crédito abate o rendimento dos lotes do resgate, do mais antigo ao mais novo, mas só até zerar o IR a pagar do lote:
@@ -489,6 +491,33 @@ mod tests {
         // o crédito só gasta o necessário para zerar os 4 de IR: 4 ÷ 0,20 = 20
         assert!(close(y.ir, 0.0) && close(y.loss_credit_used, 20.0), "{y:?}");
         assert!(close(credits[0].amount, 180.0), "{credits:?}");
+    }
+
+    #[test]
+    fn a_fall_after_a_come_cotas_gives_the_legal_loss_as_credit_to_the_group() {
+        // X: 100 cotas a 10,00; come-cotas de 2,5 cotas a 12,00 em 31/03/2025; resgate de 97,5 a 9,00 em 01/06/2025.
+        // Perda legal 97,5 × (12 − 9) = 292,50 (pelo custo original seria 92,50). Y ganha 200 (IR de 40 a 20%): o crédito
+        // zera o IR de Y, gastando 200, e sobram 292,50 − 200 = 92,50 no grupo
+        let come_cotas = FundEvent {
+            date: d("2025-03-31"),
+            id: 3,
+            kind: FundEventKind::ComeCotas { quantity: 2.5, quota_value: 12.0, loss_credit_used: None },
+        };
+        let mut set = [
+            fixture(
+                1,
+                "XPTO11",
+                FundTerm::LongTerm,
+                Some("XP"),
+                &[buy(1, "2025-01-01", 100.0, 1_000.0), come_cotas, redeem(2, "2025-06-01", 97.5, 9.0)],
+            ),
+            winner(2, "YPTO11", FundTerm::LongTerm, Some("XP"), "2025-09-01"),
+        ];
+        let credits = run(&mut set);
+        assert!(close(set[0].redemptions[0].loss_created, 292.5), "{:?}", set[0].redemptions[0]);
+        let y = &set[1].redemptions[0];
+        assert!(close(y.loss_credit_used, 200.0) && close(y.ir, 0.0), "{y:?}");
+        assert!(credits.len() == 1 && close(credits[0].amount, 92.5), "{credits:?}");
     }
 
     #[test]

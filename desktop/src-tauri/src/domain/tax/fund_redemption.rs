@@ -11,8 +11,11 @@
 //   pago abate dele. O come-cotas retira cotas proporcionalmente à quantidade de cada lote aberto (aproximação).
 //   Rendimento nominal = rendimento do resgate + a parte do ganho que os come-cotas do lote já tributaram.
 //   IR = max(0, (nominal − IOF) × alíquota − come-cotas pago); o excesso de come-cotas é só informação
-//   (a lei não prevê restituição: juridicamente é perda a compensar, IN 1.585 art. 15; o app ainda não a soma ao crédito):
-//   não entra no IR nem no líquido.
+//   (a lei não prevê restituição: juridicamente é perda a compensar, IN 1.585 art. 15): não entra no IR nem no líquido.
+// - Perda (IN 1.585, art. 15 §1): o resgate contra a aplicação mais o rendimento já tributado, isto é, contra o custo
+//   atualizado por cota do lote (a maior cota entre a compra, os come-cotas e o estoque de 2023; Lei 14.754, art. 17 §2).
+//   `perda = cotas × max(0, custo atualizado − cota do resgate)`, nunca abaixo da medida pelo custo original. É o que vira
+//   crédito do grupo em `fund_compensation`, e é a parte da perda que o "excesso" de come-cotas já pagou em imposto.
 // - Fundos fechados e exclusivos (Lei 14.754/2023): o art. 17 vale igual para eles. A amortização devolve capital sem tirar
 //   cotas: cada lote devolve a fração `valor ÷ (cota × cotas em carteira)` e é tributado como um resgate dessa fração; o custo
 //   por cota e o ganho já tributado do lote caem nessa fração. Entidades de investimento (art. 18): 15% fixo e sem IOF.
@@ -142,6 +145,10 @@ struct Lot {
     date: NaiveDate,
     quantity: f64,
     cost_per_quota: f64,
+    /// Custo atualizado por cota (Lei 14.754, art. 17 §2): o custo mais o rendimento já tributado, que na prática é a maior
+    /// cota entre a compra, os come-cotas e o estoque de 2023. Só serve para medir a perda do resgate (IN 1.585, art. 15 §1);
+    /// o IR continua saindo do rendimento nominal.
+    updated_cost_per_quota: f64,
     /// Parte de `cc_gain` que veio do estoque de 2023: some na mesma fração das cotas (resgate, come-cotas) e do custo
     /// (amortização).
     estoque_gain: f64,
@@ -209,6 +216,9 @@ fn settle_lot(
     let iof = if term.is_flat_rate() { 0.0 } else { iof_rate_for_days(days) * redeem_gain.max(0.0) };
     let rate = table_rate(term, days, rules, on)?;
     let ir_due = (nominal - iof).max(0.0) * rate;
+    // Perda legal: o resgate contra a aplicação mais o rendimento já tributado. Nunca fica abaixo da medida pelo custo
+    // original, porque o custo atualizado só sobe.
+    let legal_loss = take * (lot.updated_cost_per_quota - quota_value).max(0.0);
     Ok(LotOutcome {
         days,
         rate,
@@ -217,7 +227,7 @@ fn settle_lot(
         ir: (ir_due - cc_paid).max(0.0),
         credit_used: cc_paid.min(ir_due),
         excess: (cc_paid - ir_due).max(0.0),
-        loss: (iof - nominal).max(0.0),
+        loss: (iof - nominal).max(0.0).max(legal_loss),
         cost: take * lot.cost_per_quota,
         cc_gain,
         cc_paid,
@@ -250,6 +260,7 @@ pub fn estimate_fund(events: &[FundEvent], term: FundTerm, rules: &RuleSet) -> R
                         date: event.date,
                         quantity,
                         cost_per_quota: cost / quantity,
+                        updated_cost_per_quota: cost / quantity,
                         estoque_gain: 0.0,
                         cc_gain: 0.0,
                         cc_paid: 0.0,
@@ -276,6 +287,7 @@ pub fn estimate_fund(events: &[FundEvent], term: FundTerm, rules: &RuleSet) -> R
                     lot.cc_gain += share * (quota_value - lot.cost_per_quota) - credit_share;
                     lot.cc_paid += share * quota_value;
                     lot.quantity -= share;
+                    lot.updated_cost_per_quota = lot.updated_cost_per_quota.max(quota_value);
                 }
             }
             FundEventKind::Estoque { quota_value, rate } => {
@@ -288,6 +300,7 @@ pub fn estimate_fund(events: &[FundEvent], term: FundTerm, rules: &RuleSet) -> R
                     lot.estoque_gain += gain;
                     lot.cc_gain += gain;
                     lot.cc_paid += rate * gain;
+                    lot.updated_cost_per_quota = lot.updated_cost_per_quota.max(quota_value);
                 }
                 estoque = Some(EstoqueEstimate { date: event.date, quota_value, rate, base, tax: rate * base });
             }
@@ -382,6 +395,7 @@ pub fn estimate_fund(events: &[FundEvent], term: FundTerm, rules: &RuleSet) -> R
 
                     // O custo e o que já foi tributado caem na mesma fração; a quantidade de cotas não muda.
                     lot.cost_per_quota *= 1.0 - fraction;
+                    lot.updated_cost_per_quota *= 1.0 - fraction;
                     lot.estoque_gain *= 1.0 - fraction;
                     lot.cc_gain -= o.cc_gain;
                     lot.cc_paid -= o.cc_paid;
@@ -562,6 +576,82 @@ mod tests {
         let e = run(&events, FundTerm::LongTerm).remove(0);
         assert!(close(e.ir, 0.0) && close(e.come_cotas_credit, 0.0) && close(e.excess_come_cotas, 30.0), "{e:?}");
         assert!(e.ir.is_sign_positive());
+        // perda legal: o custo das 97,5 cotas subiu a 12,00 (a cota do come-cotas); 97,5 × (12 − 9) = 292,50. Pelo custo
+        // original seria 92,50 (−97,5 + 5); a diferença, 200, é o excesso ÷ 15%
+        assert!(close(e.loss_created, 292.5), "{e:?}");
+    }
+
+    #[test]
+    fn a_fall_after_the_come_cotas_is_a_loss_even_when_the_redemption_is_above_the_original_cost() {
+        // 100 cotas a 10,00; come-cotas de 2,5 cotas a 12,00 (30 pagos); resgate de 97,5 a 11,00 (acima do custo de 10,00)
+        // rendimento nominal 97,5 + 5 = 102,5 a 15% = 15,375; menos 30 pagos: IR zero, excesso 14,625
+        // perda legal: 97,5 × (12 − 11) = 97,5, e 97,5 × 15% = 14,625, o mesmo valor do excesso
+        let events = [
+            buy(1, "2024-01-02", 100.0, 1_000.0),
+            come_cotas(2, "2024-05-31", 2.5, 12.0),
+            redeem(3, "2026-03-01", 97.5, 11.0),
+        ];
+        let e = run(&events, FundTerm::LongTerm).remove(0);
+        assert!(close(e.ir, 0.0) && close(e.excess_come_cotas, 14.625), "{e:?}");
+        assert!(close(e.loss_created, 97.5), "{e:?}");
+    }
+
+    #[test]
+    fn a_redemption_above_the_updated_cost_creates_no_loss() {
+        // mesmo come-cotas; resgate a 13,00, acima da cota do come-cotas (12,00): ganho, nenhuma perda
+        let events = [
+            buy(1, "2024-01-02", 100.0, 1_000.0),
+            come_cotas(2, "2024-05-31", 2.5, 12.0),
+            redeem(3, "2026-03-01", 97.5, 13.0),
+        ];
+        let e = run(&events, FundTerm::LongTerm).remove(0);
+        assert!(close(e.loss_created, 0.0), "{e:?}");
+    }
+
+    #[test]
+    fn without_a_come_cotas_the_loss_is_the_same_as_before() {
+        // 100 cotas a 10,00 resgatadas a 9,00: perda de 100 pelo custo original e pelo atualizado
+        let events = [buy(1, "2024-01-02", 100.0, 1_000.0), redeem(2, "2026-03-01", 100.0, 9.0)];
+        assert!(close(run(&events, FundTerm::LongTerm)[0].loss_created, 100.0));
+    }
+
+    #[test]
+    fn a_lower_come_cotas_does_not_lower_the_updated_cost() {
+        // come-cotas de 2,5 cotas a 12,00 e outro de 2,5 a 11,00: o custo atualizado fica 12,00 (só sobe); restam 95 cotas
+        // resgate a 9,50: 95 × (12 − 9,5) = 237,50 (pelo custo original seriam só 40: −47,5 + 5 + 2,5)
+        let events = [
+            buy(1, "2024-01-02", 100.0, 1_000.0),
+            come_cotas(2, "2024-05-31", 2.5, 12.0),
+            come_cotas(3, "2024-11-29", 2.5, 11.0),
+            redeem(4, "2026-03-01", 95.0, 9.5),
+        ];
+        assert!(close(run(&events, FundTerm::LongTerm)[0].loss_created, 237.5));
+    }
+
+    #[test]
+    fn an_amortization_lowers_the_updated_cost_in_the_same_fraction() {
+        // 100 cotas a 10,00; estoque a 14,00 (sobe o custo atualizado a 14,00); amortização de 300 a 15,00 devolve
+        // 300 ÷ 1.500 = 20% do custo: o custo atualizado cai a 14 × 0,8 = 11,20; resgate das 100 cotas a 10,00: 100 × 1,20
+        let events = [
+            buy(1, "2022-06-01", 100.0, 1_000.0),
+            estoque("2023-12-31", 14.0, 0.15),
+            amortize(2, "2025-01-10", 300.0, 15.0),
+            redeem(3, "2026-03-01", 100.0, 10.0),
+        ];
+        let estimates = fund(&events, FundTerm::LongTerm).redemptions;
+        assert!(close(estimates[1].loss_created, 120.0), "{:?}", estimates[1]);
+    }
+
+    #[test]
+    fn the_stock_of_2023_raises_the_updated_cost_so_a_later_fall_is_a_loss() {
+        // 100 cotas a 10,00; estoque a 14,00; resgate a 12,00: 100 × (14 − 12) = 200 de perda legal
+        let events = [
+            buy(1, "2022-06-01", 100.0, 1_000.0),
+            estoque("2023-12-31", 14.0, 0.15),
+            redeem(2, "2026-03-01", 100.0, 12.0),
+        ];
+        let estimates = fund(&events, FundTerm::LongTerm).redemptions;
+        assert!(close(estimates[0].loss_created, 200.0), "{:?}", estimates[0]);
     }
 
     #[test]
