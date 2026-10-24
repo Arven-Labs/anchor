@@ -156,6 +156,12 @@ class Asset {
   /// CNPJ do fundo (formatado) — só `fundo`, para ler a cota no informe da CVM.
   final String? cnpj;
 
+  /// Grupo, código e país da ficha "Bens e Direitos", informados pelo usuário (com zeros
+  /// à esquerda: "03", "01", "249"). `null` = não informado.
+  final String? dirpfGroup;
+  final String? dirpfCode;
+  final String? dirpfCountry;
+
   const Asset({
     this.id,
     required this.ticker,
@@ -168,6 +174,9 @@ class Asset {
     this.equityTotalShares,
     this.equityCompanyValuation,
     this.cnpj,
+    this.dirpfGroup,
+    this.dirpfCode,
+    this.dirpfCountry,
   });
 
   double? get equityPercentual {
@@ -197,6 +206,9 @@ class Asset {
       'equity_total_shares': equityTotalShares,
       'equity_company_valuation': equityCompanyValuation,
       'cnpj': cnpj,
+      'dirpf_group': dirpfGroup,
+      'dirpf_code': dirpfCode,
+      'dirpf_country': dirpfCountry,
     };
   }
 
@@ -213,6 +225,9 @@ class Asset {
       equityTotalShares: map['equity_total_shares'] as double?,
       equityCompanyValuation: map['equity_company_valuation'] as double?,
       cnpj: map['cnpj'] as String?,
+      dirpfGroup: map['dirpf_group'] as String?,
+      dirpfCode: map['dirpf_code'] as String?,
+      dirpfCountry: map['dirpf_country'] as String?,
     );
   }
 }

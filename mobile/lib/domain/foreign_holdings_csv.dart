@@ -1,7 +1,8 @@
 // CSV do informe de Bens e Direitos do exterior, com as mesmas colunas do
-// desktop (`foreign_holdings_csv_text` em `commands/tax.rs`) para os dois
-// arquivos serem intercambiáveis. O mobile não guarda a bolsa do ativo, então
-// `exchange` sai vazia.
+// desktop (`foreign_holdings_csv_text` em `commands/tax.rs`, 13 colunas) para os
+// dois arquivos serem intercambiáveis. O mobile não guarda a bolsa do ativo, então
+// `exchange` sai vazia. As três últimas colunas são o grupo, o código e o país da
+// ficha, como o usuário informou no ativo (vazias quando não informados).
 
 import 'foreign_tax.dart';
 
@@ -16,6 +17,9 @@ const foreignHoldingsCsvHeader = [
   'cost_brl',
   'fx_approximate',
   'incomplete',
+  'dirpf_group',
+  'dirpf_code',
+  'dirpf_country',
 ];
 
 String _field(String value) {
@@ -50,6 +54,9 @@ String foreignHoldingsCsv(
         h.costBrl.toStringAsFixed(2),
         '${h.fxApproximate}',
         '${h.incomplete}',
+        h.dirpfGroup ?? '',
+        h.dirpfCode ?? '',
+        h.dirpfCountry ?? '',
       ].map(_field).join(','),
     );
   }

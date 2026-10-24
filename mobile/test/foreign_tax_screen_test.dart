@@ -130,6 +130,37 @@ void main() {
     },
   );
 
+  test('a descrição traz a ficha só quando o usuário a preencheu', () {
+    final filled = foreignHoldingDescription(
+      year: 2025,
+      ticker: 'AAPL',
+      name: 'Apple',
+      current: holding(2025, 4, 2200),
+      group: '03',
+      code: '01',
+      country: '249',
+    );
+    expect(filled, contains('Ficha: Grupo 03 · Código 01 · País 249.'));
+
+    // preenchida pela metade: só o que veio
+    final partial = foreignHoldingDescription(
+      year: 2025,
+      ticker: 'AAPL',
+      name: 'Apple',
+      current: holding(2025, 4, 2200),
+      country: '249',
+    );
+    expect(partial, contains('Ficha: País 249.'));
+
+    final blank = foreignHoldingDescription(
+      year: 2025,
+      ticker: 'AAPL',
+      name: 'Apple',
+      current: holding(2025, 4, 2200),
+    );
+    expect(blank, isNot(contains('Ficha')));
+  });
+
   test('a descrição traz a custódia quando há', () {
     final text = foreignHoldingDescription(
       year: 2025,

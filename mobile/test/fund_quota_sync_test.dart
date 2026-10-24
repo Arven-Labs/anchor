@@ -377,6 +377,54 @@ void main() {
   });
 
   group('crédito de prejuízo usado no come-cotas', () {
+    test('migra do v13: o ativo ganha a ficha vazia e setAssetDirpf grava, recusa e apaga', () async {
+      final old = await openDatabase(
+        '${dir.path}/anchor_mobile.db',
+        version: 13,
+        onCreate: (db, _) async {
+          await createOldTransactions(db);
+          await db.execute('ALTER TABLE portfolio_transactions ADD COLUMN loss_credit_used REAL');
+          await db.execute('''
+            CREATE TABLE assets (
+              id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,
+              name TEXT NOT NULL, asset_class TEXT NOT NULL, currency TEXT NOT NULL,
+              created_at TEXT NOT NULL, external_id TEXT, equity_shares_owned REAL,
+              equity_total_shares REAL, equity_company_valuation REAL, cnpj TEXT)''');
+          await db.insert('assets', {
+            'ticker': 'AAPL',
+            'name': 'Apple v13',
+            'asset_class': 'acao_internacional',
+            'currency': 'USD',
+            'created_at': '2026-01-01T00:00:00.000',
+          });
+        },
+      );
+      await old.close();
+
+      // o ativo antigo segue lá, sem ficha informada
+      final before = (await repository.listAssets()).single;
+      expect(before.name, 'Apple v13');
+      expect((before.dirpfGroup, before.dirpfCode, before.dirpfCountry), (null, null, null));
+
+      // "3" e "1" completam para "03" e "01"; "249" fica
+      await repository.setAssetDirpf(1, group: '3', code: '1', country: '249');
+      var after = (await repository.listAssets()).single;
+      expect((after.dirpfGroup, after.dirpfCode, after.dirpfCountry), ('03', '01', '249'));
+
+      // letras são recusadas e o que estava gravado fica
+      await expectLater(
+        repository.setAssetDirpf(1, group: 'ab', code: '1', country: '249'),
+        throwsA(isA<FormatException>()),
+      );
+      after = (await repository.listAssets()).single;
+      expect(after.dirpfGroup, '03');
+
+      // vazio apaga os três
+      await repository.setAssetDirpf(1);
+      after = (await repository.listAssets()).single;
+      expect((after.dirpfGroup, after.dirpfCode, after.dirpfCountry), (null, null, null));
+    });
+
     test('migra do v12: linha antiga lê nulo e o valor novo grava e volta', () async {
       final old = await openDatabase(
         '${dir.path}/anchor_mobile.db',

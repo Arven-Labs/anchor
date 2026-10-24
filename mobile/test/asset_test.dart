@@ -20,6 +20,29 @@ void main() {
     );
   }
 
+  test('a ficha de Bens e Direitos faz o round trip de toMap e fromMap', () {
+    final a = Asset(
+      id: 7,
+      ticker: 'AAPL',
+      name: 'Apple',
+      assetClass: AssetClass.acaoInternacional,
+      currency: 'USD',
+      createdAt: DateTime(2026, 1, 1),
+      dirpfGroup: '03',
+      dirpfCode: '01',
+      dirpfCountry: '249',
+    );
+
+    final back = Asset.fromMap(a.toMap());
+    expect(
+      (back.dirpfGroup, back.dirpfCode, back.dirpfCountry),
+      ('03', '01', '249'),
+    );
+    // sem ficha informada, fica nulo
+    final blank = Asset.fromMap(asset().toMap()..['id'] = 1);
+    expect((blank.dirpfGroup, blank.dirpfCode, blank.dirpfCountry), (null, null, null));
+  });
+
   test(
     'equityPercentual e equityParticipationValue calculados a partir das 3 entradas',
     () {

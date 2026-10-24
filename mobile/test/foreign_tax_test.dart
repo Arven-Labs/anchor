@@ -428,4 +428,35 @@ void main() {
     expect(result.years, isEmpty);
     expect(result.warnings, isEmpty);
   });
+
+  test('o informe de Bens e Direitos leva a ficha do ativo a cada posição', () {
+    // AAPL com grupo, código e país informados; MSFT sem. Compra de 10 por US$ 1.000
+    // em 15/03/2024 a R$ 5 (custo de R$ 5.000) nos dois.
+    final withFicha = [
+      Asset(
+        id: 1,
+        ticker: 'AAPL',
+        name: 'AAPL',
+        assetClass: AssetClass.acaoInternacional,
+        currency: 'USD',
+        createdAt: DateTime(2024, 1, 1),
+        dirpfGroup: '03',
+        dirpfCode: '01',
+        dirpfCountry: '249',
+      ),
+      stock(2, 'MSFT'),
+    ];
+    final holdings = foreignHoldings(
+      withFicha,
+      [buy(1, '2024-03-15', 10, 1000), buy(2, '2024-03-15', 10, 1000)],
+      ptax: {'USD': yearlyPtax()},
+      throughYear: 2024,
+    );
+
+    final aapl = holdings.singleWhere((h) => h.ticker == 'AAPL');
+    final msft = holdings.singleWhere((h) => h.ticker == 'MSFT');
+    expect(aapl.costBrl, near(5000));
+    expect((aapl.dirpfGroup, aapl.dirpfCode, aapl.dirpfCountry), ('03', '01', '249'));
+    expect((msft.dirpfGroup, msft.dirpfCode, msft.dirpfCountry), (null, null, null));
+  });
 }

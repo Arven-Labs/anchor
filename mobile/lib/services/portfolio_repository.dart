@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../data/db.dart';
 import '../domain/cvm_inf_diario.dart' show formatCnpj, normalizeCnpj;
+import '../domain/dirpf.dart';
 import '../domain/fund_compensation.dart' show collapseAdministrator;
 import '../models/asset.dart';
 import '../models/asset_attachment.dart';
@@ -328,6 +329,35 @@ class PortfolioRepository {
       'fund_details',
       {'administrator': collapseAdministrator(administrator)},
       where: 'asset_id = ?',
+      whereArgs: [assetId],
+    );
+  }
+
+  /// Grava o grupo, o código e o país da ficha "Bens e Direitos" do ativo, informados
+  /// pelo usuário (vazio apaga o campo). Só completa zeros à esquerda; não confere com a
+  /// tabela da Receita. Valor inválido lança [FormatException] e não grava nada.
+  Future<void> setAssetDirpf(
+    int assetId, {
+    String? group,
+    String? code,
+    String? country,
+  }) async {
+    final normalizedGroup = normalizeDirpfField('group', group, dirpfGroupLength);
+    final normalizedCode = normalizeDirpfField('code', code, dirpfCodeLength);
+    final normalizedCountry = normalizeDirpfField(
+      'country',
+      country,
+      dirpfCountryLength,
+    );
+    final db = await AppDatabase.instance();
+    await db.update(
+      'assets',
+      {
+        'dirpf_group': normalizedGroup,
+        'dirpf_code': normalizedCode,
+        'dirpf_country': normalizedCountry,
+      },
+      where: 'id = ?',
       whereArgs: [assetId],
     );
   }

@@ -243,6 +243,12 @@ class ForeignHolding {
   /// o custo está subestimado.
   final bool incomplete;
 
+  /// Grupo, código e país da ficha, como o usuário informou no ativo (`null` = não
+  /// informado).
+  final String? dirpfGroup;
+  final String? dirpfCode;
+  final String? dirpfCountry;
+
   const ForeignHolding({
     required this.year,
     required this.assetId,
@@ -254,6 +260,9 @@ class ForeignHolding {
     required this.costBrl,
     required this.fxApproximate,
     required this.incomplete,
+    this.dirpfGroup,
+    this.dirpfCode,
+    this.dirpfCountry,
   });
 }
 
@@ -345,6 +354,9 @@ List<ForeignHolding> foreignHoldings(
             costBrl: position.cost * quantity / position.quantity,
             fxApproximate: approximate,
             incomplete: incomplete || uneven,
+            dirpfGroup: asset.dirpfGroup,
+            dirpfCode: asset.dirpfCode,
+            dirpfCountry: asset.dirpfCountry,
           ),
         );
       }
@@ -362,6 +374,9 @@ List<ForeignHolding> foreignHoldings(
             costBrl: position.cost,
             fxApproximate: approximate,
             incomplete: true,
+            dirpfGroup: asset.dirpfGroup,
+            dirpfCode: asset.dirpfCode,
+            dirpfCountry: asset.dirpfCountry,
           ),
         );
       }

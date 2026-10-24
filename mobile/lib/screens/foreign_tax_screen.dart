@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../domain/dirpf.dart';
 import '../domain/foreign_holdings_csv.dart';
 import '../domain/foreign_tax.dart';
 import '../domain/fx_history.dart';
@@ -76,8 +77,10 @@ const foreignHoldingsNote =
     'Custo de aquisição em reais, não valor de mercado, só do que está lançado '
     'neste app. Uma linha por custódia: o custo de cada uma é a quantidade dela '
     'vezes o custo médio do ativo, então as custódias somam a posição. Grupo, '
-    'código e país da ficha não são preenchidos. Estimativa de fontes '
-    'secundárias: confira no programa da Receita.';
+    'código e país da ficha são seus: preencha pelo programa da Receita (as '
+    'fontes divergem e o app não confere; só completa zeros, então 3 vira 03). '
+    'Entram na descrição copiada e no CSV. Estimativa de fontes secundárias: '
+    'confira no programa da Receita.';
 
 @visibleForTesting
 const foreignHoldingsLegend =
@@ -103,13 +106,18 @@ String foreignHoldingDescription({
   String? custodiaLabel,
   ForeignHolding? previous,
   ForeignHolding? current,
+  String? group,
+  String? code,
+  String? country,
 }) {
   String units(ForeignHolding? h) =>
       h == null ? 'sem posição' : '${formatHoldingQuantity(h.quantity)} un.';
   String cost(ForeignHolding? h) => formatBrl(h?.costBrl ?? 0);
   final custody = custodiaLabel == null ? '' : ' Custódia: $custodiaLabel.';
+  final ficha = dirpfFichaText(group: group, code: code, country: country);
   return [
     '$ticker — $name.$custody',
+    if (ficha.isNotEmpty) 'Ficha: $ficha.',
     'Situação em 31/12/${year - 1}: ${units(previous)}, custo de aquisição '
         '${cost(previous)}.',
     'Situação em 31/12/$year: ${units(current)}, custo de aquisição '
@@ -143,6 +151,35 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  /// Abre o diálogo da ficha do ativo, grava o que o usuário digitou e recarrega o informe.
+  Future<void> _editFicha(ForeignHolding holding) async {
+    final result = await showDialog<({String group, String code, String country})>(
+      context: context,
+      builder: (_) => _FichaDialog(holding: holding),
+    );
+    if (result == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _repository.setAssetDirpf(
+        holding.assetId,
+        group: result.group,
+        code: result.code,
+        country: result.country,
+      );
+    } on FormatException catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Ficha inválida (${e.message}). Use só dígitos: grupo e código '
+            'até 2, país até 3.',
+          ),
+        ),
+      );
+      return;
+    }
+    await _load();
   }
 
   Future<void> _load() async {
@@ -265,6 +302,7 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
                   _HoldingsCard(
                     holdings: _holdings,
                     custodiaLabels: _custodiaLabels,
+                    onEditFicha: _editFicha,
                   ),
               ],
             ),
@@ -277,8 +315,13 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
 class _HoldingsCard extends StatefulWidget {
   final List<ForeignHolding> holdings;
   final Map<int, String> custodiaLabels;
+  final Future<void> Function(ForeignHolding holding) onEditFicha;
 
-  const _HoldingsCard({required this.holdings, required this.custodiaLabels});
+  const _HoldingsCard({
+    required this.holdings,
+    required this.custodiaLabels,
+    required this.onEditFicha,
+  });
 
   @override
   State<_HoldingsCard> createState() => _HoldingsCardState();
@@ -399,6 +442,7 @@ class _HoldingsCardState extends State<_HoldingsCard> {
                 custodiaLabel: labelOf((row.current ?? row.previous)!),
                 previous: row.previous,
                 current: row.current,
+                onEditFicha: widget.onEditFicha,
               ),
             const SizedBox(height: 4),
             Text(foreignHoldingsLegend, style: textTheme.bodySmall),
@@ -416,12 +460,14 @@ class _HoldingRow extends StatelessWidget {
   final String custodiaLabel;
   final ForeignHolding? previous;
   final ForeignHolding? current;
+  final Future<void> Function(ForeignHolding holding) onEditFicha;
 
   const _HoldingRow({
     required this.year,
     required this.custodiaLabel,
     required this.previous,
     required this.current,
+    required this.onEditFicha,
   });
 
   String _line(String label, ForeignHolding? h) => h == null
@@ -434,37 +480,123 @@ class _HoldingRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = (current ?? previous)!;
+    final ficha = dirpfFichaText(
+      group: base.dirpfGroup,
+      code: base.dirpfCode,
+      country: base.dirpfCountry,
+    );
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text('${base.ticker} — ${base.name}'),
       subtitle: Text(
         '${custodiaLabel.isEmpty ? 'Sem custódia' : custodiaLabel}\n'
         '${_line('31/12/${year - 1}', previous)}\n'
-        '${_line('31/12/$year', current)}',
+        '${_line('31/12/$year', current)}\n'
+        'Ficha: ${ficha.isEmpty ? 'não preenchida' : ficha}',
       ),
       isThreeLine: true,
-      trailing: IconButton(
-        icon: const Icon(Icons.copy),
-        tooltip: 'Copiar descrição',
-        onPressed: () async {
-          final messenger = ScaffoldMessenger.of(context);
-          await Clipboard.setData(
-            ClipboardData(
-              text: foreignHoldingDescription(
-                year: year,
-                ticker: base.ticker,
-                name: base.name,
-                custodiaLabel: custodiaLabel.isEmpty ? null : custodiaLabel,
-                previous: previous,
-                current: current,
-              ),
-            ),
-          );
-          messenger.showSnackBar(
-            const SnackBar(content: Text('Descrição copiada.')),
-          );
-        },
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.edit_note),
+            tooltip: 'Editar grupo, código e país da ficha',
+            onPressed: () => onEditFicha(base),
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy),
+            tooltip: 'Copiar descrição',
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              await Clipboard.setData(
+                ClipboardData(
+                  text: foreignHoldingDescription(
+                    year: year,
+                    ticker: base.ticker,
+                    name: base.name,
+                    custodiaLabel: custodiaLabel.isEmpty ? null : custodiaLabel,
+                    previous: previous,
+                    current: current,
+                    group: base.dirpfGroup,
+                    code: base.dirpfCode,
+                    country: base.dirpfCountry,
+                  ),
+                ),
+              );
+              messenger.showSnackBar(
+                const SnackBar(content: Text('Descrição copiada.')),
+              );
+            },
+          ),
+        ],
       ),
+    );
+  }
+}
+
+/// Os três campos da ficha de um ativo, que o usuário digita a partir do programa da
+/// Receita. O app só completa zeros à esquerda e não confere se o par existe na tabela.
+class _FichaDialog extends StatefulWidget {
+  final ForeignHolding holding;
+
+  const _FichaDialog({required this.holding});
+
+  @override
+  State<_FichaDialog> createState() => _FichaDialogState();
+}
+
+class _FichaDialogState extends State<_FichaDialog> {
+  late final _group = TextEditingController(text: widget.holding.dirpfGroup);
+  late final _code = TextEditingController(text: widget.holding.dirpfCode);
+  late final _country = TextEditingController(
+    text: widget.holding.dirpfCountry,
+  );
+
+  @override
+  void dispose() {
+    _group.dispose();
+    _code.dispose();
+    _country.dispose();
+    super.dispose();
+  }
+
+  Widget _field(TextEditingController controller, String label, int maxLength) =>
+      TextField(
+        controller: controller,
+        decoration: InputDecoration(labelText: label),
+        keyboardType: TextInputType.number,
+        maxLength: maxLength,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Ficha de ${widget.holding.ticker}'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _field(_group, 'Grupo', dirpfGroupLength),
+          _field(_code, 'Código', dirpfCodeLength),
+          _field(_country, 'País', dirpfCountryLength),
+          const Text(
+            'Copie do programa da Receita; o app não confere. Vazio apaga.',
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop((
+            group: _group.text,
+            code: _code.text,
+            country: _country.text,
+          )),
+          child: const Text('Salvar'),
+        ),
+      ],
     );
   }
 }

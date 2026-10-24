@@ -35,7 +35,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 13,
+      version: 14,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -49,7 +49,10 @@ class AppDatabase {
             equity_shares_owned REAL,
             equity_total_shares REAL,
             equity_company_valuation REAL,
-            cnpj TEXT
+            cnpj TEXT,
+            dirpf_group TEXT,
+            dirpf_code TEXT,
+            dirpf_country TEXT
           )
         ''');
         await db.execute('''
@@ -266,6 +269,13 @@ class AppDatabase {
           await db.execute(
             'ALTER TABLE portfolio_transactions ADD COLUMN loss_credit_used REAL',
           );
+        }
+        if (oldVersion < 14) {
+          // Grupo, código e país da ficha "Bens e Direitos", informados pelo usuário em
+          // cada ativo; linhas antigas ficam sem valor (nulo = não informado).
+          for (final column in ['dirpf_group', 'dirpf_code', 'dirpf_country']) {
+            await db.execute('ALTER TABLE assets ADD COLUMN $column TEXT');
+          }
         }
       },
     );
