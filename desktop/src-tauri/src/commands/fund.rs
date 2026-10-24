@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{Datelike, Duration, NaiveDate, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
 };
@@ -132,6 +132,14 @@ fn estoque_date() -> NaiveDate {
     NaiveDate::from_ymd_opt(2023, 12, 31).expect("data válida")
 }
 
+/// O fundo tem estoque de 2023 a estimar (fechado ou exclusivo, de longo ou curto prazo, com a opção informada) e então
+/// precisa da cota de dez/2023, que fica fora da janela de 2 anos da busca.
+fn wants_estoque_quota(detail: &fund_detail::Model) -> bool {
+    detail.structure != "aberto"
+        && detail.estoque_option.is_some()
+        && matches!(FundTerm::parse(&detail.term), Some(FundTerm::LongTerm | FundTerm::ShortTerm))
+}
+
 /// A cota usada como valor patrimonial de 31/12/2023: a última lançada até a data, no máximo 10 dias antes (o último dia
 /// útil de 2023 foi 29/12).
 const ESTOQUE_QUOTA_WINDOW_DAYS: i64 = 10;
@@ -183,7 +191,8 @@ fn format_cnpj(digits: &str) -> String {
 }
 
 /// Os fundos com CNPJ do Workspace, com a data desde a qual a cota interessa: a primeira compra (no máximo 2 anos atrás,
-/// para a primeira busca não baixar o histórico todo) ou, sem compra, os últimos 90 dias.
+/// para a primeira busca não baixar o histórico todo) ou, sem compra, os últimos 90 dias. Fundo com estoque de 2023 pede
+/// também o mês de dez/2023 (a cota de 31/12/2023), um zip só em vez de todo o histórico.
 async fn fund_targets(
     db: &DatabaseConnection,
     workspace_id: i32,
@@ -196,12 +205,15 @@ async fn fund_targets(
         return Ok(Vec::new());
     }
     let ids: Vec<i32> = with_cnpj.iter().map(|(a, _)| a.id).collect();
-    let subclasses: HashMap<i32, Option<String>> = fund_detail::Entity::find()
+    let subclasses: HashMap<i32, (Option<String>, bool)> = fund_detail::Entity::find()
         .filter(fund_detail::Column::AssetId.is_in(ids.clone()))
         .all(db)
         .await?
         .into_iter()
-        .map(|d| (d.asset_id, d.cvm_subclass))
+        .map(|d| {
+            let wants_estoque = wants_estoque_quota(&d);
+            (d.asset_id, (d.cvm_subclass, wants_estoque))
+        })
         .collect();
     let portfolio_ids = workspace_portfolio_ids(db, workspace_id).await?;
     let buys = if portfolio_ids.is_empty() {
@@ -223,11 +235,20 @@ async fn fund_targets(
                 .filter(|t| t.asset_id == Some(asset.id))
                 .filter_map(|t| NaiveDate::parse_from_str(&t.transaction_date, "%Y-%m-%d").ok())
                 .min();
+            let (subclass, wants_estoque) = subclasses.get(&asset.id).cloned().unwrap_or((None, false));
+            // O estoque só existe para quem já tinha cotas em 31/12/2023.
+            let held_in_2023 = first_buy.is_none_or(|d| d <= estoque_date());
+            let extra_months = if wants_estoque && held_in_2023 {
+                vec![(estoque_date().year(), estoque_date().month())]
+            } else {
+                Vec::new()
+            };
             FundTarget {
                 asset_id: asset.id,
                 cnpj,
-                subclass: subclasses.get(&asset.id).cloned().flatten(),
+                subclass,
                 since: first_buy.map_or(today - Duration::days(90), |d| d.max(oldest_allowed)),
+                extra_months,
             }
         })
         .collect())

@@ -5153,6 +5153,70 @@ async fn the_2023_stock_of_a_closed_fund_needs_the_type_the_option_and_the_quota
 }
 
 #[tokio::test]
+async fn the_cvm_quota_of_december_2023_feeds_the_stock_only_of_funds_that_have_one() {
+    use crate::commands::fund::{
+        funds_overview_with, refresh_fund_quotas_with, set_fund_cvm_in, set_fund_estoque_in, set_fund_structure_in,
+        set_fund_term_in, EstoqueStatus, SetFundCvmRequest,
+    };
+    use crate::finance_api::fund_quota_store::Session;
+    use crate::finance_core::cvm_inf_diario::tests::{csv_of, FakeZips};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Estoque CVM").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+    // 100 cotas a 10,00 em 01/06/2022 (antes de 31/12/2023); a cota da CVM em 29/12/2023 é 14,00
+    let zips = |dec23: bool| {
+        let mut months = vec![(
+            (2026, 10),
+            csv_of(&["CLASSES - FIF;00.017.024/0001-53;;2026-10-01;1119426.37;44.990762600000;1221524.87;0.00;0.00;1"]),
+        )];
+        if dec23 {
+            months.push((
+                (2023, 12),
+                csv_of(&["CLASSES - FIF;00.017.024/0001-53;;2023-12-29;1119426.37;14.000000000000;1221524.87;0.00;0.00;1"]),
+            ));
+        }
+        FakeZips::new(&months)
+    };
+    // (ticker, estrutura, opção do estoque, deve pedir dez/2023)
+    for (ticker, structure, option, wants) in [
+        ("FCLOSED", "fechado", Some("geral"), true),
+        ("FOPEN", "aberto", Some("geral"), false),
+        ("FNOOPT", "fechado", None, false),
+    ] {
+        let fund = asset_in(&db, ticker, "fundo", "BRL").await;
+        add(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2022-06-01", 0.0)).await;
+        set_fund_term_in(&db, fund.id, "longo_prazo").await.unwrap();
+        set_fund_structure_in(&db, fund.id, structure).await.unwrap();
+        set_fund_estoque_in(&db, fund.id, option).await.unwrap();
+        let session = Session::new();
+        set_fund_cvm_in(
+            &db,
+            &session,
+            SetFundCvmRequest { asset_id: fund.id, cnpj: Some("00017024000153".into()), subclass: None },
+        )
+        .await
+        .unwrap();
+        let fake = zips(true);
+        refresh_fund_quotas_with(&db, &session, &fake, ws.id, today, true).await.unwrap();
+        let overview = funds_overview_with(&db, &session, ws.id, today).await.unwrap();
+        let view = overview.funds.iter().find(|f| f.ticker == ticker).unwrap();
+        let has_dec23 = view.quotas.iter().any(|q| q.quota_date == "2023-12-29" && q.source == "cvm");
+        assert_eq!(has_dec23, wants, "{ticker}: {:?}", view.quotas);
+        if wants {
+            // ganho de 400 (14,00 − 10,00 em 100 cotas) a 15% = 60
+            let EstoqueStatus::Estimated { estimate } = &view.estoque else { panic!("{ticker}: sem estimativa do estoque") };
+            assert!(close(estimate.base, 400.0) && close(estimate.tax, 60.0), "{estimate:?}");
+        }
+        // limpa o que a CVM gravou para o próximo fundo (mesmo CNPJ) não herdar a cota
+        set_fund_cvm_in(&db, &session, SetFundCvmRequest { asset_id: fund.id, cnpj: None, subclass: None })
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
 async fn the_next_come_cotas_basis_adds_the_taxed_2023_stock_to_the_cost_after_an_amortization() {
     use crate::commands::fund::{
         funds_overview_in, set_fund_estoque_in, set_fund_structure_in, set_fund_term_in, upsert_fund_quota_in,

@@ -34,6 +34,8 @@ pub struct FundTarget {
     pub cnpj: String,
     pub subclass: Option<String>,
     pub since: NaiveDate,
+    /// Meses fora da janela `since..=hoje` de que o fundo ainda precisa (hoje: dez/2023, a cota do estoque).
+    pub extra_months: Vec<(i32, u32)>,
 }
 
 /// Como está a leitura da CVM de um fundo.
@@ -87,8 +89,22 @@ impl Session {
 }
 
 /// Os meses `(ano, mês)` a ler para cobrir `since..=today`, dadas as datas de cota da CVM já gravadas do fundo.
-pub fn plan_months(since: NaiveDate, today: NaiveDate, stored_cvm_dates: &[NaiveDate]) -> Vec<(i32, u32)> {
-    cvm_inf_diario::months(since, today)
+/// `extra` são meses que o fundo quer além da janela: entram só se já fecharam, caírem depois da primeira publicação e
+/// não estiverem na janela.
+pub fn plan_months(
+    since: NaiveDate,
+    today: NaiveDate,
+    stored_cvm_dates: &[NaiveDate],
+    extra: &[(i32, u32)],
+) -> Vec<(i32, u32)> {
+    let mut months = cvm_inf_diario::months(since, today);
+    for &month in extra {
+        if month >= cvm_inf_diario::FIRST_MONTH && month <= (today.year(), today.month()) && !months.contains(&month) {
+            months.push(month);
+        }
+    }
+    months.sort();
+    months
         .into_iter()
         .filter(|&month| {
             cvm_inf_diario::is_recent(month, today)
@@ -217,7 +233,7 @@ pub async fn refresh(
         let checked = session.checked.lock().expect("checked lock");
         for (i, target) in targets.iter().enumerate() {
             let dates = stored.get(&target.asset_id).map(Vec::as_slice).unwrap_or(&[]);
-            for month in plan_months(target.since, today, dates) {
+            for month in plan_months(target.since, today, dates, &target.extra_months) {
                 if !cvm_inf_diario::is_recent(month, today) && checked.contains(&(target.asset_id, month.0, month.1)) {
                     continue;
                 }
@@ -282,27 +298,41 @@ mod tests {
 
     #[test]
     fn nothing_stored_reads_every_month_from_the_start() {
-        let plan = plan_months(d(2026, 5, 10), d(2026, 10, 22), &[]);
+        let plan = plan_months(d(2026, 5, 10), d(2026, 10, 22), &[], &[]);
         assert_eq!(plan, vec![(2026, 5), (2026, 6), (2026, 7), (2026, 8), (2026, 9), (2026, 10)]);
     }
 
     #[test]
     fn closed_months_with_stored_quotas_are_skipped_but_the_recent_two_always_read() {
         let stored = [d(2026, 5, 29), d(2026, 6, 30), d(2026, 7, 31), d(2026, 8, 31), d(2026, 9, 30), d(2026, 10, 20)];
-        let plan = plan_months(d(2026, 5, 10), d(2026, 10, 22), &stored);
+        let plan = plan_months(d(2026, 5, 10), d(2026, 10, 22), &stored, &[]);
         assert_eq!(plan, vec![(2026, 9), (2026, 10)]);
     }
 
     #[test]
     fn a_closed_month_with_a_hole_is_read_again() {
         let stored = [d(2026, 5, 29), d(2026, 7, 31), d(2026, 8, 31), d(2026, 9, 30)];
-        let plan = plan_months(d(2026, 5, 10), d(2026, 10, 22), &stored);
+        let plan = plan_months(d(2026, 5, 10), d(2026, 10, 22), &stored, &[]);
         assert_eq!(plan, vec![(2026, 6), (2026, 9), (2026, 10)]);
     }
 
     #[test]
+    fn an_extra_month_outside_the_window_is_read_once_and_skipped_when_already_stored() {
+        let dec23 = [(2023, 12)];
+        let plan = plan_months(d(2026, 9, 10), d(2026, 10, 22), &[], &dec23);
+        assert_eq!(plan, vec![(2023, 12), (2026, 9), (2026, 10)]);
+        // Já há cota da CVM de dez/2023: não baixa de novo.
+        let stored = [d(2023, 12, 29)];
+        assert_eq!(plan_months(d(2026, 9, 10), d(2026, 10, 22), &stored, &dec23), vec![(2026, 9), (2026, 10)]);
+        // O mês já está na janela: não duplica.
+        assert_eq!(plan_months(d(2023, 11, 1), d(2023, 12, 20), &[], &dec23), vec![(2023, 11), (2023, 12)]);
+        // Antes da primeira publicação mensal ou no futuro: ignorado.
+        assert_eq!(plan_months(d(2026, 9, 10), d(2026, 10, 22), &[], &[(2020, 12), (2027, 1)]), vec![(2026, 9), (2026, 10)]);
+    }
+
+    #[test]
     fn the_window_never_goes_before_the_first_published_month() {
-        let plan = plan_months(d(2019, 1, 1), d(2021, 2, 10), &[]);
+        let plan = plan_months(d(2019, 1, 1), d(2021, 2, 10), &[], &[]);
         assert_eq!(plan, vec![(2021, 1), (2021, 2)]);
     }
 
@@ -317,7 +347,7 @@ mod tests {
     }
 
     fn target(subclass: Option<&str>) -> FundTarget {
-        FundTarget { asset_id: 1, cnpj: "00017024000153".into(), subclass: subclass.map(str::to_string), since: d(2026, 1, 1) }
+        FundTarget { asset_id: 1, cnpj: "00017024000153".into(), subclass: subclass.map(str::to_string), since: d(2026, 1, 1), extra_months: Vec::new() }
     }
 
     #[test]
