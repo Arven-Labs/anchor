@@ -174,7 +174,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
             <p className="mb-3 text-red-600">{accountsQuery.error.message}</p>
           )}
 
-          <Table>
+          <Table data-testid="account-list">
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>

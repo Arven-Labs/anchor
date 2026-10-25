@@ -21,6 +21,7 @@ import type { StockQuote } from "../collector/types";
 import { latestForTicker } from "../collector/latestForTicker";
 import type { WorkspaceSummary, MonthlyReturn, HomeWidgetLayout, WidgetKey } from "./types";
 import FxStalenessNotice from "../finances/FxStalenessNotice";
+import type { NetWorthSummary } from "../finances/types";
 import KeyRatesTable from "../rates/KeyRatesTable";
 import { formatDate as formatRateDate, formatRate, useInterestRates } from "../rates/useInterestRates";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,7 @@ const WIDGET_TITLES: Record<WidgetKey, string> = {
   market_panel: "★ Market panel",
   interest_rates: "Interest rates",
   losses_to_offset: "Losses to offset",
+  net_worth: "Cash and net worth",
 };
 
 // Fase 10.8 fatia 2 — mesma disposição visual da fatia 1 (Sessão 84), agora
@@ -90,6 +92,8 @@ const DEFAULT_LAYOUT: HomeWidgetLayout[] = [
   { widget_key: "interest_rates", position: 7, w: 6, h: 10, visible: true },
   // Fase 24 — saldo de prejuízo a compensar por grupo; entra pra quem já personalizou via `mergeWithDefaults`.
   { widget_key: "losses_to_offset", position: 8, w: 6, h: 8, visible: true },
+  // Sessão 229 — caixa das contas e patrimônio líquido na moeda base; entra pra quem já personalizou via `mergeWithDefaults`.
+  { widget_key: "net_worth", position: 9, w: 6, h: 8, visible: true },
 ];
 
 function mergeWithDefaults(saved: HomeWidgetLayout[]): HomeWidgetLayout[] {
@@ -380,6 +384,15 @@ function HomeSection({
   });
   const lossBalances = lossesQuery.data?.assessment.loss_balances ?? [];
 
+  // Mesma chave de cache da aba Liabilities de Finanças; só roda com o widget visível.
+  const netWorthVisible = (draftLayout ?? savedLayout).find((w) => w.widget_key === "net_worth")?.visible ?? true;
+  const netWorthQuery = useQuery<NetWorthSummary, AppError>({
+    queryKey: ["net-worth", workspaceId],
+    queryFn: () => invoke("get_net_worth_summary", { workspaceId }),
+    enabled: netWorthVisible,
+  });
+  const netWorth = netWorthQuery.data;
+
   const summary = summaryQuery.data;
   const monthly = profitabilityQuery.data ?? [];
   const assets = assetsQuery.data ?? [];
@@ -592,6 +605,43 @@ function HomeSection({
         )}
         {lossBalances.length > 0 && (
           <p className="text-xs text-muted-foreground">Details in Portfolio → Taxes.</p>
+        )}
+      </div>
+    ),
+    net_worth: () => (
+      <div className="flex flex-col gap-3" data-testid="net-worth-widget">
+        {netWorthQuery.isLoading && <p className="text-sm">Loading…</p>}
+        {netWorthQuery.isError && <p className="text-sm text-red-600">{netWorthQuery.error.message}</p>}
+        {netWorth && (
+          <>
+            <div>
+              <p className="text-sm text-muted-foreground">Net worth</p>
+              <p className="text-2xl font-semibold" data-testid="net-worth-widget-total">
+                {formatMoney(netWorth.net_worth, netWorth.base_currency)}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-sm text-muted-foreground">Cash</p>
+                <p className="font-medium" data-testid="net-worth-widget-cash">
+                  {formatMoney(netWorth.total_cash, netWorth.base_currency)}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total debt</p>
+                <p className="font-medium" data-testid="net-worth-widget-debt">
+                  {formatMoney(netWorth.total_debt, netWorth.base_currency)}
+                </p>
+              </div>
+            </div>
+            {netWorth.items_missing_fx > 0 && (
+              <p className="text-xs text-muted-foreground" data-testid="net-worth-widget-missing-fx">
+                {netWorth.items_missing_fx} item{netWorth.items_missing_fx === 1 ? " is" : "s are"} left out for lack
+                of an exchange rate.
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">Details in Finances → Liabilities.</p>
+          </>
         )}
       </div>
     ),

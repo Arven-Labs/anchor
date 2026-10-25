@@ -98,4 +98,32 @@ describe("Anchor — moeda por conta, de ponta a ponta", () => {
       "a Home deveria avisar que o par ARS/BRL nunca foi coletado",
     );
   });
+
+  // Sessão 229. A conta em BRL ficou com -100 da transferência e a em ARS com 18.000 sem câmbio:
+  // o widget soma só o que tem rota e conta o que ficou de fora.
+  it("o widget da Home mostra o caixa na moeda base e conta a conta sem câmbio", async () => {
+    await waitForText(
+      byId("net-worth-widget-cash"),
+      (text) => text === "BRL -100,00",
+      "o caixa deveria somar só a conta em BRL (a de ARS não tem câmbio)",
+    );
+    await waitForText(
+      byId("net-worth-widget-missing-fx"),
+      (text) => text.includes("1 item is left out"),
+      "o widget deveria contar a conta em ARS que ficou de fora",
+    );
+    await (await byId("net-worth-widget")).scrollIntoView({ block: "center" });
+    await snap("home-net-worth-widget");
+  });
+
+  it("a lista de contas mostra o saldo com a moeda e o aviso de câmbio faltando", async () => {
+    await byId("nav-finances").click();
+    await byId("finances-tab-accounts").click();
+    await waitForText(
+      byId("account-list"),
+      (text) => text.includes("ARS 18.000,00") && text.includes("no ARS/BRL rate") && text.includes("BRL -100,00"),
+      "cada saldo deveria sair com o código da moeda, e a conta em ARS avisar que falta câmbio",
+    );
+    await snap("accounts-foreign-balance");
+  });
 });

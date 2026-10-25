@@ -38,7 +38,8 @@ export type WidgetKey =
   | "portfolios_table"
   | "market_panel"
   | "interest_rates"
-  | "losses_to_offset";
+  | "losses_to_offset"
+  | "net_worth";
 
 export type HomeWidgetLayout = {
   widget_key: WidgetKey;
