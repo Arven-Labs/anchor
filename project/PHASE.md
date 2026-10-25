@@ -2236,6 +2236,7 @@ reais é digitado, com o botão "Use market price" (Sessão 173) que o preenche:
 - **Lucros de 2023 da controlada comum (Sessão 233, desktop)**: pelo art. 6º I, a distribuição marcada como lucro de 2023 ou antes de qualquer controlada paga 15% na disponibilização, descontada a parte coberta pelo crédito da atualização; recebimento de 2024 em diante. Lucro de 2024 em diante da comum segue sem imposto na distribuição.
 - **E2E `statement-review` independente da rede (Sessão 234)**: o spec falhava às vezes porque a estimativa automática do porquinho punha um item de rendimento na fila quando a Selic (buscada no BCB pelo Home) chegava a tempo; a conta do porquinho agora é semeada com a estimativa desligada. Causa provável, não provada.
 - **Zips anuais da CVM antes de 2021: descartado (Sessão 235)**: a janela de cotas é `max(primeira compra, hoje − 730 dias)` mais dezembro de 2023 (estoque, Sessão 210); nenhuma base do come-cotas pede cota mais antiga. Volta só se aparecer um consumidor real de histórico antigo.
+- **Widget de juros sem rede no E2E (Sessão 236)**: `get_interest_rates` (chamado pelo Home) ia ao BCB e à B3 mesmo com `ANCHOR_DISABLE_INGESTION`; agora, sem rede, a Selic vem só da série gravada e a curva DI não é buscada, o que tira dos specs a dependência de o BCB responder a tempo (efeito nos specs não verificado).
 - **Pendente**: conferir com extrato real se a administradora aplica o crédito no come-cotas.
 
 **Exterior no desktop (feito, Sessão 184)**: IR anual de ações, ETFs e REITs do exterior (Lei 14.754/2023).
