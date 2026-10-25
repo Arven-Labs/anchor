@@ -35,7 +35,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 15,
+      version: 16,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -111,6 +111,7 @@ class AppDatabase {
           )
         ''');
         await _createFundTables(db);
+        await _createFinanceTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -286,8 +287,45 @@ class AppDatabase {
             'ALTER TABLE portfolio_transactions ADD COLUMN foreign_tax_paid_on TEXT',
           );
         }
+        if (oldVersion < 16) {
+          await _createFinanceTables(db);
+        }
       },
     );
+  }
+
+  /// Finanças Gerais: contas em qualquer moeda, lançamentos de receita e
+  /// despesa e as preferências do app (a moeda base). `valor` é sempre a
+  /// grandeza positiva; o sinal vem do tipo (como no desktop). O
+  /// `PRAGMA foreign_keys` não está ligado neste banco, então quem apaga uma
+  /// conta apaga os lançamentos dela (`GeneralFinanceRepository.deleteAccount`).
+  static Future<void> _createFinanceTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE bank_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL,
+        titular TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE general_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bank_account_id INTEGER NOT NULL REFERENCES bank_accounts(id) ON DELETE CASCADE,
+        transaction_type TEXT NOT NULL,
+        valor REAL NOT NULL,
+        transaction_date TEXT NOT NULL,
+        notes TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
   }
 
   /// Tipo tributário do fundo e valores de cota lançados (mesmas tabelas do
