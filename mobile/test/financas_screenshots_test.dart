@@ -12,6 +12,8 @@ import 'package:anchor_mobile/domain/fx_history.dart';
 import 'package:anchor_mobile/domain/general_finance.dart';
 import 'package:anchor_mobile/domain/liability.dart';
 import 'package:anchor_mobile/models/liability.dart';
+import 'package:anchor_mobile/models/loan.dart';
+import 'package:anchor_mobile/screens/financas_loans_screen.dart';
 import 'package:anchor_mobile/screens/financas_liabilities_screen.dart';
 import 'package:anchor_mobile/models/bank_account.dart';
 import 'package:anchor_mobile/models/general_transaction.dart';
@@ -175,6 +177,32 @@ void main() {
           createdAt: DateTime(2026, 1, 1),
         ),
       );
+      final irmao = await repository.insertBorrower(
+        Borrower(nome: 'Irmão', createdAt: DateTime(2026, 1, 1)),
+      );
+      final loanId = await repository.createLoan(
+        Loan(
+          borrowerId: irmao,
+          bankAccountId: nubankId,
+          principal: 2000,
+          taxaMensalPercentual: 1,
+          dataInicio: toIsoDay(addMonths(DateTime.now(), -4)),
+          includeInNetWorth: true,
+          currency: 'BRL',
+          notes: 'Reforma da casa',
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+      await repository.registerLoanRepayment(
+        LoanRepayment(
+          loanId: loanId,
+          bankAccountId: nubankId,
+          data: '$month-04',
+          valorRecebido: 520,
+          valorBaixado: 500,
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
       await repository.createTransfer(
         fromAccountId: nubankId,
         toAccountId: chaseId,
@@ -208,6 +236,14 @@ void main() {
     await capture(tester, 'transferir');
     await tester.tap(find.text('Cancelar'));
     await tester.pumpAndSettle();
+
+    await tester.pumpWidget(
+      app(FinancasLoansScreen(accounts: [nubank, chase])),
+    );
+    await settle(tester, () => find.text('Irmão').evaluate().isNotEmpty);
+    await tester.tap(find.text('Irmão'));
+    await tester.pumpAndSettle();
+    await capture(tester, 'emprestimos');
 
     await tester.pumpWidget(
       app(FinancasLiabilitiesScreen(accounts: [nubank, chase])),

@@ -1,12 +1,15 @@
 /// `receita` e `despesa` são lançadas à mão; as duas pernas de transferência
 /// nascem juntas em `GeneralFinanceRepository.createTransfer` e as parcelas de
-/// dívida em `createLiability`. Empréstimos do desktop ficam fora do mobile.
+/// dívida em `createLiability`; o empréstimo concedido e o recebimento dele
+/// nascem em `createLoan` e `registerLoanRepayment`.
 enum GeneralTransactionType {
   receita('receita', 'Receita'),
   despesa('despesa', 'Despesa'),
   transferenciaSaida('transferencia_saida', 'Transferência (saída)'),
   transferenciaEntrada('transferencia_entrada', 'Transferência (entrada)'),
-  parcelaDivida('parcela_divida', 'Parcela de dívida');
+  parcelaDivida('parcela_divida', 'Parcela de dívida'),
+  emprestimoConcedido('emprestimo_concedido', 'Empréstimo concedido'),
+  recebimentoEmprestimo('recebimento_emprestimo', 'Recebimento de empréstimo');
 
   /// Texto gravado em `transaction_type`, o mesmo do desktop.
   final String value;
@@ -18,6 +21,12 @@ enum GeneralTransactionType {
   static const manual = [receita, despesa];
 
   bool get isTransfer => this == transferenciaSaida || this == transferenciaEntrada;
+
+  /// Gerado por outro cadastro (dívida, empréstimo): só some junto com ele.
+  bool get isGenerated =>
+      this == parcelaDivida ||
+      this == emprestimoConcedido ||
+      this == recebimentoEmprestimo;
 
   static GeneralTransactionType fromValue(String value) =>
       values.firstWhere((t) => t.value == value);

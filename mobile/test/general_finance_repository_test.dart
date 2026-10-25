@@ -8,6 +8,7 @@ import 'package:anchor_mobile/domain/general_finance.dart';
 import 'package:anchor_mobile/domain/liability.dart';
 import 'package:anchor_mobile/models/bank_account.dart';
 import 'package:anchor_mobile/models/liability.dart';
+import 'package:anchor_mobile/models/loan.dart';
 import 'package:anchor_mobile/models/general_transaction.dart';
 import 'package:anchor_mobile/models/general_transaction_category.dart';
 import 'package:anchor_mobile/services/general_finance_repository.dart';
@@ -575,6 +576,295 @@ void main() {
       final db = await AppDatabase.instance();
       expect(await db.query('liability_installments'), hasLength(12));
     });
+  });
+
+  group('empréstimo concedido', () {
+    Future<int> borrower([String nome = 'Irmão']) => repository.insertBorrower(
+      Borrower(nome: nome, createdAt: DateTime(2026, 1, 1)),
+    );
+
+    Loan loan(
+      int borrowerId, {
+      int? accountId,
+      double principal = 1000,
+      double? rate,
+      String currency = 'BRL',
+      bool include = true,
+    }) => Loan(
+      borrowerId: borrowerId,
+      bankAccountId: accountId,
+      principal: principal,
+      taxaMensalPercentual: rate,
+      dataInicio: '2026-01-10',
+      includeInNetWorth: include,
+      currency: currency,
+      createdAt: DateTime(2026, 1, 10),
+    );
+
+    LoanRepayment repayment(
+      int loanId, {
+      int? accountId,
+      double received = 0,
+      double writtenOff = 100,
+    }) => LoanRepayment(
+      loanId: loanId,
+      bankAccountId: accountId,
+      data: '2026-03-10',
+      valorRecebido: received,
+      valorBaixado: writtenOff,
+      createdAt: DateTime(2026, 3, 10),
+    );
+
+    test('com conta: a saída do principal vira lançamento e a moeda é a da conta', () async {
+      final usd = await repository.insertAccount(account('Chase', 'USD'));
+      final who = await borrower();
+
+      await repository.createLoan(loan(who, accountId: usd, currency: 'BRL'));
+
+      final txs = await repository.listTransactions();
+      expect(txs.single.type, GeneralTransactionType.emprestimoConcedido);
+      expect(txs.single.valor, 1000);
+      expect(txs.single.date, '2026-01-10');
+      expect(txs.single.notes, 'Empréstimo para Irmão');
+      expect(computeBalances(txs, '2026-12-31'), {usd: -1000.0});
+      final listed = (await repository.listLoans()).single;
+      expect(listed.loan.currency, 'USD');
+      expect(listed.loan.generalTransactionId, txs.single.id);
+    });
+
+    test('sem conta: só registro, na moeda informada, e nada mexe em saldo', () async {
+      final who = await borrower();
+
+      await repository.createLoan(loan(who, currency: ' eur '));
+
+      expect(await repository.listTransactions(), isEmpty);
+      expect((await repository.listLoans()).single.loan.currency, 'EUR');
+    });
+
+    test('taxa zero grava sem juros; recusa principal, taxa negativa, data, moeda e devedor ruins', () async {
+      final who = await borrower();
+      await repository.createLoan(loan(who, rate: 0));
+      expect((await repository.listLoans()).single.loan.taxaMensalPercentual, isNull);
+
+      expect(() => repository.createLoan(loan(who, principal: 0)), throwsArgumentError);
+      expect(() => repository.createLoan(loan(who, rate: -1)), throwsArgumentError);
+      expect(() => repository.createLoan(loan(who, currency: 'XXX')), throwsArgumentError);
+      expect(() => repository.createLoan(loan(999)), throwsStateError);
+      expect(
+        () => repository.createLoan(loan(who, accountId: 999)),
+        throwsStateError,
+      );
+      expect(await repository.listLoans(), hasLength(1));
+    });
+
+    test('baixa com conta: o recebimento entra na conta; perdão não lança nada', () async {
+      final nubank = await repository.insertAccount(account('Nubank', 'BRL'));
+      final who = await borrower();
+      final id = await repository.createLoan(loan(who, accountId: nubank));
+
+      await repository.registerLoanRepayment(
+        repayment(id, accountId: nubank, received: 110, writtenOff: 100),
+      );
+      await repository.registerLoanRepayment(repayment(id, writtenOff: 50));
+
+      final txs = await repository.listTransactions();
+      final received = txs.singleWhere(
+        (t) => t.type == GeneralTransactionType.recebimentoEmprestimo,
+      );
+      expect(received.valor, 110);
+      expect(received.notes, 'Recebimento de Irmão');
+      expect(computeBalances(txs, '2026-12-31'), {nubank: -890.0}); // -1000 + 110
+      final item = (await repository.listLoans()).single;
+      expect(item.repayments, hasLength(2));
+      expect(item.totalWrittenOff, 150);
+      expect(item.extra, closeTo(-40, 1e-9)); // +10 a mais, 50 perdoados
+      expect(item.balanceOn(DateTime(2026, 1, 10)), 850);
+    });
+
+    test('baixa recusa valores ruins, data ruim, empréstimo e conta inexistentes e moeda diferente', () async {
+      final usd = await repository.insertAccount(account('Chase', 'USD'));
+      final who = await borrower();
+      final id = await repository.createLoan(loan(who));
+
+      expect(() => repository.registerLoanRepayment(repayment(id, writtenOff: 0)), throwsArgumentError);
+      expect(() => repository.registerLoanRepayment(repayment(id, received: -1)), throwsArgumentError);
+      expect(
+        () => repository.registerLoanRepayment(
+          LoanRepayment(
+            loanId: id,
+            data: '10/03/2026',
+            valorRecebido: 0,
+            valorBaixado: 10,
+            createdAt: DateTime(2026, 3, 10),
+          ),
+        ),
+        throwsArgumentError,
+      );
+      expect(() => repository.registerLoanRepayment(repayment(999)), throwsStateError);
+      expect(
+        () => repository.registerLoanRepayment(repayment(id, accountId: 999)),
+        throwsStateError,
+      );
+      // Empréstimo em BRL, conta em USD.
+      expect(
+        () => repository.registerLoanRepayment(repayment(id, accountId: usd, received: 10)),
+        throwsArgumentError,
+      );
+      expect((await repository.listLoans()).single.repayments, isEmpty);
+      expect(await repository.listTransactions(), isEmpty);
+    });
+
+    test('apagar a baixa leva o recebimento; apagar o empréstimo leva baixas e lançamentos', () async {
+      final nubank = await repository.insertAccount(account('Nubank', 'BRL'));
+      await repository.insertTransaction(
+        tx(nubank, GeneralTransactionType.receita, 5, '2026-01-01'),
+      );
+      final who = await borrower();
+      final id = await repository.createLoan(loan(who, accountId: nubank));
+      final first = await repository.registerLoanRepayment(
+        repayment(id, accountId: nubank, received: 100),
+      );
+      await repository.registerLoanRepayment(
+        repayment(id, accountId: nubank, received: 200, writtenOff: 200),
+      );
+
+      await repository.deleteLoanRepayment(first);
+      expect(
+        (await repository.listTransactions())
+            .where((t) => t.type == GeneralTransactionType.recebimentoEmprestimo)
+            .map((t) => t.valor),
+        [200.0],
+      );
+
+      await repository.deleteLoan(id);
+
+      expect(await repository.listLoans(), isEmpty);
+      final left = await repository.listTransactions();
+      expect(left.single.type, GeneralTransactionType.receita);
+      final db = await AppDatabase.instance();
+      expect(await db.query('loan_repayments'), isEmpty);
+    });
+
+    test('lançamento gerado não se apaga solta e o manual não aceita o tipo', () async {
+      final nubank = await repository.insertAccount(account('Nubank', 'BRL'));
+      final who = await borrower();
+      await repository.createLoan(loan(who, accountId: nubank));
+      final generated = (await repository.listTransactions()).single;
+
+      expect(() => repository.deleteTransaction(generated.id!), throwsStateError);
+      for (final type in [
+        GeneralTransactionType.emprestimoConcedido,
+        GeneralTransactionType.recebimentoEmprestimo,
+      ]) {
+        expect(
+          () => repository.insertTransaction(tx(nubank, type, 10, '2026-08-05')),
+          throwsArgumentError,
+        );
+      }
+    });
+
+    test('editar muda taxa, flag e observação; devedor com empréstimo não se apaga', () async {
+      final who = await borrower();
+      final id = await repository.createLoan(loan(who, rate: 2));
+
+      await repository.updateLoan(
+        id,
+        taxaMensalPercentual: 0,
+        includeInNetWorth: false,
+        notes: '  família  ',
+      );
+
+      final changed = (await repository.listLoans()).single.loan;
+      expect(changed.taxaMensalPercentual, isNull);
+      expect(changed.includeInNetWorth, isFalse);
+      expect(changed.notes, 'família');
+      expect(changed.principal, 1000);
+      expect(
+        () => repository.updateLoan(id, taxaMensalPercentual: -1, includeInNetWorth: true),
+        throwsArgumentError,
+      );
+      expect(
+        () => repository.updateLoan(999, taxaMensalPercentual: null, includeInNetWorth: true),
+        throwsStateError,
+      );
+      expect(() => repository.deleteBorrower(who), throwsStateError);
+
+      await repository.deleteLoan(id);
+      await repository.deleteBorrower(who);
+      expect(await repository.listBorrowers(), isEmpty);
+    });
+
+    test('apagar a conta deixa o empréstimo como registro, sem a conta', () async {
+      final a = await repository.insertAccount(account('A', 'BRL'));
+      final who = await borrower();
+      final id = await repository.createLoan(loan(who, accountId: a));
+      await repository.registerLoanRepayment(
+        repayment(id, accountId: a, received: 100),
+      );
+
+      await repository.deleteAccount(a);
+
+      final item = (await repository.listLoans()).single;
+      expect(item.loan.bankAccountId, isNull);
+      expect(item.loan.generalTransactionId, isNull);
+      expect(item.repayments.single.bankAccountId, isNull);
+      expect(item.repayments.single.generalTransactionId, isNull);
+      expect(item.loan.currency, 'BRL');
+      expect(await repository.listTransactions(), isEmpty);
+    });
+
+    test('devedores listados por nome', () async {
+      await borrower('beto');
+      await borrower('Ana');
+
+      expect((await repository.listBorrowers()).map((b) => b.nome), ['Ana', 'beto']);
+      expect(() => repository.insertBorrower(Borrower(nome: '  ', createdAt: DateTime(2026, 1, 1))), throwsArgumentError);
+    });
+  });
+
+  test('banco v19 sobe para a v20 e ganha as tabelas de empréstimo', () async {
+    final old = await openDatabase(
+      '${dir.path}/anchor_mobile.db',
+      version: 19,
+      onCreate: (db, _) async {
+        await db.execute('''CREATE TABLE bank_accounts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          nome TEXT NOT NULL, titular TEXT NOT NULL,
+          currency TEXT NOT NULL, created_at TEXT NOT NULL)''');
+        await db.execute('''CREATE TABLE general_transactions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bank_account_id INTEGER NOT NULL,
+          transaction_type TEXT NOT NULL, valor REAL NOT NULL,
+          transaction_date TEXT NOT NULL, notes TEXT,
+          created_at TEXT NOT NULL, category_id INTEGER, transfer_id INTEGER)''');
+        await db.execute('''CREATE TABLE liabilities (
+          id INTEGER PRIMARY KEY AUTOINCREMENT)''');
+        await db.insert('bank_accounts', {
+          'nome': 'Velha',
+          'titular': 'Eu',
+          'currency': 'BRL',
+          'created_at': '2026-01-01T00:00:00.000',
+        });
+      },
+    );
+    await old.close();
+
+    expect(await repository.listLoans(), isEmpty);
+    final who = await repository.insertBorrower(
+      Borrower(nome: 'Irmão', createdAt: DateTime(2026, 1, 1)),
+    );
+    await repository.createLoan(
+      Loan(
+        borrowerId: who,
+        bankAccountId: 1,
+        principal: 10,
+        dataInicio: '2026-01-10',
+        includeInNetWorth: true,
+        currency: 'BRL',
+        createdAt: DateTime(2026, 1, 10),
+      ),
+    );
+    expect(await repository.listTransactions(), hasLength(1));
   });
 
   test('banco v18 sobe para a v19 e ganha as tabelas de dívida', () async {

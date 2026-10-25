@@ -35,7 +35,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 19,
+      version: 20,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -288,7 +288,8 @@ class AppDatabase {
           );
         }
         if (oldVersion < 16) {
-          // Já nasce com categorias (v17), transferências (v18) e dívidas (v19).
+          // Já nasce com categorias (v17), transferências (v18), dívidas (v19)
+          // e empréstimos (v20).
           await _createFinanceTables(db);
         }
         if (oldVersion == 16) {
@@ -304,6 +305,9 @@ class AppDatabase {
         }
         if (oldVersion >= 16 && oldVersion < 19) {
           await _createLiabilityTables(db);
+        }
+        if (oldVersion >= 16 && oldVersion < 20) {
+          await _createLoanTables(db);
         }
       },
     );
@@ -345,6 +349,50 @@ class AppDatabase {
     ''');
     await _createCategoriesTable(db);
     await _createLiabilityTables(db);
+    await _createLoanTables(db);
+  }
+
+  /// Empréstimos concedidos a terceiros, os devedores e as baixas manuais. Com
+  /// conta, o principal e cada recebimento são lançamentos da conta
+  /// (`general_transaction_id`), apagados junto pelo repositório (sem cascata
+  /// do banco).
+  static Future<void> _createLoanTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE borrowers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL,
+        notes TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE loans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        borrower_id INTEGER NOT NULL REFERENCES borrowers(id),
+        bank_account_id INTEGER REFERENCES bank_accounts(id),
+        general_transaction_id INTEGER REFERENCES general_transactions(id),
+        principal REAL NOT NULL,
+        taxa_mensal_percentual REAL,
+        data_inicio TEXT NOT NULL,
+        include_in_net_worth INTEGER NOT NULL,
+        currency TEXT NOT NULL,
+        notes TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE loan_repayments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        loan_id INTEGER NOT NULL REFERENCES loans(id),
+        bank_account_id INTEGER REFERENCES bank_accounts(id),
+        general_transaction_id INTEGER REFERENCES general_transactions(id),
+        data TEXT NOT NULL,
+        valor_recebido REAL NOT NULL,
+        valor_baixado REAL NOT NULL,
+        notes TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   /// Dívida com parcelas geradas e o detalhe de juros/amortização de cada uma;

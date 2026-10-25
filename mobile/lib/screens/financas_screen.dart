@@ -13,6 +13,7 @@ import '../services/quote_dispatcher.dart';
 import '../services/yahoo_quote_service.dart';
 import 'financas_categories_screen.dart';
 import 'financas_liabilities_screen.dart';
+import 'financas_loans_screen.dart';
 import 'financas_transactions_screen.dart';
 
 /// Aviso de câmbio que não veio: os itens dessas moedas ficam fora da soma.
@@ -34,10 +35,10 @@ String? missingItemsNote(int count) {
 /// Finanças Gerais: contas em qualquer moeda, o saldo de cada uma (derivado
 /// dos lançamentos) e o patrimônio na moeda base — caixa das contas mais valor
 /// de mercado da carteira. Standalone, como o resto do mobile (sem sync com o
-/// desktop). Transferências entre contas e dívidas (`FinancasLiabilitiesScreen`)
-/// saem pelos botões da barra. Fora do mobile por ora:
-/// empréstimos. Categorias com limite mensal ficam em
-/// `FinancasCategoriesScreen`.
+/// desktop). Transferências entre contas, dívidas (`FinancasLiabilitiesScreen`),
+/// empréstimos concedidos (`FinancasLoansScreen`) e categorias com limite
+/// mensal (`FinancasCategoriesScreen`) saem pelos botões da barra. Fora do
+/// mobile por ora: `empresaNaoListada` no patrimônio.
 class FinancasScreen extends StatefulWidget {
   /// Série da moeda em reais; o padrão é o Yahoo com o fallback de inverso e
   /// de pernas via dólar. Injetável para teste, sem rede.
@@ -110,10 +111,21 @@ class _FinancasScreenState extends State<FinancasScreen> {
           l.balanceOn(today),
         ),
     ];
+    final now = DateTime.now();
+    final loanItems = [
+      for (final l in await _repository.listLoans())
+        if (l.loan.includeInNetWorth)
+          ValuedItem(l.loan.currency, l.balanceOn(now)),
+    ];
     final fx = await loadRatesToBrl(
       {
         _base,
-        for (final item in [...cashItems, ...portfolioItems, ...debtItems])
+        for (final item in [
+          ...cashItems,
+          ...portfolioItems,
+          ...debtItems,
+          ...loanItems,
+        ])
           item.currency,
       },
       fetch: widget.fetchFx ?? _fetchFx,
@@ -123,6 +135,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
       cashItems: cashItems,
       portfolioItems: portfolioItems,
       debtItems: debtItems,
+      loanItems: loanItems,
       ratesToBrl: fx.ratesToBrl,
     );
 
@@ -433,6 +446,13 @@ class _FinancasScreenState extends State<FinancasScreen> {
     await _load();
   }
 
+  Future<void> _openLoans() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => FinancasLoansScreen(accounts: _accounts)),
+    );
+    await _load();
+  }
+
   Future<void> _openLiabilities() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -524,6 +544,11 @@ class _FinancasScreenState extends State<FinancasScreen> {
                 'Carteira ${formatMoney(net.portfolio, net.base)}',
                 key: const Key('financas-portfolio'),
               ),
+              if (net.loansReceivable > 0)
+                Text(
+                  'Empréstimos a receber ${formatMoney(net.loansReceivable, net.base)}',
+                  key: const Key('financas-loans'),
+                ),
               if (net.debt > 0)
                 Text(
                   'Dívidas −${formatMoney(net.debt, net.base)}',
@@ -579,6 +604,11 @@ class _FinancasScreenState extends State<FinancasScreen> {
             tooltip: 'Transferir',
             icon: const Icon(Icons.swap_horiz),
             onPressed: _transfer,
+          ),
+          IconButton(
+            tooltip: 'Empréstimos',
+            icon: const Icon(Icons.handshake_outlined),
+            onPressed: _openLoans,
           ),
           IconButton(
             tooltip: 'Dívidas',

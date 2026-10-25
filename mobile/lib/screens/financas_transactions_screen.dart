@@ -263,10 +263,9 @@ class _FinancasTransactionsScreenState
                                   ].join('\n'),
                                 ),
                                 isThreeLine: future || tx.notes != null,
-                                // Parcela de dívida sai junto com a dívida.
-                                trailing:
-                                    tx.type ==
-                                        GeneralTransactionType.parcelaDivida
+                                // Parcela de dívida e lançamento de empréstimo
+                                // saem junto com o cadastro que os gerou.
+                                trailing: tx.type.isGenerated
                                     ? null
                                     : IconButton(
                                         icon: const Icon(Icons.delete_outline),

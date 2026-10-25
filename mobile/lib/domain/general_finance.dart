@@ -19,11 +19,13 @@ double? parseAmount(String text) {
 }
 
 /// Porta de `signed_valor` (`desktop/src-tauri/src/commands/bank_account.rs`):
-/// despesa, parcela de dívida e saída de transferência saem da conta, receita
-/// e entrada de transferência entram. `valor` é sempre a grandeza positiva.
+/// despesa, parcela de dívida, empréstimo concedido e saída de transferência
+/// saem da conta; receita, recebimento de empréstimo e entrada de
+/// transferência entram. `valor` é sempre a grandeza positiva.
 double signedValor(GeneralTransactionType type, double valor) =>
     type == GeneralTransactionType.despesa ||
         type == GeneralTransactionType.parcelaDivida ||
+        type == GeneralTransactionType.emprestimoConcedido ||
         type == GeneralTransactionType.transferenciaSaida
     ? -valor
     : valor;
@@ -128,6 +130,10 @@ class NetWorth {
 
   /// Saldo devedor das dívidas, positivo; já subtraído em `total`.
   final double debt;
+
+  /// Saldo a receber dos empréstimos concedidos marcados para entrar no
+  /// patrimônio; já somado em `total`.
+  final double loansReceivable;
   final int itemsMissingFx;
 
   const NetWorth({
@@ -135,10 +141,11 @@ class NetWorth {
     required this.cash,
     required this.portfolio,
     this.debt = 0,
+    this.loansReceivable = 0,
     required this.itemsMissingFx,
   });
 
-  double get total => cash + portfolio - debt;
+  double get total => cash + portfolio + loansReceivable - debt;
 }
 
 NetWorth computeNetWorth({
@@ -146,6 +153,7 @@ NetWorth computeNetWorth({
   required Iterable<ValuedItem> cashItems,
   required Iterable<ValuedItem> portfolioItems,
   Iterable<ValuedItem> debtItems = const [],
+  Iterable<ValuedItem> loanItems = const [],
   required Map<String, double> ratesToBrl,
 }) {
   var missing = 0;
@@ -168,11 +176,13 @@ NetWorth computeNetWorth({
   final cash = sum(cashItems);
   final portfolio = sum(portfolioItems);
   final debt = sum(debtItems);
+  final loansReceivable = sum(loanItems);
   return NetWorth(
     base: base,
     cash: cash,
     portfolio: portfolio,
     debt: debt,
+    loansReceivable: loansReceivable,
     itemsMissingFx: missing,
   );
 }

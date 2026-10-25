@@ -121,6 +121,30 @@ void main() {
       expect(worth.itemsMissingFx, 1);
     });
 
+    test('o saldo a receber dos empréstimos soma ao patrimônio, convertido para a base', () {
+      final worth = computeNetWorth(
+        base: 'BRL',
+        cashItems: const [ValuedItem('BRL', 1000)],
+        portfolioItems: const [],
+        debtItems: const [ValuedItem('BRL', 300)],
+        loanItems: const [
+          ValuedItem('BRL', 200), // 200
+          ValuedItem('USD', 10), // 50
+          ValuedItem('PYG', 1000000), // sem taxa: fora
+        ],
+        ratesToBrl: const {'USD': 5.0},
+      );
+
+      expect(worth.loansReceivable, 250);
+      expect(worth.total, 950); // 1000 + 250 - 300
+      expect(worth.itemsMissingFx, 1);
+    });
+
+    test('empréstimo recebido e concedido movem a conta com o sinal certo', () {
+      expect(signedValor(GeneralTransactionType.emprestimoConcedido, 100), -100);
+      expect(signedValor(GeneralTransactionType.recebimentoEmprestimo, 100), 100);
+    });
+
     test('sem dívida o patrimônio é o mesmo de antes', () {
       final worth = computeNetWorth(
         base: 'BRL',

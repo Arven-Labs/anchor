@@ -13,6 +13,8 @@ import 'package:anchor_mobile/models/general_transaction.dart';
 import 'package:anchor_mobile/models/general_transaction_category.dart';
 import 'package:anchor_mobile/domain/liability.dart';
 import 'package:anchor_mobile/models/liability.dart';
+import 'package:anchor_mobile/models/loan.dart';
+import 'package:anchor_mobile/screens/financas_loans_screen.dart';
 import 'package:anchor_mobile/screens/financas_categories_screen.dart';
 import 'package:anchor_mobile/screens/financas_liabilities_screen.dart';
 import 'package:anchor_mobile/models/position.dart';
@@ -422,6 +424,88 @@ void main() {
     await tester.pumpAndSettle();
     await settle(() => find.text('Nenhuma dívida cadastrada ainda.').evaluate().isNotEmpty);
     expect(find.text('Nenhuma dívida cadastrada ainda.'), findsOneWidget);
+  });
+
+  testWidgets('empréstimo marcado soma ao patrimônio; desmarcado fica de fora', (tester) async {
+    await tester.runAsync(() async {
+      await account('Nubank', 'BRL');
+      final who = await repository.insertBorrower(
+        Borrower(nome: 'Irmão', createdAt: DateTime(2026, 1, 1)),
+      );
+      Future<int> lend(double principal, bool include) => repository.createLoan(
+        Loan(
+          borrowerId: who,
+          principal: principal,
+          dataInicio: '2026-01-10',
+          includeInNetWorth: include,
+          currency: 'BRL',
+          createdAt: DateTime(2026, 1, 10),
+        ),
+      );
+      await lend(500, true);
+      await lend(9000, false);
+    });
+    await pumpScreen(tester);
+
+    expect(textOf(tester, 'financas-loans').data, 'Empréstimos a receber BRL 500,00');
+    expect(textOf(tester, 'financas-net-worth').data, 'BRL 500,00');
+  });
+
+  testWidgets('tela de empréstimos: cadastra, baixa, mostra o saldo e exclui', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FinancasLoansScreen(accounts: const [], now: DateTime(2026, 3, 15)),
+      ),
+    );
+    Future<void> settle(bool Function() ready) async {
+      for (var i = 0; i < 200; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump();
+        if (ready()) break;
+      }
+    }
+
+    String summary() => tester
+        .widget<Text>(find.byWidgetPredicate(
+          (w) => w is Text && (w.key as ValueKey?)?.value.toString().contains('financas-loan-summary-') == true,
+        ))
+        .data!;
+
+    await settle(() => find.text('Nenhum empréstimo cadastrado ainda.').evaluate().isNotEmpty);
+    expect(find.text('Nenhum empréstimo cadastrado ainda.'), findsOneWidget);
+
+    await tester.tap(find.text('Empréstimo'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('financas-loan-new-borrower')), 'Irmão');
+    await tester.enterText(find.byKey(const Key('financas-loan-principal')), '1000');
+    await tester.enterText(find.byKey(const Key('financas-loan-rate')), '1');
+    await tester.tap(find.widgetWithText(FilledButton, 'Cadastrar'));
+    await tester.pumpAndSettle();
+    await settle(() => find.text('Irmão').evaluate().isNotEmpty);
+
+    // Início no "hoje" injetado (15/03/2026): nenhum mês completo, sem juros.
+    expect(summary(), contains('A receber BRL 1.000,00'));
+    expect(summary(), isNot(contains('Juros acumulados')));
+
+    await tester.tap(find.text('Irmão'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nenhuma baixa ainda.'), findsOneWidget);
+    await tester.tap(find.text('Registrar baixa'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('financas-repay-received')), '300');
+    await tester.tap(find.widgetWithText(FilledButton, 'Registrar'));
+    await tester.pumpAndSettle();
+    await settle(() => find.textContaining('baixou BRL 300,00').evaluate().isNotEmpty);
+
+    expect(summary(), contains('A receber BRL 700,00'));
+    expect(find.textContaining('recebido BRL 300,00 · baixou BRL 300,00'), findsOneWidget);
+
+    await tester.tap(find.text('Excluir'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Excluir'));
+    await tester.pumpAndSettle();
+    await settle(() => find.text('Nenhum empréstimo cadastrado ainda.').evaluate().isNotEmpty);
+    expect(find.text('Nenhum empréstimo cadastrado ainda.'), findsOneWidget);
   });
 
   testWidgets('o botão Categorias abre a tela de categorias', (tester) async {
