@@ -585,6 +585,49 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await snap("taxes-offshore-holdings");
   });
 
+  // Controlada ativa (Lei 14.754, art. 6º): não é tributada em 31/12, só quando o lucro é disponibilizado. Uma distribuição de
+  // US$ 1.000 recebida em 10/03/2025, com PTAX de venda de 5,50 nesse dia, vale R$ 5.500 e paga 15% = R$ 825,00 em 2025. O lucro
+  // informado da entidade (US$ 3.000 em 2025) não gera imposto de 31/12: só a 'Holding LLC' aparece na tabela do art. 5º.
+  it("tributa a controlada ativa pela distribuição recebida, não pelo lucro de 31/12", async () => {
+    const workspace = sql("SELECT id FROM workspace WHERE name = 'Tax E2E'");
+    sql(
+      "INSERT INTO ptax_daily (currency, reference_date, buy, sell, source, fetched_at) " +
+        "VALUES ('USD', '2025-03-10', 5.4, 5.5, 'test', '2025-03-10T00:00:00Z')",
+    );
+    sql(
+      "INSERT INTO offshore_entities (workspace_id, name, country, currency, ownership_percent, regime, created_at) " +
+        `VALUES (${workspace}, 'Operadora LLC', 'US', 'USD', 100, 'ativa', '2026-01-01T00:00:00Z')`,
+    );
+    const entity = sql("SELECT id FROM offshore_entities WHERE name = 'Operadora LLC'");
+    sql(
+      "INSERT INTO offshore_results (entity_id, year, profit, tax_paid_abroad, created_at) " +
+        `VALUES (${entity}, 2025, 3000, 0, '2026-01-01T00:00:00Z')`,
+    );
+    sql(
+      "INSERT INTO offshore_distributions (entity_id, origin_year, received_on, amount, created_at) " +
+        `VALUES (${entity}, 2025, '2025-03-10', 1000, '2025-03-10T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await waitForText(
+      byId("offshore-active-tax-due-2025"),
+      (text) => text.includes("825,00"),
+      "o imposto da distribuição da controlada ativa em 2025 deveria ser R$ 825,00",
+    );
+    // o imposto de 31/12 de 2025 continua sendo só o da 'Holding LLC' (R$ 605,00), sem o lucro da entidade ativa
+    await waitForText(
+      byId("offshore-tax-due-2025"),
+      (text) => text.includes("605,00"),
+      "o imposto de 31/12 de 2025 deveria seguir R$ 605,00, sem o lucro da entidade ativa",
+    );
+    await byId(`offshore-entity-active-${entity}`).waitForDisplayed({ timeout: 30_000 });
+    await byId("offshore-card").scrollIntoView({ block: "center" });
+    await snap("taxes-offshore-active");
+  });
+
   // Aviso da guarda do registro das perdas (IN RFB 1.585, art. 15 §2): a Zeta tem um único fundo, zerado por um resgate com
   // perda de R$ 200,00 em 01/06/2025 (100 cotas a 10,00 vendidas a 8,00). O saldo fica no grupo e todos os fundos dela estão
   // zerados, então a tela avisa. A guarda vai até 31/12/2026: o texto depende de "hoje" estar antes ou depois dessa data,

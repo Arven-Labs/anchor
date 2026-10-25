@@ -21,6 +21,8 @@ pub struct OffshoreEntityView {
     #[serde(flatten)]
     pub entity: offshore_entity::Model,
     pub results: Vec<offshore_result::Model>,
+    /// As distribuições recebidas, da mais antiga à mais nova (as de entidade `ativa` são o que gera imposto).
+    pub distributions: Vec<offshore_distribution::Model>,
 }
 
 #[derive(Deserialize)]
@@ -29,6 +31,9 @@ pub struct OffshoreEntityRequest {
     pub country: String,
     pub currency: String,
     pub ownership_percent: f64,
+    /// `automatico` (padrão) ou `ativa` (art. 6º da Lei 14.754: tributada só na disponibilização do lucro).
+    #[serde(default)]
+    pub regime: Option<String>,
     pub notes: Option<String>,
 }
 
@@ -68,10 +73,21 @@ struct CleanEntity {
     country: String,
     currency: String,
     ownership_percent: f64,
+    regime: &'static str,
     notes: Option<String>,
 }
 
+pub const REGIME_AUTOMATIC: &str = "automatico";
+pub const REGIME_ACTIVE: &str = "ativa";
+
 fn clean_entity(request: OffshoreEntityRequest) -> Result<CleanEntity, AppError> {
+    let regime = match request.regime.as_deref().map(str::trim) {
+        None | Some("") | Some(REGIME_AUTOMATIC) => REGIME_AUTOMATIC,
+        Some(REGIME_ACTIVE) => REGIME_ACTIVE,
+        Some(other) => {
+            return Err(AppError::InvalidInput(format!("regime must be '{REGIME_AUTOMATIC}' or '{REGIME_ACTIVE}', got '{other}'")))
+        }
+    };
     let currency = required(&request.currency, "currency")?.to_uppercase();
     if currency.len() != 3 || !currency.chars().all(|c| c.is_ascii_alphabetic()) {
         return Err(AppError::InvalidInput("currency must be a 3-letter code (e.g. USD)".to_string()));
@@ -84,6 +100,7 @@ fn clean_entity(request: OffshoreEntityRequest) -> Result<CleanEntity, AppError>
         country: required(&request.country, "country")?,
         currency,
         ownership_percent: request.ownership_percent,
+        regime,
         notes: request.notes.map(|n| n.trim().to_string()).filter(|n| !n.is_empty()),
     })
 }
@@ -106,20 +123,27 @@ pub async fn list_offshore_entities_in(
         .all(db)
         .await?;
     let ids: Vec<i32> = entities.iter().map(|e| e.id).collect();
-    let results = if ids.is_empty() {
-        Vec::new()
+    let (results, distributions) = if ids.is_empty() {
+        (Vec::new(), Vec::new())
     } else {
-        offshore_result::Entity::find()
-            .filter(offshore_result::Column::EntityId.is_in(ids))
+        let results = offshore_result::Entity::find()
+            .filter(offshore_result::Column::EntityId.is_in(ids.clone()))
             .order_by_asc(offshore_result::Column::Year)
             .all(db)
-            .await?
+            .await?;
+        let distributions = offshore_distribution::Entity::find()
+            .filter(offshore_distribution::Column::EntityId.is_in(ids))
+            .order_by_asc(offshore_distribution::Column::ReceivedOn)
+            .all(db)
+            .await?;
+        (results, distributions)
     };
     Ok(entities
         .into_iter()
         .map(|entity| {
             let results = results.iter().filter(|r| r.entity_id == entity.id).cloned().collect();
-            OffshoreEntityView { entity, results }
+            let distributions = distributions.iter().filter(|d| d.entity_id == entity.id).cloned().collect();
+            OffshoreEntityView { entity, results, distributions }
         })
         .collect())
 }
@@ -143,6 +167,7 @@ pub async fn create_offshore_entity_in(
         country: Set(clean.country),
         currency: Set(clean.currency),
         ownership_percent: Set(clean.ownership_percent),
+        regime: Set(clean.regime.to_string()),
         notes: Set(clean.notes),
         created_at: Set(Utc::now().to_rfc3339()),
         ..Default::default()
@@ -173,6 +198,7 @@ pub async fn update_offshore_entity_in(
     active.country = Set(clean.country);
     active.currency = Set(clean.currency);
     active.ownership_percent = Set(clean.ownership_percent);
+    active.regime = Set(clean.regime.to_string());
     active.notes = Set(clean.notes);
     Ok(active.update(db).await?)
 }
@@ -250,6 +276,8 @@ pub async fn delete_offshore_result(
 #[derive(Deserialize)]
 pub struct AddOffshoreDistributionRequest {
     pub entity_id: i32,
+    /// Ano do lucro distribuído. Ignorado (vale o ano do recebimento) para entidade `ativa`, que não tem crédito por ano.
+    #[serde(default)]
     pub origin_year: i32,
     /// `AAAA-MM-DD`.
     pub received_on: String,
@@ -271,7 +299,12 @@ pub async fn add_offshore_distribution_in(
     db: &DatabaseConnection,
     request: AddOffshoreDistributionRequest,
 ) -> Result<offshore_distribution::Model, AppError> {
-    if request.origin_year < FIRST_YEAR || request.origin_year > 2100 {
+    let entity = offshore_entity::Entity::find_by_id(request.entity_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("offshore entity {}", request.entity_id)))?;
+    let active = entity.regime == REGIME_ACTIVE;
+    if !active && (request.origin_year < FIRST_YEAR || request.origin_year > 2100) {
         return Err(AppError::InvalidInput(format!("origin year must be {FIRST_YEAR} or later (Lei 14.754)")));
     }
     if !request.amount.is_finite() || request.amount <= 0.0 {
@@ -281,21 +314,25 @@ pub async fn add_offshore_distribution_in(
         .ok()
         .filter(|d| request.received_on.len() == 10 && d.year() >= 1900)
         .ok_or_else(|| AppError::InvalidInput(format!("received_on '{}' is not a date (YYYY-MM-DD)", request.received_on)))?;
-    let year_end = NaiveDate::from_ymd_opt(request.origin_year, 12, 31)
-        .ok_or_else(|| AppError::InvalidInput(format!("invalid year {}", request.origin_year)))?;
-    if received_on < year_end {
+    // Entidade ativa (art. 6º): o imposto é do ano do recebimento, sem ano de origem; a lei vale a partir de 2024.
+    let origin_year = if active {
+        if received_on.year() < FIRST_YEAR {
+            return Err(AppError::InvalidInput(format!("the distribution must be received in {FIRST_YEAR} or later (Lei 14.754)")));
+        }
+        received_on.year()
+    } else {
+        request.origin_year
+    };
+    let year_end = NaiveDate::from_ymd_opt(origin_year, 12, 31)
+        .ok_or_else(|| AppError::InvalidInput(format!("invalid year {origin_year}")))?;
+    if !active && received_on < year_end {
         return Err(AppError::InvalidInput(format!(
-            "the profit of {} was only taxed on 31/12/{}: the distribution cannot be received before that",
-            request.origin_year, request.origin_year
+            "the profit of {origin_year} was only taxed on 31/12/{origin_year}: the distribution cannot be received before that"
         )));
     }
-    offshore_entity::Entity::find_by_id(request.entity_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("offshore entity {}", request.entity_id)))?;
     Ok(offshore_distribution::ActiveModel {
         entity_id: Set(request.entity_id),
-        origin_year: Set(request.origin_year),
+        origin_year: Set(origin_year),
         received_on: Set(request.received_on),
         amount: Set(request.amount),
         created_at: Set(Utc::now().to_rfc3339()),
@@ -331,35 +368,47 @@ pub async fn get_offshore_credits(
 
 pub async fn offshore_credits_in(db: &DatabaseConnection, workspace_id: i32) -> Result<OffshoreCredits, AppError> {
     let assessment = crate::commands::tax::assess_workspace(db, workspace_id).await?;
+    // Entidade ativa (art. 6º) não tem crédito de dividendo: as distribuições dela são tributadas, não reduzem crédito.
+    let distributions = load_distributions(db, workspace_id, false).await?;
+    let (rows, views) = offshore_credits(&assessment.offshore_years, &distributions, Utc::now().date_naive());
+    Ok(OffshoreCredits { rows, distributions: views })
+}
+
+/// As distribuições do Workspace, das entidades ativas (`active`, art. 6º) ou das demais, da mais antiga à mais nova.
+pub(crate) async fn load_distributions(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+    active: bool,
+) -> Result<Vec<OffshoreDistribution>, AppError> {
+    let regime = offshore_entity::Column::Regime;
     let entity_ids: Vec<i32> = offshore_entity::Entity::find()
         .filter(offshore_entity::Column::WorkspaceId.eq(workspace_id))
+        .filter(if active { regime.eq(REGIME_ACTIVE) } else { regime.ne(REGIME_ACTIVE) })
         .all(db)
         .await?
         .into_iter()
         .map(|e| e.id)
         .collect();
-    let rows = if entity_ids.is_empty() {
-        Vec::new()
-    } else {
-        offshore_distribution::Entity::find()
-            .filter(offshore_distribution::Column::EntityId.is_in(entity_ids))
-            .order_by_asc(offshore_distribution::Column::ReceivedOn)
-            .all(db)
-            .await?
-    };
-    let mut distributions = Vec::with_capacity(rows.len());
-    for row in rows {
-        distributions.push(OffshoreDistribution {
-            id: row.id,
-            entity_id: row.entity_id,
-            origin_year: row.origin_year,
-            received_on: NaiveDate::parse_from_str(&row.received_on, "%Y-%m-%d")
-                .map_err(|_| AppError::InvalidInput(format!("invalid date '{}'", row.received_on)))?,
-            amount: row.amount,
-        });
+    if entity_ids.is_empty() {
+        return Ok(Vec::new());
     }
-    let (rows, views) = offshore_credits(&assessment.offshore_years, &distributions, Utc::now().date_naive());
-    Ok(OffshoreCredits { rows, distributions: views })
+    let rows = offshore_distribution::Entity::find()
+        .filter(offshore_distribution::Column::EntityId.is_in(entity_ids))
+        .order_by_asc(offshore_distribution::Column::ReceivedOn)
+        .all(db)
+        .await?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(OffshoreDistribution {
+                id: row.id,
+                entity_id: row.entity_id,
+                origin_year: row.origin_year,
+                received_on: NaiveDate::parse_from_str(&row.received_on, "%Y-%m-%d")
+                    .map_err(|_| AppError::InvalidInput(format!("invalid date '{}'", row.received_on)))?,
+                amount: row.amount,
+            })
+        })
+        .collect()
 }
 
 /// As entidades e os resultados do Workspace no formato da apuração.
@@ -377,6 +426,7 @@ pub(crate) async fn load_inputs(
             country: view.entity.country,
             currency: view.entity.currency,
             ownership_percent: view.entity.ownership_percent,
+            active_regime: view.entity.regime == REGIME_ACTIVE,
         });
         results.extend(view.results.into_iter().map(|r| OffshoreResult {
             entity_id: r.entity_id,

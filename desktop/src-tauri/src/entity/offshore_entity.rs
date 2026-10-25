@@ -16,6 +16,8 @@ pub struct Model {
     /// Participação do usuário, de 0 (exclusive) a 100.
     #[sea_orm(column_type = "Double")]
     pub ownership_percent: f64,
+    /// `automatico` (lucro tributado todo 31/12, art. 5º) ou `ativa` (tributada na disponibilização, art. 6º).
+    pub regime: String,
     pub notes: Option<String>,
     pub created_at: String,
 }

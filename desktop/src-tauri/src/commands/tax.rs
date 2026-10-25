@@ -240,6 +240,12 @@ pub(crate) async fn assess_workspace(
     )?;
     assessment.offshore_years = offshore_years;
     assessment.warnings.extend(offshore_warnings);
+
+    let active_distributions = offshore_cmd::load_distributions(db, workspace_id, true).await?;
+    let (active_years, active_warnings) =
+        offshore::assess_active_distributions(&offshore_entities, &active_distributions, &rules, &rate)?;
+    assessment.offshore_active_years = active_years;
+    assessment.warnings.extend(active_warnings);
     Ok(assessment)
 }
 
@@ -527,6 +533,15 @@ async fn refresh_ptax(db: &DatabaseConnection, workspace_id: i32, allow_network:
             let entry = span.entry(entity.currency.clone()).or_insert((year_end, year_end));
             entry.0 = entry.0.min(year_end - chrono::Duration::days(10));
             entry.1 = entry.1.max(year_end);
+        }
+        // Distribuições de entidades ativas (art. 6º): a PTAX do dia do recebimento (10 dias antes, para o dia útil anterior).
+        for d in offshore_cmd::load_distributions(db, workspace_id, true).await? {
+            let Some(entity) = entities.iter().find(|e| e.id == d.entity_id).filter(|e| e.currency != "BRL") else {
+                continue;
+            };
+            let entry = span.entry(entity.currency.clone()).or_insert((d.received_on, d.received_on));
+            entry.0 = entry.0.min(d.received_on - chrono::Duration::days(10));
+            entry.1 = entry.1.max(d.received_on);
         }
         for (currency, (since, until)) in span {
             ptax_store::refresh(db, &currency, since, until).await?;

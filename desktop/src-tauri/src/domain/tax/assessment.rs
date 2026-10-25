@@ -7,7 +7,7 @@ use super::calendar::darf_due_date;
 use super::classify::{is_unit, treatment, TaxTreatment};
 use super::crypto::{assess_crypto, CryptoMonth};
 use super::foreign::{self, ForeignYear};
-use super::offshore::OffshoreYear;
+use super::offshore::{OffshoreActiveYear, OffshoreYear};
 use super::rules::{self, RuleSet};
 use crate::domain::cost_basis::{take_from_position, Position, EPS};
 use crate::error::AppError;
@@ -150,6 +150,10 @@ pub enum TaxWarning {
     OffshoreFxApproximate { year: i32 },
     /// Resultado de entidade controlada no exterior de um ano que ainda não fechou (31/12 não passou): não apurado.
     OffshoreYearOpen { year: i32 },
+    /// Distribuição de entidade controlada ativa (art. 6º) sem câmbio na data do recebimento: ficou de fora.
+    OffshoreDistributionFxMissing { year: i32, entity: String },
+    /// Distribuição de entidade controlada ativa convertida pelo câmbio de mercado (a PTAX do dia faltava).
+    OffshoreDistributionFxApproximate { year: i32 },
     /// Opção exercida: o resultado não é apurado aqui (o prêmio vai pro custo da ação).
     OptionExercised { ticker: String, date: NaiveDate },
 }
@@ -174,6 +178,8 @@ pub struct Assessment {
     pub foreign_years: Vec<ForeignYear>,
     /// Entidades controladas no exterior (Lei 14.754): apuração anual de 31/12, preenchida pelo comando.
     pub offshore_years: Vec<OffshoreYear>,
+    /// Distribuições recebidas de controladas ativas (art. 6º), por ano de recebimento; preenchida pelo comando.
+    pub offshore_active_years: Vec<OffshoreActiveYear>,
     pub warnings: Vec<TaxWarning>,
     /// Só gavetas com saldo de prejuízo > 0.
     pub loss_balances: Vec<LossBalance>,
@@ -518,6 +524,7 @@ pub fn assess_with_options(
         crypto_months,
         foreign_years: Vec::new(),
         offshore_years: Vec::new(),
+        offshore_active_years: Vec::new(),
         warnings,
         loss_balances,
     })

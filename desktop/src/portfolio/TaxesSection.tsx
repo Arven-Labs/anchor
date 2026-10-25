@@ -7,7 +7,7 @@ import type { BankAccountView } from "../finances/types";
 import Field from "../components/Field";
 import ForeignHoldingsCard, { useForeignHoldings } from "./ForeignHoldingsCard";
 import ComeCotasCard from "./ComeCotasCard";
-import OffshoreCard, { type OffshoreYear } from "./OffshoreCard";
+import OffshoreCard, { type OffshoreActiveYear, type OffshoreYear } from "./OffshoreCard";
 import OffshoreHoldingsCard, { useOffshoreCredits } from "./OffshoreHoldingsCard";
 import SaleSimulationCard from "./SaleSimulationCard";
 import { Badge } from "@/components/ui/badge";
@@ -178,6 +178,8 @@ type TaxWarning =
   | { kind: "offshore_fx_missing"; year: number; entity: string }
   | { kind: "offshore_fx_approximate"; year: number }
   | { kind: "offshore_year_open"; year: number }
+  | { kind: "offshore_distribution_fx_missing"; year: number; entity: string }
+  | { kind: "offshore_distribution_fx_approximate"; year: number }
   | { kind: "option_exercised"; ticker: string; date: string };
 
 type TaxPayment = {
@@ -197,6 +199,7 @@ type TaxAssessmentView = {
     crypto_months: CryptoMonth[];
     foreign_years: ForeignYear[];
     offshore_years: OffshoreYear[];
+    offshore_active_years: OffshoreActiveYear[];
     warnings: TaxWarning[];
     loss_balances: LossBalance[];
   };
@@ -253,6 +256,10 @@ function warningText(w: TaxWarning): string {
       return `Some controlled-entity results from ${w.year} were converted at the market exchange rate because the Central Bank's PTAX of 31/12 was not available, so that year's values are approximate.`;
     case "offshore_year_open":
       return `The ${w.year} result of a controlled entity abroad is not assessed yet: the year has not closed (the PTAX of 31/12 does not exist yet).`;
+    case "offshore_distribution_fx_missing":
+      return `A ${w.year} distribution from ${w.entity} has no exchange rate (neither PTAX nor market) for the day it was received, so it was left out of the active-entities assessment. Collect the exchange-rate history and open this tab again.`;
+    case "offshore_distribution_fx_approximate":
+      return `Some ${w.year} distributions from active controlled entities were converted at the market exchange rate because the Central Bank's PTAX was not available for their day, so that year's values are approximate.`;
     case "option_exercised":
       return `Option ${w.ticker} was exercised on ${formatDate(w.date)}. Its premium goes into the cost of the stock bought or sold by the exercise, so it is not taxed here — update that stock's cost yourself.`;
   }
@@ -318,6 +325,7 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
   const cryptoMonths = assessmentQuery.data?.assessment.crypto_months ?? [];
   const foreignYears = assessmentQuery.data?.assessment.foreign_years ?? [];
   const offshoreYears = assessmentQuery.data?.assessment.offshore_years ?? [];
+  const offshoreActiveYears = assessmentQuery.data?.assessment.offshore_active_years ?? [];
   const foreignHoldings = useForeignHoldings(workspaceId, assessmentQuery.isSuccess);
   const offshoreCredits = useOffshoreCredits(workspaceId, assessmentQuery.isSuccess);
   const payments = assessmentQuery.data?.payments ?? [];
@@ -722,7 +730,7 @@ export default function TaxesSection({ workspaceId }: { workspaceId: number }) {
 
       <ForeignHoldingsCard workspaceId={workspaceId} holdings={foreignHoldings} />
 
-      <OffshoreCard workspaceId={workspaceId} years={offshoreYears} />
+      <OffshoreCard workspaceId={workspaceId} years={offshoreYears} activeYears={offshoreActiveYears} />
 
       <OffshoreHoldingsCard workspaceId={workspaceId} credits={offshoreCredits} />
 

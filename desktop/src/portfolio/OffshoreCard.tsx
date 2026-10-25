@@ -5,6 +5,8 @@ import type { AppError } from "../types";
 import Field from "../components/Field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -55,6 +57,28 @@ export type OffshoreYear = {
   lines: OffshoreLine[];
 };
 
+// Entidade ativa (art. 6º): o imposto vem das distribuições recebidas, por ano de recebimento (`offshore_active_years`).
+export type ActiveDistributionLine = {
+  distribution_id: number;
+  entity_id: number;
+  entity_name: string;
+  country: string;
+  currency: string;
+  received_on: string;
+  amount: number;
+  fx_rate: number;
+  fx_source: "ptax" | "market";
+  amount_brl: number;
+};
+
+export type OffshoreActiveYear = {
+  year: number;
+  rate: number;
+  taxable_base: number;
+  tax_due: number;
+  lines: ActiveDistributionLine[];
+};
+
 type OffshoreResultRow = {
   id: number;
   entity_id: number;
@@ -63,6 +87,16 @@ type OffshoreResultRow = {
   tax_paid_abroad: number;
 };
 
+type OffshoreDistributionRow = {
+  id: number;
+  entity_id: number;
+  origin_year: number;
+  received_on: string;
+  amount: number;
+};
+
+type Regime = "automatico" | "ativa";
+
 type OffshoreEntityRow = {
   id: number;
   workspace_id: number;
@@ -70,13 +104,15 @@ type OffshoreEntityRow = {
   country: string;
   currency: string;
   ownership_percent: number;
+  regime: Regime;
   notes: string | null;
   results: OffshoreResultRow[];
+  distributions: OffshoreDistributionRow[];
 };
 
-type EntityForm = { name: string; country: string; currency: string; ownership: string };
+type EntityForm = { name: string; country: string; currency: string; ownership: string; regime: Regime };
 
-const EMPTY_FORM: EntityForm = { name: "", country: "", currency: "USD", ownership: "100" };
+const EMPTY_FORM: EntityForm = { name: "", country: "", currency: "USD", ownership: "100", regime: "automatico" };
 
 function formatBrl(value: number): string {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -86,9 +122,20 @@ function formatAmount(value: number, currency: string): string {
   return value.toLocaleString("en-US", { style: "currency", currency });
 }
 
-export default function OffshoreCard({ workspaceId, years }: { workspaceId: number; years: OffshoreYear[] }) {
+export default function OffshoreCard({
+  workspaceId,
+  years,
+  activeYears,
+}: {
+  workspaceId: number;
+  years: OffshoreYear[];
+  activeYears: OffshoreActiveYear[];
+}) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [distEntityId, setDistEntityId] = useState<number | null>(null);
+  const [distDate, setDistDate] = useState("");
+  const [distAmount, setDistAmount] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<EntityForm>(EMPTY_FORM);
@@ -117,6 +164,7 @@ export default function OffshoreCard({ workspaceId, years }: { workspaceId: numb
         country: form.country,
         currency: form.currency,
         ownership_percent: Number(form.ownership),
+        regime: form.regime,
         notes: null,
       };
       return editingId === null
@@ -152,6 +200,25 @@ export default function OffshoreCard({ workspaceId, years }: { workspaceId: numb
     },
   });
 
+  // Distribuição de entidade ativa: sem ano de origem, o ano do recebimento é o que vale (o comando ignora `origin_year`).
+  const addDistributionMutation = useMutation<unknown, AppError, void>({
+    mutationFn: () =>
+      invoke("add_offshore_distribution", {
+        request: { entity_id: distEntityId, origin_year: 0, received_on: distDate, amount: Number(distAmount) },
+      }),
+    onSuccess: () => {
+      setDistEntityId(null);
+      setDistDate("");
+      setDistAmount("");
+      refresh();
+    },
+  });
+
+  const deleteDistributionMutation = useMutation<void, AppError, number>({
+    mutationFn: (distributionId) => invoke("delete_offshore_distribution", { distributionId }),
+    onSuccess: refresh,
+  });
+
   const deleteResultMutation = useMutation<void, AppError, number>({
     mutationFn: (resultId) => invoke("delete_offshore_result", { resultId }),
     onSuccess: refresh,
@@ -171,6 +238,7 @@ export default function OffshoreCard({ workspaceId, years }: { workspaceId: numb
       country: entity.country,
       currency: entity.currency,
       ownership: String(entity.ownership_percent),
+      regime: entity.regime,
     });
     setFormOpen(true);
   }
@@ -185,6 +253,11 @@ export default function OffshoreCard({ workspaceId, years }: { workspaceId: numb
     saveResultMutation.mutate();
   }
 
+  function onSubmitDistribution(event: FormEvent) {
+    event.preventDefault();
+    addDistributionMutation.mutate();
+  }
+
   return (
     <Card data-testid="offshore-card">
       <CardHeader>
@@ -195,9 +268,16 @@ export default function OffshoreCard({ workspaceId, years }: { workspaceId: numb
           there, both in the entity's currency. Anchor takes your share, converts it at the Central Bank's PTAX of
           31/12 (selling rate; the buying rate for the tax paid abroad, which is a credit up to the tax due) and
           estimates the tax. A loss only offsets later profits of the same entity. It goes in the annual return,
-          not a monthly DARF. Active-business entities, trusts and the legal test of "control" are not handled:
-          register only entities that fall under this regime. This is an estimate based on secondary sources —
-          confirm in the return.
+          not a monthly DARF. Trusts and the legal test of "control" are not handled. This is an estimate based on
+          secondary sources — confirm in the return.
+        </CardDescription>
+        <CardDescription>
+          The 31/12 rule applies to entities in a favored-tax country or privileged regime, or whose own active
+          income is under 60% of the total (art. 5, §5). A controlled entity outside that (an operating company) is
+          marked <em>Active</em>: it is taxed only when profit is made available to you (art. 6) — register each
+          distribution you receive and Anchor taxes it at 15% at the PTAX of the day it was received. Anchor does not
+          check which case an entity falls in — you choose. Credit, lending to you and the option of art. 8 (declaring
+          the entity's assets as your own) are not handled.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -298,16 +378,64 @@ export default function OffshoreCard({ workspaceId, years }: { workspaceId: numb
           </Table>
         )}
 
+        {activeYears.length > 0 && (
+          <Table data-testid="offshore-active-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Year received</TableHead>
+                <TableHead>Distributions (active entities)</TableHead>
+                <TableHead className="text-right">Taxable base</TableHead>
+                <TableHead className="text-right">Estimated tax</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[...activeYears].reverse().map((y) => (
+                <TableRow key={y.year}>
+                  <TableCell>{y.year}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {y.lines
+                      .map(
+                        (l) =>
+                          `${l.entity_name}: ${formatAmount(l.amount, l.currency)} on ${l.received_on} at ${l.fx_rate.toFixed(4)} (${l.fx_source === "ptax" ? "PTAX" : "market"})`,
+                      )
+                      .join("; ")}
+                  </TableCell>
+                  <TableCell className="text-right">{formatBrl(y.taxable_base)}</TableCell>
+                  <TableCell className="text-right font-medium" data-testid={`offshore-active-tax-due-${y.year}`}>
+                    {formatBrl(y.tax_due)}
+                    <span className="block text-xs text-muted-foreground">at {(y.rate * 100).toFixed(1)}%</span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+
         {entities.map((entity) => (
           <div key={entity.id} className="flex flex-col gap-2 rounded-md border p-3" data-testid={`offshore-entity-${entity.id}`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <span className="font-medium">{entity.name}</span>
+                {entity.regime === "ativa" && (
+                  <Badge variant="secondary" className="ml-2" data-testid={`offshore-entity-active-${entity.id}`}>
+                    Active — taxed when distributed
+                  </Badge>
+                )}
                 <span className="block text-xs text-muted-foreground">
                   {entity.country} · {entity.currency} · {entity.ownership_percent}% owned
                 </span>
               </div>
               <div className="flex gap-2">
+                {entity.regime === "ativa" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    data-testid={`offshore-add-distribution-${entity.id}`}
+                    onClick={() => setDistEntityId(entity.id)}
+                  >
+                    Add distribution
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => setResultEntityId(entity.id)}>
                   Add year
                 </Button>
@@ -356,6 +484,76 @@ export default function OffshoreCard({ workspaceId, years }: { workspaceId: numb
                   ))}
                 </TableBody>
               </Table>
+            )}
+            {entity.regime === "ativa" && entity.distributions.length > 0 && (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Received on</TableHead>
+                    <TableHead className="text-right">Distribution</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {entity.distributions.map((d) => (
+                    <TableRow key={d.id}>
+                      <TableCell>{d.received_on}</TableCell>
+                      <TableCell className="text-right">{formatAmount(d.amount, entity.currency)}</TableCell>
+                      <TableCell className="flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={deleteDistributionMutation.isPending}
+                          onClick={() => deleteDistributionMutation.mutate(d.id)}
+                        >
+                          Remove
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+            {distEntityId === entity.id && (
+              <form onSubmit={onSubmitDistribution} className="grid grid-cols-1 items-end gap-3 sm:grid-cols-3">
+                <Field label="Received on">
+                  <Input
+                    type="date"
+                    required
+                    min="2024-01-01"
+                    value={distDate}
+                    onChange={(e) => setDistDate(e.currentTarget.value)}
+                    data-testid="offshore-distribution-date"
+                  />
+                </Field>
+                <Field label={`Amount received, ${entity.currency}`}>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0.01}
+                    required
+                    value={distAmount}
+                    onChange={(e) => setDistAmount(e.currentTarget.value)}
+                    data-testid="offshore-distribution-amount"
+                  />
+                </Field>
+                <div className="flex gap-2">
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={addDistributionMutation.isPending}
+                    data-testid="offshore-distribution-save"
+                  >
+                    Save
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setDistEntityId(null)}>
+                    Cancel
+                  </Button>
+                </div>
+                {addDistributionMutation.isError && (
+                  <p className="text-sm text-destructive sm:col-span-3">{addDistributionMutation.error.message}</p>
+                )}
+              </form>
             )}
             {resultEntityId === entity.id && (
               <form onSubmit={onSubmitResult} className="grid grid-cols-1 items-end gap-3 sm:grid-cols-4">
@@ -406,7 +604,7 @@ export default function OffshoreCard({ workspaceId, years }: { workspaceId: numb
         ))}
 
         {formOpen ? (
-          <form onSubmit={onSubmitEntity} className="grid grid-cols-1 items-end gap-3 sm:grid-cols-5">
+          <form onSubmit={onSubmitEntity} className="grid grid-cols-1 items-end gap-3 sm:grid-cols-6">
             <Field label="Name">
               <Input
                 required
@@ -444,6 +642,17 @@ export default function OffshoreCard({ workspaceId, years }: { workspaceId: numb
                 data-testid="offshore-entity-ownership"
               />
             </Field>
+            <Field label="Taxed">
+              <Select value={form.regime} onValueChange={(v) => setForm({ ...form, regime: v as Regime })}>
+                <SelectTrigger data-testid="offshore-entity-regime">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="automatico">Every 31/12 (art. 5)</SelectItem>
+                  <SelectItem value="ativa">When distributed — active (art. 6)</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
             <div className="flex gap-2">
               <Button type="submit" size="sm" disabled={saveEntityMutation.isPending} data-testid="offshore-entity-save">
                 {editingId === null ? "Add" : "Save"}
@@ -453,7 +662,7 @@ export default function OffshoreCard({ workspaceId, years }: { workspaceId: numb
               </Button>
             </div>
             {saveEntityMutation.isError && (
-              <p className="text-sm text-destructive sm:col-span-5">{saveEntityMutation.error.message}</p>
+              <p className="text-sm text-destructive sm:col-span-6">{saveEntityMutation.error.message}</p>
             )}
           </form>
         ) : (

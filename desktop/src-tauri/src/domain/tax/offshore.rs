@@ -34,6 +34,8 @@ pub struct OffshoreEntity {
     pub currency: String,
     /// De 0 (exclusive) a 100.
     pub ownership_percent: f64,
+    /// Controlada ativa (art. 6º): só é tributada quando o lucro é disponibilizado, não em 31/12.
+    pub active_regime: bool,
 }
 
 /// O resultado do exercício de uma entidade, na moeda dela.
@@ -102,7 +104,9 @@ pub fn assess_offshore(
     let mut approximate_years = std::collections::BTreeSet::new();
     let by_id: BTreeMap<i32, &OffshoreEntity> = entities.iter().map(|e| (e.id, e)).collect();
 
-    let mut ordered: Vec<&OffshoreResult> = results.iter().filter(|r| by_id.contains_key(&r.entity_id)).collect();
+    // Entidade ativa (art. 6º) não é tributada em 31/12: o resultado dela fica só como histórico.
+    let mut ordered: Vec<&OffshoreResult> =
+        results.iter().filter(|r| by_id.get(&r.entity_id).is_some_and(|e| !e.active_regime)).collect();
     ordered.sort_by_key(|r| (r.year, r.entity_id));
 
     let mut loss_by_entity: BTreeMap<i32, f64> = BTreeMap::new();
@@ -178,6 +182,97 @@ pub fn assess_offshore(
     }
     warnings.extend(approximate_years.into_iter().map(|year| TaxWarning::OffshoreFxApproximate { year }));
     warnings.extend(open_years.into_iter().map(|year| TaxWarning::OffshoreYearOpen { year }));
+    Ok((years, warnings))
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Controlada ativa (Lei 14.754, art. 6º)
+// ---------------------------------------------------------------------------------------------------------------------
+//
+// A controlada que não cai no §5º do art. 5º (fora de país de tributação favorecida e com renda ativa própria de 60% ou mais
+// da renda total) só tem o lucro tributado "no momento da efetiva disponibilização" ao dono, na forma do art. 2º: 15% sobre
+// a parcela anual, sem dedução. O app não classifica a entidade (quem diz é o usuário) e só vê a disponibilização que o usuário
+// lança como distribuição (o parágrafo único do art. 6º também conta crédito, emprego e operação de crédito com o dono;
+// isso fica por conta dele). Premissas a conferir: a conversão é a PTAX de venda do dia do recebimento (o art. 2º não foi
+// lido com a regra de câmbio; é a do exterior, Sessão 187), a base é a distribuição inteira (sem o prejuízo da controlada,
+// que é do art. 5º §14) e a participação já está no valor recebido.
+
+/// Uma distribuição de entidade ativa já convertida em reais.
+#[derive(Clone, Debug, Serialize)]
+pub struct ActiveDistributionLine {
+    pub distribution_id: i32,
+    pub entity_id: i32,
+    pub entity_name: String,
+    pub country: String,
+    pub currency: String,
+    pub received_on: NaiveDate,
+    /// Valor recebido, na moeda da entidade.
+    pub amount: f64,
+    /// Câmbio de venda do dia do recebimento e de onde veio.
+    pub fx_rate: f64,
+    pub fx_source: RateSource,
+    pub amount_brl: f64,
+}
+
+/// O ano-calendário das distribuições recebidas de entidades ativas.
+#[derive(Clone, Debug, Serialize)]
+pub struct OffshoreActiveYear {
+    pub year: i32,
+    pub rate: f64,
+    pub taxable_base: f64,
+    pub tax_due: f64,
+    pub lines: Vec<ActiveDistributionLine>,
+}
+
+/// Apura por ano de recebimento as distribuições de entidades `active_regime`. Distribuição de entidade comum é ignorada
+/// (ela reduz o crédito de dividendo, `offshore_credits`); sem câmbio na data, a linha fica de fora e avisa.
+pub fn assess_active_distributions(
+    entities: &[OffshoreEntity],
+    distributions: &[OffshoreDistribution],
+    rules: &RuleSet,
+    rate: RateToBrl,
+) -> Result<(Vec<OffshoreActiveYear>, Vec<TaxWarning>), AppError> {
+    let by_id: BTreeMap<i32, &OffshoreEntity> =
+        entities.iter().filter(|e| e.active_regime).map(|e| (e.id, e)).collect();
+    let mut ordered: Vec<&OffshoreDistribution> =
+        distributions.iter().filter(|d| by_id.contains_key(&d.entity_id)).collect();
+    ordered.sort_by_key(|d| (d.received_on, d.id));
+
+    let mut warnings = Vec::new();
+    let mut approximate_years = std::collections::BTreeSet::new();
+    let mut lines_by_year: BTreeMap<i32, Vec<ActiveDistributionLine>> = BTreeMap::new();
+    for d in ordered {
+        let entity = by_id[&d.entity_id];
+        let year = d.received_on.year();
+        let Some((fx_rate, fx_source)) = convert(&entity.currency, d.received_on, RateKind::Sell, rate) else {
+            warnings.push(TaxWarning::OffshoreDistributionFxMissing { year, entity: entity.name.clone() });
+            continue;
+        };
+        if fx_source == RateSource::Market {
+            approximate_years.insert(year);
+        }
+        lines_by_year.entry(year).or_default().push(ActiveDistributionLine {
+            distribution_id: d.id,
+            entity_id: entity.id,
+            entity_name: entity.name.clone(),
+            country: entity.country.clone(),
+            currency: entity.currency.clone(),
+            received_on: d.received_on,
+            amount: d.amount,
+            fx_rate,
+            fx_source,
+            amount_brl: d.amount * fx_rate,
+        });
+    }
+
+    let mut years = Vec::new();
+    for (year, lines) in lines_by_year {
+        let year_end = NaiveDate::from_ymd_opt(year, 12, 31).ok_or_else(|| AppError::InvalidInput(format!("invalid year {year}")))?;
+        let tax_rate = rules.get(rules::OFFSHORE_RATE, year_end)?;
+        let taxable_base = lines.iter().fold(0.0, |acc, l| acc + l.amount_brl);
+        years.push(OffshoreActiveYear { year, rate: tax_rate, taxable_base, tax_due: taxable_base * tax_rate, lines });
+    }
+    warnings.extend(approximate_years.into_iter().map(|year| TaxWarning::OffshoreDistributionFxApproximate { year }));
     Ok((years, warnings))
 }
 
@@ -302,7 +397,7 @@ mod tests {
     }
 
     fn entity(id: i32, currency: &str, percent: f64) -> OffshoreEntity {
-        OffshoreEntity { id, name: format!("Holding {id}"), country: "US".to_string(), currency: currency.to_string(), ownership_percent: percent }
+        OffshoreEntity { id, name: format!("Holding {id}"), country: "US".to_string(), currency: currency.to_string(), ownership_percent: percent, active_regime: false }
     }
 
     fn result(entity_id: i32, year: i32, profit: f64, tax_paid_abroad: f64) -> OffshoreResult {
@@ -509,5 +604,86 @@ mod tests {
         assert!(close(balance(&rows, 1, 2024, 2024), 4_500.0), "{rows:?}");
         assert!(close(balance(&rows, 1, 2024, 2025), 3_500.0), "{rows:?}");
         assert!(close(balance(&rows, 2, 2025, 2025), 6_000.0), "{rows:?}");
+    }
+
+    fn active_entity(id: i32, currency: &str) -> OffshoreEntity {
+        OffshoreEntity { active_regime: true, ..entity(id, currency, 100.0) }
+    }
+
+    fn active_run(
+        entities: &[OffshoreEntity],
+        distributions: &[OffshoreDistribution],
+    ) -> (Vec<OffshoreActiveYear>, Vec<TaxWarning>) {
+        assess_active_distributions(entities, distributions, &test_rule_set(), &ptax_rate).unwrap()
+    }
+
+    #[test]
+    fn an_active_entity_is_not_taxed_on_31_12_even_with_a_profit_and_a_loss_does_not_carry() {
+        // lucro de US$ 1.000 em 2024 e prejuízo em 2025: nada apurado em 31/12 e sem aviso de ano aberto
+        let (years, warnings) =
+            run(&[active_entity(1, "USD")], &[result(1, 2024, 1_000.0, 0.0), result(1, 2025, -400.0, 0.0)]);
+        assert!(years.is_empty() && warnings.is_empty(), "{years:?} {warnings:?}");
+    }
+
+    #[test]
+    fn an_active_distribution_pays_15_percent_at_the_ptax_of_the_day_it_was_received() {
+        // US$ 1.000 recebidos em 2024 (PTAX 5,00) = R$ 5.000, imposto 750; US$ 200 em 2025 (6,00) = R$ 1.200, imposto 180
+        let (years, warnings) = active_run(
+            &[active_entity(1, "USD")],
+            &[distribution(1, 1, 2024, "2024-06-10", 1_000.0), distribution(2, 1, 2025, "2025-02-03", 200.0)],
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(years.iter().map(|y| y.year).collect::<Vec<_>>(), vec![2024, 2025]);
+        assert!(close(years[0].taxable_base, 5_000.0) && close(years[0].tax_due, 750.0) && close(years[0].rate, 0.15));
+        assert!(close(years[1].taxable_base, 1_200.0) && close(years[1].tax_due, 180.0), "{:?}", years[1]);
+        assert!(years[0].lines[0].fx_source == RateSource::Ptax && close(years[0].lines[0].fx_rate, 5.0));
+    }
+
+    #[test]
+    fn the_distributions_of_a_year_add_up_and_an_ordinary_entity_is_ignored() {
+        // duas distribuições de 2024 somam 100 × 5 + 300 × 5 = 2.000 (imposto 300); a da entidade comum não entra
+        let (years, _) = active_run(
+            &[active_entity(1, "USD"), entity(2, "USD", 100.0)],
+            &[
+                distribution(1, 1, 2024, "2024-03-01", 100.0),
+                distribution(2, 1, 2024, "2024-09-01", 300.0),
+                distribution(3, 2, 2024, "2024-09-01", 999.0),
+            ],
+        );
+        assert_eq!(years.len(), 1);
+        assert!(close(years[0].taxable_base, 2_000.0) && close(years[0].tax_due, 300.0), "{:?}", years[0]);
+        assert_eq!(years[0].lines.len(), 2);
+    }
+
+    #[test]
+    fn an_active_distribution_without_any_rate_is_left_out_and_warns() {
+        // não há PTAX nem câmbio para 2026
+        let (years, warnings) = active_run(&[active_entity(1, "USD")], &[distribution(1, 1, 2026, "2026-03-10", 100.0)]);
+        assert!(years.is_empty());
+        assert!(
+            matches!(warnings.as_slice(), [TaxWarning::OffshoreDistributionFxMissing { year: 2026, entity }] if entity == "Holding 1"),
+            "{warnings:?}"
+        );
+    }
+
+    #[test]
+    fn the_market_rate_marks_the_active_year_approximate() {
+        let market = |_: &str, _: NaiveDate, _: RateKind| Some((4.0, RateSource::Market));
+        let (years, warnings) = assess_active_distributions(
+            &[active_entity(1, "USD")],
+            &[distribution(1, 1, 2024, "2024-06-10", 100.0)],
+            &test_rule_set(),
+            &market,
+        )
+        .unwrap();
+        assert!(close(years[0].taxable_base, 400.0), "{years:?}");
+        assert!(matches!(warnings.as_slice(), [TaxWarning::OffshoreDistributionFxApproximate { year: 2024 }]), "{warnings:?}");
+    }
+
+    #[test]
+    fn an_entity_in_brl_needs_no_rate_for_an_active_distribution() {
+        let (years, warnings) = active_run(&[active_entity(1, "BRL")], &[distribution(1, 1, 2026, "2026-03-10", 1_000.0)]);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(close(years[0].taxable_base, 1_000.0) && close(years[0].tax_due, 150.0), "{years:?}");
     }
 }

@@ -4474,6 +4474,7 @@ async fn an_offshore_entity_is_taxed_on_the_ptax_of_31_12_and_an_open_year_waits
         country: "US".to_string(),
         currency: currency.to_string(),
         ownership_percent: percent,
+        regime: None,
         notes: None,
     };
 
@@ -4546,6 +4547,7 @@ async fn offshore_distributions_reduce_the_dividend_credit_and_the_commands_refu
                 country: "US".to_string(),
                 currency: "USD".to_string(),
                 ownership_percent: 50.0,
+                regime: None,
                 notes: None,
             },
         },
@@ -4592,6 +4594,73 @@ async fn offshore_distributions_reduce_the_dividend_credit_and_the_commands_refu
 }
 
 #[tokio::test]
+async fn an_active_offshore_entity_is_taxed_on_the_distributions_it_pays_and_not_on_31_12() {
+    use crate::commands::offshore::{
+        add_offshore_distribution_in, create_offshore_entity_in, offshore_credits_in, upsert_offshore_result_in,
+        AddOffshoreDistributionRequest, CreateOffshoreEntityRequest, OffshoreEntityRequest, UpsertOffshoreResultRequest,
+    };
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Ativa").await;
+    seed_ptax(&db, "USD", "2024-12-31", 4.9, 5.0).await;
+    seed_ptax(&db, "USD", "2025-03-10", 5.4, 5.5).await;
+    let create = |regime: Option<&str>| {
+        create_offshore_entity_in(
+            &db,
+            CreateOffshoreEntityRequest {
+                workspace_id: ws.id,
+                entity: OffshoreEntityRequest {
+                    name: "Operadora LLC".to_string(),
+                    country: "US".to_string(),
+                    currency: "USD".to_string(),
+                    ownership_percent: 100.0,
+                    regime: regime.map(str::to_string),
+                    notes: None,
+                },
+            },
+        )
+    };
+    assert!(matches!(create(Some("passiva")).await, Err(AppError::InvalidInput(_))), "regime desconhecido");
+    let entity = create(Some("ativa")).await.unwrap();
+    assert_eq!(entity.regime, "ativa");
+
+    // lucro de US$ 1.000 em 2024: uma entidade ativa não é tributada em 31/12
+    upsert_offshore_result_in(
+        &db,
+        UpsertOffshoreResultRequest { entity_id: entity.id, year: 2024, profit: 1000.0, tax_paid_abroad: 0.0 },
+    )
+    .await
+    .unwrap();
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert!(assessment.offshore_years.is_empty() && assessment.offshore_active_years.is_empty());
+
+    let request = |received_on: &str, amount: f64| AddOffshoreDistributionRequest {
+        entity_id: entity.id,
+        origin_year: 0,
+        received_on: received_on.to_string(),
+        amount,
+    };
+    // antes de 2024 a lei não vale; valor e data inválidos também são recusados
+    for bad in [request("2023-12-20", 100.0), request("2025-03-10", 0.0), request("10/03/2025", 100.0)] {
+        let result = add_offshore_distribution_in(&db, bad).await;
+        assert!(matches!(result, Err(AppError::InvalidInput(_))), "{result:?}");
+    }
+    // sem ano de origem; o ano do recebimento vale. US$ 1.000 × 5,50 (PTAX de venda de 10/03/2025) = R$ 5.500; imposto 825
+    let saved = add_offshore_distribution_in(&db, request("2025-03-10", 1000.0)).await.unwrap();
+    assert_eq!(saved.origin_year, 2025);
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert!(assessment.offshore_years.is_empty());
+    let year = &assessment.offshore_active_years[0];
+    assert_eq!(year.year, 2025);
+    assert!(close(year.taxable_base, 5500.0) && close(year.tax_due, 825.0), "{year:?}");
+
+    // não vira crédito de dividendo a receber
+    let credits = offshore_credits_in(&db, ws.id).await.unwrap();
+    assert!(credits.rows.is_empty() && credits.distributions.is_empty(), "{:?}", credits.rows);
+}
+
+#[tokio::test]
 async fn the_offshore_commands_refuse_invalid_input() {
     use crate::commands::offshore::{
         create_offshore_entity_in, upsert_offshore_result_in, CreateOffshoreEntityRequest, OffshoreEntityRequest,
@@ -4611,6 +4680,7 @@ async fn the_offshore_commands_refuse_invalid_input() {
                     country: "US".to_string(),
                     currency: currency.to_string(),
                     ownership_percent: percent,
+                    regime: None,
                     notes: None,
                 },
             },
