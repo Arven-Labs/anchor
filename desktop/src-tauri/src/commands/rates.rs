@@ -1,6 +1,10 @@
 // Fase 17 — juros ao vivo pro widget da Home e pra tela "Interest rates" do
 // Research. A Selic vem de `selic_daily` (Fase 26, BCB direto); a curva DI vem
 // da B3 (cache de 1 h na memória) e é montada a cada chamada.
+//
+// Com `ANCHOR_DISABLE_INGESTION` (os testes E2E) não vai à rede, como o resto do app: a Selic vem só do que está gravado e a
+// curva DI não é buscada. O Home chama isto ao abrir, então sem essa trava a Selic gravada de um spec dependia de o BCB
+// responder a tempo (Sessões 234 e 236).
 
 use chrono::{Duration, NaiveDate, Utc};
 use sea_orm::DatabaseConnection;
@@ -8,7 +12,7 @@ use serde::Serialize;
 
 use crate::domain::rates;
 use crate::error::AppError;
-use crate::finance_api::{client, skip_not_found};
+use crate::finance_api::{client, selic_store, skip_not_found};
 
 /// Prazos-chave da curva DI, em anos.
 const KEY_TENORS_YEARS: [f64; 5] = [1.0, 2.0, 3.0, 5.0, 10.0];
@@ -91,10 +95,13 @@ fn to_vertices(curve: &client::DiCurveResponse) -> Vec<CurveVertex> {
         .collect()
 }
 
-async fn selic_view(db: &DatabaseConnection) -> Result<SelicView, AppError> {
-    let response = client::fetch_selic(db, "meta").await?;
-    let points: Vec<(NaiveDate, f64)> =
-        response.data.iter().map(|p| (p.reference_date, p.value_pct)).collect();
+async fn selic_view(db: &DatabaseConnection, allow_network: bool) -> Result<SelicView, AppError> {
+    let points: Vec<(NaiveDate, f64)> = if allow_network {
+        let response = client::fetch_selic(db, "meta").await?;
+        response.data.iter().map(|p| (p.reference_date, p.value_pct)).collect()
+    } else {
+        selic_store::stored(db, "meta").await?
+    };
     let changes = rates::selic_changes(&points);
     let &(since, current_pct) = changes
         .last()
@@ -109,7 +116,10 @@ async fn selic_view(db: &DatabaseConnection) -> Result<SelicView, AppError> {
     })
 }
 
-async fn di_view() -> Result<Option<DiCurveView>, AppError> {
+async fn di_view(allow_network: bool) -> Result<Option<DiCurveView>, AppError> {
+    if !allow_network {
+        return Ok(None);
+    }
     let Some(curve) = latest_curve(Utc::now().date_naive()).await? else {
         return Ok(None);
     };
@@ -136,7 +146,8 @@ async fn di_view() -> Result<Option<DiCurveView>, AppError> {
 pub async fn get_interest_rates(
     db: tauri::State<'_, DatabaseConnection>,
 ) -> Result<InterestRatesView, AppError> {
-    let (selic, di) = tokio::join!(selic_view(&db), di_view());
+    let allow_network = std::env::var_os(crate::ingestion::DISABLE_ENV).is_none();
+    let (selic, di) = tokio::join!(selic_view(&db, allow_network), di_view(allow_network));
     let (selic, selic_error) = match selic {
         Ok(view) => (Some(view), None),
         Err(err) => (None, Some(err.to_string())),
@@ -153,6 +164,32 @@ pub async fn get_interest_rates(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sea_orm::ConnectionTrait;
+
+    /// Sem rede a Selic vem só da série gravada: vazia é erro (o Home mostra a mensagem), com dados vale a última meta.
+    #[tokio::test]
+    async fn without_the_network_the_selic_comes_only_from_the_stored_series() {
+        let db = crate::test_support::memory_db().await;
+        assert!(matches!(selic_view(&db, false).await, Err(AppError::NotFound(_))));
+
+        for (date, pct) in [("2024-01-01", 10.10), ("2025-03-01", 13.25)] {
+            db.execute_unprepared(&format!(
+                "INSERT INTO selic_daily (series_code, reference_date, value_pct, source, fetched_at) \
+                 VALUES ('meta', '{date}', {pct}, 'test', '2026-01-01T00:00:00Z')"
+            ))
+            .await
+            .unwrap();
+        }
+        let view = selic_view(&db, false).await.unwrap();
+        assert!((view.current_pct - 13.25).abs() < 1e-9, "{}", view.current_pct);
+        assert_eq!(view.since, NaiveDate::from_ymd_opt(2025, 3, 1).unwrap());
+    }
+
+    /// Sem rede a curva DI nem é buscada.
+    #[tokio::test]
+    async fn without_the_network_the_di_curve_is_not_fetched() {
+        assert!(di_view(false).await.unwrap().is_none());
+    }
 
     #[tokio::test]
     #[ignore]
