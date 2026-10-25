@@ -5,11 +5,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
+import 'package:anchor_mobile/domain/fx_history.dart';
 import 'package:anchor_mobile/domain/general_finance.dart';
+import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/bank_account.dart';
 import 'package:anchor_mobile/models/general_transaction.dart';
+import 'package:anchor_mobile/models/position.dart';
 import 'package:anchor_mobile/screens/financas_screen.dart';
 import 'package:anchor_mobile/services/general_finance_repository.dart';
+import 'package:anchor_mobile/services/live_positions.dart';
+import 'package:anchor_mobile/services/quote_exceptions.dart';
 
 // A aba de Finanças montada de verdade (SQLite ffi, sem rede).
 void main() {
@@ -71,15 +76,29 @@ void main() {
 
   // O SQLite ffi responde em tempo real, fora do relógio falso do teste: sonda até o
   // indicador de carregamento sair, em vez de esperar um tempo fixo.
-  Future<void> pumpScreen(WidgetTester tester) async {
-    await tester.pumpWidget(const MaterialApp(home: FinancasScreen()));
+  // A tela só fica pronta quando o resumo (patrimônio) aparece.
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    Future<FxHistory> Function(String currency)? fetchFx,
+    List<LivePositionRow> positions = const [],
+  }) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FinancasScreen(
+          fetchFx: fetchFx ?? (_) async => throw QuoteNotFoundException('sem rede nos testes'),
+          loadPositions: () async => positions,
+        ),
+      ),
+    );
     for (var i = 0; i < 200; i++) {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
       await tester.pump();
-      if (find.byType(CircularProgressIndicator).evaluate().isEmpty) return;
+      if (find.byKey(const Key('financas-net-worth')).evaluate().isNotEmpty) return;
     }
     fail('a tela não terminou de carregar');
   }
+
+  Text textOf(WidgetTester tester, String key) => tester.widget<Text>(find.byKey(Key(key)));
 
   testWidgets('sem conta, a aba avisa que não há nada cadastrado', (tester) async {
     await pumpScreen(tester);
@@ -100,8 +119,73 @@ void main() {
     });
     await pumpScreen(tester);
 
-    expect(tester.widget<Text>(find.byKey(Key('financas-balance-$usd'))).data, 'USD 70,00');
-    expect(tester.widget<Text>(find.byKey(Key('financas-balance-$brl'))).data, 'BRL -12,50');
+    expect(textOf(tester, 'financas-balance-$usd').data, 'USD 70,00');
+    expect(textOf(tester, 'financas-balance-$brl').data, 'BRL -12,50');
     expect(find.text('Chase'), findsOneWidget);
+  });
+
+  testWidgets('o patrimônio soma caixa e carteira na moeda base, e cada conta mostra o equivalente', (tester) async {
+    late int usd;
+    await tester.runAsync(() async {
+      usd = await account('Chase', 'USD');
+      final brl = await account('Nubank', 'BRL');
+      await add(usd, GeneralTransactionType.receita, 100, '2026-01-02');
+      await add(usd, GeneralTransactionType.despesa, 30, '2026-01-05');
+      await add(brl, GeneralTransactionType.receita, 50, '2026-01-06');
+    });
+
+    await pumpScreen(
+      tester,
+      fetchFx: (currency) async => FxHistory([(DateTime.now(), currency == 'USD' ? 5.0 : 1.0)]),
+      positions: [
+        LivePositionRow(
+          Position(
+            asset: Asset(
+              id: 1,
+              ticker: 'AAPL',
+              name: 'Apple',
+              assetClass: AssetClass.acaoInternacional,
+              currency: 'USD',
+              createdAt: DateTime(2026, 1, 1),
+            ),
+            netQuantity: 2,
+            averageBuyPrice: null,
+          ),
+          10, // US$ 20 de carteira
+        ),
+      ],
+    );
+
+    // Caixa: US$ 70 × 5 + R$ 50 = R$ 400. Carteira: US$ 20 × 5 = R$ 100.
+    expect(textOf(tester, 'financas-cash').data, 'Caixa BRL 400,00');
+    expect(textOf(tester, 'financas-portfolio').data, 'Carteira BRL 100,00');
+    expect(textOf(tester, 'financas-net-worth').data, 'BRL 500,00');
+    expect(textOf(tester, 'financas-equivalent-$usd').data, '≈ BRL 350,00');
+    expect(find.byKey(const Key('financas-missing')), findsNothing);
+    expect(find.byKey(const Key('financas-fx-banner')), findsNothing);
+  });
+
+  testWidgets('conta sem câmbio fica fora do patrimônio, é contada e o aviso nomeia a moeda', (tester) async {
+    late int pyg;
+    await tester.runAsync(() async {
+      pyg = await account('Banco', 'PYG');
+      final brl = await account('Nubank', 'BRL');
+      await add(pyg, GeneralTransactionType.receita, 1000000, '2026-01-02');
+      await add(brl, GeneralTransactionType.receita, 50, '2026-01-06');
+    });
+
+    await pumpScreen(tester); // o câmbio de teste sempre diz "sem dados"
+
+    expect(textOf(tester, 'financas-cash').data, 'Caixa BRL 50,00');
+    expect(textOf(tester, 'financas-missing').data, '1 item fora da soma por falta de câmbio ou cotação.');
+    expect(textOf(tester, 'financas-fx-banner').data, fxUnavailableBanner({'PYG'}));
+    expect(textOf(tester, 'financas-equivalent-$pyg').data, 'sem câmbio PYG/BRL');
+    expect(textOf(tester, 'financas-balance-$pyg').data, 'PYG 1.000.000,00');
+  });
+
+  test('textos do aviso: moedas em ordem e plural dos itens fora', () {
+    expect(fxUnavailableBanner({'PYG', 'ARS'}), contains('ARS, PYG'));
+    expect(missingItemsNote(0), isNull);
+    expect(missingItemsNote(3), '3 itens fora da soma por falta de câmbio ou cotação.');
   });
 }

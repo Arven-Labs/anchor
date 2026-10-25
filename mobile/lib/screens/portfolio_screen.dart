@@ -3,10 +3,9 @@ import 'package:flutter/material.dart';
 import '../domain/foreign_tax.dart' show foreignAssetClasses;
 import '../models/asset.dart';
 import '../models/custodia.dart';
-import '../models/position.dart';
+import '../services/live_positions.dart';
 import '../services/portfolio_repository.dart';
 import '../services/quote_dispatcher.dart';
-import '../services/quote_exceptions.dart';
 import 'add_asset_screen.dart';
 import 'add_transaction_screen.dart';
 import 'crypto_swap_screen.dart';
@@ -22,21 +21,6 @@ class PortfolioScreen extends StatefulWidget {
 
   @override
   State<PortfolioScreen> createState() => _PortfolioScreenState();
-}
-
-class _PositionRow {
-  final Position position;
-  final double? livePrice;
-
-  /// A fonte de cotação não respondeu agora (limite de requisições, rede
-  /// fora) — diferente de `livePrice == null` sem isto, que é "sem cotação".
-  final bool priceUnavailable;
-
-  const _PositionRow(
-    this.position,
-    this.livePrice, {
-    this.priceUnavailable = false,
-  });
 }
 
 /// Texto do "Preço atual" do card: o número, "indisponível agora" quando a
@@ -59,7 +43,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   final _dispatcher = QuoteDispatcher();
 
   bool _loading = true;
-  List<_PositionRow> _rows = [];
+  List<LivePositionRow> _rows = [];
   Map<int, Custodia> _custodiasById = {};
 
   @override
@@ -74,72 +58,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     final positions = await _repository.getPositions();
     final custodias = await _repository.listCustodias();
 
-    // Todas as criptos já cadastradas (com `coin_id`) numa chamada só; se a
-    // fonte falhar, todas ficam "indisponível agora" juntas.
-    final coinIds = {
-      for (final p in positions)
-        if (p.asset.assetClass == AssetClass.cripto &&
-            p.asset.externalId != null)
-          p.asset.externalId!,
-    };
-    var cryptoPrices = <String, Map<String, double>>{};
-    var cryptoUnavailable = false;
-    try {
-      cryptoPrices = await _dispatcher.fetchCryptoPrices(coinIds);
-    } on QuoteUnavailableException {
-      cryptoUnavailable = true;
-    } catch (_) {}
-
-    final rows = await Future.wait(
-      positions.map((position) async {
-        final assetClass = position.asset.assetClass;
-
-        // `imovel`: quantidade é sempre 1, então a última avaliação manual
-        // serve direto como "preço atual" (sem chamar o dispatcher — não tem
-        // fonte automática nenhuma pra essa classe).
-        if (assetClass == AssetClass.imovel) {
-          final latest = await _repository.getLatestValuation(
-            position.asset.id!,
-          );
-          return _PositionRow(position, latest?.value);
-        }
-
-        // `fundo`: sem cotação automática; o "preço atual" é a última cota
-        // lançada à mão (aba de IR de fundos).
-        if (assetClass == AssetClass.fundo) {
-          final latest = await _repository.getLatestFundQuota(
-            position.asset.id!,
-          );
-          return _PositionRow(position, latest?.value);
-        }
-
-        // `empresaNaoListada`: o valor de participação já é o total da
-        // posição (percentual × valuation da empresa), não um preço por
-        // unidade — não entra na conta quantidade×preço, aparece como linha
-        // separada no card.
-        if (assetClass == AssetClass.empresaNaoListada) {
-          return _PositionRow(position, null);
-        }
-
-        final coinId = position.asset.externalId;
-        if (assetClass == AssetClass.cripto && coinId != null) {
-          return _PositionRow(
-            position,
-            // Cada ativo lê o par da própria moeda (BRL novo, USD antigo).
-            cryptoPrices[coinId]?[position.asset.currency.toLowerCase()],
-            priceUnavailable: cryptoUnavailable,
-          );
-        }
-
-        try {
-          final quote = await _dispatcher.fetchQuoteForAsset(position.asset);
-          return _PositionRow(position, quote.price);
-        } on QuoteUnavailableException {
-          return _PositionRow(position, null, priceUnavailable: true);
-        } catch (_) {
-          return _PositionRow(position, null);
-        }
-      }),
+    final rows = await loadLivePositions(
+      positions,
+      repository: _repository,
+      dispatcher: _dispatcher,
     );
 
     if (mounted) {
@@ -313,7 +235,7 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _PositionCard extends StatelessWidget {
-  final _PositionRow row;
+  final LivePositionRow row;
   final Map<int, Custodia> custodiasById;
 
   const _PositionCard({required this.row, required this.custodiasById});

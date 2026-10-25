@@ -1,18 +1,48 @@
 import 'package:flutter/material.dart';
 
 import '../domain/currency_catalog.dart';
+import '../domain/fx_history.dart';
 import '../domain/general_finance.dart';
 import '../domain/money_format.dart';
 import '../models/bank_account.dart';
+import '../services/fx_rates_loader.dart';
 import '../services/general_finance_repository.dart';
+import '../services/live_positions.dart';
+import '../services/portfolio_repository.dart';
+import '../services/quote_dispatcher.dart';
+import '../services/yahoo_quote_service.dart';
 import 'financas_transactions_screen.dart';
 
-/// Finanças Gerais: contas em qualquer moeda e o saldo de cada uma, derivado
-/// dos lançamentos. Standalone, como o resto do mobile (sem sync com o
+/// Aviso de câmbio que não veio: os itens dessas moedas ficam fora da soma.
+@visibleForTesting
+String fxUnavailableBanner(Set<String> failed) =>
+    'Câmbio indisponível agora para ${(failed.toList()..sort()).join(', ')}. '
+    'Os itens dessas moedas ficam fora do patrimônio.';
+
+/// Linha do resumo quando algo ficou de fora (conta sem câmbio ou posição sem
+/// cotação); `null` quando está tudo dentro.
+@visibleForTesting
+String? missingItemsNote(int count) {
+  if (count == 0) return null;
+  return count == 1
+      ? '1 item fora da soma por falta de câmbio ou cotação.'
+      : '$count itens fora da soma por falta de câmbio ou cotação.';
+}
+
+/// Finanças Gerais: contas em qualquer moeda, o saldo de cada uma (derivado
+/// dos lançamentos) e o patrimônio na moeda base — caixa das contas mais valor
+/// de mercado da carteira. Standalone, como o resto do mobile (sem sync com o
 /// desktop). Fora do mobile por ora: categorias, transferências, dívidas e
 /// empréstimos.
 class FinancasScreen extends StatefulWidget {
-  const FinancasScreen({super.key});
+  /// Série da moeda em reais; o padrão é o Yahoo com o fallback de inverso e
+  /// de pernas via dólar. Injetável para teste, sem rede.
+  final Future<FxHistory> Function(String currency)? fetchFx;
+
+  /// Posições com preço atual; o padrão lê a carteira e cota na rede.
+  final Future<List<LivePositionRow>> Function()? loadPositions;
+
+  const FinancasScreen({super.key, this.fetchFx, this.loadPositions});
 
   @override
   State<FinancasScreen> createState() => _FinancasScreenState();
@@ -20,10 +50,21 @@ class FinancasScreen extends StatefulWidget {
 
 class _FinancasScreenState extends State<FinancasScreen> {
   final _repository = GeneralFinanceRepository();
+  final _portfolio = PortfolioRepository();
+  final _dispatcher = QuoteDispatcher();
+  final _yahoo = YahooQuoteService();
 
   bool _loading = true;
   List<BankAccount> _accounts = [];
   Map<int, double> _balances = {};
+  String _base = defaultBaseCurrency;
+
+  // O resumo vem depois da lista: cota a carteira e o câmbio, que é rede.
+  bool _summaryLoading = true;
+  NetWorth? _netWorth;
+  Map<String, double> _rates = {};
+  Set<String> _fxFailed = {};
+  int _summaryRun = 0;
 
   @override
   void initState() {
@@ -34,13 +75,68 @@ class _FinancasScreenState extends State<FinancasScreen> {
   Future<void> _load() async {
     final accounts = await _repository.listAccounts();
     final transactions = await _repository.listTransactions();
+    final base = await _repository.getBaseCurrency();
     final balances = computeBalances(transactions, toIsoDay(DateTime.now()));
     if (!mounted) return;
     setState(() {
       _accounts = accounts;
       _balances = balances;
+      _base = base;
       _loading = false;
     });
+    await _loadSummary();
+  }
+
+  Future<void> _loadSummary() async {
+    final run = ++_summaryRun;
+    setState(() => _summaryLoading = true);
+
+    final rows = await (widget.loadPositions ?? _livePositions)();
+    final cashItems = [
+      for (final account in _accounts)
+        ValuedItem(account.currency, _balances[account.id] ?? 0),
+    ];
+    final portfolioItems = portfolioValuedItems(rows);
+    final fx = await loadRatesToBrl(
+      {
+        _base,
+        for (final item in [...cashItems, ...portfolioItems]) item.currency,
+      },
+      fetch: widget.fetchFx ?? _fetchFx,
+    );
+    final net = computeNetWorth(
+      base: _base,
+      cashItems: cashItems,
+      portfolioItems: portfolioItems,
+      ratesToBrl: fx.ratesToBrl,
+    );
+
+    // Uma troca de base ou um refresh no meio deixa esta rodada velha.
+    if (!mounted || run != _summaryRun) return;
+    setState(() {
+      _netWorth = net;
+      _rates = fx.ratesToBrl;
+      _fxFailed = fx.failed;
+      _summaryLoading = false;
+    });
+  }
+
+  Future<List<LivePositionRow>> _livePositions() async => loadLivePositions(
+    await _portfolio.getPositions(),
+    repository: _portfolio,
+    dispatcher: _dispatcher,
+  );
+
+  Future<FxHistory> _fetchFx(String currency) => _yahoo
+      .fetchFxHistoryWithFallback(
+        from: DateTime.now().subtract(const Duration(days: 7)),
+        currency: currency,
+      );
+
+  Future<void> _changeBase(String code) async {
+    await _repository.setBaseCurrency(code);
+    setState(() => _base = code);
+    await _loadSummary();
   }
 
   /// Cria (`existing == null`) ou edita. A moeda fica travada na conta que já
@@ -172,6 +268,107 @@ class _FinancasScreenState extends State<FinancasScreen> {
     await _load();
   }
 
+  Widget _summaryCard() {
+    final net = _netWorth;
+    final textTheme = Theme.of(context).textTheme;
+    final missingNote = net == null ? null : missingItemsNote(net.itemsMissingFx);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text('Patrimônio', style: textTheme.titleSmall),
+                ),
+                // Atualizando por baixo (troca de base, refresh): o número
+                // antigo fica na tela até o novo chegar.
+                if (_summaryLoading && net != null)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                DropdownButton<String>(
+                  key: const Key('financas-base-dropdown'),
+                  value: _base,
+                  underline: const SizedBox.shrink(),
+                  items: [
+                    for (final (code, _) in currencyCatalog)
+                      DropdownMenuItem(value: code, child: Text(code)),
+                  ],
+                  onChanged: (code) {
+                    if (code != null && code != _base) _changeBase(code);
+                  },
+                ),
+              ],
+            ),
+            if (net == null)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('Calculando…'),
+              )
+            else ...[
+              Text(
+                formatMoney(net.total, net.base),
+                key: const Key('financas-net-worth'),
+                style: textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Caixa ${formatMoney(net.cash, net.base)}',
+                key: const Key('financas-cash'),
+              ),
+              Text(
+                'Carteira ${formatMoney(net.portfolio, net.base)}',
+                key: const Key('financas-portfolio'),
+              ),
+              if (missingNote != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    missingNote,
+                    key: const Key('financas-missing'),
+                    style: textTheme.bodySmall,
+                  ),
+                ),
+              if (_fxFailed.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    fxUnavailableBanner(_fxFailed),
+                    key: const Key('financas-fx-banner'),
+                    style: textTheme.bodySmall,
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// "≈ BRL 350,00" sob o saldo de uma conta em outra moeda; "sem câmbio"
+  /// quando não há taxa; nada enquanto o resumo ainda calcula ou quando a
+  /// conta já está na base.
+  Widget? _equivalent(BankAccount account, double balance) {
+    if (account.currency == _base || _netWorth == null) return null;
+    final converted = convertToBase(balance, account.currency, _base, _rates);
+    return Text(
+      converted == null
+          ? 'sem câmbio ${account.currency}/$_base'
+          : '≈ ${formatMoney(converted, _base)}',
+      key: Key('financas-equivalent-${account.id}'),
+      style: Theme.of(context).textTheme.bodySmall,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -192,45 +389,53 @@ class _FinancasScreenState extends State<FinancasScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _accounts.isEmpty
-          ? const Center(child: Text('Nenhuma conta cadastrada ainda.'))
-          : ListView.builder(
+          : ListView(
               padding: const EdgeInsets.all(16),
-              itemCount: _accounts.length,
-              itemBuilder: (context, index) {
-                final account = _accounts[index];
-                final balance = _balances[account.id] ?? 0;
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    title: Text(account.nome),
-                    subtitle: Text(account.titular),
-                    onTap: () => _open(account),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          formatMoney(balance, account.currency),
-                          key: Key('financas-balance-${account.id}'),
-                        ),
-                        PopupMenuButton<String>(
-                          onSelected: (action) => action == 'edit'
-                              ? _editAccount(account)
-                              : _deleteAccount(account),
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'edit', child: Text('Editar')),
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: Text('Excluir'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+              children: [
+                _summaryCard(),
+                if (_accounts.isEmpty)
+                  const Center(child: Text('Nenhuma conta cadastrada ainda.')),
+                for (final account in _accounts)
+                  _accountCard(account, _balances[account.id] ?? 0),
+              ],
             ),
+    );
+  }
+
+  Widget _accountCard(BankAccount account, double balance) {
+    final equivalent = _equivalent(account, balance);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        title: Text(account.nome),
+        subtitle: Text(account.titular),
+        onTap: () => _open(account),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  formatMoney(balance, account.currency),
+                  key: Key('financas-balance-${account.id}'),
+                ),
+                ?equivalent,
+              ],
+            ),
+            PopupMenuButton<String>(
+              onSelected: (action) => action == 'edit'
+                  ? _editAccount(account)
+                  : _deleteAccount(account),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'edit', child: Text('Editar')),
+                PopupMenuItem(value: 'delete', child: Text('Excluir')),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
