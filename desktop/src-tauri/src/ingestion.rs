@@ -139,22 +139,26 @@ pub async fn workspace_fx_pairs(
         .collect())
 }
 
-/// Tenta o par `a+b` e, se o Yahoo não o tem, o inverso `b+a` (a leitura inverte). Anota cada falha em `attempts`.
-async fn fetch_route<F, Fut>(fetch: &mut F, a: &str, b: &str, attempts: &mut Vec<String>) -> bool
+/// Tenta o par `a+b` e, se a fonte respondeu que não o tem (`NoData`), o inverso `b+a` (a leitura inverte). Anota cada
+/// "não tem" em `attempts`. `Ok(true)` = gravou; `Ok(false)` = a fonte não tem nenhuma das duas orientações. Qualquer outro
+/// erro (rede fora do ar, limite de requisições, timeout) volta na hora: tentar outro par falharia do mesmo jeito e, com a
+/// fonte lenta, multiplicaria a espera.
+async fn fetch_route<F, Fut>(fetch: &mut F, a: &str, b: &str, attempts: &mut Vec<String>) -> Result<bool, AppError>
 where
     F: FnMut(String, String) -> Fut,
     Fut: std::future::Future<Output = Result<(), AppError>>,
 {
     for (x, y) in [(a, b), (b, a)] {
         match fetch(x.to_string(), y.to_string()).await {
-            Ok(()) => return true,
-            Err(err) => attempts.push(format!("{x}/{y}: {err}")),
+            Ok(()) => return Ok(true),
+            Err(AppError::NoData(message)) => attempts.push(format!("{x}/{y}: {message}")),
+            Err(other) => return Err(other),
         }
     }
-    false
+    Ok(false)
 }
 
-/// Coleta o câmbio de `currency` contra `base`. Primeiro o par direto (ou o inverso); se o Yahoo não tem nenhum dos dois, as
+/// Coleta o câmbio de `currency` contra `base`. Primeiro o par direto (ou o inverso); se o Yahoo responde que não tem nenhum, as
 /// duas pernas via USD (`moeda/USD` e `USD/base`, cada uma também na orientação inversa), que `FxRates` e `FxHistory` já
 /// multiplicam na leitura. `fetch(a, b)` grava o par `a+b`; é injetado para testar o encadeamento sem rede. Sem rota, o erro
 /// lista as tentativas.
@@ -167,14 +171,14 @@ where
         return Ok(());
     }
     let mut attempts = Vec::new();
-    if fetch_route(&mut fetch, currency, base, &mut attempts).await {
+    if fetch_route(&mut fetch, currency, base, &mut attempts).await? {
         return Ok(());
     }
     // Com o USD de um dos lados as pernas seriam o próprio par que acabou de falhar.
     if currency != PIVOT
         && base != PIVOT
-        && fetch_route(&mut fetch, currency, PIVOT, &mut attempts).await
-        && fetch_route(&mut fetch, PIVOT, base, &mut attempts).await
+        && fetch_route(&mut fetch, currency, PIVOT, &mut attempts).await?
+        && fetch_route(&mut fetch, PIVOT, base, &mut attempts).await?
     {
         return Ok(());
     }
@@ -536,6 +540,40 @@ mod tests {
         for code in ["PYG/BRL", "BRL/PYG", "PYG/USD", "USD/PYG"] {
             assert!(message.contains(code), "{message}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_network_failure_stops_at_the_first_call_instead_of_trying_every_route() {
+        // sem rede (ou com limite de requisições) o resultado é o mesmo para qualquer par: uma chamada só, e o erro original
+        let calls = std::cell::RefCell::new(Vec::new());
+        let result = collect_with_fallback("PYG", "BRL", |a: String, b: String| {
+            calls.borrow_mut().push(format!("{a}{b}"));
+            async { Err(AppError::Rpc("connection timed out".to_string())) }
+        })
+        .await;
+        assert!(matches!(&result, Err(AppError::Rpc(m)) if m.contains("timed out")), "{result:?}");
+        assert_eq!(calls.into_inner(), vec!["PYGBRL"]);
+    }
+
+    #[tokio::test]
+    async fn a_failure_on_the_second_leg_stops_without_trying_its_inverse() {
+        let calls = std::cell::RefCell::new(Vec::new());
+        let result = collect_with_fallback("PYG", "BRL", |a: String, b: String| {
+            let code = format!("{a}{b}");
+            calls.borrow_mut().push(code.clone());
+            async move {
+                match code.as_str() {
+                    "PYGUSD" => Ok(()),
+                    "USDBRL" => Err(AppError::Rpc("rate limited".to_string())),
+                    _ => Err(AppError::NoData(format!("no data for {code}"))),
+                }
+            }
+        })
+        .await;
+        // o direto e o inverso não existem, a primeira perna entra, e a segunda cai por limite de requisições: erro na hora,
+        // sem tentar BRLUSD
+        assert!(matches!(&result, Err(AppError::Rpc(m)) if m.contains("rate limited")), "{result:?}");
+        assert_eq!(calls.into_inner(), vec!["PYGBRL", "BRLPYG", "PYGUSD", "USDBRL"]);
     }
 
     #[tokio::test]
