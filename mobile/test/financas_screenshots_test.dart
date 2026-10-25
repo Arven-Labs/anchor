@@ -10,6 +10,9 @@ import 'package:sqflite/sqflite.dart';
 import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/fx_history.dart';
 import 'package:anchor_mobile/domain/general_finance.dart';
+import 'package:anchor_mobile/domain/liability.dart';
+import 'package:anchor_mobile/models/liability.dart';
+import 'package:anchor_mobile/screens/financas_liabilities_screen.dart';
 import 'package:anchor_mobile/models/bank_account.dart';
 import 'package:anchor_mobile/models/general_transaction.dart';
 import 'package:anchor_mobile/models/general_transaction_category.dart';
@@ -159,6 +162,19 @@ void main() {
       await add(nubankId, GeneralTransactionType.despesa, 100, '05', categoryId: lazer);
       await add(chaseId, GeneralTransactionType.receita, 1200, '02');
       await add(chaseId, GeneralTransactionType.despesa, 40, '06', categoryId: lazer);
+      await repository.createLiability(
+        Liability(
+          bankAccountId: nubankId,
+          nome: 'Financiamento do carro',
+          titular: 'Eu',
+          principal: 24000,
+          taxaPercentual: 1.5,
+          prazoMeses: 24,
+          sistema: AmortizationSystem.price,
+          dataInicio: toIsoDay(addMonths(DateTime.now(), -3)),
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
       await repository.createTransfer(
         fromAccountId: nubankId,
         toAccountId: chaseId,
@@ -192,6 +208,17 @@ void main() {
     await capture(tester, 'transferir');
     await tester.tap(find.text('Cancelar'));
     await tester.pumpAndSettle();
+
+    await tester.pumpWidget(
+      app(FinancasLiabilitiesScreen(accounts: [nubank, chase])),
+    );
+    await settle(
+      tester,
+      () => find.text('Financiamento do carro').evaluate().isNotEmpty,
+    );
+    await tester.tap(find.text('Financiamento do carro'));
+    await tester.pumpAndSettle();
+    await capture(tester, 'dividas');
 
     await tester.pumpWidget(
       app(

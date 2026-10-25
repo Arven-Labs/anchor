@@ -1,11 +1,12 @@
 /// `receita` e `despesa` são lançadas à mão; as duas pernas de transferência
-/// nascem juntas em `GeneralFinanceRepository.createTransfer`. Parcelas de
-/// dívida e empréstimos do desktop ficam fora do mobile.
+/// nascem juntas em `GeneralFinanceRepository.createTransfer` e as parcelas de
+/// dívida em `createLiability`. Empréstimos do desktop ficam fora do mobile.
 enum GeneralTransactionType {
   receita('receita', 'Receita'),
   despesa('despesa', 'Despesa'),
   transferenciaSaida('transferencia_saida', 'Transferência (saída)'),
-  transferenciaEntrada('transferencia_entrada', 'Transferência (entrada)');
+  transferenciaEntrada('transferencia_entrada', 'Transferência (entrada)'),
+  parcelaDivida('parcela_divida', 'Parcela de dívida');
 
   /// Texto gravado em `transaction_type`, o mesmo do desktop.
   final String value;

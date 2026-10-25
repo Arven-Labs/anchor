@@ -5,6 +5,9 @@ import '../domain/currency_catalog.dart';
 import '../models/bank_account.dart';
 import '../models/general_transaction.dart';
 import '../models/general_transaction_category.dart';
+import '../models/liability.dart';
+import '../domain/general_finance.dart' show toIsoDay;
+import '../domain/liability.dart';
 
 /// Contas, lançamentos e a moeda base de Finanças Gerais. Cálculo de saldo e
 /// de patrimônio fica em `domain/general_finance.dart`, puro.
@@ -64,6 +67,19 @@ class GeneralFinanceRepository {
   Future<void> deleteAccount(int id) async {
     final db = await AppDatabase.instance();
     await db.transaction((txn) async {
+      // As parcelas da dívida (lançamentos da própria conta) saem no delete
+      // abaixo; aqui vão os registros da dívida.
+      await txn.delete(
+        'liability_installments',
+        where:
+            'liability_id IN (SELECT id FROM liabilities WHERE bank_account_id = ?)',
+        whereArgs: [id],
+      );
+      await txn.delete(
+        'liabilities',
+        where: 'bank_account_id = ?',
+        whereArgs: [id],
+      );
       // A outra perna de cada transferência da conta vai junto: sozinha ela
       // deixaria dinheiro entrando ou saindo do nada.
       await txn.delete(
@@ -97,14 +113,126 @@ class GeneralFinanceRepository {
     if (DateTime.tryParse(tx.date) == null || tx.date.length != 10) {
       throw ArgumentError('Data inválida: ${tx.date}');
     }
-    if (tx.type.isTransfer) {
-      throw ArgumentError('Transferência nasce em createTransfer');
+    if (!GeneralTransactionType.manual.contains(tx.type)) {
+      throw ArgumentError(
+        'Só receita e despesa são lançadas à mão; transferência nasce em '
+        'createTransfer e parcela de dívida em createLiability',
+      );
     }
     final db = await AppDatabase.instance();
     final map = tx.toMap()..remove('id');
     // Categoria é de despesa: receita não entra em orçamento.
     if (tx.type != GeneralTransactionType.despesa) map['category_id'] = null;
     return db.insert('general_transactions', map);
+  }
+
+  /// Cadastra a dívida e gera todas as parcelas como lançamentos
+  /// `parcela_divida` na conta (parcela `n` vence `n` meses depois do início),
+  /// numa transação só. Parcela futura não entra no saldo da conta; o saldo
+  /// devedor cai quando ela vence.
+  Future<int> createLiability(Liability liability) async {
+    final nome = liability.nome.trim();
+    if (nome.isEmpty) throw ArgumentError('Informe o nome da dívida');
+    final start = DateTime.tryParse(liability.dataInicio);
+    if (start == null || liability.dataInicio.length != 10) {
+      throw ArgumentError('Data inválida: ${liability.dataInicio}');
+    }
+    final schedule = computeInstallments(
+      principal: liability.principal,
+      taxaMensal: liability.taxaPercentual / 100,
+      prazoMeses: liability.prazoMeses,
+      sistema: liability.sistema,
+    );
+    final db = await AppDatabase.instance();
+    return db.transaction((txn) async {
+      final accounts = await txn.query(
+        'bank_accounts',
+        where: 'id = ?',
+        whereArgs: [liability.bankAccountId],
+      );
+      if (accounts.isEmpty) throw StateError('Conta não encontrada');
+      final now = liability.createdAt.toIso8601String();
+      final liabilityId = await txn.insert(
+        'liabilities',
+        Liability(
+          bankAccountId: liability.bankAccountId,
+          nome: nome,
+          titular: liability.titular,
+          principal: liability.principal,
+          taxaPercentual: liability.taxaPercentual,
+          prazoMeses: liability.prazoMeses,
+          sistema: liability.sistema,
+          dataInicio: liability.dataInicio,
+          createdAt: liability.createdAt,
+        ).toMap()..remove('id'),
+      );
+      for (final installment in schedule) {
+        final due = toIsoDay(addMonths(start, installment.numeroParcela));
+        final transactionId = await txn.insert('general_transactions', {
+          'bank_account_id': liability.bankAccountId,
+          'transaction_type': GeneralTransactionType.parcelaDivida.value,
+          'valor': installment.valorParcela,
+          'transaction_date': due,
+          'notes':
+              '$nome — parcela ${installment.numeroParcela}/${liability.prazoMeses}',
+          'created_at': now,
+        });
+        await txn.insert('liability_installments', {
+          'liability_id': liabilityId,
+          'general_transaction_id': transactionId,
+          'numero_parcela': installment.numeroParcela,
+          'valor_parcela': installment.valorParcela,
+          'valor_juros': installment.valorJuros,
+          'valor_amortizacao': installment.valorAmortizacao,
+          'saldo_devedor_apos': installment.saldoDevedorApos,
+          'data_vencimento': due,
+        });
+      }
+      return liabilityId;
+    });
+  }
+
+  /// Dívidas com as parcelas, por nome.
+  Future<List<LiabilityWithInstallments>> listLiabilities() async {
+    final db = await AppDatabase.instance();
+    final liabilities = await db.query('liabilities', orderBy: 'nome COLLATE NOCASE');
+    final installments = await db.query(
+      'liability_installments',
+      orderBy: 'numero_parcela',
+    );
+    final byLiability = <int, List<LiabilityInstallment>>{};
+    for (final row in installments) {
+      final installment = LiabilityInstallment.fromMap(row);
+      byLiability.putIfAbsent(installment.liabilityId, () => []).add(installment);
+    }
+    return [
+      for (final row in liabilities)
+        LiabilityWithInstallments(
+          Liability.fromMap(row),
+          byLiability[row['id'] as int] ?? const [],
+        ),
+    ];
+  }
+
+  /// Apaga a dívida, as parcelas e os lançamentos que elas geraram (sem isso
+  /// ficariam "fantasma" no saldo da conta).
+  Future<void> deleteLiability(int id) async {
+    final db = await AppDatabase.instance();
+    await db.transaction((txn) async {
+      await txn.delete(
+        'general_transactions',
+        where:
+            'id IN (SELECT general_transaction_id FROM liability_installments '
+            'WHERE liability_id = ?)',
+        whereArgs: [id],
+      );
+      await txn.delete(
+        'liability_installments',
+        where: 'liability_id = ?',
+        whereArgs: [id],
+      );
+      await txn.delete('liabilities', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   Future<int> insertCategory(GeneralTransactionCategory category) async {
@@ -177,14 +305,21 @@ class GeneralFinanceRepository {
   }
 
   /// Apagar uma perna de transferência apaga a outra junto (como no desktop).
+  /// Parcela de dívida não se apaga solta: o saldo devedor continuaria
+  /// contando a amortização dela. Quem apaga é `deleteLiability`.
   Future<void> deleteTransaction(int id) async {
     final db = await AppDatabase.instance();
     final rows = await db.query(
       'general_transactions',
-      columns: ['transfer_id'],
+      columns: ['transfer_id', 'transaction_type'],
       where: 'id = ?',
       whereArgs: [id],
     );
+    if (rows.isNotEmpty &&
+        rows.first['transaction_type'] ==
+            GeneralTransactionType.parcelaDivida.value) {
+      throw StateError('Parcela de dívida só se apaga junto com a dívida');
+    }
     final transferId = rows.isEmpty ? null : rows.first['transfer_id'] as int?;
     if (transferId == null) {
       await db.delete('general_transactions', where: 'id = ?', whereArgs: [id]);

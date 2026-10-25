@@ -263,10 +263,15 @@ class _FinancasTransactionsScreenState
                                   ].join('\n'),
                                 ),
                                 isThreeLine: future || tx.notes != null,
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete_outline),
-                                  onPressed: () => _delete(tx),
-                                ),
+                                // Parcela de dívida sai junto com a dívida.
+                                trailing:
+                                    tx.type ==
+                                        GeneralTransactionType.parcelaDivida
+                                    ? null
+                                    : IconButton(
+                                        icon: const Icon(Icons.delete_outline),
+                                        onPressed: () => _delete(tx),
+                                      ),
                               ),
                             );
                           },

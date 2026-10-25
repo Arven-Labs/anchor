@@ -5,7 +5,9 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/general_finance.dart';
+import 'package:anchor_mobile/domain/liability.dart';
 import 'package:anchor_mobile/models/bank_account.dart';
+import 'package:anchor_mobile/models/liability.dart';
 import 'package:anchor_mobile/models/general_transaction.dart';
 import 'package:anchor_mobile/models/general_transaction_category.dart';
 import 'package:anchor_mobile/services/general_finance_repository.dart';
@@ -452,6 +454,169 @@ void main() {
         throwsArgumentError,
       );
     });
+  });
+
+  group('dívida', () {
+    Liability liability(int accountId, {String start = '2026-01-31'}) => Liability(
+      bankAccountId: accountId,
+      nome: 'Carro',
+      titular: 'Eu',
+      principal: 1200,
+      taxaPercentual: 1,
+      prazoMeses: 12,
+      sistema: AmortizationSystem.sac,
+      dataInicio: start,
+      createdAt: DateTime(2026, 1, 1),
+    );
+
+    test('gera uma parcela por mês como lançamento da conta, com vencimento no fim do mês', () async {
+      final id = await repository.insertAccount(account('Nubank', 'BRL'));
+
+      await repository.createLiability(liability(id));
+
+      final txs = await repository.listTransactions();
+      expect(txs, hasLength(12));
+      expect(
+        txs.every((t) => t.type == GeneralTransactionType.parcelaDivida),
+        isTrue,
+      );
+      final dates = txs.map((t) => t.date).toList()..sort();
+      expect(dates.first, '2026-02-28');
+      expect(dates[1], '2026-03-31');
+      expect(dates.last, '2027-01-31');
+      expect(txs.firstWhere((t) => t.date == '2026-02-28').valor, closeTo(112, 1e-9));
+      expect(txs.firstWhere((t) => t.date == '2026-02-28').notes, 'Carro — parcela 1/12');
+
+      final listed = (await repository.listLiabilities()).single;
+      expect(listed.installments, hasLength(12));
+      expect(listed.balanceOn('2026-03-15'), closeTo(1100, 1e-9));
+      expect(listed.paidOn('2026-03-15'), 1);
+      expect(listed.nextAfter('2026-03-15')!.numeroParcela, 2);
+      expect(listed.nextAfter('2030-01-01'), isNull);
+    });
+
+    test('só a parcela vencida entra no saldo da conta', () async {
+      final id = await repository.insertAccount(account('Nubank', 'BRL'));
+      await repository.createLiability(liability(id));
+
+      final balances = computeBalances(
+        await repository.listTransactions(),
+        '2026-03-15',
+      );
+
+      expect(balances[id], closeTo(-112, 1e-9));
+    });
+
+    test('recusa nome vazio, data ruim, dados inválidos e conta inexistente, sem gravar nada', () async {
+      final id = await repository.insertAccount(account('Nubank', 'BRL'));
+      Liability copy({String? nome, String? start, double? principal, int? term}) => Liability(
+        bankAccountId: id,
+        nome: nome ?? 'Carro',
+        titular: 'Eu',
+        principal: principal ?? 1200,
+        taxaPercentual: 1,
+        prazoMeses: term ?? 12,
+        sistema: AmortizationSystem.price,
+        dataInicio: start ?? '2026-01-31',
+        createdAt: DateTime(2026, 1, 1),
+      );
+
+      expect(() => repository.createLiability(copy(nome: ' ')), throwsArgumentError);
+      expect(() => repository.createLiability(copy(start: '31/01/2026')), throwsArgumentError);
+      expect(() => repository.createLiability(copy(principal: 0)), throwsArgumentError);
+      expect(() => repository.createLiability(copy(term: 0)), throwsArgumentError);
+      expect(() => repository.createLiability(liability(999)), throwsStateError);
+      expect(await repository.listLiabilities(), isEmpty);
+      expect(await repository.listTransactions(), isEmpty);
+    });
+
+    test('parcela não se apaga solta, e lançamento manual não aceita o tipo', () async {
+      final id = await repository.insertAccount(account('Nubank', 'BRL'));
+      await repository.createLiability(liability(id));
+      final parcela = (await repository.listTransactions()).first;
+
+      expect(() => repository.deleteTransaction(parcela.id!), throwsStateError);
+      expect(
+        () => repository.insertTransaction(
+          tx(id, GeneralTransactionType.parcelaDivida, 10, '2026-08-05'),
+        ),
+        throwsArgumentError,
+      );
+      expect(await repository.listTransactions(), hasLength(12));
+    });
+
+    test('apagar a dívida apaga as parcelas e os lançamentos dela, e preserva os outros', () async {
+      final id = await repository.insertAccount(account('Nubank', 'BRL'));
+      await repository.insertTransaction(
+        tx(id, GeneralTransactionType.receita, 5, '2026-08-01'),
+      );
+      final debt = await repository.createLiability(liability(id));
+
+      await repository.deleteLiability(debt);
+
+      expect(await repository.listLiabilities(), isEmpty);
+      final left = await repository.listTransactions();
+      expect(left.single.type, GeneralTransactionType.receita);
+      final db = await AppDatabase.instance();
+      expect(await db.query('liability_installments'), isEmpty);
+    });
+
+    test('apagar a conta leva a dívida junto', () async {
+      final a = await repository.insertAccount(account('A', 'BRL'));
+      final b = await repository.insertAccount(account('B', 'BRL'));
+      await repository.createLiability(liability(a));
+      await repository.createLiability(liability(b));
+
+      await repository.deleteAccount(a);
+
+      final left = await repository.listLiabilities();
+      expect(left.single.liability.bankAccountId, b);
+      expect(await repository.listTransactions(), hasLength(12));
+      final db = await AppDatabase.instance();
+      expect(await db.query('liability_installments'), hasLength(12));
+    });
+  });
+
+  test('banco v18 sobe para a v19 e ganha as tabelas de dívida', () async {
+    final old = await openDatabase(
+      '${dir.path}/anchor_mobile.db',
+      version: 18,
+      onCreate: (db, _) async {
+        await db.execute('''CREATE TABLE bank_accounts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          nome TEXT NOT NULL, titular TEXT NOT NULL,
+          currency TEXT NOT NULL, created_at TEXT NOT NULL)''');
+        await db.execute('''CREATE TABLE general_transactions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bank_account_id INTEGER NOT NULL,
+          transaction_type TEXT NOT NULL, valor REAL NOT NULL,
+          transaction_date TEXT NOT NULL, notes TEXT,
+          created_at TEXT NOT NULL, category_id INTEGER, transfer_id INTEGER)''');
+        await db.insert('bank_accounts', {
+          'nome': 'Velha',
+          'titular': 'Eu',
+          'currency': 'BRL',
+          'created_at': '2026-01-01T00:00:00.000',
+        });
+      },
+    );
+    await old.close();
+
+    expect(await repository.listLiabilities(), isEmpty);
+    await repository.createLiability(
+      Liability(
+        bankAccountId: 1,
+        nome: 'Carro',
+        titular: 'Eu',
+        principal: 1000,
+        taxaPercentual: 0,
+        prazoMeses: 2,
+        sistema: AmortizationSystem.price,
+        dataInicio: '2026-01-10',
+        createdAt: DateTime(2026, 1, 1),
+      ),
+    );
+    expect(await repository.listTransactions(), hasLength(2));
   });
 
   test('banco v17 sobe para a v18 e ganha transfer_id', () async {

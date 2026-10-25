@@ -35,7 +35,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 18,
+      version: 19,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -288,7 +288,7 @@ class AppDatabase {
           );
         }
         if (oldVersion < 16) {
-          // Já nasce com categorias (v17) e transferências (v18).
+          // Já nasce com categorias (v17), transferências (v18) e dívidas (v19).
           await _createFinanceTables(db);
         }
         if (oldVersion == 16) {
@@ -301,6 +301,9 @@ class AppDatabase {
           await db.execute(
             'ALTER TABLE general_transactions ADD COLUMN transfer_id INTEGER',
           );
+        }
+        if (oldVersion >= 16 && oldVersion < 19) {
+          await _createLiabilityTables(db);
         }
       },
     );
@@ -341,6 +344,41 @@ class AppDatabase {
       )
     ''');
     await _createCategoriesTable(db);
+    await _createLiabilityTables(db);
+  }
+
+  /// Dívida com parcelas geradas e o detalhe de juros/amortização de cada uma;
+  /// o caixa é o `general_transactions` apontado por `general_transaction_id`.
+  /// Quem apaga a dívida apaga também esses lançamentos
+  /// (`GeneralFinanceRepository.deleteLiability`), sem cascata do banco.
+  static Future<void> _createLiabilityTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE liabilities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bank_account_id INTEGER NOT NULL REFERENCES bank_accounts(id),
+        nome TEXT NOT NULL,
+        titular TEXT NOT NULL,
+        principal REAL NOT NULL,
+        taxa_percentual REAL NOT NULL,
+        prazo_meses INTEGER NOT NULL,
+        sistema_amortizacao TEXT NOT NULL,
+        data_inicio TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE liability_installments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        liability_id INTEGER NOT NULL REFERENCES liabilities(id),
+        general_transaction_id INTEGER NOT NULL REFERENCES general_transactions(id),
+        numero_parcela INTEGER NOT NULL,
+        valor_parcela REAL NOT NULL,
+        valor_juros REAL NOT NULL,
+        valor_amortizacao REAL NOT NULL,
+        saldo_devedor_apos REAL NOT NULL,
+        data_vencimento TEXT NOT NULL
+      )
+    ''');
   }
 
   /// Categoria de lançamento com limite mensal opcional (na moeda base).

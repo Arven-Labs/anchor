@@ -11,7 +11,10 @@ import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/bank_account.dart';
 import 'package:anchor_mobile/models/general_transaction.dart';
 import 'package:anchor_mobile/models/general_transaction_category.dart';
+import 'package:anchor_mobile/domain/liability.dart';
+import 'package:anchor_mobile/models/liability.dart';
 import 'package:anchor_mobile/screens/financas_categories_screen.dart';
+import 'package:anchor_mobile/screens/financas_liabilities_screen.dart';
 import 'package:anchor_mobile/models/position.dart';
 import 'package:anchor_mobile/screens/financas_screen.dart';
 import 'package:anchor_mobile/services/general_finance_repository.dart';
@@ -268,7 +271,11 @@ void main() {
     for (var i = 0; i < 200; i++) {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
       await tester.pump();
-      if (find.text('BRL 120,50').evaluate().isNotEmpty) break;
+      // Também espera o resumo: o spinner some quando a recarga termina.
+      if (find.text('BRL 120,50').evaluate().isNotEmpty &&
+          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+        break;
+      }
     }
 
     expect(textOf(tester, 'financas-balance-$a').data, 'BRL 379,50');
@@ -301,6 +308,120 @@ void main() {
     await tester.pump();
 
     expect(find.textContaining('Taxa efetiva: 1 BRL = 0.1923 USD'), findsOneWidget);
+  });
+
+  testWidgets('a dívida abate o patrimônio e aparece no resumo', (tester) async {
+    await tester.runAsync(() async {
+      final id = await account('Nubank', 'BRL');
+      await add(id, GeneralTransactionType.receita, 5000, '2026-01-02');
+      // Principal 1200 sem juros em 12 meses a partir de 2026-01-15: as parcelas
+      // vencem de 15/02/2026 a 15/01/2027 e todas as já vencidas abatem.
+      await repository.createLiability(
+        Liability(
+          bankAccountId: id,
+          nome: 'Carro',
+          titular: 'Eu',
+          principal: 1200,
+          taxaPercentual: 0,
+          prazoMeses: 12,
+          sistema: AmortizationSystem.price,
+          dataInicio: '2020-01-15',
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+    });
+    await pumpScreen(tester);
+
+    // 2020 + 12 meses: tudo vencido, saldo devedor zero, nada a mostrar.
+    expect(find.byKey(const Key('financas-debt')), findsNothing);
+    expect(textOf(tester, 'financas-net-worth').data, 'BRL 3.800,00'); // 5000 - 12 * 100
+  });
+
+  testWidgets('dívida em aberto: o resumo mostra o saldo devedor e subtrai do total', (tester) async {
+    final start = DateTime.now().add(const Duration(days: 1));
+    await tester.runAsync(() async {
+      final id = await account('Nubank', 'BRL');
+      await add(id, GeneralTransactionType.receita, 5000, '2026-01-02');
+      await repository.createLiability(
+        Liability(
+          bankAccountId: id,
+          nome: 'Carro',
+          titular: 'Eu',
+          principal: 1200,
+          taxaPercentual: 0,
+          prazoMeses: 12,
+          sistema: AmortizationSystem.price,
+          dataInicio: toIsoDay(start),
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+    });
+    await pumpScreen(tester);
+
+    // Nenhuma parcela venceu: a conta segue com 5000 e a dívida inteira abate.
+    expect(textOf(tester, 'financas-debt').data, 'Dívidas −BRL 1.200,00');
+    expect(textOf(tester, 'financas-net-worth').data, 'BRL 3.800,00');
+  });
+
+  testWidgets('tela de dívidas: cadastra, mostra saldo e cronograma, e exclui', (tester) async {
+    late BankAccount nubank;
+    await tester.runAsync(() async {
+      final id = await account('Nubank', 'BRL');
+      nubank = BankAccount(
+        id: id,
+        nome: 'Nubank',
+        titular: 'Eu',
+        currency: 'BRL',
+        createdAt: DateTime(2026, 1, 1),
+      );
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FinancasLiabilitiesScreen(
+          accounts: [nubank],
+          now: DateTime(2026, 3, 15),
+        ),
+      ),
+    );
+    Future<void> settle(bool Function() ready) async {
+      for (var i = 0; i < 200; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump();
+        if (ready()) break;
+      }
+    }
+
+    await settle(() => find.text('Nenhuma dívida cadastrada ainda.').evaluate().isNotEmpty);
+    expect(find.text('Nenhuma dívida cadastrada ainda.'), findsOneWidget);
+
+    await tester.tap(find.text('Dívida'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('financas-liability-name')), 'Carro');
+    await tester.enterText(find.byKey(const Key('financas-liability-principal')), '1200');
+    await tester.enterText(find.byKey(const Key('financas-liability-rate')), '0');
+    await tester.enterText(find.byKey(const Key('financas-liability-term')), '12');
+    await tester.tap(find.widgetWithText(FilledButton, 'Cadastrar'));
+    await tester.pumpAndSettle();
+    await settle(() => find.text('Carro').evaluate().isNotEmpty);
+
+    // Início em 15/03/2026 (o "hoje" injetado): nenhuma parcela venceu ainda.
+    final summary = tester.widget<Text>(find.byWidgetPredicate(
+      (w) => w is Text && (w.key as ValueKey?)?.value.toString().contains('financas-liability-summary-') == true,
+    ));
+    expect(summary.data, contains('Saldo devedor BRL 1.200,00'));
+    expect(summary.data, contains('0 de 12 parcelas pagas'));
+    expect(summary.data, contains('Próxima: BRL 100,00 em 15/04/2026'));
+
+    await tester.tap(find.text('Carro'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('01 · 15/04/2026 · BRL 100,00'), findsOneWidget);
+
+    await tester.tap(find.text('Excluir dívida'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Excluir'));
+    await tester.pumpAndSettle();
+    await settle(() => find.text('Nenhuma dívida cadastrada ainda.').evaluate().isNotEmpty);
+    expect(find.text('Nenhuma dívida cadastrada ainda.'), findsOneWidget);
   });
 
   testWidgets('o botão Categorias abre a tela de categorias', (tester) async {

@@ -19,10 +19,11 @@ double? parseAmount(String text) {
 }
 
 /// Porta de `signed_valor` (`desktop/src-tauri/src/commands/bank_account.rs`):
-/// despesa e saída de transferência saem da conta, receita e entrada de
-/// transferência entram. `valor` é sempre a grandeza positiva.
+/// despesa, parcela de dívida e saída de transferência saem da conta, receita
+/// e entrada de transferência entram. `valor` é sempre a grandeza positiva.
 double signedValor(GeneralTransactionType type, double valor) =>
     type == GeneralTransactionType.despesa ||
+        type == GeneralTransactionType.parcelaDivida ||
         type == GeneralTransactionType.transferenciaSaida
     ? -valor
     : valor;
@@ -117,28 +118,34 @@ class ValuedItem {
 }
 
 /// Patrimônio na moeda `base`: caixa das contas mais valor de mercado da
-/// carteira. Item sem preço ou sem câmbio fica fora da soma e entra em
-/// `itemsMissingFx` — espelha `NetWorthSummary.items_missing_fx` do desktop.
+/// carteira, menos o saldo devedor das dívidas. Item sem preço ou sem câmbio
+/// fica fora da soma e entra em `itemsMissingFx` — espelha
+/// `NetWorthSummary.items_missing_fx` do desktop.
 class NetWorth {
   final String base;
   final double cash;
   final double portfolio;
+
+  /// Saldo devedor das dívidas, positivo; já subtraído em `total`.
+  final double debt;
   final int itemsMissingFx;
 
   const NetWorth({
     required this.base,
     required this.cash,
     required this.portfolio,
+    this.debt = 0,
     required this.itemsMissingFx,
   });
 
-  double get total => cash + portfolio;
+  double get total => cash + portfolio - debt;
 }
 
 NetWorth computeNetWorth({
   required String base,
   required Iterable<ValuedItem> cashItems,
   required Iterable<ValuedItem> portfolioItems,
+  Iterable<ValuedItem> debtItems = const [],
   required Map<String, double> ratesToBrl,
 }) {
   var missing = 0;
@@ -160,10 +167,12 @@ NetWorth computeNetWorth({
 
   final cash = sum(cashItems);
   final portfolio = sum(portfolioItems);
+  final debt = sum(debtItems);
   return NetWorth(
     base: base,
     cash: cash,
     portfolio: portfolio,
+    debt: debt,
     itemsMissingFx: missing,
   );
 }

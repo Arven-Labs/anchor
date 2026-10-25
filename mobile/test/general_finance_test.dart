@@ -103,6 +103,40 @@ void main() {
       },
     );
 
+    test('a dívida abate o patrimônio na base; dívida sem câmbio fica fora e conta', () {
+      final worth = computeNetWorth(
+        base: 'BRL',
+        cashItems: const [ValuedItem('BRL', 1000)],
+        portfolioItems: const [ValuedItem('BRL', 500)],
+        debtItems: const [
+          ValuedItem('BRL', 300), // 300
+          ValuedItem('USD', 20), // 100
+          ValuedItem('PYG', 5000000), // sem taxa: fora
+        ],
+        ratesToBrl: const {'USD': 5.0},
+      );
+
+      expect(worth.debt, 400);
+      expect(worth.total, 1100); // 1000 + 500 - 400
+      expect(worth.itemsMissingFx, 1);
+    });
+
+    test('sem dívida o patrimônio é o mesmo de antes', () {
+      final worth = computeNetWorth(
+        base: 'BRL',
+        cashItems: const [ValuedItem('BRL', 100)],
+        portfolioItems: const [],
+        ratesToBrl: const {},
+      );
+
+      expect(worth.debt, 0);
+      expect(worth.total, 100);
+    });
+
+    test('parcela de dívida sai da conta como despesa', () {
+      expect(signedValor(GeneralTransactionType.parcelaDivida, 112), -112);
+    });
+
     test('muda de base sem refazer as contas', () {
       final worth = computeNetWorth(
         base: 'USD',
