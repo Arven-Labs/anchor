@@ -151,7 +151,20 @@ describe("Anchor — revisão do extrato bancário", () => {
     await byId("statement-review-form").waitForDisplayed({ timeout: 20_000 });
     await byId("statement-correct").click();
     await browser.waitUntil(() => ledgerRows() === 6, { timeout: 20_000, timeoutMsg: "o resgate deveria estar gravado" });
-    await byId("statement-review-empty").waitForDisplayed({ timeout: 10_000 });
+    // Falhou uma vez no CI (Sessão 233) e passou na repetição, sem causa conhecida: se repetir, a mensagem diz o que havia no
+    // banco (um item de estimativa do porquinho na fila?) e o que o diálogo mostrava (o formulário, ainda carregando, fechado?).
+    try {
+      await byId("statement-review-empty").waitForDisplayed({ timeout: 10_000 });
+    } catch (error) {
+      const queue = sql("SELECT kind || ':' || status || ':' || count(*) FROM import_pending GROUP BY kind, status").replace(/\n/g, " | ");
+      let dialog;
+      try {
+        dialog = await textOf(byId("statement-review-dialog"));
+      } catch {
+        dialog = "(sem diálogo na tela)";
+      }
+      throw new Error(`${error.message}. Fila no banco: ${queue || "(vazia)"}. Texto do diálogo: ${dialog}`);
+    }
     expect(pendingCount("pending")).toBe(0);
   });
 
