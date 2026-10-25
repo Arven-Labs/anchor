@@ -138,6 +138,124 @@ void main() {
     });
   });
 
+  group('fetchFxHistoryWithFallback', () {
+    final jan2 = DateTime.utc(2026, 1, 2).millisecondsSinceEpoch ~/ 1000;
+
+    String fxBody(double close) => jsonEncode({
+      'chart': {
+        'result': [
+          {
+            'timestamp': [jan2],
+            'indicators': {
+              'quote': [
+                {
+                  'close': [close],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    /// Responde por símbolo: o que está em `answers` devolve a taxa, o que
+    /// está em `status` devolve esse status, o resto é 404. Registra a ordem.
+    YahooQuoteService fake(
+      List<String> calls, {
+      Map<String, double> answers = const {},
+      Map<String, int> status = const {},
+    }) => YahooQuoteService(
+      client: MockClient((request) async {
+        final symbol = request.url.pathSegments.last;
+        calls.add(symbol);
+        if (status.containsKey(symbol)) return http.Response('', status[symbol]!);
+        if (answers.containsKey(symbol)) return http.Response(fxBody(answers[symbol]!), 200);
+        return http.Response('', 404);
+      }),
+    );
+
+    Future<double?> rate(YahooQuoteService yahoo, {String currency = 'PYG'}) async =>
+        (await yahoo.fetchFxHistoryWithFallback(from: DateTime(2026, 1, 2), currency: currency))
+            .rateOn(DateTime(2026, 1, 2));
+
+    test('par direto basta, uma chamada', () async {
+      final calls = <String>[];
+
+      expect(await rate(fake(calls, answers: {'EURBRL=X': 6.2}), currency: 'EUR'), 6.2);
+      expect(calls, ['EURBRL=X']);
+    });
+
+    test('sem o direto, usa o inverso invertido', () async {
+      final calls = <String>[];
+
+      expect(await rate(fake(calls, answers: {'BRLPYG=X': 1600.0})), closeTo(1 / 1600, 1e-12));
+      expect(calls, ['PYGBRL=X', 'BRLPYG=X']);
+    });
+
+    test('sem direto nem inverso, cruza as pernas via dólar', () async {
+      final calls = <String>[];
+      final yahoo = fake(calls, answers: {'PYGUSD=X': 0.000125, 'USDBRL=X': 5.0});
+
+      // 0,000125 × 5,00 = 0,000625.
+      expect(await rate(yahoo), closeTo(0.000625, 1e-12));
+      expect(calls, ['PYGBRL=X', 'BRLPYG=X', 'PYGUSD=X', 'USDBRL=X']);
+    });
+
+    test('uma perna pode vir pelo inverso dela', () async {
+      final calls = <String>[];
+      final yahoo = fake(calls, answers: {'USDPYG=X': 8000.0, 'USDBRL=X': 5.0});
+
+      // (1 / 8000) × 5,00 = 0,000625.
+      expect(await rate(yahoo), closeTo(0.000625, 1e-12));
+      expect(calls, ['PYGBRL=X', 'BRLPYG=X', 'PYGUSD=X', 'USDPYG=X', 'USDBRL=X']);
+    });
+
+    test('primeira perna sem rota não pede a segunda', () async {
+      final calls = <String>[];
+
+      await expectLater(
+        rate(fake(calls, answers: {'USDBRL=X': 5.0})),
+        throwsA(isA<QuoteNotFoundException>()),
+      );
+      expect(calls, ['PYGBRL=X', 'BRLPYG=X', 'PYGUSD=X', 'USDPYG=X']);
+    });
+
+    test('segunda perna sem rota é não encontrado', () async {
+      await expectLater(
+        rate(fake([], answers: {'PYGUSD=X': 0.000125})),
+        throwsA(isA<QuoteNotFoundException>()),
+      );
+    });
+
+    test('limite de requisições na primeira chamada para sem tentar o inverso', () async {
+      final calls = <String>[];
+
+      await expectLater(
+        rate(fake(calls, status: {'PYGBRL=X': 429})),
+        throwsA(isA<QuoteUnavailableException>()),
+      );
+      expect(calls, ['PYGBRL=X']);
+    });
+
+    test('limite na segunda perna para sem tentar o inverso dela', () async {
+      final calls = <String>[];
+      final yahoo = fake(calls, answers: {'PYGUSD=X': 0.000125}, status: {'USDBRL=X': 429});
+
+      await expectLater(rate(yahoo), throwsA(isA<QuoteUnavailableException>()));
+      expect(calls, ['PYGBRL=X', 'BRLPYG=X', 'PYGUSD=X', 'USDBRL=X']);
+    });
+
+    test('dólar não cruza por ele mesmo', () async {
+      final calls = <String>[];
+
+      await expectLater(
+        rate(fake(calls), currency: 'USD'),
+        throwsA(isA<QuoteNotFoundException>()),
+      );
+      expect(calls, ['USDBRL=X', 'BRLUSD=X']);
+    });
+  });
+
   test('metal indisponível propaga a falha da fonte; metal desconhecido é não encontrado', () async {
     expect(serviceReturning(429).fetchMetalQuote('XAU'), throwsA(isA<QuoteUnavailableException>()));
     expect(serviceReturning(200).fetchMetalQuote('XYZ'), throwsA(isA<QuoteNotFoundException>()));

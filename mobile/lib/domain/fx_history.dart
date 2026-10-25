@@ -16,6 +16,23 @@ class FxHistory {
 
   bool get isEmpty => _series.isEmpty;
 
+  /// A série do par ao contrário (`BRLUSD` → `USDBRL`): 1/taxa em cada dia.
+  /// Dia com taxa zero, negativa ou não finita fica de fora.
+  FxHistory inverted() => FxHistory([
+    for (final (day, rate) in _series)
+      if (rate.isFinite && rate > 0) (day, 1 / rate),
+  ]);
+
+  /// Cotação cruzada (`PYGUSD` × `USDBRL` = `PYGBRL`): para cada dia desta
+  /// série, a taxa daqui vezes a de `other` no dia mais próximo. Sem taxa
+  /// utilizável de um dos lados, o dia fica de fora.
+  FxHistory times(FxHistory other) => FxHistory([
+    for (final (day, rate) in _series)
+      if (other.rateOn(day) case final second?)
+        if (rate.isFinite && rate > 0 && second.isFinite && second > 0)
+          (day, rate * second),
+  ]);
+
   /// Taxa do dia mais próximo de `date`; `null` com a série vazia.
   double? rateOn(DateTime date) {
     if (_series.isEmpty) return null;

@@ -121,7 +121,7 @@ class _CryptoTaxScreenState extends State<CryptoTaxScreen> {
     var fxUnavailable = false;
     if (usdDates.isNotEmpty) {
       try {
-        usdBrl = await _yahoo.fetchFxHistory(from: usdDates.first);
+        usdBrl = await _yahoo.fetchFxHistoryWithFallback(from: usdDates.first);
       } catch (_) {
         fxUnavailable = true;
       }

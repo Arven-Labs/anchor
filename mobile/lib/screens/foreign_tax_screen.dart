@@ -231,7 +231,7 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
         // Segue para o câmbio de mercado.
       }
       try {
-        fx[entry.key] = await _yahoo.fetchFxHistory(
+        fx[entry.key] = await _yahoo.fetchFxHistoryWithFallback(
           from: entry.value,
           currency: entry.key,
         );

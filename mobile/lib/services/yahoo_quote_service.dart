@@ -73,8 +73,52 @@ class YahooQuoteService {
   Future<FxHistory> fetchFxHistory({
     required DateTime from,
     String currency = 'USD',
+  }) => _fetchPair(from, currency, 'BRL');
+
+  /// Como `fetchFxHistory`, mas quando o Yahoo não tem o par `MOEDABRL=X` cai
+  /// para o inverso (`BRLMOEDA=X`, invertido) e, se também não existir, para
+  /// as pernas via dólar (`MOEDAUSD` × `USDBRL`, cada uma com o seu inverso).
+  /// Espelha `ingestion::collect_with_fallback` do desktop: só a resposta
+  /// "sem dados" (`QuoteNotFoundException`) abre o próximo caminho; limite de
+  /// requisições, timeout ou rede fora (`QuoteUnavailableException`) sobem na
+  /// hora. A segunda perna só é pedida se a primeira existir.
+  Future<FxHistory> fetchFxHistoryWithFallback({
+    required DateTime from,
+    String currency = 'USD',
   }) async {
-    final symbol = '${currency.trim().toUpperCase()}BRL=X';
+    final code = currency.trim().toUpperCase();
+    const base = 'BRL';
+    const pivot = 'USD';
+
+    final direct = await _route(from, code, base);
+    if (direct != null) return direct;
+
+    if (code != pivot) {
+      final first = await _route(from, code, pivot);
+      if (first != null) {
+        final second = await _route(from, pivot, base);
+        if (second != null) return first.times(second);
+      }
+    }
+    throw QuoteNotFoundException('$code$base=X');
+  }
+
+  /// `a`→`b` pelo par direto, ou pelo inverso invertido; `null` se o Yahoo
+  /// não tem nenhum dos dois.
+  Future<FxHistory?> _route(DateTime from, String a, String b) async {
+    try {
+      return await _fetchPair(from, a, b);
+    } on QuoteNotFoundException {
+      try {
+        return (await _fetchPair(from, b, a)).inverted();
+      } on QuoteNotFoundException {
+        return null;
+      }
+    }
+  }
+
+  Future<FxHistory> _fetchPair(DateTime from, String base, String quote) async {
+    final symbol = '${base.trim().toUpperCase()}$quote=X';
     final start = DateTime.utc(
       from.year,
       from.month,
