@@ -4671,13 +4671,14 @@ async fn offshore_distributions_reduce_the_dividend_credit_and_the_commands_refu
         amount,
     };
 
-    // recusas: antes de 31/12 do ano de origem, valor zero ou negativo, data inválida, ano anterior a 2024, entidade inexistente
+    // recusas: antes de 31/12 do ano de origem, valor zero ou negativo, data inválida, ano de origem anterior a 2023 (2023 vale
+    // desde a Sessão 233, lucro de 2023 ou antes: art. 6º I), entidade inexistente
     for bad in [
         request(2025, "2025-12-30", 100.0, entity.id),
         request(2025, "2026-03-10", 0.0, entity.id),
         request(2025, "2026-03-10", -5.0, entity.id),
         request(2025, "10/03/2026", 100.0, entity.id),
-        request(2023, "2026-03-10", 100.0, entity.id),
+        request(2022, "2026-03-10", 100.0, entity.id),
     ] {
         let result = add_offshore_distribution_in(&db, bad).await;
         assert!(matches!(result, Err(AppError::InvalidInput(_))), "{result:?}");
