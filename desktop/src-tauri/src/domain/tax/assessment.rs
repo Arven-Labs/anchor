@@ -8,6 +8,7 @@ use super::classify::{is_unit, treatment, TaxTreatment};
 use super::crypto::{assess_crypto, CryptoMonth};
 use super::foreign::{self, ForeignYear};
 use super::offshore::{OffshoreActiveYear, OffshoreUpdate2023Row, OffshoreYear};
+use super::offshore_capital::{OffshoreCapitalMonth, OffshoreCapitalPosition};
 use super::rules::{self, RuleSet};
 use crate::domain::cost_basis::{take_from_position, Position, EPS};
 use crate::error::AppError;
@@ -158,6 +159,10 @@ pub enum TaxWarning {
     OffshoreUpdate2023FxMissing { entity: String },
     /// Atualização de 2023 de uma controlada convertida pelo câmbio de mercado (a PTAX de dezembro de 2023 faltava).
     OffshoreUpdate2023FxApproximate { entity: String },
+    /// Aporte, venda ou devolução de capital de uma controlada (art. 7º) sem câmbio na data: o evento ficou de fora.
+    OffshoreCapitalFxMissing { entity: String, date: NaiveDate },
+    /// Venda ou devolução de capital de uma controlada sem capital lançado antes: o ganho considera custo zero.
+    OffshoreCapitalCostUnknown { entity: String, date: NaiveDate },
     /// Distribuição de entidade controlada ativa (art. 6º) sem câmbio na data do recebimento: ficou de fora.
     OffshoreDistributionFxMissing { year: i32, entity: String },
     /// Distribuição de entidade controlada ativa convertida pelo câmbio de mercado (a PTAX do dia faltava).
@@ -190,6 +195,10 @@ pub struct Assessment {
     pub offshore_active_years: Vec<OffshoreActiveYear>,
     /// Atualização opcional de 2023 das participações em controladas (art. 14), já em reais; preenchida pelo comando.
     pub offshore_updates_2023: Vec<OffshoreUpdate2023Row>,
+    /// Ganho de capital na venda de participação em controlada (art. 7º), por mês; preenchida pelo comando.
+    pub offshore_capital_months: Vec<OffshoreCapitalMonth>,
+    /// O custo e o capital que restam da participação em cada controlada com eventos lançados.
+    pub offshore_capital_positions: Vec<OffshoreCapitalPosition>,
     pub warnings: Vec<TaxWarning>,
     /// Só gavetas com saldo de prejuízo > 0.
     pub loss_balances: Vec<LossBalance>,
@@ -536,6 +545,8 @@ pub fn assess_with_options(
         offshore_years: Vec::new(),
         offshore_active_years: Vec::new(),
         offshore_updates_2023: Vec::new(),
+        offshore_capital_months: Vec::new(),
+        offshore_capital_positions: Vec::new(),
         warnings,
         loss_balances,
     })

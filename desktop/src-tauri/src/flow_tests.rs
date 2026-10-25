@@ -4958,6 +4958,90 @@ async fn the_2023_profits_of_an_ordinary_entity_are_taxed_on_receipt_and_the_cre
 }
 
 #[tokio::test]
+async fn selling_a_stake_in_a_controlled_entity_taxes_the_gain_over_the_cost_of_the_capital_applied() {
+    use crate::commands::offshore::{
+        add_offshore_capital_event_in, create_offshore_entity_in, list_offshore_entities_in, AddOffshoreCapitalEventRequest,
+        CreateOffshoreEntityRequest, OffshoreEntityRequest,
+    };
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Venda de participação").await;
+    seed_ptax(&db, "USD", "2024-03-01", 4.9, 5.0).await;
+    seed_ptax(&db, "USD", "2025-02-10", 5.9, 6.0).await;
+    let entity = create_offshore_entity_in(
+        &db,
+        CreateOffshoreEntityRequest {
+            workspace_id: ws.id,
+            entity: OffshoreEntityRequest {
+                name: "Holding LLC".to_string(),
+                country: "US".to_string(),
+                currency: "USD".to_string(),
+                ownership_percent: 100.0,
+                regime: None,
+                notes: None,
+            },
+        },
+    )
+    .await
+    .unwrap();
+    let add = |entity_id: i32, kind: &str, date: &str, amount: f64, brl_cost: Option<f64>, fraction: Option<f64>| {
+        add_offshore_capital_event_in(
+            &db,
+            AddOffshoreCapitalEventRequest {
+                entity_id,
+                kind: kind.to_string(),
+                event_date: date.to_string(),
+                amount,
+                brl_cost,
+                fraction,
+            },
+        )
+    };
+
+    // recusas: entidade inexistente, tipo, valor, data, venda sem fração ou com fração fora de (0, 1], custo em reais inválido,
+    // e venda ou devolução anterior a 2024 (a lei)
+    let unknown = add(9999, "aporte", "2024-03-01", 100.0, None, None).await;
+    assert!(matches!(unknown, Err(AppError::NotFound(_))), "{unknown:?}");
+    for (kind, date, amount, cost, fraction) in [
+        ("compra", "2024-03-01", 100.0, None, None),
+        ("aporte", "2024-03-01", 0.0, None, None),
+        ("aporte", "2024-03-01", f64::NAN, None, None),
+        ("aporte", "01/03/2024", 100.0, None, None),
+        ("aporte", "2024-03-01", 100.0, Some(-1.0), None),
+        ("venda", "2025-02-10", 100.0, None, None),
+        ("venda", "2025-02-10", 100.0, None, Some(0.0)),
+        ("venda", "2025-02-10", 100.0, None, Some(1.5)),
+        ("venda", "2023-12-01", 100.0, None, Some(0.5)),
+        ("devolucao", "2023-12-01", 100.0, None, None),
+    ] {
+        let result = add(entity.id, kind, date, amount, cost, fraction).await;
+        assert!(matches!(result, Err(AppError::InvalidInput(_))), "{kind} {date} {amount}: {result:?}");
+    }
+
+    // aporte de US$ 1.000 a 5,00 (custo R$ 5.000) e venda de 50% por US$ 800 a 6,00: recebido R$ 4.800, custo vendido
+    // R$ 2.500, ganho R$ 2.300, imposto de 15% = R$ 345. Os campos que não são do tipo são descartados.
+    let contribution = add(entity.id, "aporte", "2024-03-01", 1_000.0, None, Some(0.5)).await.unwrap();
+    assert_eq!(contribution.fraction, None, "fração é só da venda");
+    let sale = add(entity.id, "venda", "2025-02-10", 800.0, Some(99.0), Some(0.5)).await.unwrap();
+    assert_eq!((sale.brl_cost, sale.fraction), (None, Some(0.5)), "custo em reais é só do aporte");
+
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert!(assessment.warnings.is_empty(), "{:?}", assessment.warnings);
+    let month = &assessment.offshore_capital_months[0];
+    assert_eq!(month.period, "2025-02");
+    assert!(close(month.gain, 2_300.0) && close(month.tax, 345.0) && close(month.due, 345.0), "{month:?}");
+    assert_eq!(month.darf_code, 4600);
+    let position = &assessment.offshore_capital_positions[0];
+    assert!(close(position.capital, 500.0) && close(position.cost_brl, 2_500.0), "{position:?}");
+
+    // a lista da entidade traz os dois eventos, do mais antigo ao mais novo
+    let views = list_offshore_entities_in(&db, ws.id).await.unwrap();
+    let kinds: Vec<&str> = views[0].capital_events.iter().map(|e| e.kind.as_str()).collect();
+    assert_eq!(kinds, vec!["aporte", "venda"]);
+}
+
+#[tokio::test]
 async fn the_2023_credit_covers_the_distributions_of_an_active_entity_marked_as_2023_profits() {
     use crate::commands::offshore::{
         add_offshore_distribution_in, create_offshore_entity_in, offshore_credits_in, set_offshore_update_2023_in,

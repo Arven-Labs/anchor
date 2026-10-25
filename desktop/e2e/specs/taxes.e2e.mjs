@@ -770,6 +770,39 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await snap("taxes-offshore-ordinary-2023-profits");
   });
 
+  // Venda de participação em controlada (art. 7º): uma entidade nova ('Capital LLC', 100%), para não misturar com a atualização de
+  // 2023 da 'Holding LLC'. Aporte antigo de US$ 1.000 com custo declarado de R$ 4.000 (sem PTAX nessa data). Venda de 50% por US$ 1.000
+  // em 10/03/2025 (PTAX de venda 5,50, já semeada pelo caso da controlada ativa): recebido R$ 5.500, custo vendido R$ 2.000, ganho
+  // R$ 3.500, imposto de 15% = R$ 525,00 (DARF 4600). Sobra metade: custo R$ 2.000.
+  it("apura o ganho de capital da venda de metade da participação em controlada", async () => {
+    const workspace = sql("SELECT id FROM workspace WHERE name = 'Tax E2E'");
+    sql(
+      "INSERT INTO offshore_entities (workspace_id, name, country, currency, ownership_percent, created_at) " +
+        `VALUES (${workspace}, 'Capital LLC', 'US', 'USD', 100, '2026-01-01T00:00:00Z')`,
+    );
+    const entity = sql("SELECT id FROM offshore_entities WHERE name = 'Capital LLC'");
+    sql(
+      "INSERT INTO offshore_capital_events (entity_id, kind, event_date, amount, brl_cost, fraction, created_at) " +
+        `VALUES (${entity}, 'aporte', '2022-05-02', 1000, 4000, NULL, '2026-01-01T00:00:00Z'), ` +
+        `(${entity}, 'venda', '2025-03-10', 1000, NULL, 0.5, '2026-01-01T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await waitForText(
+      byId("offshore-capital-tax-2025-03"),
+      (text) => text.includes("525,00"),
+      "o imposto do ganho de capital da venda deveria ser R$ 525,00 (ganho de R$ 3.500 a 15%)",
+    );
+    expect(await textOf(byId("offshore-capital-gain-2025-03"))).toContain("3.500,00");
+    expect(await textOf(byId("offshore-capital-darf-2025-03"))).toContain("code 4600");
+    expect(await textOf(byId(`offshore-capital-cost-${entity}`))).toContain("2.000,00");
+    await byId("offshore-capital-table").scrollIntoView({ block: "center" });
+    await snap("taxes-offshore-capital-gain");
+  });
+
   // Aviso da guarda do registro das perdas (IN RFB 1.585, art. 15 §2): a Zeta tem um único fundo, zerado por um resgate com
   // perda de R$ 200,00 em 01/06/2025 (100 cotas a 10,00 vendidas a 8,00). O saldo fica no grupo e todos os fundos dela estão
   // zerados, então a tela avisa. A guarda vai até 31/12/2026: o texto depende de "hoje" estar antes ou depois dessa data,

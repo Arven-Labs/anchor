@@ -189,6 +189,8 @@ pub fn run() {
             commands::offshore::delete_offshore_result,
             commands::offshore::add_offshore_distribution,
             commands::offshore::delete_offshore_distribution,
+            commands::offshore::add_offshore_capital_event,
+            commands::offshore::delete_offshore_capital_event,
             commands::offshore::get_offshore_credits,
             commands::tax::get_foreign_holdings,
             commands::tax::export_foreign_holdings_csv,

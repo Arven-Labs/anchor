@@ -16,4 +16,5 @@ pub mod fund_compensation;
 pub mod fund_redemption;
 pub mod iof;
 pub mod offshore;
+pub mod offshore_capital;
 pub mod rules;

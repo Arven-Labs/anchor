@@ -141,12 +141,7 @@ pub fn assess_crypto(trades: &[Trade], rules: &RuleSet) -> Result<(Vec<CryptoMon
         // A tabela progressiva corre sobre o ganho tributável acumulado no ano: este mês ocupa as faixas a partir
         // de onde os meses anteriores pararam.
         let year_total = taxable_by_year.entry(first_day.year()).or_insert(0.0);
-        let tiers = [
-            (rules.get(rules::CRYPTO_FIRST_TIER_GAIN_LIMIT, first_day)?, rules.get(rules::CRYPTO_RATE, first_day)?),
-            (rules.get(rules::CRYPTO_SECOND_TIER_GAIN_LIMIT, first_day)?, rules.get(rules::CRYPTO_RATE_SECOND_TIER, first_day)?),
-            (rules.get(rules::CRYPTO_THIRD_TIER_GAIN_LIMIT, first_day)?, rules.get(rules::CRYPTO_RATE_THIRD_TIER, first_day)?),
-            (f64::INFINITY, rules.get(rules::CRYPTO_RATE_FOURTH_TIER, first_day)?),
-        ];
+        let tiers = gain_tiers(rules, first_day)?;
         let tax = tiered_tax(*year_total, taxable, &tiers);
         *year_total += taxable;
         // Alíquota efetiva do mês (a da 1ª faixa quando não há ganho tributável).
@@ -180,9 +175,21 @@ pub fn assess_crypto(trades: &[Trade], rules: &RuleSet) -> Result<(Vec<CryptoMon
     Ok((months, warnings))
 }
 
+/// As faixas `(teto acumulado de ganho no ano, alíquota)` do art. 21 da Lei 8.981 vigentes em `first_day`. São as regras
+/// `CRYPTO_*` (a tabela é a mesma do ganho de capital em geral), usadas também pelo ganho na venda de participação em
+/// controlada (`offshore_capital`).
+pub(super) fn gain_tiers(rules: &RuleSet, first_day: NaiveDate) -> Result<[(f64, f64); 4], AppError> {
+    Ok([
+        (rules.get(rules::CRYPTO_FIRST_TIER_GAIN_LIMIT, first_day)?, rules.get(rules::CRYPTO_RATE, first_day)?),
+        (rules.get(rules::CRYPTO_SECOND_TIER_GAIN_LIMIT, first_day)?, rules.get(rules::CRYPTO_RATE_SECOND_TIER, first_day)?),
+        (rules.get(rules::CRYPTO_THIRD_TIER_GAIN_LIMIT, first_day)?, rules.get(rules::CRYPTO_RATE_THIRD_TIER, first_day)?),
+        (f64::INFINITY, rules.get(rules::CRYPTO_RATE_FOURTH_TIER, first_day)?),
+    ])
+}
+
 /// Imposto de `taxable` de ganho que começa em `before` (ganho tributável já acumulado no ano) sobre faixas
 /// `(teto acumulado, alíquota)`; a alíquota é marginal, cada faixa tributa só a parte que cabe nela.
-fn tiered_tax(before: f64, taxable: f64, tiers: &[(f64, f64)]) -> f64 {
+pub(super) fn tiered_tax(before: f64, taxable: f64, tiers: &[(f64, f64)]) -> f64 {
     let end = before + taxable;
     let mut floor = 0.0;
     let mut tax = 0.0;

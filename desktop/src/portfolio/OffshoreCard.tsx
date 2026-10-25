@@ -97,6 +97,65 @@ type OffshoreDistributionRow = {
   amount: number;
 };
 
+type CapitalKind = "aporte" | "venda" | "devolucao";
+
+// Aporte, venda ou devolução de capital da participação (art. 7º), na moeda da entidade.
+type CapitalEventRow = {
+  id: number;
+  entity_id: number;
+  kind: CapitalKind;
+  event_date: string;
+  amount: number;
+  brl_cost: number | null;
+  fraction: number | null;
+};
+
+// Ganho de capital na venda de participação em controlada (`offshore_capital_months`), por mês do evento.
+export type CapitalDisposal = {
+  event_id: number;
+  entity_id: number;
+  entity_name: string;
+  currency: string;
+  kind: CapitalKind;
+  date: string;
+  amount: number;
+  fx_rate: number;
+  fx_source: "ptax" | "market";
+  received_brl: number;
+  fraction: number;
+  cost_brl: number;
+  gain: number;
+  cost_unknown: boolean;
+};
+
+export type OffshoreCapitalMonth = {
+  period: string;
+  gain: number;
+  rate: number;
+  tax: number;
+  carried_in: number;
+  due: number;
+  carried_out: number;
+  due_date: string;
+  darf_code: number;
+  disposals: CapitalDisposal[];
+};
+
+// O custo e o capital que restam da participação (`offshore_capital_positions`).
+export type OffshoreCapitalPosition = {
+  entity_id: number;
+  entity_name: string;
+  currency: string;
+  capital: number;
+  cost_brl: number;
+};
+
+const CAPITAL_LABELS: Record<CapitalKind, string> = {
+  aporte: "Contribution",
+  venda: "Sale or write-off",
+  devolucao: "Capital return",
+};
+
 type Regime = "automatico" | "ativa";
 
 type OffshoreEntityRow = {
@@ -112,6 +171,7 @@ type OffshoreEntityRow = {
   notes: string | null;
   results: OffshoreResultRow[];
   distributions: OffshoreDistributionRow[];
+  capital_events: CapitalEventRow[];
 };
 
 type EntityForm = { name: string; country: string; currency: string; ownership: string; regime: Regime };
@@ -124,6 +184,188 @@ function formatBrl(value: number): string {
 
 function formatAmount(value: number, currency: string): string {
   return value.toLocaleString("en-US", { style: "currency", currency });
+}
+
+// Capital aplicado na participação (art. 7º): o custo nasce dos aportes e cai nas vendas e devoluções de capital, que geram o
+// ganho de capital. O valor é na moeda da entidade; no aporte antigo o custo em reais da DAA é opcional (sem ele, o app converte
+// pela PTAX do dia); na venda, informa-se a % da participação vendida. A apuração (ganho, imposto, DARF) vem do backend.
+function CapitalSection({
+  workspaceId,
+  entity,
+  position,
+}: {
+  workspaceId: number;
+  entity: OffshoreEntityRow;
+  position: OffshoreCapitalPosition | undefined;
+}) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState<CapitalKind>("aporte");
+  const [date, setDate] = useState("");
+  const [amount, setAmount] = useState("");
+  const [brlCost, setBrlCost] = useState("");
+  const [percent, setPercent] = useState("");
+
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["offshore-entities", workspaceId] });
+    void queryClient.invalidateQueries({ queryKey: ["tax-assessment", workspaceId] });
+  };
+  const addMutation = useMutation<unknown, AppError, void>({
+    mutationFn: () =>
+      invoke("add_offshore_capital_event", {
+        request: {
+          entity_id: entity.id,
+          kind,
+          event_date: date,
+          amount: Number(amount),
+          brl_cost: kind === "aporte" && brlCost.trim() !== "" ? Number(brlCost) : null,
+          fraction: kind === "venda" ? Number(percent) / 100 : null,
+        },
+      }),
+    onSuccess: () => {
+      setAmount("");
+      setBrlCost("");
+      setPercent("");
+      setOpen(false);
+      refresh();
+    },
+  });
+  const removeMutation = useMutation<void, AppError, number>({
+    mutationFn: (eventId) => invoke("delete_offshore_capital_event", { eventId }),
+    onSuccess: refresh,
+  });
+
+  return (
+    <div className="flex flex-col gap-2" data-testid={`offshore-capital-${entity.id}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-medium">Capital applied (holding)</span>
+        <Button variant="outline" size="sm" data-testid={`offshore-capital-add-${entity.id}`} onClick={() => setOpen(true)}>
+          Add event
+        </Button>
+      </div>
+      {position && (
+        <p className="text-xs text-muted-foreground" data-testid={`offshore-capital-cost-${entity.id}`}>
+          Cost of the holding today: {formatBrl(position.cost_brl)} · capital left {formatAmount(position.capital, entity.currency)}
+        </p>
+      )}
+      {entity.capital_events.length > 0 && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Event</TableHead>
+              <TableHead className="text-right">Amount ({entity.currency})</TableHead>
+              <TableHead className="text-right">Detail</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entity.capital_events.map((e) => (
+              <TableRow key={e.id}>
+                <TableCell>{e.event_date}</TableCell>
+                <TableCell>{CAPITAL_LABELS[e.kind]}</TableCell>
+                <TableCell className="text-right">{formatAmount(e.amount, entity.currency)}</TableCell>
+                <TableCell className="text-right text-xs text-muted-foreground">
+                  {e.kind === "venda" && e.fraction !== null ? `${(e.fraction * 100).toFixed(2)}% of the holding` : null}
+                  {e.kind === "aporte" ? (e.brl_cost !== null ? `cost ${formatBrl(e.brl_cost)} (declared)` : "cost at the PTAX") : null}
+                </TableCell>
+                <TableCell className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={removeMutation.isPending}
+                    onClick={() => removeMutation.mutate(e.id)}
+                  >
+                    Remove
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      {open && (
+        <form
+          className="grid grid-cols-1 items-end gap-3 sm:grid-cols-4"
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            addMutation.mutate();
+          }}
+        >
+          <Field label="Event">
+            <Select value={kind} onValueChange={(v) => setKind(v as CapitalKind)}>
+              <SelectTrigger data-testid={`offshore-capital-kind-${entity.id}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(CAPITAL_LABELS) as CapitalKind[]).map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {CAPITAL_LABELS[k]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Date">
+            <Input
+              type="date"
+              required
+              min={kind === "aporte" ? undefined : "2024-01-01"}
+              value={date}
+              onChange={(e) => setDate(e.currentTarget.value)}
+              data-testid={`offshore-capital-date-${entity.id}`}
+            />
+          </Field>
+          <Field label={kind === "aporte" ? `Contributed, ${entity.currency}` : `Received, ${entity.currency}`}>
+            <Input
+              type="number"
+              step="0.01"
+              min={0.01}
+              required
+              value={amount}
+              onChange={(e) => setAmount(e.currentTarget.value)}
+              data-testid={`offshore-capital-amount-${entity.id}`}
+            />
+          </Field>
+          {kind === "aporte" && (
+            <Field label="Cost in reais (optional)">
+              <Input
+                type="number"
+                step="0.01"
+                min={0.01}
+                value={brlCost}
+                onChange={(e) => setBrlCost(e.currentTarget.value)}
+                data-testid={`offshore-capital-cost-input-${entity.id}`}
+              />
+            </Field>
+          )}
+          {kind === "venda" && (
+            <Field label="% of the holding sold">
+              <Input
+                type="number"
+                step="0.01"
+                min={0.01}
+                max={100}
+                required
+                value={percent}
+                onChange={(e) => setPercent(e.currentTarget.value)}
+                data-testid={`offshore-capital-percent-${entity.id}`}
+              />
+            </Field>
+          )}
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={addMutation.isPending} data-testid={`offshore-capital-save-${entity.id}`}>
+              Save
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+          {addMutation.isError && <p className="text-sm text-destructive sm:col-span-4">{addMutation.error.message}</p>}
+        </form>
+      )}
+    </div>
+  );
 }
 
 // As distribuições tributadas na disponibilização: todas as da entidade ativa e, na comum, só as de lucro de 2023 ou antes.
@@ -199,10 +441,14 @@ export default function OffshoreCard({
   workspaceId,
   years,
   activeYears,
+  capitalMonths,
+  capitalPositions,
 }: {
   workspaceId: number;
   years: OffshoreYear[];
   activeYears: OffshoreActiveYear[];
+  capitalMonths: OffshoreCapitalMonth[];
+  capitalPositions: OffshoreCapitalPosition[];
 }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -460,6 +706,46 @@ export default function OffshoreCard({
           </Table>
         )}
 
+        {capitalMonths.length > 0 && (
+          <Table data-testid="offshore-capital-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Month</TableHead>
+                <TableHead>Sales and capital returns of holdings</TableHead>
+                <TableHead className="text-right">Gain (loss)</TableHead>
+                <TableHead className="text-right">Estimated tax</TableHead>
+                <TableHead className="text-right">DARF</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[...capitalMonths].reverse().map((m) => (
+                <TableRow key={m.period}>
+                  <TableCell>{m.period}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {m.disposals
+                      .map((d) => {
+                        const what = d.kind === "venda" ? `sold ${(d.fraction * 100).toFixed(2)}%` : "capital return";
+                        const unknown = d.cost_unknown ? " (no capital recorded: cost 0)" : "";
+                        return `${d.entity_name}: ${what}, ${formatAmount(d.amount, d.currency)} on ${d.date} at ${d.fx_rate.toFixed(4)} = ${formatBrl(d.received_brl)}, cost ${formatBrl(d.cost_brl)}${unknown}`;
+                      })
+                      .join("; ")}
+                  </TableCell>
+                  <TableCell className="text-right" data-testid={`offshore-capital-gain-${m.period}`}>
+                    {formatBrl(m.gain)}
+                  </TableCell>
+                  <TableCell className="text-right font-medium" data-testid={`offshore-capital-tax-${m.period}`}>
+                    {formatBrl(m.tax)}
+                    <span className="block text-xs text-muted-foreground">at {(m.rate * 100).toFixed(1)}%</span>
+                  </TableCell>
+                  <TableCell className="text-right text-xs" data-testid={`offshore-capital-darf-${m.period}`}>
+                    {m.due > 0 ? `${formatBrl(m.due)} · code ${m.darf_code} · due ${m.due_date}` : "below the minimum: carried over"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+
         {activeYears.length > 0 && (
           <Table data-testid="offshore-active-table">
             <TableHeader>
@@ -614,6 +900,11 @@ export default function OffshoreCard({
               key={`${entity.id}:${entity.update_2023_equity}:${entity.update_2023_profits}`}
               workspaceId={workspaceId}
               entity={entity}
+            />
+            <CapitalSection
+              workspaceId={workspaceId}
+              entity={entity}
+              position={capitalPositions.find((p) => p.entity_id === entity.id)}
             />
             {distEntityId === entity.id && (
               <form onSubmit={onSubmitDistribution} className="grid grid-cols-1 items-end gap-3 sm:grid-cols-3">

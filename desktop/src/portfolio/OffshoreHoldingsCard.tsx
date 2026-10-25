@@ -212,8 +212,9 @@ export default function OffshoreHoldingsCard({ workspaceId, credits }: { workspa
           originally declared in reais (the foreign amount times the 31/12 rate of the year of origin) and is not taxed
           again; the exchange gain or loss against the amount received is neither taxed nor deducted (§§11 and 12). The
           credit of a year is the base actually taxed that year, after the entity's own losses. Your holding in the
-          entity itself (its acquisition cost) is not tracked here: declare it by hand, adding the 2023 update below if
-          you opted for it. This is an estimate based on the law's text — confirm in the Receita's program.
+          entity itself (its acquisition cost) is not listed here: take it from the Capital section of the entity above,
+          and add the 2023 update below if you opted for it. This is an estimate based on the law's text — confirm in
+          the Receita's program.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">

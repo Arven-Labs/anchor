@@ -24,6 +24,7 @@ use crate::domain::ptax::{PtaxSeries, RateKind, RateSource};
 use crate::commands::offshore as offshore_cmd;
 use crate::domain::tax::foreign;
 use crate::domain::tax::offshore;
+use crate::domain::tax::offshore_capital;
 use crate::domain::tax::rules::{self, Rule, RuleSet};
 use crate::entity::{
     assets, bank_account, custodia, general_transaction, general_transaction_category, option_position,
@@ -257,6 +258,19 @@ pub(crate) async fn assess_workspace(
     let (update_rows, update_warnings) = offshore::assess_offshore_update_2023(&offshore_entities, &offshore_updates, &rate);
     assessment.offshore_updates_2023 = update_rows;
     assessment.warnings.extend(update_warnings);
+
+    // Ganho de capital na venda de participação em controlada (art. 7º); o custo adicional da atualização de 2023 entra na base.
+    let capital_events = offshore_cmd::load_capital_events(db, workspace_id).await?;
+    let (capital_months, capital_positions, capital_warnings) = offshore_capital::assess_offshore_capital(
+        &offshore_entities,
+        &assessment.offshore_updates_2023,
+        &capital_events,
+        &rules,
+        &rate,
+    )?;
+    assessment.offshore_capital_months = capital_months;
+    assessment.offshore_capital_positions = capital_positions;
+    assessment.warnings.extend(capital_warnings);
     Ok(assessment)
 }
 
@@ -583,6 +597,16 @@ async fn refresh_ptax(db: &DatabaseConnection, workspace_id: i32, allow_network:
             let entry = span.entry(entity.currency.clone()).or_insert((year_end, year_end));
             entry.0 = entry.0.min(year_end - chrono::Duration::days(10));
             entry.1 = entry.1.max(year_end);
+        }
+        // Capital aplicado nas controladas (art. 7º): a PTAX do dia de cada aporte, venda e devolução (10 dias antes, para o dia
+        // útil anterior).
+        for event in offshore_cmd::load_capital_events(db, workspace_id).await? {
+            let Some(entity) = entities.iter().find(|e| e.id == event.entity_id).filter(|e| e.currency != "BRL") else {
+                continue;
+            };
+            let entry = span.entry(entity.currency.clone()).or_insert((event.date, event.date));
+            entry.0 = entry.0.min(event.date - chrono::Duration::days(10));
+            entry.1 = entry.1.max(event.date);
         }
         // Atualização de 2023 das controladas (art. 14): a PTAX de dezembro de 2023, como a dos ativos (10 dias antes de 31/12).
         for u in offshore_cmd::load_updates_2023(db, workspace_id).await? {

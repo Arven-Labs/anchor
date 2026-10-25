@@ -13,7 +13,8 @@ use crate::domain::tax::offshore::{
     offshore_credits, OffshoreCreditRow, OffshoreDistribution, OffshoreDistributionView, OffshoreEntity, OffshoreResult,
     OffshoreUpdate2023Input, OffshoreUpdate2023Row, UPDATE_2023_YEAR,
 };
-use crate::entity::{offshore_distribution, offshore_entity, offshore_result};
+use crate::domain::tax::offshore_capital::{CapitalEvent, CapitalKind};
+use crate::entity::{offshore_capital_event, offshore_distribution, offshore_entity, offshore_result};
 use crate::error::AppError;
 
 /// Uma entidade com os resultados que o usuário já informou, do ano mais antigo ao mais novo.
@@ -24,6 +25,8 @@ pub struct OffshoreEntityView {
     pub results: Vec<offshore_result::Model>,
     /// As distribuições recebidas, da mais antiga à mais nova (as de entidade `ativa` são o que gera imposto).
     pub distributions: Vec<offshore_distribution::Model>,
+    /// Os aportes, vendas e devoluções de capital da participação (art. 7º), do mais antigo ao mais novo.
+    pub capital_events: Vec<offshore_capital_event::Model>,
 }
 
 #[derive(Deserialize)]
@@ -124,8 +127,8 @@ pub async fn list_offshore_entities_in(
         .all(db)
         .await?;
     let ids: Vec<i32> = entities.iter().map(|e| e.id).collect();
-    let (results, distributions) = if ids.is_empty() {
-        (Vec::new(), Vec::new())
+    let (results, distributions, capital_events) = if ids.is_empty() {
+        (Vec::new(), Vec::new(), Vec::new())
     } else {
         let results = offshore_result::Entity::find()
             .filter(offshore_result::Column::EntityId.is_in(ids.clone()))
@@ -133,18 +136,25 @@ pub async fn list_offshore_entities_in(
             .all(db)
             .await?;
         let distributions = offshore_distribution::Entity::find()
-            .filter(offshore_distribution::Column::EntityId.is_in(ids))
+            .filter(offshore_distribution::Column::EntityId.is_in(ids.clone()))
             .order_by_asc(offshore_distribution::Column::ReceivedOn)
             .all(db)
             .await?;
-        (results, distributions)
+        let capital_events = offshore_capital_event::Entity::find()
+            .filter(offshore_capital_event::Column::EntityId.is_in(ids))
+            .order_by_asc(offshore_capital_event::Column::EventDate)
+            .order_by_asc(offshore_capital_event::Column::Id)
+            .all(db)
+            .await?;
+        (results, distributions, capital_events)
     };
     Ok(entities
         .into_iter()
         .map(|entity| {
             let results = results.iter().filter(|r| r.entity_id == entity.id).cloned().collect();
             let distributions = distributions.iter().filter(|d| d.entity_id == entity.id).cloned().collect();
-            OffshoreEntityView { entity, results, distributions }
+            let capital_events = capital_events.iter().filter(|e| e.entity_id == entity.id).cloned().collect();
+            OffshoreEntityView { entity, results, distributions, capital_events }
         })
         .collect())
 }
@@ -422,6 +432,113 @@ pub async fn delete_offshore_distribution(
 ) -> Result<(), AppError> {
     offshore_distribution::Entity::delete_by_id(distribution_id).exec(db.inner()).await?;
     Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct AddOffshoreCapitalEventRequest {
+    pub entity_id: i32,
+    /// `aporte`, `venda` (alienação, baixa ou liquidação) ou `devolucao` (devolução de capital).
+    pub kind: String,
+    /// `AAAA-MM-DD`.
+    pub event_date: String,
+    /// Valor, na moeda da entidade: aportado, recebido na venda ou devolvido.
+    pub amount: f64,
+    /// Só no aporte: o custo em reais declarado (aportes antigos). Sem ele, o app converte pela PTAX do dia.
+    #[serde(default)]
+    pub brl_cost: Option<f64>,
+    /// Só na venda: a fração da participação vendida, de 0 (exclusive) a 1.
+    #[serde(default)]
+    pub fraction: Option<f64>,
+}
+
+#[tauri::command]
+pub async fn add_offshore_capital_event(
+    db: tauri::State<'_, DatabaseConnection>,
+    request: AddOffshoreCapitalEventRequest,
+) -> Result<offshore_capital_event::Model, AppError> {
+    add_offshore_capital_event_in(db.inner(), request).await
+}
+
+/// Lança um aporte, uma venda ou uma devolução de capital da participação numa controlada (art. 7º). Venda e devolução valem
+/// a partir de 2024 (a lei); o aporte pode ser de qualquer data. Os campos que não são do tipo são descartados.
+pub async fn add_offshore_capital_event_in(
+    db: &DatabaseConnection,
+    request: AddOffshoreCapitalEventRequest,
+) -> Result<offshore_capital_event::Model, AppError> {
+    offshore_entity::Entity::find_by_id(request.entity_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("offshore entity {}", request.entity_id)))?;
+    let kind = CapitalKind::parse(request.kind.trim()).ok_or_else(|| {
+        AppError::InvalidInput(format!("kind must be 'aporte', 'venda' or 'devolucao', got '{}'", request.kind))
+    })?;
+    if !request.amount.is_finite() || request.amount <= 0.0 {
+        return Err(AppError::InvalidInput("amount must be above zero".to_string()));
+    }
+    let event_date = NaiveDate::parse_from_str(&request.event_date, "%Y-%m-%d")
+        .ok()
+        .filter(|d| request.event_date.len() == 10 && d.year() >= 1900)
+        .ok_or_else(|| AppError::InvalidInput(format!("event_date '{}' is not a date (YYYY-MM-DD)", request.event_date)))?;
+    let brl_cost = match (kind, request.brl_cost) {
+        (CapitalKind::Contribution, Some(cost)) if !cost.is_finite() || cost <= 0.0 => {
+            return Err(AppError::InvalidInput("the cost in reais must be above zero".to_string()))
+        }
+        (CapitalKind::Contribution, cost) => cost,
+        _ => None,
+    };
+    let fraction = match (kind, request.fraction) {
+        (CapitalKind::Sale, Some(f)) if f.is_finite() && f > 0.0 && f <= 1.0 => Some(f),
+        (CapitalKind::Sale, _) => {
+            return Err(AppError::InvalidInput("a sale needs the fraction sold, above 0 and at most 1".to_string()))
+        }
+        _ => None,
+    };
+    if kind != CapitalKind::Contribution && event_date.year() < FIRST_YEAR {
+        return Err(AppError::InvalidInput(format!("a sale or capital return must be from {FIRST_YEAR} or later (Lei 14.754)")));
+    }
+    Ok(offshore_capital_event::ActiveModel {
+        entity_id: Set(request.entity_id),
+        kind: Set(request.kind.trim().to_string()),
+        event_date: Set(request.event_date),
+        amount: Set(request.amount),
+        brl_cost: Set(brl_cost),
+        fraction: Set(fraction),
+        created_at: Set(Utc::now().to_rfc3339()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await?)
+}
+
+#[tauri::command]
+pub async fn delete_offshore_capital_event(
+    db: tauri::State<'_, DatabaseConnection>,
+    event_id: i32,
+) -> Result<(), AppError> {
+    offshore_capital_event::Entity::delete_by_id(event_id).exec(db.inner()).await?;
+    Ok(())
+}
+
+/// Os eventos de capital do Workspace no formato da apuração, ignorando os de tipo ilegível.
+pub(crate) async fn load_capital_events(db: &DatabaseConnection, workspace_id: i32) -> Result<Vec<CapitalEvent>, AppError> {
+    let views = list_offshore_entities_in(db, workspace_id).await?;
+    let mut events = Vec::new();
+    for row in views.into_iter().flat_map(|v| v.capital_events) {
+        let (Some(kind), Ok(date)) = (CapitalKind::parse(&row.kind), NaiveDate::parse_from_str(&row.event_date, "%Y-%m-%d"))
+        else {
+            continue;
+        };
+        events.push(CapitalEvent {
+            id: row.id,
+            entity_id: row.entity_id,
+            kind,
+            date,
+            amount: row.amount,
+            brl_cost: row.brl_cost,
+            fraction: row.fraction,
+        });
+    }
+    Ok(events)
 }
 
 /// Os créditos de dividendo a receber das controladas (ficha Bens e Direitos) e o que cada distribuição reduziu.

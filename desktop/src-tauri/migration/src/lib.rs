@@ -104,6 +104,7 @@ mod m20261110_100000_create_offshore_distributions;
 mod m20261111_100000_add_regime_to_offshore_entities;
 mod m20261112_100000_add_update_2023_value_to_assets;
 mod m20261113_100000_add_update_2023_to_offshore_entities;
+mod m20261114_100000_create_offshore_capital_events;
 
 pub struct Migrator;
 
@@ -215,6 +216,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261111_100000_add_regime_to_offshore_entities::Migration),
             Box::new(m20261112_100000_add_update_2023_value_to_assets::Migration),
             Box::new(m20261113_100000_add_update_2023_to_offshore_entities::Migration),
+            Box::new(m20261114_100000_create_offshore_capital_events::Migration),
         ]
     }
 }
