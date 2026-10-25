@@ -28,6 +28,9 @@ pub struct Model {
     pub dirpf_group: Option<String>,
     pub dirpf_code: Option<String>,
     pub dirpf_country: Option<String>,
+    /// Saldo de 31/12/2023 na moeda do ativo, da atualização opcional do art. 14 da Lei 14.754; nulo = o usuário não optou.
+    #[sea_orm(column_type = "Double", nullable)]
+    pub update_2023_value: Option<f64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

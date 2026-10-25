@@ -102,6 +102,7 @@ mod m20261108_100000_add_tax_return_fields_to_assets;
 mod m20261109_100000_add_foreign_tax_paid_on_to_transactions;
 mod m20261110_100000_create_offshore_distributions;
 mod m20261111_100000_add_regime_to_offshore_entities;
+mod m20261112_100000_add_update_2023_value_to_assets;
 
 pub struct Migrator;
 
@@ -211,6 +212,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261109_100000_add_foreign_tax_paid_on_to_transactions::Migration),
             Box::new(m20261110_100000_create_offshore_distributions::Migration),
             Box::new(m20261111_100000_add_regime_to_offshore_entities::Migration),
+            Box::new(m20261112_100000_add_update_2023_value_to_assets::Migration),
         ]
     }
 }

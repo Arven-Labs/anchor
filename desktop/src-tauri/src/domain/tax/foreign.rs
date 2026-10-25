@@ -12,7 +12,7 @@
 //   abate a base dos anos seguintes.
 // - Imposto = base × alíquota (15%). O imposto retido no exterior abate o devido, até o limite dele.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use chrono::{Datelike, NaiveDate};
 use serde::Serialize;
@@ -29,6 +29,85 @@ pub const FIRST_YEAR: i32 = 2024;
 
 /// Câmbio para BRL: `(moeda, data, lado)` → `(taxa, de onde veio)`, `None` sem cotação. Nunca é chamado para BRL.
 pub type RateToBrl<'a> = &'a dyn Fn(&str, NaiveDate, RateKind) -> Option<(f64, RateSource)>;
+
+/// Atualização opcional dos bens no exterior ao valor de 31/12/2023 (Lei 14.754, art. 14): quem optou e pagou os 8% passa a
+/// ter na ficha Bens e Direitos um custo de aquisição adicional (§4º II), então o custo da posição daquela data vira o saldo
+/// informado pela custodiante (§2º I) convertido pela PTAX de venda do último dia útil de dezembro de 2023 (§3º).
+#[derive(Clone, Debug)]
+pub struct Update2023 {
+    pub asset_id: i32,
+    pub ticker: String,
+    pub currency: String,
+    /// Saldo de 31/12/2023 na moeda do ativo.
+    pub value: f64,
+}
+
+/// A atualização vale no fim de 31/12/2023: fatos até esse dia entram no custo antes dela, os seguintes depois.
+fn update_2023_date() -> NaiveDate {
+    NaiveDate::from_ymd_opt(2023, 12, 31).expect("data válida")
+}
+
+/// Aplica a atualização de um ativo uma única vez (`settled`), registrando o aviso do que não deu certo e marcando 2023 como
+/// aproximado quando o câmbio de dezembro de 2023 veio do mercado.
+fn settle_update(
+    update: &Update2023,
+    pos: &mut Position,
+    rate: RateToBrl,
+    settled: &mut HashSet<i32>,
+    approximate_years: &mut BTreeSet<i32>,
+    warnings: &mut Vec<TaxWarning>,
+) {
+    if !settled.insert(update.asset_id) {
+        return;
+    }
+    match apply_update_2023(pos, update, rate) {
+        Ok(RateSource::Market) => {
+            approximate_years.insert(update_2023_date().year());
+        }
+        Ok(_) => {}
+        Err(UpdateIssue::NoPosition) => warnings.push(TaxWarning::Update2023NoPosition { ticker: update.ticker.clone() }),
+        Err(UpdateIssue::FxMissing) => warnings.push(TaxWarning::Update2023FxMissing { ticker: update.ticker.clone() }),
+    }
+}
+
+/// Versão do informe: aplica a atualização do ativo uma vez, antes da foto de 31/12/2023. Sem câmbio mantém o custo antigo e
+/// marca a posição como incompleta; câmbio de mercado marca como aproximada; sem posição não há o que atualizar.
+fn settle_holding_update(
+    update: Option<&Update2023>,
+    updated: &mut bool,
+    pos: &mut Position,
+    rate: RateToBrl,
+    approximate: &mut bool,
+    incomplete: &mut bool,
+) {
+    if std::mem::replace(updated, true) {
+        return;
+    }
+    let Some(update) = update else { return };
+    match apply_update_2023(pos, update, rate) {
+        Ok(source) => *approximate |= source == RateSource::Market,
+        Err(UpdateIssue::NoPosition) => {}
+        Err(UpdateIssue::FxMissing) => *incomplete = true,
+    }
+}
+
+/// Por que a atualização não pôde ser aplicada.
+enum UpdateIssue {
+    /// Sem quantidade em 31/12/2023: não há o que atualizar.
+    NoPosition,
+    /// Sem câmbio (nem PTAX nem de mercado) para dezembro de 2023.
+    FxMissing,
+}
+
+/// Troca o custo da posição pelo saldo atualizado em reais. Devolve de onde veio o câmbio.
+fn apply_update_2023(pos: &mut Position, update: &Update2023, rate: RateToBrl) -> Result<RateSource, UpdateIssue> {
+    if pos.quantity <= EPS {
+        return Err(UpdateIssue::NoPosition);
+    }
+    let (fx, source) = convert(&update.currency, update_2023_date(), RateKind::Sell, rate).ok_or(UpdateIssue::FxMissing)?;
+    pos.cost = update.value * fx;
+    Ok(source)
+}
 
 /// Um provento de ativo no exterior, como saiu de `transactions`, na moeda do ativo.
 #[derive(Clone, Debug)]
@@ -182,9 +261,22 @@ impl HoldingEvent<'_> {
 /// quantidade). Usa a mesma ordem e a mesma conversão de `assess_foreign`; ano sem fato repete a posição anterior.
 /// O custo é do ativo (custo médio global): cada custódia leva a quantidade dela × o custo médio, então a soma das
 /// custódias é a posição do ativo. Ordenada por `(ano, ativo, custódia)`.
+#[cfg(test)]
 pub fn foreign_holdings(
     trades: &[Trade],
     transfers: &[Transfer],
+    rate: RateToBrl,
+    through_year: i32,
+) -> Vec<ForeignHolding> {
+    foreign_holdings_with_updates(trades, transfers, &[], rate, through_year)
+}
+
+/// `foreign_holdings` com a atualização opcional de 2023 (`Update2023`): o custo da posição de 31/12/2023 em diante parte do
+/// saldo atualizado, em reais (a atualização sem câmbio deixa o custo antigo e marca a posição como incompleta).
+pub fn foreign_holdings_with_updates(
+    trades: &[Trade],
+    transfers: &[Transfer],
+    updates: &[Update2023],
     rate: RateToBrl,
     through_year: i32,
 ) -> Vec<ForeignHolding> {
@@ -214,6 +306,9 @@ pub fn foreign_holdings(
         let mut by_custodia: BTreeMap<Option<i32>, f64> = BTreeMap::new();
         let (mut approximate, mut incomplete) = (false, false);
         let mut next_year = FIRST_YEAR - 1;
+        // O primeiro 31/12 fotografado é o de 2023: a atualização entra antes dele, uma vez.
+        let update = updates.iter().find(|u| u.asset_id == asset_id);
+        let mut updated = update.is_none();
         let snapshot = |year: i32,
                         pos: &Position,
                         by_custodia: &BTreeMap<Option<i32>, f64>,
@@ -259,6 +354,7 @@ pub fn foreign_holdings(
         for event in &events {
             // Os 31/12 que ficaram para trás são fotos do estado antes deste evento.
             while next_year < event.date().year() && next_year <= through_year {
+                settle_holding_update(update, &mut updated, &mut pos, rate, &mut approximate, &mut incomplete);
                 snapshot(next_year, &pos, &by_custodia, approximate, incomplete, &mut holdings);
                 next_year += 1;
             }
@@ -294,6 +390,7 @@ pub fn foreign_holdings(
             }
         }
         while next_year <= through_year {
+            settle_holding_update(update, &mut updated, &mut pos, rate, &mut approximate, &mut incomplete);
             snapshot(next_year, &pos, &by_custodia, approximate, incomplete, &mut holdings);
             next_year += 1;
         }
@@ -304,15 +401,31 @@ pub fn foreign_holdings(
 
 /// Apura ano a ano o IR dos ativos do exterior. `trades` e `dividends` podem vir em qualquer ordem e misturar outras
 /// classes (os trades fora de `ForeignWarning` são ignorados). Item sem câmbio na data fica de fora e gera aviso.
+#[cfg(test)]
 pub fn assess_foreign(
     trades: &[Trade],
     dividends: &[ForeignDividend],
     rules: &RuleSet,
     rate: RateToBrl,
 ) -> Result<(Vec<ForeignYear>, Vec<TaxWarning>), AppError> {
+    assess_foreign_with_updates(trades, dividends, &[], rules, rate)
+}
+
+/// `assess_foreign` com a atualização opcional de 2023 (`Update2023`): o custo da posição de cada ativo atualizado vira o saldo
+/// de 31/12/2023 em reais antes de qualquer fato posterior. Atualização sem posição ou sem câmbio é ignorada e avisa.
+pub fn assess_foreign_with_updates(
+    trades: &[Trade],
+    dividends: &[ForeignDividend],
+    updates: &[Update2023],
+    rules: &RuleSet,
+    rate: RateToBrl,
+) -> Result<(Vec<ForeignYear>, Vec<TaxWarning>), AppError> {
     let mut warnings = Vec::new();
     let mut fx_missing_years: BTreeSet<i32> = BTreeSet::new();
     let mut fx_approximate_years: BTreeSet<i32> = BTreeSet::new();
+    // Cada atualização é aplicada uma vez: ao chegar o primeiro fato depois de 31/12/2023 do ativo, ou no fim.
+    let mut settled: HashSet<i32> = HashSet::new();
+    let update_of = |asset_id: i32| updates.iter().find(|u| u.asset_id == asset_id);
 
     let mut foreign: Vec<&Trade> =
         trades.iter().filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning).collect();
@@ -323,6 +436,11 @@ pub fn assess_foreign(
     let mut positions: HashMap<i32, Position> = HashMap::new();
     for t in foreign {
         let pos = positions.entry(t.asset_id).or_default();
+        if t.date > update_2023_date() {
+            if let Some(update) = update_of(t.asset_id) {
+                settle_update(update, pos, rate, &mut settled, &mut fx_approximate_years, &mut warnings);
+            }
+        }
         // Desdobramento só tem razão, sem valor: não precisa de câmbio.
         if t.side == Side::Split {
             pos.quantity *= t.quantity;
@@ -367,6 +485,12 @@ pub fn assess_foreign(
             }
             Side::Split => unreachable!("tratado acima"),
         }
+    }
+
+    // Ativos cujo último fato é de 2023 (ou sem fato do exterior) ainda não foram atualizados: avisa se não havia posição.
+    for update in updates {
+        let mut pos = positions.remove(&update.asset_id).unwrap_or_default();
+        settle_update(update, &mut pos, rate, &mut settled, &mut fx_approximate_years, &mut warnings);
     }
 
     let mut dividends_by_year: BTreeMap<i32, Vec<ForeignDividendItem>> = BTreeMap::new();
@@ -1023,5 +1147,135 @@ mod tests {
         // custo 100 × 5 = 500; venda 300 × 6 = 1.800; ganho 1.300, sem aviso de custo desconhecido
         assert!(warnings.is_empty());
         assert!(close(years[0].capital_gain, 1_300.0), "{:?}", years[0]);
+    }
+
+    // --- Atualização opcional de 2023 (art. 14) ---
+
+    /// PTAX do dólar para a atualização: 4,00 em 2022, 4,80 em 2023, 5,00 em 2024 e 6,00 em 2025.
+    fn rate_with_2023(currency: &str, date: NaiveDate, _kind: RateKind) -> Option<(f64, RateSource)> {
+        match (currency, date.year()) {
+            ("USD", 2022) => Some((4.0, RateSource::Ptax)),
+            ("USD", 2023) => Some((4.8, RateSource::Ptax)),
+            ("USD", 2024) => Some((5.0, RateSource::Ptax)),
+            ("USD", 2025) => Some((6.0, RateSource::Ptax)),
+            _ => None,
+        }
+    }
+
+    /// Como `rate_with_2023`, mas sem nenhuma cotação para 2023.
+    fn rate_without_2023(currency: &str, date: NaiveDate, kind: RateKind) -> Option<(f64, RateSource)> {
+        if date.year() == 2023 { None } else { rate_with_2023(currency, date, kind) }
+    }
+
+    fn update(asset: i32, value: f64) -> Update2023 {
+        Update2023 { asset_id: asset, ticker: format!("T{asset}"), currency: "USD".to_string(), value }
+    }
+
+    fn run_updated(
+        trades: &[Trade],
+        updates: &[Update2023],
+        rate: RateToBrl,
+    ) -> (Vec<ForeignYear>, Vec<TaxWarning>) {
+        assess_foreign_with_updates(trades, &[], updates, &test_rule_set(), rate).unwrap()
+    }
+
+    #[test]
+    fn the_2023_update_replaces_the_cost_of_the_position_and_cuts_the_gain() {
+        // 10 ações a US$ 10 em 2022 (4,00) = custo R$ 400. Atualização: saldo US$ 200 × 4,80 = R$ 960. Venda das 10 em 2024 por
+        // US$ 250 × 5,00 = R$ 1.250: ganho 1.250 − 960 = 290 (sem a atualização seriam 1.250 − 400 = 850)
+        let trades = [
+            trade(1, 1, "2022-06-10", Side::Buy, 10.0, 100.0, 0.0),
+            trade(2, 1, "2024-06-10", Side::Sell, 10.0, 250.0, 0.0),
+        ];
+        let (years, warnings) = run_updated(&trades, &[update(1, 200.0)], &rate_with_2023);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(close(years[0].capital_gain, 290.0), "{:?}", years[0]);
+        let (years, _) = run_updated(&trades, &[], &rate_with_2023);
+        assert!(close(years[0].capital_gain, 850.0), "sem atualização vale o custo antigo: {:?}", years[0]);
+    }
+
+    #[test]
+    fn a_purchase_after_2023_mixes_into_the_updated_average_cost() {
+        // custo atualizado R$ 960 (10 ações); compra de 10 a US$ 20 × 5,00 = R$ 1.000 em 2024 → 20 ações a R$ 1.960. A venda
+        // de 10 por US$ 250 × 5,00 = R$ 1.250 leva metade do custo (980): ganho 270
+        let (years, warnings) = run_updated(
+            &[
+                trade(1, 1, "2022-06-10", Side::Buy, 10.0, 100.0, 0.0),
+                trade(2, 1, "2024-02-01", Side::Buy, 10.0, 200.0, 0.0),
+                trade(3, 1, "2024-06-10", Side::Sell, 10.0, 250.0, 0.0),
+            ],
+            &[update(1, 200.0)],
+            &rate_with_2023,
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(close(years[0].capital_gain, 270.0), "{:?}", years[0]);
+    }
+
+    #[test]
+    fn an_update_without_a_position_on_31_12_2023_is_ignored_and_warns() {
+        // só comprou em 2024 (US$ 100 × 5,00 = 500) e vendeu por US$ 150 × 5,00 = 750: ganho 250, com ou sem o valor
+        let trades = [
+            trade(1, 1, "2024-02-01", Side::Buy, 10.0, 100.0, 0.0),
+            trade(2, 1, "2024-06-10", Side::Sell, 10.0, 150.0, 0.0),
+        ];
+        let (years, warnings) = run_updated(&trades, &[update(1, 999.0)], &rate_with_2023);
+        assert!(close(years[0].capital_gain, 250.0), "{:?}", years[0]);
+        assert!(matches!(warnings.as_slice(), [TaxWarning::Update2023NoPosition { ticker }] if ticker == "T1"), "{warnings:?}");
+    }
+
+    #[test]
+    fn an_update_without_an_exchange_rate_for_december_2023_is_ignored_and_warns() {
+        // sem cotação em 2023: vale o custo antigo (R$ 400) e o ganho é 1.250 − 400 = 850
+        let (years, warnings) = run_updated(
+            &[
+                trade(1, 1, "2022-06-10", Side::Buy, 10.0, 100.0, 0.0),
+                trade(2, 1, "2024-06-10", Side::Sell, 10.0, 250.0, 0.0),
+            ],
+            &[update(1, 200.0)],
+            &rate_without_2023,
+        );
+        assert!(close(years[0].capital_gain, 850.0), "{:?}", years[0]);
+        assert!(matches!(warnings.as_slice(), [TaxWarning::Update2023FxMissing { ticker }] if ticker == "T1"), "{warnings:?}");
+    }
+
+    #[test]
+    fn the_market_rate_of_december_2023_marks_2023_approximate() {
+        let market = |currency: &str, date: NaiveDate, kind: RateKind| {
+            rate_with_2023(currency, date, kind).map(|(r, s)| if date.year() == 2023 { (r, RateSource::Market) } else { (r, s) })
+        };
+        let (_, warnings) = run_updated(
+            &[
+                trade(1, 1, "2022-06-10", Side::Buy, 10.0, 100.0, 0.0),
+                trade(2, 1, "2024-06-10", Side::Sell, 10.0, 250.0, 0.0),
+            ],
+            &[update(1, 200.0)],
+            &market,
+        );
+        assert!(matches!(warnings.as_slice(), [TaxWarning::ForeignFxApproximate { year: 2023 }]), "{warnings:?}");
+    }
+
+    #[test]
+    fn the_holdings_of_2023_onward_carry_the_updated_cost_split_by_custody() {
+        // 10 ações compradas em 2022 (custo R$ 400), 6 numa custódia e 4 em outra depois da transferência; com a atualização o
+        // custo da posição é R$ 960 em 31/12/2023 e em 31/12/2024: 576 para as 6 e 384 para as 4
+        let trades = [in_custodia(trade(1, 1, "2022-06-10", Side::Buy, 10.0, 100.0, 0.0), 1)];
+        let transfers = [transfer(2, "2022-07-01", 4.0, 1, 2)];
+        let list = foreign_holdings_with_updates(&trades, &transfers, &[update(1, 200.0)], &rate_with_2023, 2024);
+        for year in [2023, 2024] {
+            let first = at_custodia(&list, year, 1).unwrap();
+            let second = at_custodia(&list, year, 2).unwrap();
+            assert!(close(first.cost_brl, 576.0) && close(second.cost_brl, 384.0), "{year}: {first:?} {second:?}");
+            assert!(!first.incomplete && !first.fx_approximate);
+        }
+        let plain = foreign_holdings_with_updates(&trades, &transfers, &[], &rate_with_2023, 2023);
+        assert!(close(at_custodia(&plain, 2023, 1).unwrap().cost_brl, 240.0), "sem atualização: 6 × 40");
+    }
+
+    #[test]
+    fn the_holdings_keep_the_old_cost_and_flag_it_when_december_2023_has_no_rate() {
+        let trades = [trade(1, 1, "2022-06-10", Side::Buy, 10.0, 100.0, 0.0)];
+        let list = foreign_holdings_with_updates(&trades, &[], &[update(1, 200.0)], &rate_without_2023, 2023);
+        let h = at(&list, 2023, 1).unwrap();
+        assert!(close(h.cost_brl, 400.0) && h.incomplete, "{h:?}");
     }
 }

@@ -227,7 +227,8 @@ pub(crate) async fn assess_workspace(
         .collect();
     let fx = ForeignFx::load(db, &currencies).await?;
     let rate = |currency: &str, date: NaiveDate, kind: RateKind| fx.rate(currency, date, kind);
-    let (years, warnings) = foreign::assess_foreign(&trades, &dividends, &rules, &rate)?;
+    let updates = load_updates_2023(db, &trades).await?;
+    let (years, warnings) = foreign::assess_foreign_with_updates(&trades, &dividends, &updates, &rules, &rate)?;
     assessment.foreign_years = years;
     assessment.warnings.extend(warnings);
 
@@ -247,6 +248,33 @@ pub(crate) async fn assess_workspace(
     assessment.offshore_active_years = active_years;
     assessment.warnings.extend(active_warnings);
     Ok(assessment)
+}
+
+/// As atualizações de 2023 (art. 14) dos ativos do exterior que têm operação no Workspace. Os ativos são globais, então o
+/// Workspace entra pelas operações; ativo que não é do exterior fica de fora.
+pub(crate) async fn load_updates_2023(
+    db: &DatabaseConnection,
+    trades: &[Trade],
+) -> Result<Vec<foreign::Update2023>, AppError> {
+    let ids: HashSet<i32> = trades
+        .iter()
+        .filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning)
+        .map(|t| t.asset_id)
+        .collect();
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(assets::Entity::find()
+        .filter(assets::Column::Id.is_in(ids))
+        .filter(assets::Column::Update2023Value.is_not_null())
+        .order_by_asc(assets::Column::Id)
+        .all(db)
+        .await?
+        .into_iter()
+        .filter_map(|a| {
+            Some(foreign::Update2023 { asset_id: a.id, ticker: a.ticker, currency: a.currency, value: a.update_2023_value? })
+        })
+        .collect())
 }
 
 /// Moedas (fora BRL) dos ativos do exterior nas operações.
@@ -321,6 +349,8 @@ pub struct ForeignHoldingView {
     pub dirpf_group: Option<String>,
     pub dirpf_code: Option<String>,
     pub dirpf_country: Option<String>,
+    /// Saldo de 31/12/2023 da atualização opcional do art. 14 (na moeda do ativo; `None` = o usuário não optou).
+    pub update_2023_value: Option<f64>,
 }
 
 /// Posição de cada ativo do exterior em cada 31/12 (de 2023 até o ano corrente), com custo médio em reais. Só lê o
@@ -340,9 +370,11 @@ pub async fn foreign_holdings_in(
     let trades = load_trades(db, workspace_id).await?;
     let transfers = load_transfers(db, workspace_id).await?;
     let fx = ForeignFx::load(db, &foreign_currencies(&trades)).await?;
-    let holdings = foreign::foreign_holdings(
+    let updates = load_updates_2023(db, &trades).await?;
+    let holdings = foreign::foreign_holdings_with_updates(
         &trades,
         &transfers,
+        &updates,
         &|currency, date, kind| fx.rate(currency, date, kind),
         Utc::now().year(),
     );
@@ -378,6 +410,7 @@ pub async fn foreign_holdings_in(
                 dirpf_group: asset.and_then(|a| a.dirpf_group.clone()),
                 dirpf_code: asset.and_then(|a| a.dirpf_code.clone()),
                 dirpf_country: asset.and_then(|a| a.dirpf_country.clone()),
+                update_2023_value: asset.and_then(|a| a.update_2023_value),
                 holding,
             }
         })
@@ -518,7 +551,14 @@ async fn refresh_ptax(db: &DatabaseConnection, workspace_id: i32, allow_network:
             .chain(dividends.iter().map(|d| (d.currency.clone(), d.date)))
             // O dia em que o imposto foi pago no exterior também precisa de PTAX (pode cair fora do primeiro/último fato).
             .chain(dividends.iter().filter_map(|d| d.tax_paid_on.map(|paid| (d.currency.clone(), paid))));
-        let mut span = ptax_spans(facts);
+        // A atualização de 2023 (art. 14) converte pela PTAX de venda do último dia útil de dezembro de 2023 (10 dias antes
+        // de 31/12, para o dia útil anterior quando 31/12 não tem cotação).
+        let update_day = NaiveDate::from_ymd_opt(2023, 12, 31).expect("data válida");
+        let update_facts = load_updates_2023(db, &trades)
+            .await?
+            .into_iter()
+            .flat_map(|u| [(u.currency.clone(), update_day), (u.currency, update_day - chrono::Duration::days(10))]);
+        let mut span = ptax_spans(facts.chain(update_facts));
         // Entidades controladas no exterior: a PTAX de 31/12 de cada ano informado que já fechou (10 dias antes, para o
         // dia útil anterior quando 31/12 não tem cotação).
         let today = Utc::now().date_naive();

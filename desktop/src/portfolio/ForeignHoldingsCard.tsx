@@ -50,6 +50,8 @@ type Holding = {
   dirpf_group: string | null;
   dirpf_code: string | null;
   dirpf_country: string | null;
+  // Saldo de 31/12/2023 da atualização opcional do art. 14, na moeda do ativo (null = não optou).
+  update_2023_value: number | null;
 };
 
 function formatBrl(value: number): string {
@@ -70,6 +72,8 @@ type AssetRow = {
   group: string | null;
   code: string | null;
   country: string | null;
+  currency: string;
+  update2023: number | null;
   previous?: Holding;
   current?: Holding;
 };
@@ -90,6 +94,8 @@ function rowsOfYear(holdings: Holding[], year: number): AssetRow[] {
       group: h.dirpf_group,
       code: h.dirpf_code,
       country: h.dirpf_country,
+      currency: h.currency,
+      update2023: h.update_2023_value,
     };
     if (h.year === year) row.current = h;
     else row.previous = h;
@@ -160,6 +166,53 @@ function FichaEditor({ workspaceId, row }: { workspaceId: number; row: AssetRow 
         >
           Save
         </Button>
+      </div>
+      {save.isError && <span className="text-xs text-destructive">{save.error.message}</span>}
+    </div>
+  );
+}
+
+// Atualização opcional de 2023 (art. 14 da Lei 14.754): o saldo de 31/12/2023 que a custodiante informou, na moeda do ativo.
+// O app converte pela PTAX de venda do último dia útil de dezembro de 2023 e usa o resultado como custo da posição daquela
+// data. Só vale para quem optou e pagou os 8% até 31/05/2024; o app não confere o direito à opção. Vale para o ativo todo.
+function UpdateEditor({ workspaceId, row }: { workspaceId: number; row: AssetRow }) {
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState(row.update2023 === null ? "" : String(row.update2023));
+  const save = useMutation<unknown, AppError, void>({
+    mutationFn: () =>
+      invoke("set_asset_update_2023", {
+        request: { asset_id: row.assetId, value: value.trim() === "" ? null : Number(value) },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["foreign-holdings", workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["tax-assessment", workspaceId] });
+    },
+  });
+  const id = `${row.ticker}-${row.custodiaLabel ?? "none"}`;
+  return (
+    <div className="mt-1 flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-1">
+        <Input
+          className="h-7 w-40 text-xs"
+          type="number"
+          step="0.01"
+          min={0}
+          placeholder={`31/12/2023, ${row.currency}`}
+          aria-label={`Value of ${row.ticker} on 31/12/2023`}
+          value={value}
+          data-testid={`foreign-holding-update2023-${id}`}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={save.isPending}
+          data-testid={`foreign-holding-update2023-save-${id}`}
+          onClick={() => save.mutate()}
+        >
+          Save
+        </Button>
+        <span className="text-xs text-muted-foreground">Art. 14 update (8% paid by 31/05/2024); empty = none</span>
       </div>
       {save.isError && <span className="text-xs text-destructive">{save.error.message}</span>}
     </div>
@@ -294,6 +347,7 @@ export default function ForeignHoldingsCard({ workspaceId, holdings }: { workspa
                       {row.custodiaLabel ?? "No custody"}
                     </span>
                     <FichaEditor key={`${row.key}:${row.group}:${row.code}:${row.country}`} workspaceId={workspaceId} row={row} />
+                    <UpdateEditor key={`${row.key}:${row.update2023}`} workspaceId={workspaceId} row={row} />
                   </TableCell>
                   {[row.previous, row.current].map((h, index) => (
                     <TableCell

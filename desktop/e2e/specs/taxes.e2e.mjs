@@ -281,6 +281,50 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await snap("taxes-holdings");
   });
 
+  // Atualização opcional de 2023 (art. 14 da Lei 14.754): AMZN comprada em 2022 por US$ 300 a R$ 4,00 (custo R$ 1.200,00). Com o
+  // saldo de 31/12/2023 de US$ 600 e a PTAX de venda de 29/12/2023 (último dia útil) de 4,90, o custo vira R$ 2.940,00.
+  it("usa o saldo de 31/12/2023 da atualização opcional como custo do ativo no informe", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('AMZN', 'Amazon', 'acao_internacional', 'USD', 'pais', 'US', '2022-01-01T00:00:00Z')",
+    );
+    const amzn = sql("SELECT id FROM assets WHERE ticker = 'AMZN'");
+    for (const [date, buy, sell] of [
+      ["2022-03-01", 3.99, 4.0],
+      ["2023-12-29", 4.89, 4.9],
+    ]) {
+      sql(
+        "INSERT INTO ptax_daily (currency, reference_date, buy, sell, source, fetched_at) " +
+          `VALUES ('USD', '${date}', ${buy}, ${sell}, 'test', '${date}T00:00:00Z')`,
+      );
+    }
+    sql(
+      "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+        `VALUES (${portfolio}, ${amzn}, 'compra', 5, 60, 300, 0, '2022-03-01', '2022-03-01T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await byId("foreign-holdings-card").waitForDisplayed({ timeout: 30_000 });
+    await waitForText(
+      byId("foreign-holding-AMZN-cost"),
+      (text) => text.includes("1.200,00"),
+      "o custo de AMZN deveria começar em R$ 1.200,00, o das compras",
+    );
+    await byId("foreign-holding-update2023-AMZN-none").setValue("600");
+    await byId("foreign-holding-update2023-save-AMZN-none").click();
+    await waitForText(
+      byId("foreign-holding-AMZN-cost"),
+      (text) => text.includes("2.940,00"),
+      "com o saldo de US$ 600 de 31/12/2023 a 4,90, o custo de AMZN deveria ser R$ 2.940,00",
+    );
+    await byId("foreign-holdings-card").scrollIntoView({ block: "center" });
+    await snap("taxes-holdings-update-2023");
+  });
+
   // Entidade controlada no exterior: lucro de 31/12 pela PTAX de venda, participação e crédito pela PTAX de compra.
   it("apura uma entidade controlada no exterior pela PTAX de 31/12", async () => {
     const workspace = sql("SELECT id FROM workspace WHERE name = 'Tax E2E'");

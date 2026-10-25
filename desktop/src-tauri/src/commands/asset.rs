@@ -331,6 +331,43 @@ pub async fn update_asset_dirpf_in(
     .await?)
 }
 
+#[derive(Deserialize)]
+pub struct SetAssetUpdate2023Request {
+    pub asset_id: i32,
+    /// Saldo de 31/12/2023 na moeda do ativo; `None` apaga a atualização.
+    pub value: Option<f64>,
+}
+
+/// Grava (ou apaga) o saldo de 31/12/2023 da atualização opcional do art. 14 da Lei 14.754, informado pelo usuário. Não confere
+/// se ele tinha direito à opção (declarado na DAA de 2022, não adquirido em 2023) nem se pagou os 8%.
+#[tauri::command]
+pub async fn set_asset_update_2023(
+    db: tauri::State<'_, DatabaseConnection>,
+    request: SetAssetUpdate2023Request,
+) -> Result<assets::Model, AppError> {
+    set_asset_update_2023_in(db.inner(), request).await
+}
+
+pub async fn set_asset_update_2023_in(
+    db: &DatabaseConnection,
+    request: SetAssetUpdate2023Request,
+) -> Result<assets::Model, AppError> {
+    if request.value.is_some_and(|v| !v.is_finite() || v <= 0.0) {
+        return Err(AppError::InvalidInput("the 31/12/2023 value must be above zero".to_string()));
+    }
+    let existing = assets::Entity::find_by_id(request.asset_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("asset {}", request.asset_id)))?;
+    Ok(assets::ActiveModel {
+        id: Unchanged(existing.id),
+        update_2023_value: Set(request.value),
+        ..Default::default()
+    }
+    .update(db)
+    .await?)
+}
+
 #[cfg(test)]
 mod dirpf_tests {
     use super::normalize_dirpf_field;

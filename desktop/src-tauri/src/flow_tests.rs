@@ -4294,6 +4294,50 @@ async fn the_stored_ptax_decides_the_foreign_assessment_and_the_withholding_uses
 }
 
 #[tokio::test]
+async fn the_2023_update_of_a_foreign_asset_sets_its_cost_and_the_command_refuses_bad_values() {
+    use crate::commands::asset::{set_asset_update_2023_in, SetAssetUpdate2023Request};
+    use crate::commands::tax::foreign_holdings_in;
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Atualização 2023").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    seed_ptax(&db, "USD", "2023-05-10", 4.99, 5.0).await;
+    // 31/12/2023 é domingo: vale a PTAX de venda do último dia útil, 29/12/2023
+    seed_ptax(&db, "USD", "2023-12-29", 4.89, 4.9).await;
+    seed_ptax(&db, "USD", "2024-06-10", 5.49, 5.5).await;
+    trade(&db, pf.id, aapl.id, "compra", 10.0, 1000.0, "2023-05-10").await;
+    trade(&db, pf.id, aapl.id, "venda", 10.0, 1200.0, "2024-06-10").await;
+    let set = |value: Option<f64>| set_asset_update_2023_in(&db, SetAssetUpdate2023Request { asset_id: aapl.id, value });
+
+    for bad in [Some(0.0), Some(-1.0), Some(f64::NAN)] {
+        let result = set(bad).await;
+        assert!(matches!(result, Err(AppError::InvalidInput(_))), "{result:?}");
+    }
+    let unknown = set_asset_update_2023_in(&db, SetAssetUpdate2023Request { asset_id: 9999, value: Some(1.0) }).await;
+    assert!(matches!(unknown, Err(AppError::NotFound(_))), "{unknown:?}");
+
+    // sem a atualização: custo 1.000 × 5,0 = 5.000; venda 1.200 × 5,5 = 6.600; ganho 1.600
+    let y = &assess_workspace(&db, ws.id).await.unwrap().foreign_years[0];
+    assert!(close(y.capital_gain, 1600.0), "{y:?}");
+
+    // saldo de US$ 1.500 × 4,90 = R$ 7.350 vira o custo: ganho 6.600 − 7.350 = −750, no informe de 2023 e no de 2024
+    assert_eq!(set(Some(1500.0)).await.unwrap().update_2023_value, Some(1500.0));
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert!(close(assessment.foreign_years[0].capital_gain, -750.0), "{:?}", assessment.foreign_years[0]);
+    assert!(assessment.warnings.is_empty(), "{:?}", assessment.warnings);
+    let rows = foreign_holdings_in(&db, ws.id).await.unwrap();
+    let row = rows.iter().find(|r| r.holding.year == 2023).unwrap();
+    assert!(close(row.holding.cost_brl, 7350.0) && row.update_2023_value == Some(1500.0), "{:?}", row.holding);
+
+    // vazio apaga: volta ao custo das compras
+    assert_eq!(set(None).await.unwrap().update_2023_value, None);
+    let y = &assess_workspace(&db, ws.id).await.unwrap().foreign_years[0];
+    assert!(close(y.capital_gain, 1600.0), "{y:?}");
+}
+
+#[tokio::test]
 async fn the_foreign_holdings_report_has_the_cost_in_reais_per_asset_and_december() {
     use crate::commands::tax::{foreign_holdings_csv_text, foreign_holdings_in};
 
@@ -4449,6 +4493,7 @@ fn the_holdings_csv_quotes_names_with_commas_and_keeps_two_decimals() {
         dirpf_group: Some("03".to_string()),
         dirpf_code: Some("01".to_string()),
         dirpf_country: Some("249".to_string()),
+        update_2023_value: None,
     }];
     let csv = foreign_holdings_csv_text(&rows).unwrap();
     assert!(

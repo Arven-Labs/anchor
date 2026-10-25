@@ -150,6 +150,10 @@ pub enum TaxWarning {
     OffshoreFxApproximate { year: i32 },
     /// Resultado de entidade controlada no exterior de um ano que ainda não fechou (31/12 não passou): não apurado.
     OffshoreYearOpen { year: i32 },
+    /// Atualização de 2023 (art. 14) informada para um ativo sem posição em 31/12/2023: ignorada.
+    Update2023NoPosition { ticker: String },
+    /// Atualização de 2023 (art. 14) sem câmbio (nem PTAX nem de mercado) para dezembro de 2023: ignorada, vale o custo antigo.
+    Update2023FxMissing { ticker: String },
     /// Distribuição de entidade controlada ativa (art. 6º) sem câmbio na data do recebimento: ficou de fora.
     OffshoreDistributionFxMissing { year: i32, entity: String },
     /// Distribuição de entidade controlada ativa convertida pelo câmbio de mercado (a PTAX do dia faltava).
