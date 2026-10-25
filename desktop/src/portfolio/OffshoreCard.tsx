@@ -66,6 +66,8 @@ export type ActiveDistributionLine = {
   currency: string;
   received_on: string;
   amount: number;
+  // A parte coberta pelo crédito de 2023 (art. 14 §4º III), na moeda da entidade; `amount_brl` é só a parte tributável.
+  covered_amount: number;
   fx_rate: number;
   fx_source: "ptax" | "market";
   amount_brl: number;
@@ -202,6 +204,7 @@ export default function OffshoreCard({
   const [distEntityId, setDistEntityId] = useState<number | null>(null);
   const [distDate, setDistDate] = useState("");
   const [distAmount, setDistAmount] = useState("");
+  const [distFrom2023, setDistFrom2023] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<EntityForm>(EMPTY_FORM);
@@ -266,16 +269,23 @@ export default function OffshoreCard({
     },
   });
 
-  // Distribuição de entidade ativa: sem ano de origem, o ano do recebimento é o que vale (o comando ignora `origin_year`).
+  // Distribuição de entidade ativa: sem ano de origem, o ano do recebimento é o que vale (o comando ignora `origin_year`),
+  // exceto a marcação "lucro de 2023" (2023), que consome o crédito da atualização do art. 14.
   const addDistributionMutation = useMutation<unknown, AppError, void>({
     mutationFn: () =>
       invoke("add_offshore_distribution", {
-        request: { entity_id: distEntityId, origin_year: 0, received_on: distDate, amount: Number(distAmount) },
+        request: {
+          entity_id: distEntityId,
+          origin_year: distFrom2023 ? 2023 : 0,
+          received_on: distDate,
+          amount: Number(distAmount),
+        },
       }),
     onSuccess: () => {
       setDistEntityId(null);
       setDistDate("");
       setDistAmount("");
+      setDistFrom2023(false);
       refresh();
     },
   });
@@ -460,10 +470,16 @@ export default function OffshoreCard({
                   <TableCell>{y.year}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {y.lines
-                      .map(
-                        (l) =>
-                          `${l.entity_name}: ${formatAmount(l.amount, l.currency)} on ${l.received_on} at ${l.fx_rate.toFixed(4)} (${l.fx_source === "ptax" ? "PTAX" : "market"})`,
-                      )
+                      .map((l) => {
+                        const covered =
+                          l.covered_amount > 0
+                            ? `, ${formatAmount(l.covered_amount, l.currency)} covered by the 2023 credit`
+                            : "";
+                        // Inteira coberta sem câmbio: a taxa é 0 e não há o que converter.
+                        const rate =
+                          l.fx_rate > 0 ? ` at ${l.fx_rate.toFixed(4)} (${l.fx_source === "ptax" ? "PTAX" : "market"})` : "";
+                        return `${l.entity_name}: ${formatAmount(l.amount, l.currency)} on ${l.received_on}${rate}${covered}`;
+                      })
                       .join("; ")}
                   </TableCell>
                   <TableCell className="text-right">{formatBrl(y.taxable_base)}</TableCell>
@@ -497,7 +513,10 @@ export default function OffshoreCard({
                     variant="outline"
                     size="sm"
                     data-testid={`offshore-add-distribution-${entity.id}`}
-                    onClick={() => setDistEntityId(entity.id)}
+                    onClick={() => {
+                      setDistFrom2023(false);
+                      setDistEntityId(entity.id);
+                    }}
                   >
                     Add distribution
                   </Button>
@@ -563,7 +582,14 @@ export default function OffshoreCard({
                 <TableBody>
                   {entity.distributions.map((d) => (
                     <TableRow key={d.id}>
-                      <TableCell>{d.received_on}</TableCell>
+                      <TableCell>
+                        {d.received_on}
+                        {d.origin_year === 2023 && (
+                          <Badge variant="secondary" className="ml-2" data-testid={`offshore-distribution-2023-${d.id}`}>
+                            2023 profits
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">{formatAmount(d.amount, entity.currency)}</TableCell>
                       <TableCell className="flex justify-end">
                         <Button
@@ -608,6 +634,17 @@ export default function OffshoreCard({
                     data-testid="offshore-distribution-amount"
                   />
                 </Field>
+                {(entity.update_2023_profits ?? 0) > 0 && (
+                  <label className="flex items-center gap-2 text-sm sm:col-span-3">
+                    <input
+                      type="checkbox"
+                      checked={distFrom2023}
+                      onChange={(e) => setDistFrom2023(e.currentTarget.checked)}
+                      data-testid="offshore-distribution-from-2023"
+                    />
+                    Profits of 2023 or earlier (covered by the 2023 update; only the excess is taxed)
+                  </label>
+                )}
                 <div className="flex gap-2">
                   <Button
                     type="submit"

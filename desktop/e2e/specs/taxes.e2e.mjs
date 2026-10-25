@@ -711,6 +711,41 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await snap("taxes-offshore-active");
   });
 
+  // Crédito de 2023 na controlada ativa (art. 14 §4º III): reaproveita a 'Operadora LLC' (distribuição de US$ 1.000 em 10/03/2025
+  // a 5,50 = R$ 5.500) e a PTAX de venda de 29/12/2023 (4,90) dos casos anteriores. Atualização com lucros de US$ 400 pela tela
+  // (crédito de R$ 1.960,00). Uma distribuição marcada de US$ 1.000 em 10/03/2025, semeada por SQL, tem US$ 400 cobertos e
+  // US$ 600 × 5,50 = R$ 3.300 tributáveis: base 5.500 + 3.300 = R$ 8.800 e imposto de 15% = R$ 1.320,00.
+  it("a distribuição marcada como lucro de 2023 só paga imposto no que passa do crédito", async () => {
+    const entity = sql("SELECT id FROM offshore_entities WHERE name = 'Operadora LLC'");
+    sql(
+      "INSERT INTO offshore_distributions (entity_id, origin_year, received_on, amount, created_at) " +
+        `VALUES (${entity}, 2023, '2025-03-10', 1000, '2025-03-10T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    // antes da atualização a distribuição marcada é tributada inteira (R$ 825,00 + R$ 825,00 no ano); depois dela, só o excesso
+    await byId(`offshore-update2023-equity-${entity}`).waitForDisplayed({ timeout: 30_000 });
+    await byId(`offshore-update2023-equity-${entity}`).setValue("10000");
+    await byId(`offshore-update2023-profits-${entity}`).setValue("400");
+    await byId(`offshore-update2023-save-${entity}`).click();
+
+    await waitForText(
+      byId("offshore-active-tax-due-2025"),
+      (text) => text.includes("1.320,00"),
+      "o imposto de 2025 da controlada ativa deveria ser R$ 1.320,00 (base R$ 8.800, com US$ 400 cobertos pelo crédito)",
+    );
+    await waitForText(
+      byId(`offshore-update2023-credit-${entity}`),
+      (text) => text.includes("1.960,00"),
+      "o crédito de dividendo de 2023 da controlada ativa deveria ser R$ 1.960,00 (lucros de US$ 400 a 4,90)",
+    );
+    await byId("offshore-card").scrollIntoView({ block: "center" });
+    await snap("taxes-offshore-active-update-2023");
+  });
+
   // Aviso da guarda do registro das perdas (IN RFB 1.585, art. 15 §2): a Zeta tem um único fundo, zerado por um resgate com
   // perda de R$ 200,00 em 01/06/2025 (100 cotas a 10,00 vendidas a 8,00). O saldo fica no grupo e todos os fundos dela estão
   // zerados, então a tela avisa. A guarda vai até 31/12/2026: o texto depende de "hoje" estar antes ou depois dessa data,

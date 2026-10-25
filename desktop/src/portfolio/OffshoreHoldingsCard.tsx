@@ -249,7 +249,7 @@ export default function OffshoreHoldingsCard({ workspaceId, credits }: { workspa
                       {formatBrl(u.additional_cost_brl)}
                     </TableCell>
                     <TableCell className="text-right" data-testid={`offshore-update2023-credit-${u.entity_id}`}>
-                      {u.active_regime ? "—" : formatBrl(u.profits_brl)}
+                      {formatBrl(u.profits_brl)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -257,8 +257,8 @@ export default function OffshoreHoldingsCard({ workspaceId, credits }: { workspa
             </Table>
             {updates.some((u) => u.active_regime) && (
               <p className="text-sm text-amber-500" data-testid="offshore-update2023-active-note">
-                An active entity (art. 6º) only has its update recorded: the dividend credit and the reduction of the
-                tax on its distributions are not calculated here.
+                An active entity (art. 6º) is taxed when it distributes: only the distributions you mark as profits of
+                2023 use this credit (the covered part is not taxed again); the rest pays 15%.
               </p>
             )}
           </div>

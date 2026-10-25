@@ -242,13 +242,18 @@ pub(crate) async fn assess_workspace(
     assessment.offshore_years = offshore_years;
     assessment.warnings.extend(offshore_warnings);
 
+    let offshore_updates = offshore_cmd::load_updates_2023(db, workspace_id).await?;
     let active_distributions = offshore_cmd::load_distributions(db, workspace_id, true).await?;
-    let (active_years, active_warnings) =
-        offshore::assess_active_distributions(&offshore_entities, &active_distributions, &rules, &rate)?;
+    let (active_years, active_warnings) = offshore::assess_active_distributions(
+        &offshore_entities,
+        &active_distributions,
+        &offshore_updates,
+        &rules,
+        &rate,
+    )?;
     assessment.offshore_active_years = active_years;
     assessment.warnings.extend(active_warnings);
 
-    let offshore_updates = offshore_cmd::load_updates_2023(db, workspace_id).await?;
     let (update_rows, update_warnings) = offshore::assess_offshore_update_2023(&offshore_entities, &offshore_updates, &rate);
     assessment.offshore_updates_2023 = update_rows;
     assessment.warnings.extend(update_warnings);

@@ -208,9 +208,14 @@ pub struct ActiveDistributionLine {
     pub received_on: NaiveDate,
     /// Valor recebido, na moeda da entidade.
     pub amount: f64,
-    /// Câmbio de venda do dia do recebimento e de onde veio.
+    /// A parte do valor coberta pelo crédito de dividendo da atualização de 2023 (art. 14 §4º III), na moeda da entidade:
+    /// não é tributada de novo.
+    pub covered_amount: f64,
+    /// Câmbio de venda do dia do recebimento e de onde veio. Distribuição inteira coberta pelo crédito não precisa de câmbio:
+    /// sem cotação a taxa fica 0 (a tela mostra "coberta").
     pub fx_rate: f64,
     pub fx_source: RateSource,
+    /// Só a parte tributável (`amount − covered_amount`), em BRL.
     pub amount_brl: f64,
 }
 
@@ -226,9 +231,15 @@ pub struct OffshoreActiveYear {
 
 /// Apura por ano de recebimento as distribuições de entidades `active_regime`. Distribuição de entidade comum é ignorada
 /// (ela reduz o crédito de dividendo, `offshore_credits`); sem câmbio na data, a linha fica de fora e avisa.
+///
+/// Distribuição marcada como lucro de 2023 (`origin_year == UPDATE_2023_YEAR`) consome, da mais antiga para a mais nova, o
+/// crédito de dividendo da atualização de 2023 da entidade (`updates`, a parcela de lucros): a parte coberta não é tributada de
+/// novo (art. 14 §4º III) e só o resto converte e paga. O crédito é contado na moeda da entidade, o que dá o mesmo resultado
+/// de contá-lo em reais pela taxa de 2023 e não tributa a variação cambial (§5º).
 pub fn assess_active_distributions(
     entities: &[OffshoreEntity],
     distributions: &[OffshoreDistribution],
+    updates: &[OffshoreUpdate2023Input],
     rules: &RuleSet,
     rate: RateToBrl,
 ) -> Result<(Vec<OffshoreActiveYear>, Vec<TaxWarning>), AppError> {
@@ -237,6 +248,8 @@ pub fn assess_active_distributions(
     let mut ordered: Vec<&OffshoreDistribution> =
         distributions.iter().filter(|d| by_id.contains_key(&d.entity_id)).collect();
     ordered.sort_by_key(|d| (d.received_on, d.id));
+    // Crédito de 2023 que ainda resta por entidade, na moeda dela.
+    let mut credit_left: BTreeMap<i32, f64> = updates.iter().map(|u| (u.entity_id, u.profits)).collect();
 
     let mut warnings = Vec::new();
     let mut approximate_years = std::collections::BTreeSet::new();
@@ -244,11 +257,25 @@ pub fn assess_active_distributions(
     for d in ordered {
         let entity = by_id[&d.entity_id];
         let year = d.received_on.year();
-        let Some((fx_rate, fx_source)) = convert(&entity.currency, d.received_on, RateKind::Sell, rate) else {
-            warnings.push(TaxWarning::OffshoreDistributionFxMissing { year, entity: entity.name.clone() });
-            continue;
+        let covered_amount = if d.origin_year == UPDATE_2023_YEAR {
+            let left = credit_left.entry(d.entity_id).or_insert(0.0);
+            let covered = d.amount.min(*left).max(0.0);
+            *left -= covered;
+            covered
+        } else {
+            0.0
         };
-        if fx_source == RateSource::Market {
+        let taxable_amount = d.amount - covered_amount;
+        let (fx_rate, fx_source) = match convert(&entity.currency, d.received_on, RateKind::Sell, rate) {
+            Some(found) => found,
+            // Inteira coberta pelo crédito: não há o que converter, então a falta de câmbio não importa.
+            None if taxable_amount <= 1e-9 => (0.0, RateSource::Ptax),
+            None => {
+                warnings.push(TaxWarning::OffshoreDistributionFxMissing { year, entity: entity.name.clone() });
+                continue;
+            }
+        };
+        if fx_source == RateSource::Market && taxable_amount > 1e-9 {
             approximate_years.insert(year);
         }
         lines_by_year.entry(year).or_default().push(ActiveDistributionLine {
@@ -259,9 +286,10 @@ pub fn assess_active_distributions(
             currency: entity.currency.clone(),
             received_on: d.received_on,
             amount: d.amount,
+            covered_amount,
             fx_rate,
             fx_source,
-            amount_brl: d.amount * fx_rate,
+            amount_brl: taxable_amount * fx_rate,
         });
     }
 
@@ -309,7 +337,7 @@ pub struct OffshoreUpdate2023Row {
     pub entity_name: String,
     pub country: String,
     pub currency: String,
-    /// Entidade ativa (art. 6º): a atualização só fica registrada, não gera crédito de dividendo aqui.
+    /// Entidade ativa (art. 6º): o crédito de 2023 existe, mas só abate o imposto das distribuições marcadas como lucro de 2023.
     pub active_regime: bool,
     pub equity: f64,
     pub profits: f64,
@@ -438,9 +466,9 @@ pub fn offshore_credits(
             (key, source)
         })
         .collect();
-    // Atualização de 2023 (art. 14 §4º II): a parcela de lucros vira crédito de dividendo de origem 2023. Entidade ativa
-    // fica de fora (as distribuições dela são tributadas, não reduzem crédito).
-    for u in updates.iter().filter(|u| !u.active_regime && u.profits_brl > 0.0) {
+    // Atualização de 2023 (art. 14 §4º II): a parcela de lucros vira crédito de dividendo de origem 2023, de qualquer
+    // controlada. Na ativa só as distribuições marcadas como lucro de 2023 o reduzem; as de 2024 em diante são tributadas.
+    for u in updates.iter().filter(|u| u.profits_brl > 0.0) {
         let source = Source {
             entity_name: &u.entity_name,
             country: &u.country,
@@ -806,12 +834,24 @@ mod tests {
     }
 
     #[test]
-    fn no_2023_credit_without_profits_and_none_for_an_active_entity() {
-        // sem parcela de lucros (0) não há crédito; entidade ativa registra a atualização mas não tem crédito de dividendo
+    fn no_2023_credit_without_the_profits_share() {
+        // sem parcela de lucros (0) não há crédito, nem para entidade comum nem para ativa
         let (rows, _) = update_credits(&[entity(1, "USD", 100.0)], &[update_input(1, 10_000.0, 0.0)], &[]);
         assert!(rows.is_empty(), "{rows:?}");
-        let (rows, _) = update_credits(&[active_entity(1, "USD")], &[update_input(1, 10_000.0, 2_000.0)], &[]);
+        let (rows, _) = update_credits(&[active_entity(1, "USD")], &[update_input(1, 10_000.0, 0.0)], &[]);
         assert!(rows.is_empty(), "{rows:?}");
+    }
+
+    #[test]
+    fn an_active_entity_has_the_2023_credit_and_a_distribution_marked_2023_reduces_it() {
+        // crédito US$ 2.000 × 4,80 = R$ 9.600; distribuição marcada de US$ 500 reduz R$ 2.400 (saldo 7.200 em 2024)
+        let (rows, views) = update_credits(
+            &[active_entity(1, "USD")],
+            &[update_input(1, 10_000.0, 2_000.0)],
+            &[distribution(1, 1, 2023, "2024-03-10", 500.0)],
+        );
+        assert!(close(balance(&rows, 1, 2023, 2023), 9_600.0) && close(balance(&rows, 1, 2023, 2024), 7_200.0), "{rows:?}");
+        assert!(close(views[0].reduction_brl.unwrap(), 2_400.0));
     }
 
     #[test]
@@ -832,7 +872,59 @@ mod tests {
         entities: &[OffshoreEntity],
         distributions: &[OffshoreDistribution],
     ) -> (Vec<OffshoreActiveYear>, Vec<TaxWarning>) {
-        assess_active_distributions(entities, distributions, &test_rule_set(), &ptax_rate).unwrap()
+        active_run_with(entities, distributions, &[])
+    }
+
+    fn active_run_with(
+        entities: &[OffshoreEntity],
+        distributions: &[OffshoreDistribution],
+        updates: &[OffshoreUpdate2023Input],
+    ) -> (Vec<OffshoreActiveYear>, Vec<TaxWarning>) {
+        assess_active_distributions(entities, distributions, updates, &test_rule_set(), &ptax_rate).unwrap()
+    }
+
+    #[test]
+    fn a_distribution_marked_2023_is_covered_by_the_credit_and_only_the_excess_is_taxed() {
+        // crédito: lucros de US$ 2.000. A: US$ 1.500 marcada em 2024 → toda coberta, nada tributável. B: US$ 800 marcada em
+        // 2025 → cobertos os US$ 500 que restam, tributáveis US$ 300 × 6,00 = R$ 1.800. C: US$ 100 desmarcada em 2025 → R$ 600.
+        // Ano de 2025: base 1.800 + 600 = 2.400, imposto 360
+        let (years, warnings) = active_run_with(
+            &[active_entity(1, "USD")],
+            &[
+                distribution(1, 1, 2023, "2024-06-10", 1_500.0),
+                distribution(2, 1, 2023, "2025-02-03", 800.0),
+                distribution(3, 1, 2025, "2025-02-04", 100.0),
+            ],
+            &[update_input(1, 10_000.0, 2_000.0)],
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let (y24, y25) = (&years[0], &years[1]);
+        assert!(close(y24.taxable_base, 0.0) && close(y24.tax_due, 0.0), "{y24:?}");
+        assert!(close(y24.lines[0].covered_amount, 1_500.0) && close(y24.lines[0].amount_brl, 0.0), "{y24:?}");
+        assert!(close(y25.lines[0].covered_amount, 500.0) && close(y25.lines[0].amount_brl, 1_800.0), "{y25:?}");
+        assert!(close(y25.lines[1].covered_amount, 0.0) && close(y25.lines[1].amount_brl, 600.0), "{y25:?}");
+        assert!(close(y25.taxable_base, 2_400.0) && close(y25.tax_due, 360.0), "{y25:?}");
+    }
+
+    #[test]
+    fn a_distribution_marked_2023_without_a_2023_update_pays_everything() {
+        // sem atualização não há crédito: US$ 100 × 5,00 = R$ 500, imposto 75
+        let (years, _) =
+            active_run_with(&[active_entity(1, "USD")], &[distribution(1, 1, 2023, "2024-06-10", 100.0)], &[]);
+        assert!(close(years[0].lines[0].covered_amount, 0.0), "{years:?}");
+        assert!(close(years[0].taxable_base, 500.0) && close(years[0].tax_due, 75.0), "{years:?}");
+    }
+
+    #[test]
+    fn a_distribution_fully_covered_by_the_credit_needs_no_rate() {
+        // 2026 não tem câmbio, mas US$ 100 estão inteiros dentro do crédito de US$ 200: nada a converter, sem aviso
+        let (years, warnings) = active_run_with(
+            &[active_entity(1, "USD")],
+            &[distribution(1, 1, 2023, "2026-03-10", 100.0)],
+            &[update_input(1, 10_000.0, 200.0)],
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(close(years[0].lines[0].covered_amount, 100.0) && close(years[0].taxable_base, 0.0), "{years:?}");
     }
 
     #[test]
@@ -890,6 +982,7 @@ mod tests {
         let (years, warnings) = assess_active_distributions(
             &[active_entity(1, "USD")],
             &[distribution(1, 1, 2024, "2024-06-10", 100.0)],
+            &[],
             &test_rule_set(),
             &market,
         )

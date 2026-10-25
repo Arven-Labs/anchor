@@ -4894,6 +4894,70 @@ async fn the_2023_update_of_an_offshore_entity_gives_a_dividend_credit_that_dist
 }
 
 #[tokio::test]
+async fn the_2023_credit_covers_the_distributions_of_an_active_entity_marked_as_2023_profits() {
+    use crate::commands::offshore::{
+        add_offshore_distribution_in, create_offshore_entity_in, offshore_credits_in, set_offshore_update_2023_in,
+        AddOffshoreDistributionRequest, CreateOffshoreEntityRequest, OffshoreEntityRequest, SetOffshoreUpdate2023Request,
+    };
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Ativa com atualização").await;
+    seed_ptax(&db, "USD", "2023-12-29", 4.79, 4.8).await;
+    seed_ptax(&db, "USD", "2024-06-10", 4.9, 5.0).await;
+    let entity = create_offshore_entity_in(
+        &db,
+        CreateOffshoreEntityRequest {
+            workspace_id: ws.id,
+            entity: OffshoreEntityRequest {
+                name: "Operadora LLC".to_string(),
+                country: "US".to_string(),
+                currency: "USD".to_string(),
+                ownership_percent: 100.0,
+                regime: Some("ativa".to_string()),
+                notes: None,
+            },
+        },
+    )
+    .await
+    .unwrap();
+    let set = |equity: Option<f64>, profits: Option<f64>| {
+        set_offshore_update_2023_in(&db, SetOffshoreUpdate2023Request { entity_id: entity.id, equity, profits })
+    };
+    let distribute = |origin_year: i32, amount: f64| {
+        add_offshore_distribution_in(
+            &db,
+            AddOffshoreDistributionRequest { entity_id: entity.id, origin_year, received_on: "2024-06-10".to_string(), amount },
+        )
+    };
+
+    // marcar "lucro de 2023" exige a atualização com parcela de lucros
+    let refused = distribute(2023, 100.0).await;
+    assert!(matches!(refused, Err(AppError::InvalidInput(_))), "sem atualização: {refused:?}");
+    set(Some(10_000.0), None).await.unwrap();
+    let refused = distribute(2023, 100.0).await;
+    assert!(matches!(refused, Err(AppError::InvalidInput(_))), "sem parcela de lucros: {refused:?}");
+
+    // crédito de US$ 2.000. Marcada de US$ 2.500: cobertos 2.000, tributáveis 500 × 5,00 = R$ 2.500. Desmarcada de US$ 100
+    // (grava o ano do recebimento): R$ 500. Base R$ 3.000, imposto R$ 450
+    set(Some(10_000.0), Some(2_000.0)).await.unwrap();
+    assert_eq!(distribute(2023, 2_500.0).await.unwrap().origin_year, 2023);
+    assert_eq!(distribute(0, 100.0).await.unwrap().origin_year, 2024);
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert!(assessment.warnings.is_empty(), "{:?}", assessment.warnings);
+    let year = &assessment.offshore_active_years[0];
+    assert_eq!(year.year, 2024);
+    assert!(close(year.taxable_base, 3_000.0) && close(year.tax_due, 450.0), "{year:?}");
+    assert!(close(year.lines[0].covered_amount, 2_000.0) && close(year.lines[1].covered_amount, 0.0), "{year:?}");
+
+    // a ativa tem o crédito de 2023 na ficha; só a distribuição marcada o reduz (2.500 × 4,80 = 12.000 > 9.600: saldo zero)
+    let credits = offshore_credits_in(&db, ws.id).await.unwrap();
+    assert_eq!(credits.distributions.len(), 1, "{:?}", credits.distributions);
+    let credit = credits.rows.iter().find(|r| r.origin_year == 2023 && r.as_of_year == 2024).unwrap();
+    assert!(close(credit.taxed_brl, 9_600.0) && close(credit.balance_brl, 0.0) && close(credit.over_distributed_brl, 2_400.0), "{credit:?}");
+}
+
+#[tokio::test]
 async fn a_fund_estimate_uses_the_position_the_quota_values_and_the_stored_rate() {
     use crate::commands::fund::{funds_overview_in, set_fund_term_in, upsert_fund_quota_in, UpsertFundQuotaRequest};
     use crate::commands::transaction::compute_positions;

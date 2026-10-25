@@ -326,7 +326,8 @@ pub async fn delete_offshore_result(
 #[derive(Deserialize)]
 pub struct AddOffshoreDistributionRequest {
     pub entity_id: i32,
-    /// Ano do lucro distribuído. Ignorado (vale o ano do recebimento) para entidade `ativa`, que não tem crédito por ano.
+    /// Ano do lucro distribuído. Ignorado (vale o ano do recebimento) para entidade `ativa`, que não tem crédito por ano,
+    /// exceto 2023: marca a distribuição como lucro de 2023, coberto pelo crédito da atualização do art. 14.
     #[serde(default)]
     pub origin_year: i32,
     /// `AAAA-MM-DD`.
@@ -371,12 +372,22 @@ pub async fn add_offshore_distribution_in(
         .ok()
         .filter(|d| request.received_on.len() == 10 && d.year() >= 1900)
         .ok_or_else(|| AppError::InvalidInput(format!("received_on '{}' is not a date (YYYY-MM-DD)", request.received_on)))?;
-    // Entidade ativa (art. 6º): o imposto é do ano do recebimento, sem ano de origem; a lei vale a partir de 2024.
+    // Entidade ativa (art. 6º): o imposto é do ano do recebimento, sem ano de origem; a lei vale a partir de 2024. A única
+    // exceção é a marcação "lucro de 2023" (`origin_year` 2023), que consome o crédito da atualização (art. 14 §4º III).
     let origin_year = if active {
         if received_on.year() < FIRST_YEAR {
             return Err(AppError::InvalidInput(format!("the distribution must be received in {FIRST_YEAR} or later (Lei 14.754)")));
         }
-        received_on.year()
+        if request.origin_year == UPDATE_2023_YEAR {
+            if !has_2023_credit {
+                return Err(AppError::InvalidInput(
+                    "a distribution of 2023 profits needs the 2023 update with a profits share on this entity".to_string(),
+                ));
+            }
+            UPDATE_2023_YEAR
+        } else {
+            received_on.year()
+        }
     } else {
         request.origin_year
     };
@@ -427,8 +438,12 @@ pub async fn get_offshore_credits(
 
 pub async fn offshore_credits_in(db: &DatabaseConnection, workspace_id: i32) -> Result<OffshoreCredits, AppError> {
     let assessment = crate::commands::tax::assess_workspace(db, workspace_id).await?;
-    // Entidade ativa (art. 6º) não tem crédito de dividendo: as distribuições dela são tributadas, não reduzem crédito.
-    let distributions = load_distributions(db, workspace_id, false).await?;
+    // Entidade ativa (art. 6º): as distribuições dela são tributadas e só reduzem crédito as marcadas como lucro de 2023
+    // (o crédito de 2023 da atualização, art. 14 §4º III). As das entidades comuns reduzem o crédito do ano de origem.
+    let mut distributions = load_distributions(db, workspace_id, false).await?;
+    distributions.extend(
+        load_distributions(db, workspace_id, true).await?.into_iter().filter(|d| d.origin_year == UPDATE_2023_YEAR),
+    );
     let (rows, views) = offshore_credits(
         &assessment.offshore_years,
         &assessment.offshore_updates_2023,
