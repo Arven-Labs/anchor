@@ -1,5 +1,23 @@
 import '../models/general_transaction.dart';
 
+/// `YYYY-MM-DD` → `dd/MM/yyyy`; texto que não tem esse formato volta como veio.
+String formatIsoDay(String iso) {
+  if (iso.length != 10) return iso;
+  return '${iso.substring(8, 10)}/${iso.substring(5, 7)}/${iso.substring(0, 4)}';
+}
+
+/// `DateTime` → `YYYY-MM-DD`, como o lançamento grava a data.
+String toIsoDay(DateTime date) =>
+    '${date.year.toString().padLeft(4, '0')}-'
+    '${date.month.toString().padLeft(2, '0')}-'
+    '${date.day.toString().padLeft(2, '0')}';
+
+/// Valor digitado (aceita vírgula) → número positivo e finito, ou `null`.
+double? parseAmount(String text) {
+  final value = double.tryParse(text.trim().replaceAll(',', '.'));
+  return value != null && value.isFinite && value > 0 ? value : null;
+}
+
 /// Porta de `signed_valor` (`desktop/src-tauri/src/commands/bank_account.rs`):
 /// despesa sai da conta, receita entra. `valor` é sempre a grandeza positiva.
 double signedValor(GeneralTransactionType type, double valor) =>

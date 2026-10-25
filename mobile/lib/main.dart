@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'screens/financas_screen.dart';
 import 'screens/portfolio_screen.dart';
 import 'screens/quote_search_screen.dart';
 import 'theme.dart';
@@ -32,7 +33,11 @@ class AnchorHome extends StatefulWidget {
 class _AnchorHomeState extends State<AnchorHome> {
   int _tabIndex = 0;
 
-  static const _screens = [QuoteSearchScreen(), PortfolioScreen()];
+  static const _screens = [
+    QuoteSearchScreen(),
+    PortfolioScreen(),
+    FinancasScreen(),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +51,10 @@ class _AnchorHomeState extends State<AnchorHome> {
           NavigationDestination(
             icon: Icon(Icons.pie_chart),
             label: 'Portfolio',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            label: 'Finanças',
           ),
         ],
       ),
