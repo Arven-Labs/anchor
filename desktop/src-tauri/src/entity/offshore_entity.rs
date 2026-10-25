@@ -18,6 +18,12 @@ pub struct Model {
     pub ownership_percent: f64,
     /// `automatico` (lucro tributado todo 31/12, art. 5º) ou `ativa` (tributada na disponibilização, art. 6º).
     pub regime: String,
+    /// Atualização de 2023 (art. 14): patrimônio líquido proporcional em 31/12/2023, na moeda da entidade. Nulo = não optou.
+    #[sea_orm(column_type = "Double", nullable)]
+    pub update_2023_equity: Option<f64>,
+    /// Dentro do patrimônio líquido, a parcela de lucros (acumulados e reservas de lucros), na moeda da entidade.
+    #[sea_orm(column_type = "Double", nullable)]
+    pub update_2023_profits: Option<f64>,
     pub notes: Option<String>,
     pub created_at: String,
 }

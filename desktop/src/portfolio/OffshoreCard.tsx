@@ -105,6 +105,8 @@ type OffshoreEntityRow = {
   currency: string;
   ownership_percent: number;
   regime: Regime;
+  update_2023_equity: number | null;
+  update_2023_profits: number | null;
   notes: string | null;
   results: OffshoreResultRow[];
   distributions: OffshoreDistributionRow[];
@@ -120,6 +122,70 @@ function formatBrl(value: number): string {
 
 function formatAmount(value: number, currency: string): string {
   return value.toLocaleString("en-US", { style: "currency", currency });
+}
+
+// Atualização opcional de 2023 da participação (art. 14 §1º IV da Lei 14.754): o patrimônio líquido proporcional à
+// participação em 31/12/2023 e, dentro dele, a parcela de lucros, os dois na moeda da entidade, como saem das demonstrações
+// financeiras. O app converte pela PTAX de venda do último dia útil de dezembro de 2023 (a conta fica no cartão de Bens e
+// Direitos). Só vale para quem optou e pagou os 8% até 31/05/2024; o app não confere o direito à opção nem calcula o imposto.
+function UpdateEditor({ workspaceId, entity }: { workspaceId: number; entity: OffshoreEntityRow }) {
+  const queryClient = useQueryClient();
+  const [equity, setEquity] = useState(entity.update_2023_equity === null ? "" : String(entity.update_2023_equity));
+  const [profits, setProfits] = useState(entity.update_2023_profits === null ? "" : String(entity.update_2023_profits));
+  const save = useMutation<unknown, AppError, void>({
+    mutationFn: () =>
+      invoke("set_offshore_update_2023", {
+        request: {
+          entity_id: entity.id,
+          equity: equity.trim() === "" ? null : Number(equity),
+          profits: profits.trim() === "" ? null : Number(profits),
+        },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["offshore-entities", workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["offshore-credits", workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["tax-assessment", workspaceId] });
+    },
+  });
+  return (
+    <div className="flex flex-col gap-1" data-testid={`offshore-update2023-${entity.id}`}>
+      <div className="flex flex-wrap items-center gap-1">
+        <Input
+          className="h-7 w-44 text-xs"
+          type="number"
+          step="0.01"
+          min={0}
+          placeholder={`Equity 31/12/2023, ${entity.currency}`}
+          aria-label={`Proportional equity of ${entity.name} on 31/12/2023`}
+          value={equity}
+          data-testid={`offshore-update2023-equity-${entity.id}`}
+          onChange={(e) => setEquity(e.target.value)}
+        />
+        <Input
+          className="h-7 w-44 text-xs"
+          type="number"
+          step="0.01"
+          min={0}
+          placeholder={`of which profits, ${entity.currency}`}
+          aria-label={`Profits share of the equity of ${entity.name} on 31/12/2023`}
+          value={profits}
+          data-testid={`offshore-update2023-profits-${entity.id}`}
+          onChange={(e) => setProfits(e.target.value)}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={save.isPending}
+          data-testid={`offshore-update2023-save-${entity.id}`}
+          onClick={() => save.mutate()}
+        >
+          Save
+        </Button>
+        <span className="text-xs text-muted-foreground">Art. 14 update (8% paid by 31/05/2024); empty equity = none</span>
+      </div>
+      {save.isError && <span className="text-xs text-destructive">{save.error.message}</span>}
+    </div>
+  );
 }
 
 export default function OffshoreCard({
@@ -514,6 +580,11 @@ export default function OffshoreCard({
                 </TableBody>
               </Table>
             )}
+            <UpdateEditor
+              key={`${entity.id}:${entity.update_2023_equity}:${entity.update_2023_profits}`}
+              workspaceId={workspaceId}
+              entity={entity}
+            />
             {distEntityId === entity.id && (
               <form onSubmit={onSubmitDistribution} className="grid grid-cols-1 items-end gap-3 sm:grid-cols-3">
                 <Field label="Received on">

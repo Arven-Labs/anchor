@@ -247,6 +247,11 @@ pub(crate) async fn assess_workspace(
         offshore::assess_active_distributions(&offshore_entities, &active_distributions, &rules, &rate)?;
     assessment.offshore_active_years = active_years;
     assessment.warnings.extend(active_warnings);
+
+    let offshore_updates = offshore_cmd::load_updates_2023(db, workspace_id).await?;
+    let (update_rows, update_warnings) = offshore::assess_offshore_update_2023(&offshore_entities, &offshore_updates, &rate);
+    assessment.offshore_updates_2023 = update_rows;
+    assessment.warnings.extend(update_warnings);
     Ok(assessment)
 }
 
@@ -573,6 +578,15 @@ async fn refresh_ptax(db: &DatabaseConnection, workspace_id: i32, allow_network:
             let entry = span.entry(entity.currency.clone()).or_insert((year_end, year_end));
             entry.0 = entry.0.min(year_end - chrono::Duration::days(10));
             entry.1 = entry.1.max(year_end);
+        }
+        // Atualização de 2023 das controladas (art. 14): a PTAX de dezembro de 2023, como a dos ativos (10 dias antes de 31/12).
+        for u in offshore_cmd::load_updates_2023(db, workspace_id).await? {
+            let Some(entity) = entities.iter().find(|e| e.id == u.entity_id).filter(|e| e.currency != "BRL") else {
+                continue;
+            };
+            let entry = span.entry(entity.currency.clone()).or_insert((update_day, update_day));
+            entry.0 = entry.0.min(update_day - chrono::Duration::days(10));
+            entry.1 = entry.1.max(update_day);
         }
         // Distribuições de entidades ativas (art. 6º): a PTAX do dia do recebimento (10 dias antes, para o dia útil anterior).
         for d in offshore_cmd::load_distributions(db, workspace_id, true).await? {

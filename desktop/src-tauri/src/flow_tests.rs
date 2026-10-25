@@ -4807,6 +4807,93 @@ async fn the_offshore_commands_refuse_invalid_input() {
 }
 
 #[tokio::test]
+async fn the_2023_update_of_an_offshore_entity_gives_a_dividend_credit_that_distributions_reduce() {
+    use crate::commands::offshore::{
+        add_offshore_distribution_in, create_offshore_entity_in, offshore_credits_in, set_offshore_update_2023_in,
+        AddOffshoreDistributionRequest, CreateOffshoreEntityRequest, OffshoreEntityRequest, SetOffshoreUpdate2023Request,
+    };
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Atualização controlada").await;
+    // 31/12/2023 é domingo: vale a PTAX de venda do último dia útil, 29/12/2023
+    seed_ptax(&db, "USD", "2023-12-29", 4.79, 4.8).await;
+    let entity = create_offshore_entity_in(
+        &db,
+        CreateOffshoreEntityRequest {
+            workspace_id: ws.id,
+            entity: OffshoreEntityRequest {
+                name: "Holding LLC".to_string(),
+                country: "US".to_string(),
+                currency: "USD".to_string(),
+                ownership_percent: 50.0,
+                regime: None,
+                notes: None,
+            },
+        },
+    )
+    .await
+    .unwrap();
+    let set = |equity: Option<f64>, profits: Option<f64>| {
+        set_offshore_update_2023_in(&db, SetOffshoreUpdate2023Request { entity_id: entity.id, equity, profits })
+    };
+    let distribute = |origin_year: i32, received_on: &str, amount: f64| {
+        add_offshore_distribution_in(
+            &db,
+            AddOffshoreDistributionRequest { entity_id: entity.id, origin_year, received_on: received_on.to_string(), amount },
+        )
+    };
+
+    // valores inválidos e entidade desconhecida
+    for (equity, profits) in [
+        (Some(0.0), None),
+        (Some(-1.0), None),
+        (Some(f64::NAN), None),
+        (Some(100.0), Some(-1.0)),
+        (Some(100.0), Some(f64::NAN)),
+        (Some(100.0), Some(200.0)),
+    ] {
+        let result = set(equity, profits).await;
+        assert!(matches!(result, Err(AppError::InvalidInput(_))), "{equity:?} {profits:?}: {result:?}");
+    }
+    let unknown =
+        set_offshore_update_2023_in(&db, SetOffshoreUpdate2023Request { entity_id: 9999, equity: Some(1.0), profits: None }).await;
+    assert!(matches!(unknown, Err(AppError::NotFound(_))), "{unknown:?}");
+
+    // sem atualização, ou sem parcela de lucros, o lucro de 2023 não tem crédito: a distribuição é recusada
+    let refused = distribute(2023, "2024-03-10", 500.0).await;
+    assert!(matches!(refused, Err(AppError::InvalidInput(_))), "{refused:?}");
+    set(Some(10_000.0), None).await.unwrap();
+    let refused = distribute(2023, "2024-03-10", 500.0).await;
+    assert!(matches!(refused, Err(AppError::InvalidInput(_))), "sem parcela de lucros: {refused:?}");
+
+    // PL de US$ 10.000 × 4,80 = R$ 48.000; lucros de US$ 2.000 × 4,80 = R$ 9.600; custo adicional R$ 38.400
+    let saved = set(Some(10_000.0), Some(2_000.0)).await.unwrap();
+    assert_eq!((saved.update_2023_equity, saved.update_2023_profits), (Some(10_000.0), Some(2_000.0)));
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert!(assessment.warnings.is_empty(), "{:?}", assessment.warnings);
+    let row = &assessment.offshore_updates_2023[0];
+    assert!(close(row.equity_brl, 48_000.0) && close(row.profits_brl, 9_600.0) && close(row.additional_cost_brl, 38_400.0), "{row:?}");
+
+    // a distribuição de lucro de 2023 só vale a partir de 31/12/2023; US$ 500 × 4,80 = R$ 2.400 reduzem o crédito
+    let early = distribute(2023, "2023-12-20", 500.0).await;
+    assert!(matches!(early, Err(AppError::InvalidInput(_))), "{early:?}");
+    assert_eq!(distribute(2023, "2024-03-10", 500.0).await.unwrap().origin_year, 2023);
+    let credits = offshore_credits_in(&db, ws.id).await.unwrap();
+    let credit = credits.rows.iter().find(|r| r.origin_year == 2023 && r.as_of_year == 2024).unwrap();
+    assert!(close(credit.taxed_brl, 9_600.0) && close(credit.distributed_brl, 2_400.0) && close(credit.balance_brl, 7_200.0), "{credit:?}");
+    assert!(close(credits.distributions[0].reduction_brl.unwrap(), 2_400.0));
+    assert_eq!(credits.updates.len(), 1);
+
+    // apagar tira a atualização e o crédito (a distribuição fica, sem o que reduzir)
+    let cleared = set(None, Some(5.0)).await.unwrap();
+    assert_eq!((cleared.update_2023_equity, cleared.update_2023_profits), (None, None));
+    let credits = offshore_credits_in(&db, ws.id).await.unwrap();
+    assert!(credits.rows.is_empty() && credits.updates.is_empty(), "{:?}", credits.rows);
+    assert_eq!(credits.distributions[0].reduction_brl, None);
+}
+
+#[tokio::test]
 async fn a_fund_estimate_uses_the_position_the_quota_values_and_the_stored_rate() {
     use crate::commands::fund::{funds_overview_in, set_fund_term_in, upsert_fund_quota_in, UpsertFundQuotaRequest};
     use crate::commands::transaction::compute_positions;

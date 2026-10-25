@@ -629,6 +629,45 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await snap("taxes-offshore-holdings");
   });
 
+  // Atualização de 2023 da participação (art. 14 §1º IV): reaproveita a 'Holding LLC' e a PTAX de venda de 29/12/2023 (4,90) que o
+  // caso dos ativos já gravou. PL de US$ 10.000 × 4,90 = R$ 49.000; parcela de lucros de US$ 2.000 × 4,90 = R$ 9.800 (crédito de
+  // dividendo); o resto, R$ 39.200, é o custo adicional da participação. Uma distribuição de US$ 500 do lucro de 2023, semeada por
+  // SQL, reduz 500 × 4,90 = R$ 2.450 pela taxa da atualização.
+  it("atualiza a participação em 31/12/2023 e a distribuição reduz o crédito de dividendo", async () => {
+    const entity = sql("SELECT id FROM offshore_entities WHERE name = 'Holding LLC'");
+    sql(
+      "INSERT INTO offshore_distributions (entity_id, origin_year, received_on, amount, created_at) " +
+        `VALUES (${entity}, 2023, '2024-03-10', 500, '2024-03-10T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await byId(`offshore-update2023-equity-${entity}`).waitForDisplayed({ timeout: 30_000 });
+    await byId(`offshore-update2023-equity-${entity}`).setValue("10000");
+    await byId(`offshore-update2023-profits-${entity}`).setValue("2000");
+    await byId(`offshore-update2023-save-${entity}`).click();
+
+    await waitForText(
+      byId(`offshore-update2023-additional-${entity}`),
+      (text) => text.includes("39.200,00"),
+      "o custo adicional da participação deveria ser R$ 39.200,00 (PL de US$ 10.000 menos lucros de US$ 2.000, a 4,90)",
+    );
+    await waitForText(
+      byId(`offshore-update2023-credit-${entity}`),
+      (text) => text.includes("9.800,00"),
+      "o crédito de dividendo de 2023 deveria ser R$ 9.800,00 (lucros de US$ 2.000 a 4,90)",
+    );
+    await waitForText(
+      byId("offshore-distributions"),
+      (text) => text.includes("2.450,00"),
+      "a distribuição de US$ 500 do lucro de 2023 deveria reduzir o crédito em R$ 2.450,00",
+    );
+    await byId("offshore-holdings-card").scrollIntoView({ block: "center" });
+    await snap("taxes-offshore-update-2023");
+  });
+
   // Controlada ativa (Lei 14.754, art. 6º): não é tributada em 31/12, só quando o lucro é disponibilizado. Uma distribuição de
   // US$ 1.000 recebida em 10/03/2025, com PTAX de venda de 5,50 nesse dia, vale R$ 5.500 e paga 15% = R$ 825,00 em 2025. O lucro
   // informado da entidade (US$ 3.000 em 2025) não gera imposto de 31/12: só a 'Holding LLC' aparece na tabela do art. 5º.

@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::domain::tax::foreign::FIRST_YEAR;
 use crate::domain::tax::offshore::{
     offshore_credits, OffshoreCreditRow, OffshoreDistribution, OffshoreDistributionView, OffshoreEntity, OffshoreResult,
+    OffshoreUpdate2023Input, OffshoreUpdate2023Row, UPDATE_2023_YEAR,
 };
 use crate::entity::{offshore_distribution, offshore_entity, offshore_result};
 use crate::error::AppError;
@@ -203,6 +204,55 @@ pub async fn update_offshore_entity_in(
     Ok(active.update(db).await?)
 }
 
+#[derive(Deserialize)]
+pub struct SetOffshoreUpdate2023Request {
+    pub entity_id: i32,
+    /// Patrimônio líquido proporcional em 31/12/2023, na moeda da entidade; nulo apaga a atualização (e a parcela de lucros).
+    pub equity: Option<f64>,
+    /// Parcela de lucros dentro do patrimônio líquido (acumulados e reservas de lucros); nulo vale 0.
+    #[serde(default)]
+    pub profits: Option<f64>,
+}
+
+#[tauri::command]
+pub async fn set_offshore_update_2023(
+    db: tauri::State<'_, DatabaseConnection>,
+    request: SetOffshoreUpdate2023Request,
+) -> Result<offshore_entity::Model, AppError> {
+    set_offshore_update_2023_in(db.inner(), request).await
+}
+
+/// Grava a atualização opcional de 2023 de uma controlada (Lei 14.754, art. 14 §1º IV), ou apaga com `equity` nulo.
+pub async fn set_offshore_update_2023_in(
+    db: &DatabaseConnection,
+    request: SetOffshoreUpdate2023Request,
+) -> Result<offshore_entity::Model, AppError> {
+    let (equity, profits) = match request.equity {
+        None => (None, None),
+        Some(equity) => {
+            if !equity.is_finite() || equity <= 0.0 {
+                return Err(AppError::InvalidInput("equity must be above zero".to_string()));
+            }
+            let profits = request.profits.unwrap_or(0.0);
+            if !profits.is_finite() || profits < 0.0 {
+                return Err(AppError::InvalidInput("profits must be zero or more".to_string()));
+            }
+            if profits > equity {
+                return Err(AppError::InvalidInput("the profits share cannot exceed the equity".to_string()));
+            }
+            (Some(equity), Some(profits))
+        }
+    };
+    let existing = offshore_entity::Entity::find_by_id(request.entity_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("offshore entity {}", request.entity_id)))?;
+    let mut active: offshore_entity::ActiveModel = existing.into();
+    active.update_2023_equity = Set(equity);
+    active.update_2023_profits = Set(profits);
+    Ok(active.update(db).await?)
+}
+
 #[tauri::command]
 pub async fn delete_offshore_entity(
     db: tauri::State<'_, DatabaseConnection>,
@@ -304,8 +354,15 @@ pub async fn add_offshore_distribution_in(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("offshore entity {}", request.entity_id)))?;
     let active = entity.regime == REGIME_ACTIVE;
-    if !active && (request.origin_year < FIRST_YEAR || request.origin_year > 2100) {
-        return Err(AppError::InvalidInput(format!("origin year must be {FIRST_YEAR} or later (Lei 14.754)")));
+    // O lucro de 2023 só tem crédito de dividendo se o usuário atualizou a participação (art. 14) informando a parcela de lucros.
+    let has_2023_credit = entity.update_2023_profits.is_some_and(|p| p > 0.0);
+    if !active
+        && !(request.origin_year == UPDATE_2023_YEAR && has_2023_credit)
+        && (request.origin_year < FIRST_YEAR || request.origin_year > 2100)
+    {
+        return Err(AppError::InvalidInput(format!(
+            "origin year must be {FIRST_YEAR} or later (Lei 14.754), or {UPDATE_2023_YEAR} when the 2023 update has a profits share"
+        )));
     }
     if !request.amount.is_finite() || request.amount <= 0.0 {
         return Err(AppError::InvalidInput("amount must be above zero".to_string()));
@@ -356,6 +413,8 @@ pub async fn delete_offshore_distribution(
 pub struct OffshoreCredits {
     pub rows: Vec<OffshoreCreditRow>,
     pub distributions: Vec<OffshoreDistributionView>,
+    /// A atualização de 2023 de cada controlada que optou, já em reais (custo adicional da participação e crédito).
+    pub updates: Vec<OffshoreUpdate2023Row>,
 }
 
 #[tauri::command]
@@ -370,8 +429,34 @@ pub async fn offshore_credits_in(db: &DatabaseConnection, workspace_id: i32) -> 
     let assessment = crate::commands::tax::assess_workspace(db, workspace_id).await?;
     // Entidade ativa (art. 6º) não tem crédito de dividendo: as distribuições dela são tributadas, não reduzem crédito.
     let distributions = load_distributions(db, workspace_id, false).await?;
-    let (rows, views) = offshore_credits(&assessment.offshore_years, &distributions, Utc::now().date_naive());
-    Ok(OffshoreCredits { rows, distributions: views })
+    let (rows, views) = offshore_credits(
+        &assessment.offshore_years,
+        &assessment.offshore_updates_2023,
+        &distributions,
+        Utc::now().date_naive(),
+    );
+    Ok(OffshoreCredits { rows, distributions: views, updates: assessment.offshore_updates_2023 })
+}
+
+/// As atualizações de 2023 (art. 14) das controladas do Workspace que optaram (patrimônio líquido informado).
+pub(crate) async fn load_updates_2023(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+) -> Result<Vec<OffshoreUpdate2023Input>, AppError> {
+    let entities = offshore_entity::Entity::find()
+        .filter(offshore_entity::Column::WorkspaceId.eq(workspace_id))
+        .all(db)
+        .await?;
+    Ok(entities
+        .into_iter()
+        .filter_map(|e| {
+            e.update_2023_equity.map(|equity| OffshoreUpdate2023Input {
+                entity_id: e.id,
+                equity,
+                profits: e.update_2023_profits.unwrap_or(0.0),
+            })
+        })
+        .collect())
 }
 
 /// As distribuições do Workspace, das entidades ativas (`active`, art. 6º) ou das demais, da mais antiga à mais nova.

@@ -7,7 +7,7 @@ use super::calendar::darf_due_date;
 use super::classify::{is_unit, treatment, TaxTreatment};
 use super::crypto::{assess_crypto, CryptoMonth};
 use super::foreign::{self, ForeignYear};
-use super::offshore::{OffshoreActiveYear, OffshoreYear};
+use super::offshore::{OffshoreActiveYear, OffshoreUpdate2023Row, OffshoreYear};
 use super::rules::{self, RuleSet};
 use crate::domain::cost_basis::{take_from_position, Position, EPS};
 use crate::error::AppError;
@@ -154,6 +154,10 @@ pub enum TaxWarning {
     Update2023NoPosition { ticker: String },
     /// Atualização de 2023 (art. 14) sem câmbio (nem PTAX nem de mercado) para dezembro de 2023: ignorada, vale o custo antigo.
     Update2023FxMissing { ticker: String },
+    /// Atualização de 2023 (art. 14) de uma controlada sem câmbio (nem PTAX nem de mercado) para dezembro de 2023: ignorada.
+    OffshoreUpdate2023FxMissing { entity: String },
+    /// Atualização de 2023 de uma controlada convertida pelo câmbio de mercado (a PTAX de dezembro de 2023 faltava).
+    OffshoreUpdate2023FxApproximate { entity: String },
     /// Distribuição de entidade controlada ativa (art. 6º) sem câmbio na data do recebimento: ficou de fora.
     OffshoreDistributionFxMissing { year: i32, entity: String },
     /// Distribuição de entidade controlada ativa convertida pelo câmbio de mercado (a PTAX do dia faltava).
@@ -184,6 +188,8 @@ pub struct Assessment {
     pub offshore_years: Vec<OffshoreYear>,
     /// Distribuições recebidas de controladas ativas (art. 6º), por ano de recebimento; preenchida pelo comando.
     pub offshore_active_years: Vec<OffshoreActiveYear>,
+    /// Atualização opcional de 2023 das participações em controladas (art. 14), já em reais; preenchida pelo comando.
+    pub offshore_updates_2023: Vec<OffshoreUpdate2023Row>,
     pub warnings: Vec<TaxWarning>,
     /// Só gavetas com saldo de prejuízo > 0.
     pub loss_balances: Vec<LossBalance>,
@@ -529,6 +535,7 @@ pub fn assess_with_options(
         foreign_years: Vec::new(),
         offshore_years: Vec::new(),
         offshore_active_years: Vec::new(),
+        offshore_updates_2023: Vec::new(),
         warnings,
         loss_balances,
     })

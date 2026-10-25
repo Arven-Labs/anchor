@@ -180,6 +180,8 @@ type TaxWarning =
   | { kind: "offshore_year_open"; year: number }
   | { kind: "update2023_no_position"; ticker: string }
   | { kind: "update2023_fx_missing"; ticker: string }
+  | { kind: "offshore_update2023_fx_missing"; entity: string }
+  | { kind: "offshore_update2023_fx_approximate"; entity: string }
   | { kind: "offshore_distribution_fx_missing"; year: number; entity: string }
   | { kind: "offshore_distribution_fx_approximate"; year: number }
   | { kind: "option_exercised"; ticker: string; date: string };
@@ -262,6 +264,10 @@ function warningText(w: TaxWarning): string {
       return `${w.ticker} has a 31/12/2023 value (art. 14 update) but no position on that date, so the update was ignored.`;
     case "update2023_fx_missing":
       return `${w.ticker} has a 31/12/2023 value (art. 14 update) but no exchange rate (neither PTAX nor market) for December 2023, so the update was ignored and the old cost applies. Collect the exchange-rate history and open this tab again.`;
+    case "offshore_update2023_fx_missing":
+      return `${w.entity} has a 31/12/2023 equity (art. 14 update) but no exchange rate (neither PTAX nor market) for December 2023, so the update was ignored. Collect the exchange-rate history and open this tab again.`;
+    case "offshore_update2023_fx_approximate":
+      return `The 31/12/2023 equity (art. 14 update) of ${w.entity} was converted at the market exchange rate because the Central Bank's PTAX of December 2023 was not available, so its values are approximate.`;
     case "offshore_distribution_fx_missing":
       return `A ${w.year} distribution from ${w.entity} has no exchange rate (neither PTAX nor market) for the day it was received, so it was left out of the active-entities assessment. Collect the exchange-rate history and open this tab again.`;
     case "offshore_distribution_fx_approximate":

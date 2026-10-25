@@ -184,6 +184,7 @@ pub fn run() {
             commands::offshore::create_offshore_entity,
             commands::offshore::update_offshore_entity,
             commands::offshore::delete_offshore_entity,
+            commands::offshore::set_offshore_update_2023,
             commands::offshore::upsert_offshore_result,
             commands::offshore::delete_offshore_result,
             commands::offshore::add_offshore_distribution,

@@ -55,7 +55,26 @@ type DistributionView = {
   reduction_brl: number | null;
 };
 
-type OffshoreCredits = { rows: CreditRow[]; distributions: DistributionView[] };
+// A atualização de 2023 (art. 14) de uma controlada, já em reais.
+type UpdateRow = {
+  entity_id: number;
+  entity_name: string;
+  country: string;
+  currency: string;
+  active_regime: boolean;
+  equity: number;
+  profits: number;
+  fx_rate: number;
+  fx_source: "ptax" | "market";
+  equity_brl: number;
+  profits_brl: number;
+  additional_cost_brl: number;
+};
+
+type OffshoreCredits = { rows: CreditRow[]; distributions: DistributionView[]; updates: UpdateRow[] };
+
+// O ano de origem do crédito que vem da atualização de 2023 (e não de um lucro tributado em 31/12).
+const UPDATE_YEAR = 2023;
 
 function formatBrl(value: number): string {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -101,11 +120,16 @@ function linesOfYear(rows: CreditRow[], year: number): CreditLine[] {
 // Texto para colar no campo "Discriminação" do programa da Receita.
 function descriptionText(year: number, line: CreditLine): string {
   const value = (r?: CreditRow) => formatBrl(r ? r.balance_brl : 0);
+  const fromUpdate = line.originYear === UPDATE_YEAR;
   return [
-    `Crédito de dividendo a receber da controlada ${line.entityName} (${line.country}), lucro do ano de origem ${line.originYear}, tributado em 31/12/${line.originYear} (Lei 14.754, art. 5º, §10).`,
+    fromUpdate
+      ? `Crédito de dividendo a receber da controlada ${line.entityName} (${line.country}), lucros atualizados em 31/12/2023 e tributados a 8% (Lei 14.754, art. 14, §4º, II).`
+      : `Crédito de dividendo a receber da controlada ${line.entityName} (${line.country}), lucro do ano de origem ${line.originYear}, tributado em 31/12/${line.originYear} (Lei 14.754, art. 5º, §10).`,
     `Situação em 31/12/${year - 1}: custo de aquisição ${value(line.previous)}.`,
     `Situação em 31/12/${year}: custo de aquisição ${value(line.current)}.`,
-    "Valor em reais declarado originalmente; as distribuições recebidas reduzem o custo pelo valor declarado, sem nova tributação (§11).",
+    fromUpdate
+      ? "Valor em reais declarado originalmente; as distribuições recebidas reduzem o custo pelo valor declarado, sem nova tributação (art. 14, §4º, III)."
+      : "Valor em reais declarado originalmente; as distribuições recebidas reduzem o custo pelo valor declarado, sem nova tributação (§11).",
   ].join("\n");
 }
 
@@ -115,7 +139,7 @@ export function useOffshoreCredits(workspaceId: number, enabled: boolean): Offsh
     queryFn: () => invoke("get_offshore_credits", { workspaceId }),
     enabled,
   });
-  return query.data ?? { rows: [], distributions: [] };
+  return query.data ?? { rows: [], distributions: [], updates: [] };
 }
 
 export default function OffshoreHoldingsCard({ workspaceId, credits }: { workspaceId: number; credits: OffshoreCredits }) {
@@ -150,10 +174,12 @@ export default function OffshoreHoldingsCard({ workspaceId, credits }: { workspa
     onSuccess: refresh,
   });
 
-  const { rows, distributions } = credits;
-  if (rows.length === 0) return null;
+  const { rows, distributions, updates } = credits;
+  if (rows.length === 0 && updates.length === 0) return null;
 
+  // Sem crédito (só atualização sem parcela de lucros, ou de entidade ativa) não há anos para escolher.
   const years = [...new Set(rows.map((r) => r.as_of_year))].sort((a, b) => b - a);
+  const hasCredits = years.length > 0;
   const year = selectedYear !== null && years.includes(selectedYear) ? selectedYear : years[0];
   const lines = linesOfYear(rows, year);
   const entities = [...new Map(rows.map((r) => [r.entity_id, r.entity_name])).entries()];
@@ -186,11 +212,59 @@ export default function OffshoreHoldingsCard({ workspaceId, credits }: { workspa
           originally declared in reais (the foreign amount times the 31/12 rate of the year of origin) and is not taxed
           again; the exchange gain or loss against the amount received is neither taxed nor deducted (§§11 and 12). The
           credit of a year is the base actually taxed that year, after the entity's own losses. Your holding in the
-          entity itself (its acquisition cost) is not tracked here: declare it by hand. This is an estimate based on the
-          law's text — confirm in the Receita's program.
+          entity itself (its acquisition cost) is not tracked here: declare it by hand, adding the 2023 update below if
+          you opted for it. This is an estimate based on the law's text — confirm in the Receita's program.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {updates.length > 0 && (
+          <div className="flex flex-col gap-2" data-testid="offshore-update2023-table">
+            <span className="text-sm font-medium">2023 update of the holding (art. 14, §§2 to 4)</span>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Entity</TableHead>
+                  <TableHead className="text-right">Equity on 31/12/2023</TableHead>
+                  <TableHead className="text-right">Sell PTAX</TableHead>
+                  <TableHead className="text-right">Additional cost of the holding</TableHead>
+                  <TableHead className="text-right">Dividend credit (profits)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {updates.map((u) => (
+                  <TableRow key={u.entity_id} data-testid={`offshore-update2023-row-${u.entity_id}`}>
+                    <TableCell>
+                      <span className="font-medium">{u.entity_name}</span>
+                      <span className="block text-xs text-muted-foreground">{u.country}</span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {u.equity.toLocaleString("pt-BR")} {u.currency}
+                      <span className="block text-xs text-muted-foreground">{formatBrl(u.equity_brl)}</span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {u.fx_rate.toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
+                      {u.fx_source === "market" && <span className="block text-xs text-amber-500">market rate</span>}
+                    </TableCell>
+                    <TableCell className="text-right" data-testid={`offshore-update2023-additional-${u.entity_id}`}>
+                      {formatBrl(u.additional_cost_brl)}
+                    </TableCell>
+                    <TableCell className="text-right" data-testid={`offshore-update2023-credit-${u.entity_id}`}>
+                      {u.active_regime ? "—" : formatBrl(u.profits_brl)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {updates.some((u) => u.active_regime) && (
+              <p className="text-sm text-amber-500" data-testid="offshore-update2023-active-note">
+                An active entity (art. 6º) only has its update recorded: the dividend credit and the reduction of the
+                tax on its distributions are not calculated here.
+              </p>
+            )}
+          </div>
+        )}
+        {hasCredits && (
+          <>
         <Select value={String(year)} onValueChange={(v) => setSelectedYear(Number(v))}>
           <SelectTrigger className="w-40" data-testid="offshore-holdings-year">
             <SelectValue />
@@ -219,7 +293,7 @@ export default function OffshoreHoldingsCard({ workspaceId, credits }: { workspa
                 <TableCell>
                   <span className="font-medium">{line.entityName}</span>
                   <span className="block text-xs text-muted-foreground">
-                    {line.country} · profit of {line.originYear}
+                    {line.country} · {line.originYear === UPDATE_YEAR ? "profits updated on 31/12/2023" : `profit of ${line.originYear}`}
                   </span>
                 </TableCell>
                 {[line.previous, line.current].map((r, index) => (
@@ -344,6 +418,8 @@ export default function OffshoreHoldingsCard({ workspaceId, credits }: { workspa
           </form>
           {addMutation.isError && <span className="text-sm text-destructive">{addMutation.error.message}</span>}
         </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

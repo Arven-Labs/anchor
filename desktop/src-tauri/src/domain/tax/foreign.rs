@@ -43,7 +43,7 @@ pub struct Update2023 {
 }
 
 /// A atualização vale no fim de 31/12/2023: fatos até esse dia entram no custo antes dela, os seguintes depois.
-fn update_2023_date() -> NaiveDate {
+pub(super) fn update_2023_date() -> NaiveDate {
     NaiveDate::from_ymd_opt(2023, 12, 31).expect("data válida")
 }
 
