@@ -1699,6 +1699,37 @@ async fn fx_staleness_flags_only_the_pairs_the_workspace_uses() {
 }
 
 #[tokio::test]
+async fn a_currency_without_a_direct_pair_is_fresh_and_converts_through_the_usd_legs() {
+    use crate::commands::currency::load_rates;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Cruzada").await;
+    bank_account_in(&db, ws.id, "Conta em guarani", "PYG").await;
+    // O Yahoo não tem PYGBRL: só as pernas PYGUSD e USDBRL foram coletadas (0,000125 dólar por guarani, 5,00 reais por dólar)
+    seed_price(&db, "PYGUSD", "2026-10-16", 0.000125).await;
+    seed_price(&db, "USDBRL", "2026-10-16", 5.0).await;
+
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 18).unwrap();
+    let stale = crate::ingestion::fx_staleness_in(&db, ws.id, today).await.unwrap();
+    assert!(stale.is_empty(), "as duas pernas têm fechamento de 2 dias atrás: {stale:?}");
+
+    // 0,000125 × 5,00 = R$ 0,000625 por guarani
+    let currencies: std::collections::HashSet<String> = ["PYG".to_string()].into_iter().collect();
+    let rates = load_rates(&db, "BRL", &currencies).await.unwrap();
+    assert!(close(rates.rate("PYG").unwrap(), 0.000625), "{:?}", rates.rate("PYG"));
+
+    // sem a perna USDBRL a rota não fecha: volta a ser "nunca coletado"
+    let db = memory_db().await;
+    let ws = workspace(&db, "Perna só").await;
+    bank_account_in(&db, ws.id, "Conta em guarani", "PYG").await;
+    seed_price(&db, "PYGUSD", "2026-10-16", 0.000125).await;
+    let stale = crate::ingestion::fx_staleness_in(&db, ws.id, today).await.unwrap();
+    assert_eq!(stale.len(), 1);
+    assert_eq!(stale[0].pair, "PYG/BRL");
+    assert!(stale[0].last_date.is_none());
+}
+
+#[tokio::test]
 async fn ingestion_with_nothing_owned_still_lists_no_targets() {
     let db = memory_db().await;
     workspace(&db, "Empty").await;

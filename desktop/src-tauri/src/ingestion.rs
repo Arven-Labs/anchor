@@ -32,6 +32,8 @@ const CHECK_INTERVAL: Duration = Duration::from_secs(30 * 60);
 const MIN_AGE_HOURS: i64 = 24;
 /// Pausa entre itens, pra não rajadar as fontes (o Yahoo limita por IP).
 const PAUSE_BETWEEN_ITEMS: Duration = Duration::from_millis(500);
+/// Moeda pivô da cotação cruzada: a mesma que `FxRates`/`FxHistory` usam para ler a rota.
+const PIVOT: &str = "USD";
 /// Quantas mensagens de erro entram no resumo da rodada.
 const MAX_ERRORS_KEPT: usize = 5;
 /// Com esta variável definida, nada em segundo plano vai à rede (ingestão diária e estimativa automática do porquinho).
@@ -137,6 +139,48 @@ pub async fn workspace_fx_pairs(
         .collect())
 }
 
+/// Tenta o par `a+b` e, se o Yahoo não o tem, o inverso `b+a` (a leitura inverte). Anota cada falha em `attempts`.
+async fn fetch_route<F, Fut>(fetch: &mut F, a: &str, b: &str, attempts: &mut Vec<String>) -> bool
+where
+    F: FnMut(String, String) -> Fut,
+    Fut: std::future::Future<Output = Result<(), AppError>>,
+{
+    for (x, y) in [(a, b), (b, a)] {
+        match fetch(x.to_string(), y.to_string()).await {
+            Ok(()) => return true,
+            Err(err) => attempts.push(format!("{x}/{y}: {err}")),
+        }
+    }
+    false
+}
+
+/// Coleta o câmbio de `currency` contra `base`. Primeiro o par direto (ou o inverso); se o Yahoo não tem nenhum dos dois, as
+/// duas pernas via USD (`moeda/USD` e `USD/base`, cada uma também na orientação inversa), que `FxRates` e `FxHistory` já
+/// multiplicam na leitura. `fetch(a, b)` grava o par `a+b`; é injetado para testar o encadeamento sem rede. Sem rota, o erro
+/// lista as tentativas.
+pub(crate) async fn collect_with_fallback<F, Fut>(currency: &str, base: &str, mut fetch: F) -> Result<(), AppError>
+where
+    F: FnMut(String, String) -> Fut,
+    Fut: std::future::Future<Output = Result<(), AppError>>,
+{
+    if currency == base {
+        return Ok(());
+    }
+    let mut attempts = Vec::new();
+    if fetch_route(&mut fetch, currency, base, &mut attempts).await {
+        return Ok(());
+    }
+    // Com o USD de um dos lados as pernas seriam o próprio par que acabou de falhar.
+    if currency != PIVOT
+        && base != PIVOT
+        && fetch_route(&mut fetch, currency, PIVOT, &mut attempts).await
+        && fetch_route(&mut fetch, PIVOT, base, &mut attempts).await
+    {
+        return Ok(());
+    }
+    Err(AppError::NoData(format!("no exchange rate route for {currency}/{base}: {}", attempts.join("; "))))
+}
+
 /// Fim da última rodada que terminou (`ok` ou `partial`), pra decidir a próxima.
 pub(crate) async fn last_finished_at(db: &DatabaseConnection) -> Result<Option<DateTime<Utc>>, AppError> {
     Ok(ingestion_runs::Entity::find()
@@ -189,8 +233,13 @@ pub async fn run_ingestion(
     match collection_targets(db).await {
         Ok(targets) => {
             for (currency, base) in &targets.fx_pairs {
-                record(format!("{currency}/{base}"), finance_api_fx::collect_pair(db, currency, base).await.map(drop));
-                tokio::time::sleep(PAUSE_BETWEEN_ITEMS).await;
+                // Cada chamada de rede é seguida da pausa; o par direto pode cair para o inverso e para as pernas via USD.
+                let fetch = |a: String, b: String| async move {
+                    let result = finance_api_fx::collect_pair(db, &a, &b).await.map(drop);
+                    tokio::time::sleep(PAUSE_BETWEEN_ITEMS).await;
+                    result
+                };
+                record(format!("{currency}/{base}"), collect_with_fallback(currency, base, fetch).await);
             }
             for (ticker, class) in &targets.assets {
                 record(ticker.clone(), collect_asset(db, ticker, Some(class)).await.map(drop));
@@ -243,8 +292,26 @@ pub struct FxFreshness {
     pub days_old: Option<i64>,
 }
 
+/// Data mais recente do par `a+b`, em qualquer orientação (`USDBRL` ou `BRLUSD`).
+fn newest_of_pair(latest: &HashMap<String, NaiveDate>, a: &str, b: &str) -> Option<NaiveDate> {
+    latest.get(&format!("{a}{b}")).max(latest.get(&format!("{b}{a}"))).copied()
+}
+
+/// Data a partir da qual o câmbio de `currency` contra `base` vale: a do par direto (ou inverso) ou a da rota via USD
+/// (a mais velha das duas pernas), a que for mais nova. `None` quando não há rota nenhuma coletada.
+fn route_date(latest: &HashMap<String, NaiveDate>, currency: &str, base: &str) -> Option<NaiveDate> {
+    let direct = newest_of_pair(latest, currency, base);
+    let crossed = if currency == PIVOT || base == PIVOT {
+        None
+    } else {
+        newest_of_pair(latest, currency, PIVOT).zip(newest_of_pair(latest, PIVOT, base)).map(|(a, b)| a.min(b))
+    };
+    direct.max(crossed)
+}
+
 /// Dos pares, os que nunca foram coletados ou cujo último fechamento tem mais de
-/// `STALE_AFTER_DAYS` dias. `latest` mapeia código do par (`USDBRL`) à data mais recente.
+/// `STALE_AFTER_DAYS` dias. `latest` mapeia código do par (`USDBRL`) à data mais recente; vale o par direto, o inverso ou as
+/// duas pernas via USD (cotação cruzada, quando o Yahoo não tem o par direto).
 pub fn stale_pairs(
     pairs: &BTreeSet<(String, String)>,
     latest: &HashMap<String, NaiveDate>,
@@ -253,9 +320,8 @@ pub fn stale_pairs(
     pairs
         .iter()
         .filter_map(|(currency, base)| {
-            let code = format!("{currency}{base}");
             let pair = format!("{currency}/{base}");
-            match latest.get(&code) {
+            match route_date(latest, currency, base).as_ref() {
                 None => Some(FxFreshness { pair, last_date: None, days_old: None }),
                 Some(date) => {
                     let days_old = (today - *date).num_days();
@@ -277,7 +343,17 @@ pub async fn fx_staleness_in(
     today: NaiveDate,
 ) -> Result<Vec<FxFreshness>, AppError> {
     let pairs = workspace_fx_pairs(db, workspace_id).await?;
-    let codes: Vec<String> = pairs.iter().map(|(currency, base)| format!("{currency}{base}")).collect();
+    // O par direto, o inverso e as pernas via USD (cada uma nas duas orientações).
+    let mut codes: BTreeSet<String> = BTreeSet::new();
+    for (currency, base) in &pairs {
+        for (a, b) in [(currency, base), (base, currency)] {
+            codes.insert(format!("{a}{b}"));
+        }
+        for other in [currency, base] {
+            codes.insert(format!("{other}{PIVOT}"));
+            codes.insert(format!("{PIVOT}{other}"));
+        }
+    }
     let mut latest: HashMap<String, NaiveDate> = HashMap::new();
     if !codes.is_empty() {
         for row in stock_price_history::Entity::find()
@@ -344,7 +420,6 @@ mod tests {
 
     #[test]
     fn pairs_are_stale_when_missing_or_older_than_the_limit() {
-        let day = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
         let pairs: BTreeSet<(String, String)> = [("EUR", "BRL"), ("GBP", "BRL"), ("USD", "BRL")]
             .into_iter()
             .map(|(a, b)| (a.to_string(), b.to_string()))
@@ -364,6 +439,115 @@ mod tests {
                 FxFreshness { pair: "GBP/BRL".into(), last_date: None, days_old: None },
             ]
         );
+    }
+
+    fn day(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    fn one_pair(currency: &str, base: &str) -> BTreeSet<(String, String)> {
+        [(currency.to_string(), base.to_string())].into_iter().collect()
+    }
+
+    fn dates(entries: &[(&str, &str)]) -> HashMap<String, NaiveDate> {
+        entries.iter().map(|(code, date)| (code.to_string(), day(date))).collect()
+    }
+
+    #[test]
+    fn a_pair_without_a_direct_quote_is_fresh_when_both_usd_legs_are() {
+        // PYG/BRL nunca foi coletado, mas PYGUSD (hoje) e USDBRL (2 dias) cobrem a rota: vale a mais velha, e está fresca
+        let latest = dates(&[("PYGUSD", "2026-10-18"), ("USDBRL", "2026-10-16")]);
+        assert!(stale_pairs(&one_pair("PYG", "BRL"), &latest, day("2026-10-18")).is_empty());
+    }
+
+    #[test]
+    fn the_cross_route_is_as_old_as_its_older_leg() {
+        // USDBRL de 12/10 é a perna velha: 6 dias
+        let latest = dates(&[("PYGUSD", "2026-10-18"), ("USDBRL", "2026-10-12")]);
+        let stale = stale_pairs(&one_pair("PYG", "BRL"), &latest, day("2026-10-18"));
+        assert_eq!(
+            stale,
+            vec![FxFreshness { pair: "PYG/BRL".into(), last_date: Some("2026-10-12".into()), days_old: Some(6) }]
+        );
+    }
+
+    #[test]
+    fn the_inverse_orientation_and_a_fresher_cross_route_count() {
+        // USDPYG (orientação inversa da perna) vale; o direto velho de 01/10 perde para a rota via USD de 17/10
+        let latest = dates(&[("PYGBRL", "2026-10-01"), ("USDPYG", "2026-10-17"), ("BRLUSD", "2026-10-17")]);
+        assert!(stale_pairs(&one_pair("PYG", "BRL"), &latest, day("2026-10-18")).is_empty());
+    }
+
+    #[test]
+    fn one_leg_alone_is_not_a_route() {
+        let latest = dates(&[("PYGUSD", "2026-10-18")]);
+        let stale = stale_pairs(&one_pair("PYG", "BRL"), &latest, day("2026-10-18"));
+        assert_eq!(stale, vec![FxFreshness { pair: "PYG/BRL".into(), last_date: None, days_old: None }]);
+    }
+
+    /// Roda `collect_with_fallback` com um `fetch` falso: os pares em `failing` (código `PYGBRL`) dão erro. Devolve o
+    /// resultado e a lista das chamadas, na ordem.
+    async fn run_fallback(currency: &str, base: &str, failing: &[&str]) -> (Result<(), AppError>, Vec<String>) {
+        let calls = std::cell::RefCell::new(Vec::new());
+        let result = collect_with_fallback(currency, base, |a: String, b: String| {
+            let code = format!("{a}{b}");
+            let ok = !failing.contains(&code.as_str());
+            calls.borrow_mut().push(code.clone());
+            async move { if ok { Ok(()) } else { Err(AppError::NoData(format!("no data for {code}"))) } }
+        })
+        .await;
+        (result, calls.into_inner())
+    }
+
+    #[tokio::test]
+    async fn the_direct_pair_is_enough_when_the_source_has_it() {
+        let (result, calls) = run_fallback("EUR", "BRL", &[]).await;
+        assert!(result.is_ok());
+        assert_eq!(calls, vec!["EURBRL"]);
+    }
+
+    #[tokio::test]
+    async fn the_inverse_pair_is_tried_before_crossing() {
+        let (result, calls) = run_fallback("PYG", "BRL", &["PYGBRL"]).await;
+        assert!(result.is_ok());
+        assert_eq!(calls, vec!["PYGBRL", "BRLPYG"]);
+    }
+
+    #[tokio::test]
+    async fn without_a_direct_or_inverse_pair_it_collects_the_two_usd_legs() {
+        // PYGBRL e BRLPYG não existem: PYGUSD e USDBRL entram, e a leitura multiplica as duas (FxRates cruza via USD)
+        let (result, calls) = run_fallback("PYG", "BRL", &["PYGBRL", "BRLPYG"]).await;
+        assert!(result.is_ok());
+        assert_eq!(calls, vec!["PYGBRL", "BRLPYG", "PYGUSD", "USDBRL"]);
+    }
+
+    #[tokio::test]
+    async fn a_leg_falls_back_to_its_inverse_orientation() {
+        let (result, calls) = run_fallback("PYG", "BRL", &["PYGBRL", "BRLPYG", "PYGUSD"]).await;
+        assert!(result.is_ok());
+        assert_eq!(calls, vec!["PYGBRL", "BRLPYG", "PYGUSD", "USDPYG", "USDBRL"]);
+    }
+
+    #[tokio::test]
+    async fn a_leg_missing_in_both_orientations_fails_and_lists_every_attempt() {
+        let (result, calls) = run_fallback("PYG", "BRL", &["PYGBRL", "BRLPYG", "PYGUSD", "USDPYG"]).await;
+        assert_eq!(calls, vec!["PYGBRL", "BRLPYG", "PYGUSD", "USDPYG"], "a segunda perna nem é tentada");
+        let message = result.unwrap_err().to_string();
+        for code in ["PYG/BRL", "BRL/PYG", "PYG/USD", "USD/PYG"] {
+            assert!(message.contains(code), "{message}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_pair_with_usd_on_a_side_does_not_cross_and_equal_currencies_need_nothing() {
+        let (result, calls) = run_fallback("USD", "BRL", &["USDBRL", "BRLUSD"]).await;
+        assert!(result.is_err());
+        assert_eq!(calls, vec!["USDBRL", "BRLUSD"]);
+        let (result, calls) = run_fallback("BRL", "USD", &["BRLUSD", "USDBRL"]).await;
+        assert!(result.is_err());
+        assert_eq!(calls, vec!["BRLUSD", "USDBRL"]);
+        let (result, calls) = run_fallback("BRL", "BRL", &[]).await;
+        assert!(result.is_ok() && calls.is_empty());
     }
 
     #[test]
