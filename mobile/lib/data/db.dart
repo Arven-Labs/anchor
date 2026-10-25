@@ -35,7 +35,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 16,
+      version: 17,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -288,7 +288,14 @@ class AppDatabase {
           );
         }
         if (oldVersion < 16) {
+          // Já nasce com categorias (v17).
           await _createFinanceTables(db);
+        }
+        if (oldVersion == 16) {
+          await db.execute(
+            'ALTER TABLE general_transactions ADD COLUMN category_id INTEGER',
+          );
+          await _createCategoriesTable(db);
         }
       },
     );
@@ -317,13 +324,30 @@ class AppDatabase {
         valor REAL NOT NULL,
         transaction_date TEXT NOT NULL,
         notes TEXT,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        category_id INTEGER REFERENCES general_transaction_categories(id)
       )
     ''');
     await db.execute('''
       CREATE TABLE app_settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
+      )
+    ''');
+    await _createCategoriesTable(db);
+  }
+
+  /// Categoria de lançamento com limite mensal opcional (na moeda base).
+  /// Sem `ON DELETE SET NULL` efetivo (sem `foreign_keys`): quem apaga uma
+  /// categoria limpa o `category_id` dos lançamentos
+  /// (`GeneralFinanceRepository.deleteCategory`).
+  static Future<void> _createCategoriesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE general_transaction_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL,
+        limite_mensal REAL,
+        created_at TEXT NOT NULL
       )
     ''');
   }

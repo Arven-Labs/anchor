@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/models/bank_account.dart';
 import 'package:anchor_mobile/models/general_transaction.dart';
+import 'package:anchor_mobile/models/general_transaction_category.dart';
 import 'package:anchor_mobile/services/general_finance_repository.dart';
 
 void main() {
@@ -224,4 +225,144 @@ void main() {
       expect(custodias.single['instituicao'], 'XP');
     },
   );
+
+  test('categoria: cria, edita, lista por nome e valida nome e limite', () async {
+    final mercado = await repository.insertCategory(
+      GeneralTransactionCategory(
+        nome: ' Mercado ',
+        limiteMensal: 800,
+        createdAt: DateTime(2026, 1, 1),
+      ),
+    );
+    await repository.insertCategory(
+      GeneralTransactionCategory(
+        nome: 'casa',
+        createdAt: DateTime(2026, 1, 1),
+      ),
+    );
+
+    var list = await repository.listCategories();
+    expect(list.map((c) => c.nome), ['casa', 'Mercado']);
+    expect(list.last.limiteMensal, 800);
+    expect(list.first.limiteMensal, isNull);
+
+    await repository.updateCategory(
+      GeneralTransactionCategory(
+        id: mercado,
+        nome: 'Supermercado',
+        createdAt: DateTime(2030, 1, 1),
+      ),
+    );
+    list = await repository.listCategories();
+    final updated = list.firstWhere((c) => c.id == mercado);
+    expect(updated.nome, 'Supermercado');
+    expect(updated.limiteMensal, isNull);
+    expect(updated.createdAt, DateTime(2026, 1, 1)); // não regrava a criação
+
+    for (final bad in [
+      GeneralTransactionCategory(nome: '  ', createdAt: DateTime(2026, 1, 1)),
+      GeneralTransactionCategory(
+        nome: 'X',
+        limiteMensal: 0,
+        createdAt: DateTime(2026, 1, 1),
+      ),
+      GeneralTransactionCategory(
+        nome: 'X',
+        limiteMensal: double.nan,
+        createdAt: DateTime(2026, 1, 1),
+      ),
+    ]) {
+      expect(() => repository.insertCategory(bad), throwsArgumentError);
+    }
+  });
+
+  test('categoria só vale para despesa; apagar solta os lançamentos', () async {
+    final account = await repository.insertAccount(
+      BankAccount(
+        nome: 'Nubank',
+        titular: 'Eu',
+        currency: 'BRL',
+        createdAt: DateTime(2026, 1, 1),
+      ),
+    );
+    final category = await repository.insertCategory(
+      GeneralTransactionCategory(nome: 'Mercado', createdAt: DateTime(2026, 1, 1)),
+    );
+    GeneralTransaction withCategory(GeneralTransactionType type) =>
+        GeneralTransaction(
+          bankAccountId: account,
+          type: type,
+          categoryId: category,
+          valor: 10,
+          date: '2026-08-05',
+          createdAt: DateTime(2026, 1, 1),
+        );
+    await repository.insertTransaction(
+      withCategory(GeneralTransactionType.despesa),
+    );
+    await repository.insertTransaction(
+      withCategory(GeneralTransactionType.receita),
+    );
+
+    var txs = await repository.listTransactions();
+    expect(
+      txs.where((t) => t.type == GeneralTransactionType.despesa).single.categoryId,
+      category,
+    );
+    expect(
+      txs.where((t) => t.type == GeneralTransactionType.receita).single.categoryId,
+      isNull,
+    );
+
+    await repository.deleteCategory(category);
+
+    expect(await repository.listCategories(), isEmpty);
+    txs = await repository.listTransactions();
+    expect(txs, hasLength(2));
+    expect(txs.every((t) => t.categoryId == null), isTrue);
+  });
+
+  test('banco v16 sobe para a v17 sem perder lançamentos', () async {
+    final old = await openDatabase(
+      '${dir.path}/anchor_mobile.db',
+      version: 16,
+      onCreate: (db, _) async {
+        await db.execute('''CREATE TABLE bank_accounts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          nome TEXT NOT NULL, titular TEXT NOT NULL,
+          currency TEXT NOT NULL, created_at TEXT NOT NULL)''');
+        await db.execute('''CREATE TABLE general_transactions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bank_account_id INTEGER NOT NULL,
+          transaction_type TEXT NOT NULL, valor REAL NOT NULL,
+          transaction_date TEXT NOT NULL, notes TEXT,
+          created_at TEXT NOT NULL)''');
+        await db.execute('''CREATE TABLE app_settings (
+          key TEXT PRIMARY KEY, value TEXT NOT NULL)''');
+        await db.insert('bank_accounts', {
+          'nome': 'Velha',
+          'titular': 'Eu',
+          'currency': 'BRL',
+          'created_at': '2026-01-01T00:00:00.000',
+        });
+        await db.insert('general_transactions', {
+          'bank_account_id': 1,
+          'transaction_type': 'despesa',
+          'valor': 7.5,
+          'transaction_date': '2026-08-05',
+          'created_at': '2026-01-01T00:00:00.000',
+        });
+      },
+    );
+    await old.close();
+
+    final txs = await repository.listTransactions();
+    expect(txs.single.valor, 7.5);
+    expect(txs.single.categoryId, isNull);
+    final category = await repository.insertCategory(
+      GeneralTransactionCategory(nome: 'Mercado', createdAt: DateTime(2026, 1, 1)),
+    );
+    expect(await repository.listCategories(), hasLength(1));
+    expect(category, isPositive);
+  });
 }

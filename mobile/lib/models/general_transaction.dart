@@ -8,13 +8,14 @@ enum GeneralTransactionType {
 }
 
 /// Lançamento de uma conta — espelha
-/// `desktop/src-tauri/src/entity/general_transaction.rs`, sem categoria nem
-/// `transfer_id`. `valor` é sempre positivo; o sinal vem do tipo
-/// (`signedValor` em `domain/general_finance.dart`).
+/// `desktop/src-tauri/src/entity/general_transaction.rs`, sem `transfer_id`.
+/// `valor` é sempre positivo; o sinal vem do tipo (`signedValor` em
+/// `domain/general_finance.dart`). A categoria só vale para despesa.
 class GeneralTransaction {
   final int? id;
   final int bankAccountId;
   final GeneralTransactionType type;
+  final int? categoryId;
   final double valor;
 
   /// `YYYY-MM-DD`; a comparação com "hoje" é de texto, como no desktop.
@@ -26,6 +27,7 @@ class GeneralTransaction {
     this.id,
     required this.bankAccountId,
     required this.type,
+    this.categoryId,
     required this.valor,
     required this.date,
     this.notes,
@@ -37,6 +39,7 @@ class GeneralTransaction {
       'id': id,
       'bank_account_id': bankAccountId,
       'transaction_type': type.name,
+      'category_id': categoryId,
       'valor': valor,
       'transaction_date': date,
       'notes': notes,
@@ -51,6 +54,7 @@ class GeneralTransaction {
       type: GeneralTransactionType.values.byName(
         map['transaction_type'] as String,
       ),
+      categoryId: map['category_id'] as int?,
       valor: (map['valor'] as num).toDouble(),
       date: map['transaction_date'] as String,
       notes: map['notes'] as String?,

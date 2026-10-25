@@ -140,4 +140,70 @@ void main() {
       expect(formatMoney(-0.004, 'BRL'), 'BRL 0,00');
     });
   });
+
+  group('gasto da categoria no mês', () {
+    GeneralTransaction spend(
+      int account,
+      double valor,
+      String date, {
+      int? category = 1,
+      GeneralTransactionType type = despesa,
+    }) => GeneralTransaction(
+      bankAccountId: account,
+      type: type,
+      categoryId: category,
+      valor: valor,
+      date: date,
+      createdAt: DateTime(2026, 1, 1),
+    );
+
+    ({double spent, int missingFx}) spentOf(
+      List<GeneralTransaction> txs, {
+      Map<String, double> rates = const {},
+    }) => spentThisMonth(
+      txs,
+      categoryId: 1,
+      monthPrefix: '2026-08',
+      accountCurrency: {1: 'BRL', 2: 'USD'},
+      base: 'BRL',
+      ratesToBrl: rates,
+    );
+
+    test('soma só despesa da categoria e do mês', () {
+      final result = spentOf([
+        spend(1, 100, '2026-08-05'),
+        spend(1, 50, '2026-08-20'),
+        spend(1, 999, '2026-07-31'), // outro mês
+        spend(1, 999, '2026-08-05', category: 2), // outra categoria
+        spend(1, 999, '2026-08-05', category: null), // sem categoria
+        spend(1, 999, '2026-08-05', type: receita), // receita
+      ]);
+
+      expect(result.spent, 150);
+      expect(result.missingFx, 0);
+    });
+
+    test('converte a moeda da conta para a base', () {
+      final result = spentOf([
+        spend(1, 100, '2026-08-05'),
+        spend(2, 10, '2026-08-06'),
+      ], rates: {'USD': 5.0});
+
+      expect(result.spent, 150);
+    });
+
+    test('despesa sem câmbio fica fora da soma e é contada', () {
+      final result = spentOf([
+        spend(1, 100, '2026-08-05'),
+        spend(2, 10, '2026-08-06'),
+      ]);
+
+      expect(result.spent, 100);
+      expect(result.missingFx, 1);
+    });
+
+    test('sem lançamento o gasto é zero', () {
+      expect(spentOf([]).spent, 0);
+    });
+  });
 }

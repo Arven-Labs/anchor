@@ -11,6 +11,7 @@ import '../services/live_positions.dart';
 import '../services/portfolio_repository.dart';
 import '../services/quote_dispatcher.dart';
 import '../services/yahoo_quote_service.dart';
+import 'financas_categories_screen.dart';
 import 'financas_transactions_screen.dart';
 
 /// Aviso de câmbio que não veio: os itens dessas moedas ficam fora da soma.
@@ -32,8 +33,9 @@ String? missingItemsNote(int count) {
 /// Finanças Gerais: contas em qualquer moeda, o saldo de cada uma (derivado
 /// dos lançamentos) e o patrimônio na moeda base — caixa das contas mais valor
 /// de mercado da carteira. Standalone, como o resto do mobile (sem sync com o
-/// desktop). Fora do mobile por ora: categorias, transferências, dívidas e
-/// empréstimos.
+/// desktop). Fora do mobile por ora: transferências, dívidas e
+/// empréstimos. Categorias com limite mensal ficam em
+/// `FinancasCategoriesScreen`.
 class FinancasScreen extends StatefulWidget {
   /// Série da moeda em reais; o padrão é o Yahoo com o fallback de inverso e
   /// de pernas via dólar. Injetável para teste, sem rede.
@@ -259,6 +261,18 @@ class _FinancasScreenState extends State<FinancasScreen> {
     await _load();
   }
 
+  Future<void> _openCategories() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FinancasCategoriesScreen(
+          base: _base,
+          ratesToBrl: _rates,
+          accounts: _accounts,
+        ),
+      ),
+    );
+  }
+
   Future<void> _open(BankAccount account) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -375,6 +389,11 @@ class _FinancasScreenState extends State<FinancasScreen> {
       appBar: AppBar(
         title: const Text('Finanças'),
         actions: [
+          IconButton(
+            tooltip: 'Categorias',
+            icon: const Icon(Icons.category_outlined),
+            onPressed: _openCategories,
+          ),
           IconButton(
             tooltip: 'Atualizar',
             icon: const Icon(Icons.refresh),

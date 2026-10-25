@@ -4,6 +4,7 @@ import '../domain/general_finance.dart';
 import '../domain/money_format.dart';
 import '../models/bank_account.dart';
 import '../models/general_transaction.dart';
+import '../models/general_transaction_category.dart';
 import '../services/general_finance_repository.dart';
 
 /// Lançamentos de uma conta: lista do mais novo ao mais antigo, receita e
@@ -25,8 +26,16 @@ class _FinancasTransactionsScreenState
 
   bool _loading = true;
   List<GeneralTransaction> _transactions = [];
+  List<GeneralTransactionCategory> _categories = [];
 
   BankAccount get _account => widget.account;
+
+  String? _categoryName(int? id) {
+    for (final c in _categories) {
+      if (c.id == id) return c.nome;
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -38,9 +47,11 @@ class _FinancasTransactionsScreenState
     final transactions = await _repository.listTransactions(
       accountId: _account.id,
     );
+    final categories = await _repository.listCategories();
     if (!mounted) return;
     setState(() {
       _transactions = transactions;
+      _categories = categories;
       _loading = false;
     });
   }
@@ -53,6 +64,7 @@ class _FinancasTransactionsScreenState
     final valorController = TextEditingController();
     final notesController = TextEditingController();
     var type = GeneralTransactionType.despesa;
+    int? categoryId;
     var date = DateTime.now();
 
     final saved = await showDialog<bool>(
@@ -72,6 +84,25 @@ class _FinancasTransactionsScreenState
                 onSelectionChanged: (selection) =>
                     setDialogState(() => type = selection.first),
               ),
+              if (type == GeneralTransactionType.despesa &&
+                  _categories.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int?>(
+                  key: const Key('financas-tx-category'),
+                  initialValue: categoryId,
+                  decoration: const InputDecoration(labelText: 'Categoria'),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('Sem categoria'),
+                    ),
+                    for (final c in _categories)
+                      DropdownMenuItem(value: c.id, child: Text(c.nome)),
+                  ],
+                  onChanged: (value) =>
+                      setDialogState(() => categoryId = value),
+                ),
+              ],
               const SizedBox(height: 12),
               TextField(
                 controller: valorController,
@@ -134,6 +165,7 @@ class _FinancasTransactionsScreenState
       GeneralTransaction(
         bankAccountId: _account.id!,
         type: type,
+        categoryId: type == GeneralTransactionType.despesa ? categoryId : null,
         valor: valor,
         date: toIsoDay(date),
         notes: notes.isEmpty ? null : notes,
@@ -220,8 +252,11 @@ class _FinancasTransactionsScreenState
                                 ),
                                 subtitle: Text(
                                   [
-                                    '${tx.type.label} · '
-                                        '${formatIsoDay(tx.date)}',
+                                    [
+                                      tx.type.label,
+                                      ?_categoryName(tx.categoryId),
+                                      formatIsoDay(tx.date),
+                                    ].join(' · '),
                                     if (future) 'ainda não entra no saldo',
                                     if (tx.notes != null) tx.notes!,
                                   ].join('\n'),

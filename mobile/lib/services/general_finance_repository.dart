@@ -4,6 +4,7 @@ import '../data/db.dart';
 import '../domain/currency_catalog.dart';
 import '../models/bank_account.dart';
 import '../models/general_transaction.dart';
+import '../models/general_transaction_category.dart';
 
 /// Contas, lançamentos e a moeda base de Finanças Gerais. Cálculo de saldo e
 /// de patrimônio fica em `domain/general_finance.dart`, puro.
@@ -93,7 +94,66 @@ class GeneralFinanceRepository {
     }
     final db = await AppDatabase.instance();
     final map = tx.toMap()..remove('id');
+    // Categoria é de despesa: receita não entra em orçamento.
+    if (tx.type != GeneralTransactionType.despesa) map['category_id'] = null;
     return db.insert('general_transactions', map);
+  }
+
+  Future<int> insertCategory(GeneralTransactionCategory category) async {
+    final db = await AppDatabase.instance();
+    return db.insert('general_transaction_categories', _categoryMap(category));
+  }
+
+  Future<List<GeneralTransactionCategory>> listCategories() async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query(
+      'general_transaction_categories',
+      orderBy: 'nome COLLATE NOCASE',
+    );
+    return rows.map(GeneralTransactionCategory.fromMap).toList();
+  }
+
+  Future<void> updateCategory(GeneralTransactionCategory category) async {
+    final db = await AppDatabase.instance();
+    await db.update(
+      'general_transaction_categories',
+      _categoryMap(category)..remove('created_at'),
+      where: 'id = ?',
+      whereArgs: [category.id],
+    );
+  }
+
+  /// Apaga a categoria e solta os lançamentos dela (ficam sem categoria; o
+  /// banco não aplica a chave estrangeira).
+  Future<void> deleteCategory(int id) async {
+    final db = await AppDatabase.instance();
+    await db.transaction((txn) async {
+      await txn.update(
+        'general_transactions',
+        {'category_id': null},
+        where: 'category_id = ?',
+        whereArgs: [id],
+      );
+      await txn.delete(
+        'general_transaction_categories',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
+  }
+
+  Map<String, Object?> _categoryMap(GeneralTransactionCategory category) {
+    final nome = category.nome.trim();
+    if (nome.isEmpty) throw ArgumentError('Informe o nome da categoria');
+    final limit = category.limiteMensal;
+    if (limit != null && (!limit.isFinite || limit <= 0)) {
+      throw ArgumentError('O limite mensal deve ser maior que zero');
+    }
+    return GeneralTransactionCategory(
+      nome: nome,
+      limiteMensal: limit,
+      createdAt: category.createdAt,
+    ).toMap()..remove('id');
   }
 
   /// Mais recentes primeiro; `accountId == null` traz todas as contas.

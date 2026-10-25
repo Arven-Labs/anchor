@@ -39,6 +39,23 @@ jobs:
         working-directory: mobile
         run: flutter test
 
+      # O CI não tem emulador: renderiza as telas de Finanças em teste de
+      # widget (com a Roboto do SDK) e publica os PNGs para conferir o visual.
+      - name: Capturas das telas de Finanças
+        working-directory: mobile
+        env:
+          SCREENSHOT_DIR: ${{ runner.temp }}/financas-shots
+        run: |
+          export FLUTTER_ROOT="$(dirname "$(dirname "$(readlink -f "$(which flutter)")")")"
+          flutter test test/financas_screenshots_test.dart
+
+      - name: Upload capturas
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-financas-screenshots
+          path: ${{ runner.temp }}/financas-shots/*.png
+          if-no-files-found: error
+
   # APK de teste sob demanda (botão "Run workflow"). Assinado com a chave de debug,
   # serve pra instalar direto no celular. O APK de release sai no build.yml, junto da tag.
   apk:

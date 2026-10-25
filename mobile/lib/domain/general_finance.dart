@@ -66,6 +66,43 @@ double? _rateToBrl(String currency, Map<String, double> ratesToBrl) {
   return rate != null && rate.isFinite && rate > 0 ? rate : null;
 }
 
+/// Gasto de uma categoria no mês `monthPrefix` (`YYYY-MM`), na moeda `base`:
+/// só `despesa` da categoria, cada uma convertida da moeda da conta. Despesa
+/// sem câmbio fica fora da soma e vem contada. Porta de
+/// `compute_spent_this_month` do desktop, com uma divergência: lá cada despesa
+/// usa a taxa do dia dela; aqui o app só carrega as taxas recentes, então todas
+/// usam a taxa atual de `ratesToBrl`.
+({double spent, int missingFx}) spentThisMonth(
+  Iterable<GeneralTransaction> transactions, {
+  required int categoryId,
+  required String monthPrefix,
+  required Map<int, String> accountCurrency,
+  required String base,
+  required Map<String, double> ratesToBrl,
+}) {
+  var spent = 0.0;
+  var missing = 0;
+  for (final tx in transactions) {
+    if (tx.type != GeneralTransactionType.despesa ||
+        tx.categoryId != categoryId ||
+        !tx.date.startsWith(monthPrefix)) {
+      continue;
+    }
+    final converted = convertToBase(
+      tx.valor,
+      accountCurrency[tx.bankAccountId] ?? 'BRL',
+      base,
+      ratesToBrl,
+    );
+    if (converted == null) {
+      missing++;
+    } else {
+      spent += converted;
+    }
+  }
+  return (spent: spent, missingFx: missing);
+}
+
 /// Um valor na moeda dele; `value == null` é "sem preço" (posição sem
 /// cotação) e conta como item de fora, como a falta de câmbio.
 class ValuedItem {

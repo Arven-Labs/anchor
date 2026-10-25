@@ -10,6 +10,8 @@ import 'package:anchor_mobile/domain/general_finance.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/bank_account.dart';
 import 'package:anchor_mobile/models/general_transaction.dart';
+import 'package:anchor_mobile/models/general_transaction_category.dart';
+import 'package:anchor_mobile/screens/financas_categories_screen.dart';
 import 'package:anchor_mobile/models/position.dart';
 import 'package:anchor_mobile/screens/financas_screen.dart';
 import 'package:anchor_mobile/services/general_finance_repository.dart';
@@ -181,6 +183,84 @@ void main() {
     expect(textOf(tester, 'financas-fx-banner').data, fxUnavailableBanner({'PYG'}));
     expect(textOf(tester, 'financas-equivalent-$pyg').data, 'sem câmbio PYG/BRL');
     expect(textOf(tester, 'financas-balance-$pyg').data, 'PYG 1.000.000,00');
+  });
+
+  testWidgets('categorias: gasto do mês contra o limite, com aviso de estouro', (tester) async {
+    late int cartao;
+    late int mercado;
+    late int lazer;
+    final month = toIsoDay(DateTime.now()).substring(0, 7);
+    await tester.runAsync(() async {
+      cartao = await account('Nubank', 'BRL');
+      mercado = await repository.insertCategory(
+        GeneralTransactionCategory(
+          nome: 'Mercado',
+          limiteMensal: 500,
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+      lazer = await repository.insertCategory(
+        GeneralTransactionCategory(
+          nome: 'Lazer',
+          limiteMensal: 1000,
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+      Future<void> spend(int category, double valor) => repository.insertTransaction(
+        GeneralTransaction(
+          bankAccountId: cartao,
+          type: GeneralTransactionType.despesa,
+          categoryId: category,
+          valor: valor,
+          date: '$month-01',
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+      await spend(mercado, 350);
+      await spend(mercado, 250);
+      await spend(lazer, 100);
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FinancasCategoriesScreen(
+          base: 'BRL',
+          ratesToBrl: const {},
+          accounts: [
+            BankAccount(
+              id: cartao,
+              nome: 'Nubank',
+              titular: 'Eu',
+              currency: 'BRL',
+              createdAt: DateTime(2026, 1, 1),
+            ),
+          ],
+        ),
+      ),
+    );
+    for (var i = 0; i < 200; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+      await tester.pump();
+      if (find.byKey(Key('financas-category-spent-$mercado')).evaluate().isNotEmpty) break;
+    }
+
+    expect(textOf(tester, 'financas-category-spent-$mercado').data, 'BRL 600,00 de BRL 500,00');
+    expect(textOf(tester, 'financas-category-over-$mercado').data, 'Estourou em BRL 100,00');
+    expect(textOf(tester, 'financas-category-spent-$lazer').data, 'BRL 100,00 de BRL 1.000,00');
+    expect(find.byKey(Key('financas-category-over-$lazer')), findsNothing);
+  });
+
+  testWidgets('o botão Categorias abre a tela de categorias', (tester) async {
+    await pumpScreen(tester);
+
+    await tester.tap(find.byTooltip('Categorias'));
+    for (var i = 0; i < 200; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+      await tester.pump();
+      if (find.text('Nenhuma categoria cadastrada ainda.').evaluate().isNotEmpty) break;
+    }
+
+    expect(find.text('Nenhuma categoria cadastrada ainda.'), findsOneWidget);
   });
 
   test('textos do aviso: moedas em ordem e plural dos itens fora', () {
