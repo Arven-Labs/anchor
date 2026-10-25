@@ -37,15 +37,19 @@ describe("Anchor — revisão do extrato bancário", () => {
   it("semeia cinco itens do extrato e mostra a fila em Finances", async () => {
     await enterWorkspace("E2E Statement");
     const workspace = sql("SELECT id FROM workspace WHERE name = 'E2E Statement'");
-    const account = (name) => {
+    // A estimativa automática do porquinho roda ao aprovar o último item e, com a Selic gravada, põe um item de rendimento na
+    // fila. O Home busca a Selic no BCB de verdade (o E2E só desliga a ingestão diária), então o spec dependia da rede do CI e
+    // falhou uma vez (Sessão 233/234). Aqui a estimativa fica desligada de propósito (0); ela tem o spec próprio
+    // (`porquinho-estimate`). `enable_auto_yield_if_unset` não sobrescreve um percentual já definido.
+    const account = (name, autoYieldPct) => {
       sql(
-        "INSERT INTO bank_accounts (workspace_id, nome, titular, currency, created_at) " +
-          `VALUES (${workspace}, '${name}', 'Test holder', 'BRL', '2026-01-01T00:00:00Z')`,
+        "INSERT INTO bank_accounts (workspace_id, nome, titular, currency, auto_yield_pct_of_cdi, created_at) " +
+          `VALUES (${workspace}, '${name}', 'Test holder', 'BRL', ${autoYieldPct}, '2026-01-01T00:00:00Z')`,
       );
       return sql(`SELECT id FROM bank_accounts WHERE workspace_id = ${workspace} AND nome = '${name}'`);
     };
-    checking = account("Checking");
-    pocket = account("Cdb Porquinho");
+    checking = account("Checking", "NULL");
+    pocket = account("Cdb Porquinho", 0);
     const item = (line, date, valor, label, description, withPocket) =>
       seedItem(workspace, checking, withPocket ? pocket : null, {
         line,
