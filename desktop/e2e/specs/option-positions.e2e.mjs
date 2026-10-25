@@ -105,8 +105,8 @@ describe("Anchor — posições em opções na Carteira", () => {
     await clickCentered(byId("finances-tab-liabilities"));
     await waitForText(
       byId("nw-options"),
-      (text) => text === "-100.00",
-      "o cartão Options de Finanças deveria mostrar -100.00",
+      (text) => text === "BRL -100,00",
+      "o cartão Options de Finanças deveria mostrar BRL -100,00",
     );
 
     // Desligando a flag a posição sai do patrimônio.
@@ -121,7 +121,7 @@ describe("Anchor — posições em opções na Carteira", () => {
     expect(sql("SELECT include_in_net_worth FROM option_positions WHERE series_ticker = 'PETRW550'")).toBe("0");
     await clickCentered(byId("nav-finances"));
     await clickCentered(byId("finances-tab-liabilities"));
-    await waitForText(byId("nw-options"), (text) => text === "0.00", "Options deveria voltar a 0.00");
+    await waitForText(byId("nw-options"), (text) => text === "BRL 0,00", "Options deveria voltar a BRL 0,00");
 
     await clickCentered(byId("nav-portfolio"));
     await clickCentered(byId("portfolio-tab-options")); // o caso seguinte usa o formulário

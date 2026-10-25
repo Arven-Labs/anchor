@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import type { Asset } from "../portfolio/types";
+import { formatMoney } from "@/lib/utils";
 import ConvertedHint from "./ConvertedHint";
 import type { BankAccountView } from "./types";
 import {
@@ -154,6 +155,8 @@ function LiabilitySection({ workspaceId }: { workspaceId: number }) {
   const accounts = accountsQuery.data ?? [];
   const assets = assetsQuery.data ?? [];
   const netWorth = netWorthQuery.data;
+  // Antes da resposta o padrão do Workspace (`DEFAULT_BASE_CURRENCY`) segura o prefixo.
+  const money = (value: number) => formatMoney(value, netWorth?.base_currency ?? "BRL");
 
   function resetForm() {
     setNome("");
@@ -246,25 +249,25 @@ function LiabilitySection({ workspaceId }: { workspaceId: number }) {
           )}
 
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
-            <KpiCard title="Market value" value={(netWorth?.total_market_value ?? 0).toFixed(2)} />
-            <KpiCard title="Cash" value={(netWorth?.total_cash ?? 0).toFixed(2)} />
-            <KpiCard title="Total debt" value={(netWorth?.total_debt ?? 0).toFixed(2)} />
+            <KpiCard title="Market value" value={money(netWorth?.total_market_value ?? 0)} />
+            <KpiCard title="Cash" value={money(netWorth?.total_cash ?? 0)} />
+            <KpiCard title="Total debt" value={money(netWorth?.total_debt ?? 0)} />
             <KpiCard
               title="Loans receivable"
-              value={(netWorth?.total_loans_receivable ?? 0).toFixed(2)}
+              value={money(netWorth?.total_loans_receivable ?? 0)}
               subtext="Only loans counted in net worth"
             />
             <KpiCard
               title="Options"
               testId="nw-options"
-              value={(netWorth?.total_options_value ?? 0).toFixed(2)}
+              value={money(netWorth?.total_options_value ?? 0)}
               subtext={
                 (netWorth?.options_at_cost_count ?? 0) > 0
                   ? `Open positions; ${netWorth?.options_at_cost_count} at cost`
                   : "Open positions counted in net worth"
               }
             />
-            <KpiCard title="Net worth" value={(netWorth?.net_worth ?? 0).toFixed(2)} />
+            <KpiCard title="Net worth" value={money(netWorth?.net_worth ?? 0)} />
             <KpiCard
               title="Leverage"
               value={netWorth?.leverage_ratio != null ? `${netWorth.leverage_ratio.toFixed(2)}x` : "—"}

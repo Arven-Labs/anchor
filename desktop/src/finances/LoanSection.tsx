@@ -6,6 +6,7 @@ import type { BankAccountView, Borrower, LoanView, NetWorthSummary } from "./typ
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import Field from "../components/Field";
 import { CURRENCIES } from "../stock-lookup/FxLookupSection";
+import { formatMoney } from "@/lib/utils";
 import ConvertedHint from "./ConvertedHint";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -34,8 +35,8 @@ function todayIso(): string {
 }
 
 // Mesmo padrão de `KpiCard` de `LiabilitySection.tsx` (duplicado de
-// propósito, convenção do projeto) e moeda em `.toFixed(2)` como o resto de
-// `finances/`.
+// propósito, convenção do projeto). Os totais na moeda base saem por
+// `formatMoney`, com o código da moeda na frente (Sessão 229).
 function KpiCard({ title, value, subtext }: { title: string; value: string; subtext?: string }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -283,10 +284,10 @@ function LoanSection({ workspaceId }: { workspaceId: number }) {
           </p>
 
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <KpiCard title="Total receivable" value={totalReceivable.toFixed(2)} />
+            <KpiCard title="Total receivable" value={formatMoney(totalReceivable, baseCurrency ?? "BRL")} />
             <KpiCard
               title="Counted in net worth"
-              value={(netWorth?.total_loans_receivable ?? 0).toFixed(2)}
+              value={formatMoney(netWorth?.total_loans_receivable ?? 0, baseCurrency ?? "BRL")}
               subtext="Only loans with the net worth switch on"
             />
             <KpiCard title="Borrowers" value={String(borrowers.length)} />

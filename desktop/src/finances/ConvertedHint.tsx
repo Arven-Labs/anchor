@@ -1,3 +1,5 @@
+import { formatMoney } from "@/lib/utils";
+
 // Fase 19 — valor de um item em moeda diferente da base do Workspace: mostra a
 // moeda dele e o equivalente na base ao lado, ou o aviso de câmbio faltando. Não
 // renderiza nada quando a moeda já é a base, então o texto das células em BRL
@@ -14,7 +16,7 @@ function ConvertedHint({
   if (!baseCurrency || currency === baseCurrency) return null;
   return (
     <span className="ml-1 text-xs text-muted-foreground" data-testid="converted-hint">
-      {currency} · {inBase != null ? `≈ ${inBase.toFixed(2)} ${baseCurrency}` : `no ${currency}/${baseCurrency} rate`}
+      {currency} · {inBase != null ? `≈ ${formatMoney(inBase, baseCurrency)}` : `no ${currency}/${baseCurrency} rate`}
     </span>
   );
 }

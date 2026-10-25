@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import Field from "../components/Field";
 import { CURRENCIES } from "../stock-lookup/FxLookupSection";
+import { formatMoney } from "@/lib/utils";
 import ConvertedHint from "./ConvertedHint";
 import EstimateYieldDialog from "./EstimateYieldDialog";
 import ReconcileBalanceDialog from "./ReconcileBalanceDialog";
@@ -230,7 +231,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
                             </Select>
                           )}
                         </TableCell>
-                        <TableCell>{account.balance.toFixed(2)}</TableCell>
+                        <TableCell>{formatMoney(account.balance, account.currency)}</TableCell>
                         <TableCell className="flex gap-2">
                           <Button size="sm" onClick={handleSaveEdit} disabled={updateMutation.isPending}>
                             Save
@@ -246,7 +247,7 @@ function BankAccountSection({ workspaceId }: { workspaceId: number }) {
                         <TableCell>{account.titular}</TableCell>
                         <TableCell data-testid="account-currency">{account.currency}</TableCell>
                         <TableCell>
-                          {account.balance.toFixed(2)}
+                          {formatMoney(account.balance, account.currency)}
                           <ConvertedHint
                             currency={account.currency}
                             baseCurrency={baseCurrency}
