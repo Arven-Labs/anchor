@@ -177,6 +177,13 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
   // e termina, não o resultado das fontes.
   it("Updates: 'Update now' registra uma rodada manual e libera o botão", async function () {
     this.timeout(240_000);
+    // A rodada baixa 8 fontes em sequência, e a Selic diária é a mais pesada (até 4 janelas de 45 s no BCB). O Home já a baixava
+    // antes deste caso; desde a Sessão 236 ele não vai à rede com a ingestão desligada, então a Selic cairia aqui dentro. Uma
+    // Selic gravada agora (fresca por 1 h) tira esse download do caminho, como no spec do porquinho; as demais fontes seguem reais.
+    sql(
+      "INSERT OR REPLACE INTO selic_daily (series_code, reference_date, value_pct, source, fetched_at) " +
+        "VALUES ('meta', '2024-01-01', 10.10, 'test', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
+    );
     await byId("open-settings").click();
     await byId("settings-section-Updates").click();
     await byId("ingestion-run-now").waitForDisplayed({ timeout: 20_000 });

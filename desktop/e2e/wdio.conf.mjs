@@ -61,7 +61,10 @@ export const config = {
   logLevel: "warn",
   reporters: ["spec"],
   framework: "mocha",
-  mochaOpts: { ui: "bdd", timeout: 120_000 },
+  // O WDIO impõe este limite a cada caso e ignora o `this.timeout()` de dentro dele (o "Update now" do `settings` declarava
+  // 240 s e foi cortado em 120 s). Um caso com rede real (Update now espera até 180 s) precisa dele maior; custa só a espera
+  // de um caso que travou de verdade.
+  mochaOpts: { ui: "bdd", timeout: 240_000 },
   waitforTimeout: 20_000,
 
   beforeSession: () => {
