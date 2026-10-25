@@ -357,12 +357,11 @@ pub async fn add_offshore_distribution_in(
     let active = entity.regime == REGIME_ACTIVE;
     // O lucro de 2023 só tem crédito de dividendo se o usuário atualizou a participação (art. 14) informando a parcela de lucros.
     let has_2023_credit = entity.update_2023_profits.is_some_and(|p| p > 0.0);
-    if !active
-        && !(request.origin_year == UPDATE_2023_YEAR && has_2023_credit)
-        && (request.origin_year < FIRST_YEAR || request.origin_year > 2100)
-    {
+    // Lucro de 2023 ou antes (art. 6º I): tributado na disponibilização em qualquer controlada, menos o que o crédito cobre.
+    let from_2023 = request.origin_year == UPDATE_2023_YEAR;
+    if !active && !from_2023 && (request.origin_year < FIRST_YEAR || request.origin_year > 2100) {
         return Err(AppError::InvalidInput(format!(
-            "origin year must be {FIRST_YEAR} or later (Lei 14.754), or {UPDATE_2023_YEAR} when the 2023 update has a profits share"
+            "origin year must be {FIRST_YEAR} or later (Lei 14.754), or {UPDATE_2023_YEAR} for profits of 2023 or earlier"
         )));
     }
     if !request.amount.is_finite() || request.amount <= 0.0 {
@@ -388,12 +387,18 @@ pub async fn add_offshore_distribution_in(
         } else {
             received_on.year()
         }
+    } else if from_2023 {
+        // O art. 6º I vale para disponibilização a partir de 2024, como o resto da lei.
+        if received_on.year() < FIRST_YEAR {
+            return Err(AppError::InvalidInput(format!("the distribution must be received in {FIRST_YEAR} or later (Lei 14.754)")));
+        }
+        UPDATE_2023_YEAR
     } else {
         request.origin_year
     };
     let year_end = NaiveDate::from_ymd_opt(origin_year, 12, 31)
         .ok_or_else(|| AppError::InvalidInput(format!("invalid year {origin_year}")))?;
-    if !active && received_on < year_end {
+    if !active && !from_2023 && received_on < year_end {
         return Err(AppError::InvalidInput(format!(
             "the profit of {origin_year} was only taxed on 31/12/{origin_year}: the distribution cannot be received before that"
         )));
@@ -509,6 +514,20 @@ pub(crate) async fn load_distributions(
             })
         })
         .collect()
+}
+
+/// As distribuições que geram imposto na disponibilização (art. 6º): todas as das entidades ativas e, nas demais, as marcadas
+/// como lucro de 2023 ou antes (art. 6º I). As outras das entidades comuns já foram tributadas em 31/12. Da mais antiga à mais nova.
+pub(crate) async fn load_taxed_distributions(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+) -> Result<Vec<OffshoreDistribution>, AppError> {
+    let mut rows = load_distributions(db, workspace_id, true).await?;
+    rows.extend(
+        load_distributions(db, workspace_id, false).await?.into_iter().filter(|d| d.origin_year == UPDATE_2023_YEAR),
+    );
+    rows.sort_by_key(|d| (d.received_on, d.id));
+    Ok(rows)
 }
 
 /// As entidades e os resultados do Workspace no formato da apuração.

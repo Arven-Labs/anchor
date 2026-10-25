@@ -4860,12 +4860,8 @@ async fn the_2023_update_of_an_offshore_entity_gives_a_dividend_credit_that_dist
         set_offshore_update_2023_in(&db, SetOffshoreUpdate2023Request { entity_id: 9999, equity: Some(1.0), profits: None }).await;
     assert!(matches!(unknown, Err(AppError::NotFound(_))), "{unknown:?}");
 
-    // sem atualização, ou sem parcela de lucros, o lucro de 2023 não tem crédito: a distribuição é recusada
-    let refused = distribute(2023, "2024-03-10", 500.0).await;
-    assert!(matches!(refused, Err(AppError::InvalidInput(_))), "{refused:?}");
+    // atualização sem parcela de lucros: não há crédito (e a distribuição de 2023 seria tributada, art. 6º I; outro teste)
     set(Some(10_000.0), None).await.unwrap();
-    let refused = distribute(2023, "2024-03-10", 500.0).await;
-    assert!(matches!(refused, Err(AppError::InvalidInput(_))), "sem parcela de lucros: {refused:?}");
 
     // PL de US$ 10.000 × 4,80 = R$ 48.000; lucros de US$ 2.000 × 4,80 = R$ 9.600; custo adicional R$ 38.400
     let saved = set(Some(10_000.0), Some(2_000.0)).await.unwrap();
@@ -4891,6 +4887,73 @@ async fn the_2023_update_of_an_offshore_entity_gives_a_dividend_credit_that_dist
     let credits = offshore_credits_in(&db, ws.id).await.unwrap();
     assert!(credits.rows.is_empty() && credits.updates.is_empty(), "{:?}", credits.rows);
     assert_eq!(credits.distributions[0].reduction_brl, None);
+}
+
+#[tokio::test]
+async fn the_2023_profits_of_an_ordinary_entity_are_taxed_on_receipt_and_the_credit_covers_part() {
+    use crate::commands::offshore::{
+        add_offshore_distribution_in, create_offshore_entity_in, offshore_credits_in, set_offshore_update_2023_in,
+        AddOffshoreDistributionRequest, CreateOffshoreEntityRequest, OffshoreEntityRequest, SetOffshoreUpdate2023Request,
+    };
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Comum com lucro de 2023").await;
+    seed_ptax(&db, "USD", "2023-12-29", 4.79, 4.8).await;
+    seed_ptax(&db, "USD", "2024-06-10", 4.9, 5.0).await;
+    let entity = create_offshore_entity_in(
+        &db,
+        CreateOffshoreEntityRequest {
+            workspace_id: ws.id,
+            entity: OffshoreEntityRequest {
+                name: "Holding LLC".to_string(),
+                country: "US".to_string(),
+                currency: "USD".to_string(),
+                ownership_percent: 100.0,
+                regime: None,
+                notes: None,
+            },
+        },
+    )
+    .await
+    .unwrap();
+    let distribute = |origin_year: i32, received_on: &str, amount: f64| {
+        add_offshore_distribution_in(
+            &db,
+            AddOffshoreDistributionRequest { entity_id: entity.id, origin_year, received_on: received_on.to_string(), amount },
+        )
+    };
+
+    // a lei vale para recebimento a partir de 2024; ano de origem entre 2024 e 2100 ou 2023 (lucro de 2023 ou antes)
+    let early = distribute(2023, "2023-12-20", 100.0).await;
+    assert!(matches!(early, Err(AppError::InvalidInput(_))), "{early:?}");
+    let old = distribute(2022, "2024-06-10", 100.0).await;
+    assert!(matches!(old, Err(AppError::InvalidInput(_))), "{old:?}");
+
+    // sem atualização: US$ 1.000 × 5,00 = R$ 5.000, imposto R$ 750 (art. 6º I)
+    assert_eq!(distribute(2023, "2024-06-10", 1_000.0).await.unwrap().origin_year, 2023);
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    let year = &assessment.offshore_active_years[0];
+    assert!(close(year.taxable_base, 5_000.0) && close(year.tax_due, 750.0), "{year:?}");
+
+    // com a atualização (lucros de US$ 400): cobertos 400, tributáveis 600 × 5,00 = R$ 3.000, imposto R$ 450
+    set_offshore_update_2023_in(&db, SetOffshoreUpdate2023Request { entity_id: entity.id, equity: Some(10_000.0), profits: Some(400.0) })
+        .await
+        .unwrap();
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    let year = &assessment.offshore_active_years[0];
+    assert!(close(year.taxable_base, 3_000.0) && close(year.tax_due, 450.0), "{year:?}");
+    assert!(close(year.lines[0].covered_amount, 400.0), "{year:?}");
+
+    // o crédito de 2023 segue reduzido pela mesma distribuição (1.000 × 4,80 = 4.800 sobre 400 × 4,80 = 1.920: saldo zero)
+    let credits = offshore_credits_in(&db, ws.id).await.unwrap();
+    let credit = credits.rows.iter().find(|r| r.origin_year == 2023 && r.as_of_year == 2024).unwrap();
+    assert!(close(credit.taxed_brl, 1_920.0) && close(credit.balance_brl, 0.0) && close(credit.over_distributed_brl, 2_880.0), "{credit:?}");
+
+    // lucro de 2024 da entidade comum (já tributado em 31/12) não gera imposto na distribuição
+    assert_eq!(distribute(2024, "2024-12-31", 500.0).await.unwrap().origin_year, 2024);
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert!(close(assessment.offshore_active_years[0].tax_due, 450.0), "{:?}", assessment.offshore_active_years);
 }
 
 #[tokio::test]

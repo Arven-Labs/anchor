@@ -126,6 +126,11 @@ function formatAmount(value: number, currency: string): string {
   return value.toLocaleString("en-US", { style: "currency", currency });
 }
 
+// As distribuições tributadas na disponibilização: todas as da entidade ativa e, na comum, só as de lucro de 2023 ou antes.
+function taxedDistributions(entity: OffshoreEntityRow): OffshoreDistributionRow[] {
+  return entity.regime === "ativa" ? entity.distributions : entity.distributions.filter((d) => d.origin_year === 2023);
+}
+
 // Atualização opcional de 2023 da participação (art. 14 §1º IV da Lei 14.754): o patrimônio líquido proporcional à
 // participação em 31/12/2023 e, dentro dele, a parcela de lucros, os dois na moeda da entidade, como saem das demonstrações
 // financeiras. O app converte pela PTAX de venda do último dia útil de dezembro de 2023 (a conta fica no cartão de Bens e
@@ -276,7 +281,8 @@ export default function OffshoreCard({
       invoke("add_offshore_distribution", {
         request: {
           entity_id: distEntityId,
-          origin_year: distFrom2023 ? 2023 : 0,
+          // Entidade comum: este formulário só lança lucro de 2023 ou antes (art. 6º I); o de 2024 em diante já foi tributado em 31/12.
+          origin_year: distFrom2023 || entities.find((e) => e.id === distEntityId)?.regime === "automatico" ? 2023 : 0,
           received_on: distDate,
           amount: Number(distAmount),
         },
@@ -459,7 +465,7 @@ export default function OffshoreCard({
             <TableHeader>
               <TableRow>
                 <TableHead>Year received</TableHead>
-                <TableHead>Distributions (active entities)</TableHead>
+                <TableHead>Distributions taxed on receipt</TableHead>
                 <TableHead className="text-right">Taxable base</TableHead>
                 <TableHead className="text-right">Estimated tax</TableHead>
               </TableRow>
@@ -508,19 +514,17 @@ export default function OffshoreCard({
                 </span>
               </div>
               <div className="flex gap-2">
-                {entity.regime === "ativa" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    data-testid={`offshore-add-distribution-${entity.id}`}
-                    onClick={() => {
-                      setDistFrom2023(false);
-                      setDistEntityId(entity.id);
-                    }}
-                  >
-                    Add distribution
-                  </Button>
-                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid={`offshore-add-distribution-${entity.id}`}
+                  onClick={() => {
+                    setDistFrom2023(false);
+                    setDistEntityId(entity.id);
+                  }}
+                >
+                  {entity.regime === "ativa" ? "Add distribution" : "Add 2023-profits distribution"}
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => setResultEntityId(entity.id)}>
                   Add year
                 </Button>
@@ -570,7 +574,7 @@ export default function OffshoreCard({
                 </TableBody>
               </Table>
             )}
-            {entity.regime === "ativa" && entity.distributions.length > 0 && (
+            {taxedDistributions(entity).length > 0 && (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -580,7 +584,7 @@ export default function OffshoreCard({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {entity.distributions.map((d) => (
+                  {taxedDistributions(entity).map((d) => (
                     <TableRow key={d.id}>
                       <TableCell>
                         {d.received_on}
@@ -634,7 +638,13 @@ export default function OffshoreCard({
                     data-testid="offshore-distribution-amount"
                   />
                 </Field>
-                {(entity.update_2023_profits ?? 0) > 0 && (
+                {entity.regime === "automatico" && (
+                  <p className="text-sm text-muted-foreground sm:col-span-3" data-testid="offshore-distribution-2023-note">
+                    Profits of 2023 or earlier are taxed at 15% when received (art. 6º, I), minus the part covered by the
+                    2023 update. Profits of 2024 onwards were already taxed on 31/12: record them in the Bens e Direitos card.
+                  </p>
+                )}
+                {entity.regime === "ativa" && (entity.update_2023_profits ?? 0) > 0 && (
                   <label className="flex items-center gap-2 text-sm sm:col-span-3">
                     <input
                       type="checkbox"

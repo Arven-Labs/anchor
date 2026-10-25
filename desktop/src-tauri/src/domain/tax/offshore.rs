@@ -196,8 +196,12 @@ pub fn assess_offshore(
 // isso fica por conta dele). Premissas a conferir: a conversão é a PTAX de venda do dia do recebimento (o art. 2º não foi
 // lido com a regra de câmbio; é a do exterior, Sessão 187), a base é a distribuição inteira (sem o prejuízo da controlada,
 // que é do art. 5º §14) e a participação já está no valor recebido.
+//
+// O art. 6º I vale também para a controlada comum (art. 5º), mas só para os lucros apurados até 31/12/2023: distribuídos a partir
+// de 2024, são tributados como os da ativa, descontada a parte coberta pelo crédito da atualização de 2023 (art. 14 §4º III). O
+// usuário marca a distribuição como lucro de 2023 (`origin_year` 2023); as de 2024 em diante da comum já foram tributadas em 31/12.
 
-/// Uma distribuição de entidade ativa já convertida em reais.
+/// Uma distribuição tributada na disponibilização (de entidade ativa, ou de lucro de 2023 de entidade comum), em reais.
 #[derive(Clone, Debug, Serialize)]
 pub struct ActiveDistributionLine {
     pub distribution_id: i32,
@@ -229,8 +233,9 @@ pub struct OffshoreActiveYear {
     pub lines: Vec<ActiveDistributionLine>,
 }
 
-/// Apura por ano de recebimento as distribuições de entidades `active_regime`. Distribuição de entidade comum é ignorada
-/// (ela reduz o crédito de dividendo, `offshore_credits`); sem câmbio na data, a linha fica de fora e avisa.
+/// Apura por ano de recebimento as distribuições que são tributadas na disponibilização (art. 6º): todas as de entidades
+/// `active_regime` e, nas entidades comuns, só as marcadas como lucro de 2023 ou antes (art. 6º I; as outras já foram tributadas
+/// em 31/12 e só reduzem o crédito de dividendo, `offshore_credits`). Sem câmbio na data, a linha fica de fora e avisa.
 ///
 /// Distribuição marcada como lucro de 2023 (`origin_year == UPDATE_2023_YEAR`) consome, da mais antiga para a mais nova, o
 /// crédito de dividendo da atualização de 2023 da entidade (`updates`, a parcela de lucros): a parte coberta não é tributada de
@@ -243,10 +248,11 @@ pub fn assess_active_distributions(
     rules: &RuleSet,
     rate: RateToBrl,
 ) -> Result<(Vec<OffshoreActiveYear>, Vec<TaxWarning>), AppError> {
-    let by_id: BTreeMap<i32, &OffshoreEntity> =
-        entities.iter().filter(|e| e.active_regime).map(|e| (e.id, e)).collect();
-    let mut ordered: Vec<&OffshoreDistribution> =
-        distributions.iter().filter(|d| by_id.contains_key(&d.entity_id)).collect();
+    let by_id: BTreeMap<i32, &OffshoreEntity> = entities.iter().map(|e| (e.id, e)).collect();
+    let mut ordered: Vec<&OffshoreDistribution> = distributions
+        .iter()
+        .filter(|d| by_id.get(&d.entity_id).is_some_and(|e| e.active_regime || d.origin_year == UPDATE_2023_YEAR))
+        .collect();
     ordered.sort_by_key(|d| (d.received_on, d.id));
     // Crédito de 2023 que ainda resta por entidade, na moeda dela.
     let mut credit_left: BTreeMap<i32, f64> = updates.iter().map(|u| (u.entity_id, u.profits)).collect();
@@ -913,6 +919,33 @@ mod tests {
             active_run_with(&[active_entity(1, "USD")], &[distribution(1, 1, 2023, "2024-06-10", 100.0)], &[]);
         assert!(close(years[0].lines[0].covered_amount, 0.0), "{years:?}");
         assert!(close(years[0].taxable_base, 500.0) && close(years[0].tax_due, 75.0), "{years:?}");
+    }
+
+    #[test]
+    fn a_2023_profits_distribution_of_an_ordinary_entity_is_taxed_on_receipt() {
+        // art. 6º I: lucro de 2023 de entidade comum paga na disponibilização. Sem atualização: US$ 1.000 × 5,00 = R$ 5.000,
+        // imposto 750. A distribuição de lucro de 2024 da mesma entidade (já tributada em 31/12) não entra
+        let (years, warnings) = active_run(
+            &[entity(1, "USD", 100.0)],
+            &[distribution(1, 1, 2023, "2024-06-10", 1_000.0), distribution(2, 1, 2024, "2024-06-11", 700.0)],
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(years[0].lines.len(), 1, "{years:?}");
+        assert!(close(years[0].taxable_base, 5_000.0) && close(years[0].tax_due, 750.0), "{years:?}");
+    }
+
+    #[test]
+    fn the_2023_credit_covers_the_2023_profits_distribution_of_an_ordinary_entity() {
+        // atualização com lucros de US$ 400: dos US$ 1.000 distribuídos, 400 cobertos e 600 × 5,00 = R$ 3.000 tributáveis,
+        // imposto 450. Com uma entidade ativa no mesmo ano: 100 × 5,00 = R$ 500 somam na base (3.500, imposto 525)
+        let (years, _) = active_run_with(
+            &[entity(1, "USD", 100.0), active_entity(2, "USD")],
+            &[distribution(1, 1, 2023, "2024-06-10", 1_000.0), distribution(2, 2, 2024, "2024-06-12", 100.0)],
+            &[update_input(1, 10_000.0, 400.0)],
+        );
+        let l = &years[0].lines[0];
+        assert!(close(l.covered_amount, 400.0) && close(l.amount_brl, 3_000.0), "{l:?}");
+        assert!(close(years[0].taxable_base, 3_500.0) && close(years[0].tax_due, 525.0), "{years:?}");
     }
 
     #[test]

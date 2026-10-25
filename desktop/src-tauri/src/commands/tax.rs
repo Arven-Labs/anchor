@@ -243,7 +243,7 @@ pub(crate) async fn assess_workspace(
     assessment.warnings.extend(offshore_warnings);
 
     let offshore_updates = offshore_cmd::load_updates_2023(db, workspace_id).await?;
-    let active_distributions = offshore_cmd::load_distributions(db, workspace_id, true).await?;
+    let active_distributions = offshore_cmd::load_taxed_distributions(db, workspace_id).await?;
     let (active_years, active_warnings) = offshore::assess_active_distributions(
         &offshore_entities,
         &active_distributions,
@@ -594,7 +594,7 @@ async fn refresh_ptax(db: &DatabaseConnection, workspace_id: i32, allow_network:
             entry.1 = entry.1.max(update_day);
         }
         // Distribuições de entidades ativas (art. 6º): a PTAX do dia do recebimento (10 dias antes, para o dia útil anterior).
-        for d in offshore_cmd::load_distributions(db, workspace_id, true).await? {
+        for d in offshore_cmd::load_taxed_distributions(db, workspace_id).await? {
             let Some(entity) = entities.iter().find(|e| e.id == d.entity_id).filter(|e| e.currency != "BRL") else {
                 continue;
             };

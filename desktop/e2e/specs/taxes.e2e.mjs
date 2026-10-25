@@ -746,6 +746,30 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await snap("taxes-offshore-active-update-2023");
   });
 
+  // Lucros de 2023 de controlada comum (art. 6º I): a 'Holding LLC' (comum) tem crédito de 2023 de US$ 2.000 e já recebeu US$ 500
+  // marcados como lucro de 2023 em 2024 (cobertos), então restam US$ 1.500. Uma distribuição marcada de US$ 2.000 em 10/03/2025
+  // (PTAX de venda 5,50) tem US$ 1.500 cobertos e US$ 500 × 5,50 = R$ 2.750 tributáveis. Somada à 'Operadora LLC' do caso anterior
+  // (R$ 8.800), a base de 2025 é R$ 11.550 e o imposto de 15% é R$ 1.732,50.
+  it("tributa na distribuição o lucro de 2023 da controlada comum que passa do crédito", async () => {
+    const entity = sql("SELECT id FROM offshore_entities WHERE name = 'Holding LLC'");
+    sql(
+      "INSERT INTO offshore_distributions (entity_id, origin_year, received_on, amount, created_at) " +
+        `VALUES (${entity}, 2023, '2025-03-10', 2000, '2025-03-10T00:00:00Z')`,
+    );
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await waitForText(
+      byId("offshore-active-tax-due-2025"),
+      (text) => text.includes("1.732,50"),
+      "o imposto de 2025 sobre as distribuições deveria ser R$ 1.732,50 (base R$ 11.550, com o crédito de 2023 da Holding cobrindo US$ 1.500)",
+    );
+    await byId("offshore-card").scrollIntoView({ block: "center" });
+    await snap("taxes-offshore-ordinary-2023-profits");
+  });
+
   // Aviso da guarda do registro das perdas (IN RFB 1.585, art. 15 §2): a Zeta tem um único fundo, zerado por um resgate com
   // perda de R$ 200,00 em 01/06/2025 (100 cotas a 10,00 vendidas a 8,00). O saldo fica no grupo e todos os fundos dela estão
   // zerados, então a tela avisa. A guarda vai até 31/12/2026: o texto depende de "hoje" estar antes ou depois dessa data,
