@@ -159,6 +159,14 @@ void main() {
       await add(nubankId, GeneralTransactionType.despesa, 100, '05', categoryId: lazer);
       await add(chaseId, GeneralTransactionType.receita, 1200, '02');
       await add(chaseId, GeneralTransactionType.despesa, 40, '06', categoryId: lazer);
+      await repository.createTransfer(
+        fromAccountId: nubankId,
+        toAccountId: chaseId,
+        valorSaida: 520,
+        valorEntrada: 100,
+        date: '$month-02',
+        notes: 'Câmbio',
+      );
     });
 
     await tester.pumpWidget(
@@ -175,6 +183,15 @@ void main() {
       () => find.byKey(const Key('financas-net-worth')).evaluate().isNotEmpty,
     );
     await capture(tester, 'financas');
+
+    await tester.tap(find.byTooltip('Transferir'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('financas-transfer-out')), '520');
+    await tester.enterText(find.byKey(const Key('financas-transfer-in')), '100');
+    await tester.pump();
+    await capture(tester, 'transferir');
+    await tester.tap(find.text('Cancelar'));
+    await tester.pumpAndSettle();
 
     await tester.pumpWidget(
       app(

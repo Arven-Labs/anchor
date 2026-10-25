@@ -33,7 +33,8 @@ String? missingItemsNote(int count) {
 /// Finanças Gerais: contas em qualquer moeda, o saldo de cada uma (derivado
 /// dos lançamentos) e o patrimônio na moeda base — caixa das contas mais valor
 /// de mercado da carteira. Standalone, como o resto do mobile (sem sync com o
-/// desktop). Fora do mobile por ora: transferências, dívidas e
+/// desktop). Transferências entre contas saem pelo botão da barra. Fora do
+/// mobile por ora: dívidas e
 /// empréstimos. Categorias com limite mensal ficam em
 /// `FinancasCategoriesScreen`.
 class FinancasScreen extends StatefulWidget {
@@ -261,6 +262,165 @@ class _FinancasScreenState extends State<FinancasScreen> {
     await _load();
   }
 
+  /// Transferência entre duas contas. Na mesma moeda o valor é um só; em
+  /// moedas diferentes o usuário digita o que saiu e o que chegou, como no
+  /// extrato, e a taxa efetiva aparece só como informação.
+  Future<void> _transfer() async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (_accounts.length < 2) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Cadastre duas contas para transferir.')),
+      );
+      return;
+    }
+    final outController = TextEditingController();
+    final inController = TextEditingController();
+    final notesController = TextEditingController();
+    BankAccount from = _accounts.first;
+    BankAccount to = _accounts[1];
+    var date = DateTime.now();
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final cross = from.currency != to.currency;
+          final out = parseAmount(outController.text);
+          final incoming = parseAmount(inController.text);
+          return AlertDialog(
+            title: const Text('Transferir'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<BankAccount>(
+                    key: const Key('financas-transfer-from'),
+                    initialValue: from,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'De'),
+                    items: [
+                      for (final a in _accounts)
+                        DropdownMenuItem(value: a, child: Text(a.label)),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => from = value ?? from),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<BankAccount>(
+                    key: const Key('financas-transfer-to'),
+                    initialValue: to,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Para'),
+                    items: [
+                      for (final a in _accounts)
+                        DropdownMenuItem(value: a, child: Text(a.label)),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => to = value ?? to),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: const Key('financas-transfer-out'),
+                    controller: outController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: InputDecoration(
+                      labelText: cross
+                          ? 'Saiu (${from.currency})'
+                          : 'Valor (${from.currency})',
+                    ),
+                  ),
+                  if (cross) ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      key: const Key('financas-transfer-in'),
+                      controller: inController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                      decoration: InputDecoration(
+                        labelText: 'Chegou (${to.currency})',
+                        helperText: out != null && incoming != null
+                            ? 'Taxa efetiva: 1 ${from.currency} = '
+                                  '${(incoming / out).toStringAsFixed(4)} '
+                                  '${to.currency}'
+                            : 'Spread e tarifa já embutidos nos valores.',
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.calendar_today_outlined),
+                    label: Text(formatIsoDay(toIsoDay(date))),
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: date,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) setDialogState(() => date = picked);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: notesController,
+                    decoration: const InputDecoration(labelText: 'Observação'),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Transferir'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    final valorSaida = parseAmount(outController.text);
+    final valorEntrada = from.currency == to.currency
+        ? valorSaida
+        : parseAmount(inController.text);
+    final notes = notesController.text.trim();
+    // Sem `dispose()`: o diálogo ainda está na animação de saída e o campo
+    // reconstruiria com o controlador morto (assert em debug). Sem ouvintes,
+    // o coletor os recolhe.
+    if (saved != true || !mounted) return;
+
+    if (from.id == to.id) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Escolha duas contas diferentes.')),
+      );
+      return;
+    }
+    if (valorSaida == null || valorEntrada == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Informe os valores, maiores que zero.')),
+      );
+      return;
+    }
+    await _repository.createTransfer(
+      fromAccountId: from.id!,
+      toAccountId: to.id!,
+      valorSaida: valorSaida,
+      valorEntrada: valorEntrada,
+      date: toIsoDay(date),
+      notes: notes.isEmpty ? null : notes,
+    );
+    await _load();
+  }
+
   Future<void> _openCategories() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -389,6 +549,11 @@ class _FinancasScreenState extends State<FinancasScreen> {
       appBar: AppBar(
         title: const Text('Finanças'),
         actions: [
+          IconButton(
+            tooltip: 'Transferir',
+            icon: const Icon(Icons.swap_horiz),
+            onPressed: _transfer,
+          ),
           IconButton(
             tooltip: 'Categorias',
             icon: const Icon(Icons.category_outlined),

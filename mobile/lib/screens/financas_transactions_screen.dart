@@ -77,7 +77,7 @@ class _FinancasTransactionsScreenState
             children: [
               SegmentedButton<GeneralTransactionType>(
                 segments: [
-                  for (final t in GeneralTransactionType.values)
+                  for (final t in GeneralTransactionType.manual)
                     ButtonSegment(value: t, label: Text(t.label)),
                 ],
                 selected: {type},
@@ -182,7 +182,8 @@ class _FinancasTransactionsScreenState
         title: const Text('Excluir lançamento?'),
         content: Text(
           '${tx.type.label} de ${formatMoney(tx.valor, _account.currency)} '
-          'em ${formatIsoDay(tx.date)}.',
+          'em ${formatIsoDay(tx.date)}.'
+          '${tx.transferId == null ? '' : '\nA outra perna da transferência também será apagada.'}',
         ),
         actions: [
           TextButton(

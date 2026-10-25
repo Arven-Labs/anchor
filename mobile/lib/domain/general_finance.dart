@@ -19,9 +19,13 @@ double? parseAmount(String text) {
 }
 
 /// Porta de `signed_valor` (`desktop/src-tauri/src/commands/bank_account.rs`):
-/// despesa sai da conta, receita entra. `valor` é sempre a grandeza positiva.
+/// despesa e saída de transferência saem da conta, receita e entrada de
+/// transferência entram. `valor` é sempre a grandeza positiva.
 double signedValor(GeneralTransactionType type, double valor) =>
-    type == GeneralTransactionType.despesa ? -valor : valor;
+    type == GeneralTransactionType.despesa ||
+        type == GeneralTransactionType.transferenciaSaida
+    ? -valor
+    : valor;
 
 /// Saldo de cada conta (`id` → saldo na moeda da conta) a partir dos
 /// lançamentos, ignorando os de data depois de `today` (`YYYY-MM-DD`, comparado

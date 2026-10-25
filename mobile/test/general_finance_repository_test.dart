@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
+import 'package:anchor_mobile/domain/general_finance.dart';
 import 'package:anchor_mobile/models/bank_account.dart';
 import 'package:anchor_mobile/models/general_transaction.dart';
 import 'package:anchor_mobile/models/general_transaction_category.dart';
@@ -320,6 +321,183 @@ void main() {
     txs = await repository.listTransactions();
     expect(txs, hasLength(2));
     expect(txs.every((t) => t.categoryId == null), isTrue);
+  });
+
+  group('transferência', () {
+    Future<int> open(String nome, String currency) =>
+        repository.insertAccount(account(nome, currency));
+
+    test('mesma moeda: duas pernas com o mesmo transfer_id e saldo que se move', () async {
+      final nubank = await open('Nubank', 'BRL');
+      final inter = await open('Inter', 'BRL');
+
+      final id = await repository.createTransfer(
+        fromAccountId: nubank,
+        toAccountId: inter,
+        valorSaida: 400,
+        valorEntrada: 400,
+        date: '2026-08-05',
+        notes: 'Reserva',
+      );
+
+      final txs = await repository.listTransactions();
+      expect(txs, hasLength(2));
+      expect(txs.every((t) => t.transferId == id), isTrue);
+      final out = txs.firstWhere((t) => t.bankAccountId == nubank);
+      final incoming = txs.firstWhere((t) => t.bankAccountId == inter);
+      expect(out.type, GeneralTransactionType.transferenciaSaida);
+      expect(incoming.type, GeneralTransactionType.transferenciaEntrada);
+      expect(out.id, id);
+      expect(out.notes, 'Reserva');
+      expect(computeBalances(txs, '2026-12-31'), {nubank: -400.0, inter: 400.0});
+    });
+
+    test('moedas diferentes: cada perna com o seu valor', () async {
+      final nubank = await open('Nubank', 'BRL');
+      final chase = await open('Chase', 'USD');
+
+      await repository.createTransfer(
+        fromAccountId: nubank,
+        toAccountId: chase,
+        valorSaida: 520,
+        valorEntrada: 100,
+        date: '2026-08-05',
+      );
+
+      final balances = computeBalances(
+        await repository.listTransactions(),
+        '2026-12-31',
+      );
+      expect(balances, {nubank: -520.0, chase: 100.0});
+    });
+
+    test('recusa mesma conta, valor inválido, data ruim e entrada diferente na mesma moeda', () async {
+      final a = await open('A', 'BRL');
+      final b = await open('B', 'BRL');
+
+      Future<void> transfer({
+        int? from,
+        int? to,
+        double out = 10,
+        double incoming = 10,
+        String date = '2026-08-05',
+      }) => repository.createTransfer(
+        fromAccountId: from ?? a,
+        toAccountId: to ?? b,
+        valorSaida: out,
+        valorEntrada: incoming,
+        date: date,
+      );
+
+      expect(() => transfer(to: a), throwsArgumentError);
+      expect(() => transfer(out: 0, incoming: 0), throwsArgumentError);
+      expect(() => transfer(out: double.nan), throwsArgumentError);
+      expect(() => transfer(date: '05/08/2026'), throwsArgumentError);
+      expect(() => transfer(incoming: 9), throwsArgumentError);
+      expect(() => transfer(to: 999), throwsStateError);
+      expect(await repository.listTransactions(), isEmpty);
+    });
+
+    test('apagar uma perna apaga a outra; lançamento comum fica de pé', () async {
+      final a = await open('A', 'BRL');
+      final b = await open('B', 'BRL');
+      await repository.insertTransaction(
+        tx(a, GeneralTransactionType.receita, 5, '2026-08-01'),
+      );
+      await repository.createTransfer(
+        fromAccountId: a,
+        toAccountId: b,
+        valorSaida: 10,
+        valorEntrada: 10,
+        date: '2026-08-05',
+      );
+      final incoming = (await repository.listTransactions()).firstWhere(
+        (t) => t.type == GeneralTransactionType.transferenciaEntrada,
+      );
+
+      await repository.deleteTransaction(incoming.id!);
+
+      final left = await repository.listTransactions();
+      expect(left.single.type, GeneralTransactionType.receita);
+    });
+
+    test('apagar a conta apaga também a perna da conta do outro lado', () async {
+      final a = await open('A', 'BRL');
+      final b = await open('B', 'BRL');
+      await repository.createTransfer(
+        fromAccountId: a,
+        toAccountId: b,
+        valorSaida: 10,
+        valorEntrada: 10,
+        date: '2026-08-05',
+      );
+      await repository.insertTransaction(
+        tx(b, GeneralTransactionType.receita, 3, '2026-08-06'),
+      );
+
+      await repository.deleteAccount(a);
+
+      final left = await repository.listTransactions();
+      expect(left.single.type, GeneralTransactionType.receita);
+      expect(left.single.bankAccountId, b);
+    });
+
+    test('lançamento manual não aceita tipo de transferência', () async {
+      final a = await open('A', 'BRL');
+
+      expect(
+        () => repository.insertTransaction(
+          tx(a, GeneralTransactionType.transferenciaSaida, 10, '2026-08-05'),
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  test('banco v17 sobe para a v18 e ganha transfer_id', () async {
+    final old = await openDatabase(
+      '${dir.path}/anchor_mobile.db',
+      version: 17,
+      onCreate: (db, _) async {
+        await db.execute('''CREATE TABLE bank_accounts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          nome TEXT NOT NULL, titular TEXT NOT NULL,
+          currency TEXT NOT NULL, created_at TEXT NOT NULL)''');
+        await db.execute('''CREATE TABLE general_transactions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bank_account_id INTEGER NOT NULL,
+          transaction_type TEXT NOT NULL, valor REAL NOT NULL,
+          transaction_date TEXT NOT NULL, notes TEXT,
+          created_at TEXT NOT NULL, category_id INTEGER)''');
+        await db.insert('bank_accounts', {
+          'nome': 'Velha',
+          'titular': 'Eu',
+          'currency': 'BRL',
+          'created_at': '2026-01-01T00:00:00.000',
+        });
+        await db.insert('general_transactions', {
+          'bank_account_id': 1,
+          'transaction_type': 'receita',
+          'valor': 9.0,
+          'transaction_date': '2026-08-05',
+          'created_at': '2026-01-01T00:00:00.000',
+        });
+      },
+    );
+    await old.close();
+
+    final txs = await repository.listTransactions();
+    expect(txs.single.valor, 9.0);
+    expect(txs.single.transferId, isNull);
+    final other = await repository.insertAccount(account('Nova', 'BRL'));
+    await repository.createTransfer(
+      fromAccountId: 1,
+      toAccountId: other,
+      valorSaida: 4,
+      valorEntrada: 4,
+      date: '2026-08-06',
+    );
+    expect(await repository.listTransactions(), hasLength(3));
   });
 
   test('banco v16 sobe para a v17 sem perder lançamentos', () async {

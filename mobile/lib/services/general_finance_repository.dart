@@ -64,10 +64,15 @@ class GeneralFinanceRepository {
   Future<void> deleteAccount(int id) async {
     final db = await AppDatabase.instance();
     await db.transaction((txn) async {
+      // A outra perna de cada transferência da conta vai junto: sozinha ela
+      // deixaria dinheiro entrando ou saindo do nada.
       await txn.delete(
         'general_transactions',
-        where: 'bank_account_id = ?',
-        whereArgs: [id],
+        where:
+            'bank_account_id = ? OR transfer_id IN '
+            '(SELECT transfer_id FROM general_transactions '
+            'WHERE bank_account_id = ? AND transfer_id IS NOT NULL)',
+        whereArgs: [id, id],
       );
       await txn.delete('bank_accounts', where: 'id = ?', whereArgs: [id]);
     });
@@ -91,6 +96,9 @@ class GeneralFinanceRepository {
     }
     if (DateTime.tryParse(tx.date) == null || tx.date.length != 10) {
       throw ArgumentError('Data inválida: ${tx.date}');
+    }
+    if (tx.type.isTransfer) {
+      throw ArgumentError('Transferência nasce em createTransfer');
     }
     final db = await AppDatabase.instance();
     final map = tx.toMap()..remove('id');
@@ -168,9 +176,104 @@ class GeneralFinanceRepository {
     return rows.map(GeneralTransaction.fromMap).toList();
   }
 
+  /// Apagar uma perna de transferência apaga a outra junto (como no desktop).
   Future<void> deleteTransaction(int id) async {
     final db = await AppDatabase.instance();
-    await db.delete('general_transactions', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.query(
+      'general_transactions',
+      columns: ['transfer_id'],
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    final transferId = rows.isEmpty ? null : rows.first['transfer_id'] as int?;
+    if (transferId == null) {
+      await db.delete('general_transactions', where: 'id = ?', whereArgs: [id]);
+    } else {
+      await db.delete(
+        'general_transactions',
+        where: 'transfer_id = ?',
+        whereArgs: [transferId],
+      );
+    }
+  }
+
+  /// Transferência entre duas contas: duas pernas gravadas juntas, com o mesmo
+  /// `transfer_id` (o id da perna de saída). Na mesma moeda entra exatamente o
+  /// que saiu; em moedas diferentes o usuário informa os dois valores, como no
+  /// extrato, e o spread fica embutido (mesma regra do desktop).
+  Future<int> createTransfer({
+    required int fromAccountId,
+    required int toAccountId,
+    required double valorSaida,
+    required double valorEntrada,
+    required String date,
+    String? notes,
+    DateTime? now,
+  }) async {
+    for (final valor in [valorSaida, valorEntrada]) {
+      if (!valor.isFinite || valor <= 0) {
+        throw ArgumentError('Os valores devem ser maiores que zero');
+      }
+    }
+    if (DateTime.tryParse(date) == null || date.length != 10) {
+      throw ArgumentError('Data inválida: $date');
+    }
+    if (fromAccountId == toAccountId) {
+      throw ArgumentError('Escolha duas contas diferentes');
+    }
+    final db = await AppDatabase.instance();
+    return db.transaction((txn) async {
+      Future<BankAccount> load(int id) async {
+        final rows = await txn.query(
+          'bank_accounts',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (rows.isEmpty) throw StateError('Conta não encontrada');
+        return BankAccount.fromMap(rows.first);
+      }
+
+      final from = await load(fromAccountId);
+      final to = await load(toAccountId);
+      if (from.currency == to.currency &&
+          (valorEntrada - valorSaida).abs() > 1e-9) {
+        throw ArgumentError(
+          'Contas na mesma moeda recebem exatamente o que saiu',
+        );
+      }
+      final createdAt = (now ?? DateTime.now()).toIso8601String();
+      Map<String, Object?> leg(
+        int account,
+        GeneralTransactionType type,
+        double valor,
+      ) => {
+        'bank_account_id': account,
+        'transaction_type': type.value,
+        'valor': valor,
+        'transaction_date': date,
+        'notes': notes,
+        'created_at': createdAt,
+      };
+      final transferId = await txn.insert(
+        'general_transactions',
+        leg(fromAccountId, GeneralTransactionType.transferenciaSaida, valorSaida),
+      );
+      await txn.update(
+        'general_transactions',
+        {'transfer_id': transferId},
+        where: 'id = ?',
+        whereArgs: [transferId],
+      );
+      await txn.insert('general_transactions', {
+        ...leg(
+          toAccountId,
+          GeneralTransactionType.transferenciaEntrada,
+          valorEntrada,
+        ),
+        'transfer_id': transferId,
+      });
+      return transferId;
+    });
   }
 
   /// Moeda base do patrimônio; o real quando nunca foi escolhida.

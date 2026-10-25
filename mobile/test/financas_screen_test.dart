@@ -250,6 +250,59 @@ void main() {
     expect(find.byKey(Key('financas-category-over-$lazer')), findsNothing);
   });
 
+  testWidgets('transferir move o saldo de uma conta para a outra', (tester) async {
+    late int a;
+    late int b;
+    await tester.runAsync(() async {
+      a = await account('Alfa', 'BRL');
+      b = await account('Beta', 'BRL');
+      await add(a, GeneralTransactionType.receita, 500, '2026-01-02');
+    });
+    await pumpScreen(tester);
+
+    await tester.tap(find.byTooltip('Transferir'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('financas-transfer-out')), '120,5');
+    await tester.tap(find.widgetWithText(FilledButton, 'Transferir'));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 200; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+      await tester.pump();
+      if (find.text('BRL 120,50').evaluate().isNotEmpty) break;
+    }
+
+    expect(textOf(tester, 'financas-balance-$a').data, 'BRL 379,50');
+    expect(textOf(tester, 'financas-balance-$b').data, 'BRL 120,50');
+  });
+
+  testWidgets('transferir com uma conta só avisa e não abre o diálogo', (tester) async {
+    await tester.runAsync(() => account('Alfa', 'BRL'));
+    await pumpScreen(tester);
+
+    await tester.tap(find.byTooltip('Transferir'));
+    await tester.pump();
+
+    expect(find.text('Cadastre duas contas para transferir.'), findsOneWidget);
+    expect(find.byKey(const Key('financas-transfer-out')), findsNothing);
+  });
+
+  testWidgets('em moedas diferentes o diálogo pede o que saiu e o que chegou, e mostra a taxa', (tester) async {
+    await tester.runAsync(() async {
+      await account('Alfa', 'BRL');
+      await account('Beta', 'USD');
+    });
+    await pumpScreen(tester);
+
+    await tester.tap(find.byTooltip('Transferir'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('financas-transfer-in')), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('financas-transfer-out')), '520');
+    await tester.enterText(find.byKey(const Key('financas-transfer-in')), '100');
+    await tester.pump();
+
+    expect(find.textContaining('Taxa efetiva: 1 BRL = 0.1923 USD'), findsOneWidget);
+  });
+
   testWidgets('o botão Categorias abre a tela de categorias', (tester) async {
     await pumpScreen(tester);
 

@@ -35,7 +35,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 17,
+      version: 18,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -288,7 +288,7 @@ class AppDatabase {
           );
         }
         if (oldVersion < 16) {
-          // Já nasce com categorias (v17).
+          // Já nasce com categorias (v17) e transferências (v18).
           await _createFinanceTables(db);
         }
         if (oldVersion == 16) {
@@ -296,6 +296,11 @@ class AppDatabase {
             'ALTER TABLE general_transactions ADD COLUMN category_id INTEGER',
           );
           await _createCategoriesTable(db);
+        }
+        if (oldVersion == 16 || oldVersion == 17) {
+          await db.execute(
+            'ALTER TABLE general_transactions ADD COLUMN transfer_id INTEGER',
+          );
         }
       },
     );
@@ -325,7 +330,8 @@ class AppDatabase {
         transaction_date TEXT NOT NULL,
         notes TEXT,
         created_at TEXT NOT NULL,
-        category_id INTEGER REFERENCES general_transaction_categories(id)
+        category_id INTEGER REFERENCES general_transaction_categories(id),
+        transfer_id INTEGER
       )
     ''');
     await db.execute('''
