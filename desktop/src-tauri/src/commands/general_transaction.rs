@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use chrono::NaiveDate;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
@@ -5,7 +7,9 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::commands::currency::{base_currency, load_fx_history, DEFAULT_BASE_CURRENCY};
 use crate::commands::loan::ensure_account_in_workspace;
+use crate::domain::currency_conversion::FxHistory;
 use crate::entity::{bank_account, general_transaction};
 use crate::error::AppError;
 
@@ -269,21 +273,105 @@ pub async fn create_transfer_in(
     })
 }
 
+/// Lançamento com a moeda da conta e o valor na moeda base do Workspace, pela
+/// taxa do dia do lançamento (o mesmo critério do orçamento). `valor_in_base`
+/// é `None` quando não há rota de câmbio para o par.
+#[derive(Serialize)]
+pub struct GeneralTransactionView {
+    #[serde(flatten)]
+    pub transaction: general_transaction::Model,
+    pub currency: String,
+    pub valor_in_base: Option<f64>,
+}
+
+/// `valor` de `from` para `base` pela taxa de `date` (`"YYYY-MM-DD"`); data
+/// ilegível ou par sem série dá `None`. Função pura, sem I/O.
+fn convert_on(valor: f64, from: &str, base: &str, date: &str, history: &FxHistory) -> Option<f64> {
+    let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()?;
+    history.rate_on(from, base, date).map(|rate| valor * rate)
+}
+
 #[tauri::command]
 pub async fn list_general_transactions(
     db: tauri::State<'_, DatabaseConnection>,
     workspace_id: i32,
-) -> Result<Vec<general_transaction::Model>, AppError> {
-    Ok(general_transaction::Entity::find()
+) -> Result<Vec<GeneralTransactionView>, AppError> {
+    list_transactions_view(db.inner(), workspace_id).await
+}
+
+pub async fn list_transactions_view(
+    db: &DatabaseConnection,
+    workspace_id: i32,
+) -> Result<Vec<GeneralTransactionView>, AppError> {
+    let transactions = general_transaction::Entity::find()
         .filter(general_transaction::Column::WorkspaceId.eq(workspace_id))
         .order_by_desc(general_transaction::Column::TransactionDate)
-        .all(db.inner())
-        .await?)
+        .all(db)
+        .await?;
+    let account_currency: HashMap<i32, String> = bank_account::Entity::find()
+        .filter(bank_account::Column::WorkspaceId.eq(workspace_id))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|a| (a.id, a.currency))
+        .collect();
+    let base = base_currency(db, workspace_id).await?;
+    let currencies: HashSet<String> = account_currency.values().cloned().collect();
+    let history = load_fx_history(db, &base, &currencies).await?;
+
+    Ok(transactions
+        .into_iter()
+        .map(|transaction| {
+            let currency = account_currency
+                .get(&transaction.bank_account_id)
+                .cloned()
+                .unwrap_or_else(|| DEFAULT_BASE_CURRENCY.to_string());
+            let valor_in_base =
+                convert_on(transaction.valor, &currency, &base, &transaction.transaction_date, &history);
+            GeneralTransactionView { transaction, currency, valor_in_base }
+        })
+        .collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn usd_brl_history() -> FxHistory {
+        FxHistory::new(HashMap::from([(
+            "USDBRL".to_string(),
+            vec![
+                (NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(), 5.0),
+                (NaiveDate::from_ymd_opt(2026, 1, 10).unwrap(), 6.0),
+            ],
+        )]))
+    }
+
+    #[test]
+    fn convert_on_uses_the_rate_of_the_transaction_day() {
+        // US$ 100 a 5,00 no dia 02 = R$ 500; a 6,00 no dia 10 = R$ 600.
+        let history = usd_brl_history();
+        assert_eq!(convert_on(100.0, "USD", "BRL", "2026-01-02", &history), Some(500.0));
+        assert_eq!(convert_on(100.0, "USD", "BRL", "2026-01-10", &history), Some(600.0));
+    }
+
+    #[test]
+    fn convert_on_takes_the_nearest_day_when_the_day_has_no_rate() {
+        // Dia 04 está a 2 dias do 02 e a 6 do 10: vale a taxa 5,00.
+        assert_eq!(convert_on(100.0, "USD", "BRL", "2026-01-04", &usd_brl_history()), Some(500.0));
+    }
+
+    #[test]
+    fn convert_on_without_a_route_or_a_readable_date_is_none() {
+        let history = usd_brl_history();
+        assert_eq!(convert_on(100.0, "PYG", "BRL", "2026-01-02", &history), None);
+        assert_eq!(convert_on(100.0, "USD", "BRL", "02/01/2026", &history), None);
+    }
+
+    #[test]
+    fn convert_on_in_the_base_currency_is_the_value_itself() {
+        assert_eq!(convert_on(42.5, "BRL", "BRL", "2026-01-02", &usd_brl_history()), Some(42.5));
+    }
 
     #[test]
     fn validate_type_accepts_receita_and_despesa() {

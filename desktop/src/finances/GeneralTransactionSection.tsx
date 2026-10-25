@@ -9,7 +9,10 @@ import {
   type GeneralTransaction,
   type GeneralTransactionType,
 } from "./types";
+import { formatMoney } from "@/lib/utils";
 import CategoryManagerDialog from "./CategoryManagerDialog";
+import ConvertedHint from "./ConvertedHint";
+import { useBaseCurrency } from "./useBaseCurrency";
 import TransferDialog from "./TransferDialog";
 import {
   Dialog,
@@ -96,6 +99,7 @@ function GeneralTransactionSection({ workspaceId }: { workspaceId: number }) {
     queryFn: () => invoke("list_general_transactions", { workspaceId }),
   });
 
+  const baseCurrency = useBaseCurrency(workspaceId);
   const accounts = accountsQuery.data ?? [];
   const categories = categoriesQuery.data ?? [];
   const transactions = transactionsQuery.data ?? [];
@@ -265,7 +269,10 @@ function GeneralTransactionSection({ workspaceId }: { workspaceId: number }) {
                     </TableCell>
                     <TableCell>{accountLabel(accounts, tx.bank_account_id)}</TableCell>
                     <TableCell>{categoryLabel(categories, tx.category_id)}</TableCell>
-                    <TableCell>{tx.valor.toFixed(2)}</TableCell>
+                    <TableCell>
+                      {formatMoney(tx.valor, tx.currency)}
+                      <ConvertedHint currency={tx.currency} baseCurrency={baseCurrency} inBase={tx.valor_in_base} />
+                    </TableCell>
                     <TableCell>{tx.notes ?? "—"}</TableCell>
                     <TableCell>
                       <Button

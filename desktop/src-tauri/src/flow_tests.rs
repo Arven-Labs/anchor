@@ -1518,6 +1518,33 @@ async fn an_account_without_an_exchange_rate_stays_out_of_the_total() {
 }
 
 #[tokio::test]
+async fn the_transaction_list_carries_the_account_currency_and_the_value_in_the_base() {
+    use crate::commands::general_transaction::list_transactions_view;
+    let db = memory_db().await;
+    let ws = workspace(&db, "Abroad").await;
+    let usd = bank_account_in(&db, ws.id, "Chase", "USD").await;
+    let brl = bank_account_in(&db, ws.id, "Itaú", "BRL").await;
+    cash_in(&db, ws.id, usd.id, 100.0, "2026-01-01").await;
+    cash_in(&db, ws.id, brl.id, 70.0, "2026-01-02").await;
+
+    // Sem câmbio: a moeda aparece, o equivalente não; a conta em BRL é a própria base.
+    let before = list_transactions_view(&db, ws.id).await.unwrap();
+    let in_usd = before.iter().find(|v| v.transaction.bank_account_id == usd.id).unwrap();
+    assert_eq!(in_usd.currency, "USD");
+    assert!(in_usd.valor_in_base.is_none());
+    let in_brl = before.iter().find(|v| v.transaction.bank_account_id == brl.id).unwrap();
+    assert_eq!(in_brl.currency, "BRL");
+    assert!(close(in_brl.valor_in_base.unwrap(), 70.0));
+
+    // US$ 100 a 5,00 = R$ 500 (a única taxa é a mais próxima do dia).
+    seed_fx_rate(&db, "USDBRL", 5.0).await;
+    let after = list_transactions_view(&db, ws.id).await.unwrap();
+    let in_usd = after.iter().find(|v| v.transaction.bank_account_id == usd.id).unwrap();
+    assert!(close(in_usd.valor_in_base.unwrap(), 500.0));
+    assert!(close(in_usd.transaction.valor, 100.0)); // o valor original não muda
+}
+
+#[tokio::test]
 async fn an_account_currency_only_changes_while_the_account_is_unused() {
     let db = memory_db().await;
     let ws = workspace(&db, "Abroad").await;

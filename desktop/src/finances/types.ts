@@ -43,6 +43,9 @@ export type GeneralTransaction = {
   created_at: string;
   // Fase 19 — as duas pernas de uma transferência compartilham este id.
   transfer_id: number | null;
+  // Moeda da conta e o valor na moeda base pela taxa do dia (`null` sem câmbio).
+  currency: string;
+  valor_in_base: number | null;
 };
 
 // Fase 12, núcleo de Finanças Gerais — só `receita`/`despesa` são
