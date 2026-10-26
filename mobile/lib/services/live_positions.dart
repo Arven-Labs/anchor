@@ -14,10 +14,16 @@ class LivePositionRow {
   /// fora) — diferente de `livePrice == null` sem isto, que é "sem cotação".
   final bool priceUnavailable;
 
+  /// Última avaliação manual da `empresaNaoListada`, que é o valor total da
+  /// posição (não um preço por unidade, então não passa por `livePrice`).
+  /// `null` sem avaliação lançada.
+  final double? manualTotalValue;
+
   const LivePositionRow(
     this.position,
     this.livePrice, {
     this.priceUnavailable = false,
+    this.manualTotalValue,
   });
 
   /// `quantidade × preço` na moeda do ativo, ou `null` sem preço.
@@ -28,15 +34,19 @@ class LivePositionRow {
 }
 
 /// As posições que entram no patrimônio, cada uma com o valor de mercado na
-/// moeda do ativo. Fora ficam as zeradas (já vendidas) e as de
-/// `empresaNaoListada`, cujo valor é a participação e não quantidade × preço.
-/// Posição aberta sem cotação entra com valor nulo, que o patrimônio conta
-/// como item de fora.
+/// moeda do ativo. Fora ficam as zeradas (já vendidas). A `empresaNaoListada`
+/// vale a última avaliação manual como total, igual ao desktop, não
+/// quantidade × preço. Posição aberta sem cotação (ou sem avaliação) entra com
+/// valor nulo, que o patrimônio conta como item de fora.
 List<ValuedItem> portfolioValuedItems(Iterable<LivePositionRow> rows) => [
   for (final row in rows)
-    if (row.position.netQuantity > 1e-9 &&
-        row.position.asset.assetClass != AssetClass.empresaNaoListada)
-      ValuedItem(row.position.asset.currency, row.marketValue),
+    if (row.position.netQuantity > 1e-9)
+      ValuedItem(
+        row.position.asset.currency,
+        row.position.asset.assetClass == AssetClass.empresaNaoListada
+            ? row.manualTotalValue
+            : row.marketValue,
+      ),
 ];
 
 /// Preço atual de cada posição, pela fonte da classe do ativo: avaliação
@@ -83,12 +93,13 @@ Future<List<LivePositionRow>> loadLivePositions(
         return LivePositionRow(position, latest?.value);
       }
 
-      // `empresaNaoListada`: o valor de participação já é o total da
-      // posição (percentual × valuation da empresa), não um preço por
-      // unidade — não entra na conta quantidade×preço, aparece como linha
-      // separada no card.
+      // `empresaNaoListada`: a última avaliação manual é o valor total da
+      // posição, não um preço por unidade — fica em `manualTotalValue` (só o
+      // patrimônio a usa) e o card do Portfolio segue mostrando a participação
+      // societária como linha à parte, sem preço atual.
       if (assetClass == AssetClass.empresaNaoListada) {
-        return LivePositionRow(position, null);
+        final latest = await repository.getLatestValuation(position.asset.id!);
+        return LivePositionRow(position, null, manualTotalValue: latest?.value);
       }
 
       final coinId = position.asset.externalId;

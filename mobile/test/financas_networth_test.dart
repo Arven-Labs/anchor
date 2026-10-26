@@ -42,15 +42,37 @@ void main() {
       expect(items.single.value, 125);
     });
 
-    test('posição zerada e empresa não listada ficam de fora', () {
+    test('posição zerada fica de fora', () {
       final items = portfolioValuedItems([
         row(AssetClass.acaoBr, 'BRL', 0, 30), // já vendida
-        row(AssetClass.empresaNaoListada, 'BRL', 1, null), // valor é a participação
         row(AssetClass.acaoBr, 'BRL', 2, 10),
       ]);
 
       expect(items, hasLength(1));
       expect(items.single.value, 20);
+    });
+
+    test('empresa não listada vale a avaliação manual como total, sem multiplicar pela quantidade', () {
+      final items = portfolioValuedItems([
+        LivePositionRow(
+          row(AssetClass.empresaNaoListada, 'BRL', 4, null).position,
+          null,
+          manualTotalValue: 50000,
+        ),
+      ]);
+
+      expect(items.single.currency, 'BRL');
+      expect(items.single.value, 50000);
+    });
+
+    test('empresa sem avaliação entra com valor nulo, para contar como fora; zerada fica de fora', () {
+      final items = portfolioValuedItems([
+        row(AssetClass.empresaNaoListada, 'BRL', 1, null),
+        row(AssetClass.empresaNaoListada, 'BRL', 0, null), // já vendida
+      ]);
+
+      expect(items, hasLength(1));
+      expect(items.single.value, isNull);
     });
 
     test('posição aberta sem cotação entra com valor nulo, para contar como fora', () {

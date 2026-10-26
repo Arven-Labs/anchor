@@ -37,8 +37,8 @@ String? missingItemsNote(int count) {
 /// de mercado da carteira. Standalone, como o resto do mobile (sem sync com o
 /// desktop). Transferências entre contas, dívidas (`FinancasLiabilitiesScreen`),
 /// empréstimos concedidos (`FinancasLoansScreen`) e categorias com limite
-/// mensal (`FinancasCategoriesScreen`) saem pelos botões da barra. Fora do
-/// mobile por ora: `empresaNaoListada` no patrimônio.
+/// mensal (`FinancasCategoriesScreen`) saem pelos botões da barra. A empresa
+/// não listada entra no patrimônio pela última avaliação manual.
 class FinancasScreen extends StatefulWidget {
   /// Série da moeda em reais; o padrão é o Yahoo com o fallback de inverso e
   /// de pernas via dólar. Injetável para teste, sem rede.
