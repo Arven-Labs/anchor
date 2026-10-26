@@ -1,9 +1,10 @@
-import { browser, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 import {
   byId,
   clickCentered,
   enterWorkspace,
   pickOption,
+  snap,
   sql,
   textOf,
   waitForText,
@@ -82,5 +83,39 @@ describe("Anchor — score cripto e editor de thresholds", () => {
       "o Reset deveria devolver o sinal NEUTRAL",
     );
     expect(await textOf(byId("crypto-score-header"))).toContain("0/20 green");
+  });
+
+  it("o grupo Market sentiment classifica as três leituras pelos limites de fábrica", async () => {
+    // Fear & Greed 12 (≤25 → verde), Mayer 1,6 (entre 1,3 e 2,0 → neutro) e dominância 70
+    // (≥65 → vermelho): menor é melhor nos três.
+    await byId("manual-fear_greed_index").setValue("12");
+    await byId("manual-submit").click();
+    await waitForText(
+      byId("indicator-signal-fear_greed_index"),
+      (text) => text === "GREEN",
+      "Fear & Greed 12 deveria ser GREEN",
+    );
+    await byId("manual-mayer_multiple").setValue("1.6");
+    await byId("manual-submit").click();
+    await waitForText(
+      byId("indicator-signal-mayer_multiple"),
+      (text) => text === "NEUTRAL",
+      "Mayer 1,6 deveria ser NEUTRAL",
+    );
+    await byId("manual-btc_dominance").setValue("70");
+    await byId("manual-submit").click();
+    await waitForText(
+      byId("indicator-signal-btc_dominance"),
+      (text) => text === "RED",
+      "dominância 70 deveria ser RED",
+    );
+
+    await waitForText(
+      byId("crypto-score-header"),
+      (text) => text.includes("1/20 green") && text.includes("4 of 20 logged"),
+      "o score deveria contar o verde do Fear & Greed e as 4 leituras",
+    );
+    expect(await textOf($("body"))).toContain("Market sentiment");
+    await snap("crypto-score-market-sentiment");
   });
 });
