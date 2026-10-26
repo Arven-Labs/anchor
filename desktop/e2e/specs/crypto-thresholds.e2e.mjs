@@ -86,8 +86,13 @@ describe("Anchor — score cripto e editor de thresholds", () => {
   });
 
   it("o grupo Market sentiment classifica as três leituras pelos limites de fábrica", async () => {
+    // O editor de thresholds do caso anterior ainda está aberto e cobre o formulário.
+    await browser.keys(["Escape"]);
+    await byId("threshold-reset-funding_rate_7d").waitForDisplayed({ reverse: true, timeout: 10_000 });
+
     // Fear & Greed 12 (≤25 → verde), Mayer 1,6 (entre 1,3 e 2,0 → neutro) e dominância 70
     // (≥65 → vermelho): menor é melhor nos três.
+    await byId("manual-fear_greed_index").scrollIntoView({ block: "center" });
     await byId("manual-fear_greed_index").setValue("12");
     await byId("manual-submit").click();
     await waitForText(
