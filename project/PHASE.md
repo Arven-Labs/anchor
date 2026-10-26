@@ -2812,6 +2812,13 @@ indicadores, validação, direção) e 3 testes com SQLite em memória da reclas
 efeito e do Reset.
 
 
+**Lote 4 (Sessão 245), grupo "Market sentiment"**, escolha do dono do projeto (frente "mercado geral"). Total **ETH 20 indicadores em 5 grupos, BTC 14 em 4**. Três indicadores novos, todos "menor é melhor":
+- `fear_greed_index` (ETH e BTC): o Fear & Greed da alternative.me, que já era coletado e guardado todo dia mas ficava fora do score. Seed 25/75 (as bordas "Extreme Fear" e "Extreme Greed" do próprio índice; histórico de 3186 dias entre 5 e 95, mediana 44).
+- `mayer_multiple` (ETH e BTC): preço ÷ média simples de 200 dias, do `PriceUSD` do CoinMetrics Community. Seed 1,3/2,0 (BTC hoje 1,10 e ETH 1,08; p90 de 3 anos 1,41 e 1,45; máximos perto de 2,8 e 2,9). Coletado ao vivo na sessão: BTC 1,097 e ETH 1,078.
+- `btc_dominance` (só ETH): `market_cap_percentage.btc` do `/global` da CoinGecko, hoje 60,0%. Seed 55/65, **sem calibragem histórica** (a fonte só dá o valor de hoje): é palpite em torno do nível atual, e a direção (menor é melhor para o ETH) é uma escolha, não um fato.
+- **Cap. total do mercado não entrou**: não há série grátis (`/global/market_cap_chart` é do plano Pro, o `/global` só dá hoje), então não há tendência de 30 dias. Quem quiser a tendência da dominância ou do cap. total precisa guardar histórico próprio por 30+ dias de coleta.
+- Migration `m20261115_100000` (seeds por moeda), duplicados em `ETH_DEFAULT_THRESHOLDS` e `BTC_DEFAULT_THRESHOLDS`. O grupo novo é `IndicatorGroup::Sentiment`; o frontend só ganhou os rótulos (o grupo vem do backend).
+
 ### Fase 32 — Inventário de ideias herdadas do Lume (levantado na Sessão 107, puro registro, nada decidido nem iniciado)
 
 **Origem**: o dono do projeto pediu pra ler o repo do Lume (`../lume`, `git pull` já em dia) e

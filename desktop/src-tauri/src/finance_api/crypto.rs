@@ -118,7 +118,7 @@ pub async fn collect_ticker(
 // últimos entraram no lote 3 da Fase 31 (mesma fonte). Este array só tem os
 // que vêm de `finance_core::eth_indicators`; os coletados direto pelo Anchor
 // estão em `collect_eth_indicators`.
-const ETH_INDICATORS: [(&str, &str, &str); 10] = [
+const ETH_INDICATORS: [(&str, &str, &str); 11] = [
     // (nome interno / chave de indicator_thresholds, código na Finance API, source)
     ("tvl_trend", "tvl-trend", "defillama"),
     ("net_issuance", "net-issuance", "ultrasound.money"),
@@ -130,6 +130,8 @@ const ETH_INDICATORS: [(&str, &str, &str); 10] = [
     ("active_addresses_trend", "active-addresses-trend", "coinmetrics"),
     ("exchange_supply_change_30d", "exchange-supply-trend", "coinmetrics"),
     ("eth_btc_trend_30d", "eth-btc-trend", "coinmetrics"),
+    // Lote 4 (Market sentiment): preço ÷ média de 200 dias, ETH e BTC.
+    ("mayer_multiple", "mayer-multiple", "coinmetrics"),
 ];
 
 async fn record_crypto_indicator(
@@ -180,7 +182,7 @@ pub struct IndicatorCollection {
 
 /// Indicadores do score de `coin` (`run_crypto_collector`), gravados sob essa
 /// moeda. Só ETH e BTC têm score próprio; cada um coleta o seu conjunto
-/// (`domain::crypto_score::IndicatorGroup::indicators`): 17 no ETH, 12 no BTC.
+/// (`domain::crypto_score::IndicatorGroup::indicators`): 20 no ETH, 14 no BTC.
 /// Os que passam por `finance_core::eth_indicators` (CoinMetrics, CoinGecko,
 /// DefiLlama, ultrasound.money) e, desde a Fase 31, os coletados direto pelo
 /// Anchor (`crypto_sources`) — derivativos (Binance, com fallback Bybit),
@@ -232,6 +234,18 @@ pub async fn collect_indicators(
         direct.push((
             "staking_yield",
             crypto_sources::fetch_staking_yield_real().await.map(|v| (v, "defillama+coinmetrics")),
+        ));
+    }
+    // Market sentiment (lote 4): o Fear & Greed é do mercado todo (o mesmo valor
+    // para as duas moedas) e a dominância do BTC só entra no score do ETH.
+    direct.push((
+        "fear_greed_index",
+        client::fetch_fear_greed().await.map(|r| (f64::from(r.value), "alternative.me")),
+    ));
+    if wants("btc_dominance") {
+        direct.push((
+            "btc_dominance",
+            crypto_sources::fetch_btc_dominance().await.map(|v| (v, "coingecko")),
         ));
     }
     for (internal_name, fetched) in direct {
@@ -296,10 +310,10 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn live_collect_eth_indicators_writes_seventeen_readings() {
+    async fn live_collect_eth_indicators_writes_twenty_readings() {
         let db = dev_db().await;
         let collection = collect_indicators(&db, "ETH").await.unwrap();
-        assert_eq!(collection.readings.len() + collection.errors.len(), 17);
+        assert_eq!(collection.readings.len() + collection.errors.len(), 20);
         for reading in &collection.readings {
             assert!(matches!(reading.signal.as_str(), "GREEN" | "NEUTRAL" | "RED"));
             assert_eq!(reading.coin, "ETH");
@@ -308,10 +322,10 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn live_collect_btc_indicators_writes_twelve_readings() {
+    async fn live_collect_btc_indicators_writes_fourteen_readings() {
         let db = dev_db().await;
         let collection = collect_indicators(&db, "BTC").await.unwrap();
-        assert_eq!(collection.readings.len() + collection.errors.len(), 12);
+        assert_eq!(collection.readings.len() + collection.errors.len(), 14);
         for reading in &collection.readings {
             assert!(matches!(reading.signal.as_str(), "GREEN" | "NEUTRAL" | "RED"));
             assert_eq!(reading.coin, "BTC");

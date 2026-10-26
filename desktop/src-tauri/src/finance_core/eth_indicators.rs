@@ -24,6 +24,7 @@ const TREND_LOOKBACK_DAYS: usize = 30;
 const SUPPLY_WINDOW_DAYS: f64 = 30.0;
 const DAYS_IN_YEAR: f64 = 365.0;
 const PUELL_MA_WINDOW_DAYS: usize = 365;
+const MAYER_MA_WINDOW_DAYS: usize = 200;
 const NETFLOW_WINDOW_DAYS: usize = 30;
 /// Teto da página do plano Community do CoinMetrics (acima disso, HTTP 400).
 const FULL_HISTORY_PAGE_SIZE: usize = 10_000;
@@ -166,6 +167,20 @@ pub fn puell_multiple(issuance_usd: &[f64]) -> Result<f64, AppError> {
         return Err(bad("CoinMetrics Puell Multiple", "zero issuance moving average"));
     }
     Ok(issuance_usd[issuance_usd.len() - 1] / ma)
+}
+
+/// Múltiplo de Mayer: preço de hoje (USD) ÷ média móvel simples de 200 dias.
+/// Acima de ~2 é sobrecompra histórica; abaixo de 1 o preço está sob a tendência.
+pub fn mayer_multiple(prices_usd: &[f64]) -> Result<f64, AppError> {
+    if prices_usd.len() < MAYER_MA_WINDOW_DAYS {
+        return Err(bad("CoinMetrics Mayer Multiple", "not enough price history"));
+    }
+    let window = &prices_usd[prices_usd.len() - MAYER_MA_WINDOW_DAYS..];
+    let ma = window.iter().sum::<f64>() / MAYER_MA_WINDOW_DAYS as f64;
+    if ma <= 0.0 {
+        return Err(bad("CoinMetrics Mayer Multiple", "non-positive price moving average"));
+    }
+    Ok(prices_usd[prices_usd.len() - 1] / ma)
 }
 
 /// Variação % de endereços ativos entre hoje e ~30 dias atrás.
@@ -311,6 +326,7 @@ impl EthIndicatorProvider for CoinMetrics {
                 | "active-addresses-trend"
                 | "exchange-supply-trend"
                 | "eth-btc-trend"
+                | "mayer-multiple"
         )
     }
     fn indicator<'a>(&'a self, coin: &'a str, code: &'a str) -> BoxFuture<'a, Result<f64, AppError>> {
@@ -337,6 +353,10 @@ impl EthIndicatorProvider for CoinMetrics {
                 "eth-btc-trend" => {
                     let body = coinmetrics(asset, &["PriceBTC"], TREND_LOOKBACK_DAYS + 5).await?;
                     eth_btc_trend_30d(metric_column(&body, "PriceBTC")?)
+                }
+                "mayer-multiple" => {
+                    let body = coinmetrics(asset, &["PriceUSD"], MAYER_MA_WINDOW_DAYS + 5).await?;
+                    mayer_multiple(&metric_column(&body, "PriceUSD")?)
                 }
                 _ => {
                     let body =
@@ -474,6 +494,26 @@ mod tests {
     }
 
     #[test]
+    fn mayer_multiple_divides_today_by_the_200_day_average() {
+        // Preço constante: média = preço, múltiplo 1.
+        assert!((mayer_multiple(&vec![100.0; 200]).unwrap() - 1.0).abs() < 1e-12);
+        // 199 dias a 100 e hoje a 300: média = (199 × 100 + 300) ÷ 200 = 101, múltiplo 300 ÷ 101.
+        let mut prices = vec![100.0; 199];
+        prices.push(300.0);
+        assert!((mayer_multiple(&prices).unwrap() - 300.0 / 101.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn mayer_multiple_only_uses_the_last_200_prices_and_needs_200() {
+        // 5 preços antigos enormes ficam fora da janela.
+        let mut prices = vec![1_000_000.0; 5];
+        prices.extend(vec![50.0; 200]);
+        assert!((mayer_multiple(&prices).unwrap() - 1.0).abs() < 1e-12);
+        assert!(mayer_multiple(&vec![100.0; 199]).is_err());
+        assert!(mayer_multiple(&vec![0.0; 200]).is_err());
+    }
+
+    #[test]
     fn netflow_ratio_only_counts_the_last_thirty_days() {
         // 35 dias: os 5 primeiros (saída enorme) ficam fora da janela.
         let mut inflow = vec![0.0; 5];
@@ -517,6 +557,7 @@ mod tests {
             "active-addresses-trend",
             "exchange-supply-trend",
             "eth-btc-trend",
+            "mayer-multiple",
         ];
         let providers = providers();
         for code in codes {
@@ -539,6 +580,7 @@ mod tests {
             "active-addresses-trend",
             "exchange-supply-trend",
             "eth-btc-trend",
+            "mayer-multiple",
         ] {
             let got = indicator("ETH", code).await.unwrap_or_else(|e| panic!("{code}: {e}"));
             println!("{code} = {} ({})", got.value, got.source);
@@ -556,6 +598,7 @@ mod tests {
             "exchange-netflow",
             "active-addresses-trend",
             "exchange-supply-trend",
+            "mayer-multiple",
         ] {
             let got = indicator("BTC", code).await.unwrap_or_else(|e| panic!("{code}: {e}"));
             println!("BTC {code} = {} ({})", got.value, got.source);

@@ -58,8 +58,9 @@ pub fn classify(raw_value: f64, threshold: &Threshold) -> Result<Signal, AppErro
 // ---------------------------------------------------------------------------
 // Thresholds editáveis (Fase 31). Os valores de fábrica espelham o que as
 // migrations semeiam em `indicator_thresholds` (`m20260709_212958`,
-// `m20261016_130000`, `m20261016_140000` e `m20261017_100000`; os do BTC em
-// `m20261017_110000`) — duplicados aqui só pra "Reset" funcionar sem consultar
+// `m20261016_130000`, `m20261016_140000`, `m20261017_100000` e, os de
+// sentimento, `m20261115_100000`; os do BTC em `m20261017_110000`) —
+// duplicados aqui só pra "Reset" funcionar sem consultar
 // o histórico de migrations. Ao mudar um seed, mude os dois.
 //
 // Limites são por moeda (`indicator_thresholds.coin`). Só ETH e BTC têm
@@ -79,7 +80,7 @@ pub fn threshold_coin(coin: &str) -> &'static str {
     }
 }
 
-pub const ETH_DEFAULT_THRESHOLDS: [(&str, f64, f64); 17] = [
+pub const ETH_DEFAULT_THRESHOLDS: [(&str, f64, f64); 20] = [
     ("mvrv_z_score", 0.0, 7.0),
     ("puell_multiple", 0.5, 4.0),
     ("staking_yield", 2.0, 0.0),
@@ -97,12 +98,16 @@ pub const ETH_DEFAULT_THRESHOLDS: [(&str, f64, f64); 17] = [
     ("stablecoin_supply_change_30d", 2.0, 0.0),
     ("exchange_supply_change_30d", -1.0, 1.5),
     ("eth_btc_trend_30d", 3.0, -3.0),
+    ("fear_greed_index", 25.0, 75.0),
+    ("mayer_multiple", 1.3, 2.0),
+    ("btc_dominance", 55.0, 65.0),
 ];
 
 /// Calibrados com dados reais do BTC em 2026-10-17 (ver a migration
 /// `m20261017_110000`). Sem staking, TVL, net issuance, fees vs emission nem
-/// ETH/BTC: não têm análogo no BTC.
-pub const BTC_DEFAULT_THRESHOLDS: [(&str, f64, f64); 12] = [
+/// ETH/BTC: não têm análogo no BTC. Os dois de sentimento (lote 4) vêm da
+/// migration `m20261115_100000`.
+pub const BTC_DEFAULT_THRESHOLDS: [(&str, f64, f64); 14] = [
     ("mvrv_z_score", 0.0, 7.0),
     ("nvt_ratio", 0.9, 1.3),
     ("puell_multiple", 0.5, 4.0),
@@ -115,6 +120,8 @@ pub const BTC_DEFAULT_THRESHOLDS: [(&str, f64, f64); 12] = [
     ("dvol", 40.0, 55.0),
     ("put_call_ratio", 0.7, 0.4),
     ("stablecoin_supply_change_30d", 2.0, 0.0),
+    ("fear_greed_index", 25.0, 75.0),
+    ("mayer_multiple", 1.3, 2.0),
 ];
 
 /// Limites de fábrica de uma moeda: `(indicador, verde, vermelho)`.
@@ -163,14 +170,16 @@ pub enum IndicatorGroup {
     Fundamentals,
     Derivatives,
     Liquidity,
+    Sentiment,
 }
 
 impl IndicatorGroup {
-    pub const ALL: [IndicatorGroup; 4] = [
+    pub const ALL: [IndicatorGroup; 5] = [
         IndicatorGroup::OnChain,
         IndicatorGroup::Fundamentals,
         IndicatorGroup::Derivatives,
         IndicatorGroup::Liquidity,
+        IndicatorGroup::Sentiment,
     ];
 
     pub fn label(&self) -> &'static str {
@@ -179,6 +188,7 @@ impl IndicatorGroup {
             IndicatorGroup::Fundamentals => "Network fundamentals",
             IndicatorGroup::Derivatives => "Derivatives & options",
             IndicatorGroup::Liquidity => "Market liquidity",
+            IndicatorGroup::Sentiment => "Market sentiment",
         }
     }
 
@@ -208,6 +218,7 @@ impl IndicatorGroup {
                     "put_call_ratio",
                 ],
                 IndicatorGroup::Liquidity => &["stablecoin_supply_change_30d"],
+                IndicatorGroup::Sentiment => &["fear_greed_index", "mayer_multiple"],
             };
         }
         match self {
@@ -230,6 +241,7 @@ impl IndicatorGroup {
                 "put_call_ratio",
             ],
             IndicatorGroup::Liquidity => &["stablecoin_supply_change_30d", "eth_btc_trend_30d"],
+            IndicatorGroup::Sentiment => &["fear_greed_index", "mayer_multiple", "btc_dominance"],
         }
     }
 }
@@ -356,7 +368,7 @@ mod tests {
 
     #[test]
     fn groups_cover_distinct_indicators_per_coin() {
-        for (coin, expected) in [("ETH", 17), ("BTC", 12)] {
+        for (coin, expected) in [("ETH", 20), ("BTC", 14)] {
             let all = grouped(coin);
             assert_eq!(all.len(), expected, "{coin}");
             let mut unique = all.clone();
@@ -371,13 +383,57 @@ mod tests {
         let groups = IndicatorGroup::for_coin("BTC");
         assert_eq!(
             groups,
-            [IndicatorGroup::OnChain, IndicatorGroup::Derivatives, IndicatorGroup::Liquidity]
+            [
+                IndicatorGroup::OnChain,
+                IndicatorGroup::Derivatives,
+                IndicatorGroup::Liquidity,
+                IndicatorGroup::Sentiment
+            ]
         );
         let btc = grouped("BTC");
-        for eth_only in ["staking_yield", "tvl_trend", "net_issuance", "fees_vs_emission", "eth_btc_trend_30d"] {
+        for eth_only in [
+            "staking_yield",
+            "tvl_trend",
+            "net_issuance",
+            "fees_vs_emission",
+            "eth_btc_trend_30d",
+            "btc_dominance",
+        ] {
             assert!(!btc.contains(&eth_only), "{eth_only}");
         }
-        assert_eq!(IndicatorGroup::for_coin("ETH").len(), 4);
+        assert_eq!(IndicatorGroup::for_coin("ETH").len(), 5);
+    }
+
+    #[test]
+    fn sentiment_group_has_fear_greed_and_mayer_for_both_and_dominance_only_for_eth() {
+        assert_eq!(
+            IndicatorGroup::Sentiment.indicators("ETH"),
+            ["fear_greed_index", "mayer_multiple", "btc_dominance"]
+        );
+        assert_eq!(IndicatorGroup::Sentiment.indicators("BTC"), ["fear_greed_index", "mayer_multiple"]);
+        assert_eq!(IndicatorGroup::Sentiment.label(), "Market sentiment");
+    }
+
+    // Os 3 seeds de sentimento (lote 4): menor é melhor.
+    #[test]
+    fn sentiment_seeds_are_lower_is_better() {
+        // Fear & Greed: medo extremo (≤25) é verde, ganância extrema (≥75) é vermelha.
+        let fear_greed = Threshold { green_boundary: 25.0, red_boundary: 75.0 };
+        assert_eq!(classify(12.0, &fear_greed).unwrap().as_str(), "GREEN");
+        assert_eq!(classify(50.0, &fear_greed).unwrap().as_str(), "NEUTRAL");
+        assert_eq!(classify(88.0, &fear_greed).unwrap().as_str(), "RED");
+
+        // Mayer: hoje BTC 1,10 e ETH 1,08 → verde; 1,6 → neutro; 2,4 → vermelho.
+        let mayer = Threshold { green_boundary: 1.3, red_boundary: 2.0 };
+        assert_eq!(classify(1.1, &mayer).unwrap().as_str(), "GREEN");
+        assert_eq!(classify(1.6, &mayer).unwrap().as_str(), "NEUTRAL");
+        assert_eq!(classify(2.4, &mayer).unwrap().as_str(), "RED");
+
+        // Dominância do BTC (só ETH): hoje 60% → neutro.
+        let dominance = Threshold { green_boundary: 55.0, red_boundary: 65.0 };
+        assert_eq!(classify(60.0, &dominance).unwrap().as_str(), "NEUTRAL");
+        assert_eq!(classify(50.0, &dominance).unwrap().as_str(), "GREEN");
+        assert_eq!(classify(70.0, &dominance).unwrap().as_str(), "RED");
     }
 
     #[test]
@@ -392,13 +448,13 @@ mod tests {
     #[test]
     fn empty_score_has_full_total_and_nothing_logged() {
         let score = compute_score("ETH", &[]);
-        assert_eq!((score.green, score.logged, score.total), (0, 0, 17));
+        assert_eq!((score.green, score.logged, score.total), (0, 0, 20));
         assert_eq!(score.verdict, ScoreVerdict::ReduceRisk);
         assert!(score.groups.iter().all(|g| g.indicators.iter().all(|i| i.reading.is_none())));
 
         let btc = compute_score("BTC", &[]);
-        assert_eq!((btc.green, btc.logged, btc.total), (0, 0, 12));
-        assert_eq!(btc.groups.len(), 3);
+        assert_eq!((btc.green, btc.logged, btc.total), (0, 0, 14));
+        assert_eq!(btc.groups.len(), 4);
     }
 
     #[test]
@@ -417,6 +473,8 @@ mod tests {
         assert_eq!((derivatives.green, derivatives.logged, derivatives.total), (1, 2, 5));
         let liquidity = &score.groups[3];
         assert_eq!((liquidity.green, liquidity.logged, liquidity.total), (0, 0, 2));
+        let sentiment = &score.groups[4];
+        assert_eq!((sentiment.green, sentiment.logged, sentiment.total), (0, 0, 3));
         assert_eq!((score.green, score.logged), (2, 4));
     }
 

@@ -29,8 +29,8 @@ describe("Anchor — score cripto e editor de thresholds", () => {
     await byId("edit-thresholds").waitForDisplayed({ timeout: 30_000 });
     await waitForText(
       byId("crypto-score-header"),
-      (text) => text.includes("0/17 green") && text.includes("0 of 17 logged"),
-      "o score deveria começar zerado, com 17 indicadores",
+      (text) => text.includes("0/20 green") && text.includes("0 of 20 logged"),
+      "o score deveria começar zerado, com 20 indicadores",
     );
   });
 
@@ -46,7 +46,7 @@ describe("Anchor — score cripto e editor de thresholds", () => {
     );
     await waitForText(
       byId("crypto-score-header"),
-      (text) => text.includes("1 of 17 logged"),
+      (text) => text.includes("1 of 20 logged"),
       "a leitura deveria contar como registrada",
     );
   });
@@ -67,7 +67,7 @@ describe("Anchor — score cripto e editor de thresholds", () => {
     );
     await waitForText(
       byId("crypto-score-header"),
-      (text) => text.includes("1/17 green"),
+      (text) => text.includes("1/20 green"),
       "o score deveria contar o verde novo",
     );
 
@@ -81,6 +81,6 @@ describe("Anchor — score cripto e editor de thresholds", () => {
       (text) => text === "NEUTRAL",
       "o Reset deveria devolver o sinal NEUTRAL",
     );
-    expect(await textOf(byId("crypto-score-header"))).toContain("0/17 green");
+    expect(await textOf(byId("crypto-score-header"))).toContain("0/20 green");
   });
 });

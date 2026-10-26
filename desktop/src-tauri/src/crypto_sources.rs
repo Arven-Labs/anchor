@@ -24,6 +24,7 @@ const DERIBIT_API: &str = "https://www.deribit.com/api/v2";
 const DEFILLAMA_STABLECOINS: &str = "https://stablecoins.llama.fi";
 const DEFILLAMA_YIELDS: &str = "https://yields.llama.fi";
 const COINMETRICS_COMMUNITY: &str = "https://community-api.coinmetrics.io/v4";
+const COINGECKO_API: &str = "https://api.coingecko.com/api/v3";
 /// Pool stETH (Lido, Ethereum) na DefiLlama — o id é estável.
 const STETH_POOL_ID: &str = "747c1d2a-c668-4682-b9f9-296708a3dd90";
 
@@ -353,6 +354,32 @@ pub fn parse_stablecoin_change_30d(body: &str) -> Result<f64, AppError> {
         .ok_or_else(|| source_err("DefiLlama stablecoins", "zero supply at the start"))
 }
 
+#[derive(Deserialize)]
+struct GlobalMarket {
+    data: GlobalMarketData,
+}
+
+#[derive(Deserialize)]
+struct GlobalMarketData {
+    market_cap_percentage: std::collections::HashMap<String, f64>,
+}
+
+/// Dominância do BTC (% do cap. total do mercado), do `/global` da CoinGecko.
+/// Só o valor de hoje: a fonte não tem série grátis, então não há tendência.
+pub fn parse_btc_dominance(body: &str) -> Result<f64, AppError> {
+    let global: GlobalMarket = serde_json::from_str(body).map_err(|e| source_err("CoinGecko global", e))?;
+    let btc = global
+        .data
+        .market_cap_percentage
+        .get("btc")
+        .copied()
+        .ok_or_else(|| source_err("CoinGecko global", "missing market_cap_percentage.btc"))?;
+    if !btc.is_finite() || !(0.0..=100.0).contains(&btc) {
+        return Err(source_err("CoinGecko global", format!("implausible dominance {btc}")));
+    }
+    Ok(btc)
+}
+
 // ---------------------------------------------------------------------------
 // Fetch
 // ---------------------------------------------------------------------------
@@ -501,6 +528,11 @@ pub async fn fetch_stablecoin_supply_change_30d() -> Result<f64, AppError> {
     parse_stablecoin_change_30d(&get_text("DefiLlama stablecoins", &url).await?)
 }
 
+/// Dominância do BTC hoje, em % do cap. total (CoinGecko `/global`).
+pub async fn fetch_btc_dominance() -> Result<f64, AppError> {
+    parse_btc_dominance(&get_text("CoinGecko global", &format!("{COINGECKO_API}/global")).await?)
+}
+
 /// Staking yield real do ETH: APY do stETH menos a inflação bruta.
 pub async fn fetch_staking_yield_real() -> Result<f64, AppError> {
     let apy_url = format!("{DEFILLAMA_YIELDS}/chart/{STETH_POOL_ID}");
@@ -525,8 +557,24 @@ mod tests {
     const YIELD_CHART: &str = r#"{"status":"success","data":[{"timestamp":"2026-10-15T23:01:26.957Z","tvlUsd":23771578172,"apy":2.255,"apyBase":2.255,"apyReward":null},{"timestamp":"2026-10-16T12:01:20.741Z","tvlUsd":23855899243,"apy":2.255,"apyBase":2.255,"apyReward":null}]}"#;
     const ISSUANCE: &str = r#"{"data":[{"asset":"eth","time":"2026-10-14T00:00:00.000000000Z","IssTotNtv":"2979.961923327","SplyCur":"122130969.817571701831258692"},{"asset":"eth","time":"2026-10-15T00:00:00.000000000Z","IssTotNtv":"2979.616171783","SplyCur":"122133892.772935516304718648"}]}"#;
 
+    // Trecho da resposta real de `/global` de 2026-10-26 (só as chaves usadas).
+    const GLOBAL: &str = r#"{"data":{"active_cryptocurrencies":22501,"market_cap_percentage":{"btc":59.98151875544407,"eth":10.606521696958916,"usdt":6.4},"updated_at":1792973614}}"#;
+
     fn close(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-6
+    }
+
+    #[test]
+    fn btc_dominance_is_read_from_the_global_market_cap_percentage() {
+        assert!(close(parse_btc_dominance(GLOBAL).unwrap(), 59.98151875544407));
+    }
+
+    #[test]
+    fn btc_dominance_rejects_missing_or_implausible_values() {
+        assert!(parse_btc_dominance(r#"{"data":{"market_cap_percentage":{"eth":10.6}}}"#).is_err());
+        assert!(parse_btc_dominance(r#"{"data":{"market_cap_percentage":{"btc":140.0}}}"#).is_err());
+        assert!(parse_btc_dominance(r#"{"status":{"error_code":429}}"#).is_err());
+        assert!(parse_btc_dominance("not json").is_err());
     }
 
     #[test]

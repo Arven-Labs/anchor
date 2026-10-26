@@ -1,4 +1,4 @@
-// The 17 Ethereum score indicators (Fase 3 + Fase 31) — keys match the
+// The 20 Ethereum score indicators (Fase 3 + Fase 31) — keys match the
 // `indicator` column in `indicator_thresholds`. The grouping into subscores
 // lives in the backend (`domain::crypto_score`) and comes with
 // `get_crypto_score`; this list only labels the indicators and drives the
@@ -21,6 +21,9 @@ export const INDICATORS = {
   stablecoin_supply_change_30d: "Stablecoin Supply Change, 30d (%)",
   exchange_supply_change_30d: "Exchange Supply Change, 30d (% of coins held)",
   eth_btc_trend_30d: "ETH/BTC Trend, 30d (%)",
+  fear_greed_index: "Fear & Greed Index (0-100)",
+  mayer_multiple: "Mayer Multiple (price / 200d average)",
+  btc_dominance: "BTC Dominance (% of total market cap)",
 } as const;
 
 export type IndicatorKey = keyof typeof INDICATORS;
@@ -28,7 +31,8 @@ export type IndicatorKey = keyof typeof INDICATORS;
 export const INDICATOR_KEYS = Object.keys(INDICATORS) as IndicatorKey[];
 
 // Bitcoin has its own score (Sessão 112) with the indicators that have a direct
-// BTC counterpart: no staking, TVL, net issuance, fees vs emission or ETH/BTC.
+// BTC counterpart: no staking, TVL, net issuance, fees vs emission, ETH/BTC or
+// BTC dominance.
 // Any other coin is scored with the Ethereum set, as before. Must match
 // `domain::crypto_score::IndicatorGroup::indicators` in the backend.
 const ETH_ONLY_KEYS: IndicatorKey[] = [
@@ -37,6 +41,7 @@ const ETH_ONLY_KEYS: IndicatorKey[] = [
   "net_issuance",
   "fees_vs_emission",
   "eth_btc_trend_30d",
+  "btc_dominance",
 ];
 
 /** Coins that have their own collector, score and thresholds. */

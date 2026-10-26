@@ -349,7 +349,7 @@ async fn crypto_score_groups_readings_and_reacts_to_threshold_edits() {
     record_crypto_indicator_in(&db, reading("mvrv_z_score", -1.0)).await.unwrap();
 
     let score = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
-    assert_eq!(score.total, 17);
+    assert_eq!(score.total, 20);
     assert_eq!(score.logged, 2);
     assert_eq!(score.green, 1); // só o MVRV
     let derivatives = score.groups.iter().find(|g| g.label == "Derivatives & options").unwrap();
@@ -378,15 +378,55 @@ async fn btc_score_has_its_own_indicators_groups_and_thresholds() {
     record_crypto_indicator_in(&db, btc_reading("mvrv_z_score", 1.0)).await.unwrap();
 
     let btc = crypto_score_for(&db, "BTC".to_string()).await.unwrap();
-    assert_eq!((btc.total, btc.logged), (12, 2));
-    assert_eq!(btc.groups.len(), 3); // sem Network fundamentals
+    assert_eq!((btc.total, btc.logged), (14, 2));
+    assert_eq!(btc.groups.len(), 4); // sem Network fundamentals
     let derivatives = btc.groups.iter().find(|g| g.label == "Derivatives & options").unwrap();
     assert_eq!(derivatives.indicators[0].reading.as_ref().unwrap().signal, "RED");
 
     let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
-    assert_eq!((eth.total, eth.logged), (17, 1));
+    assert_eq!((eth.total, eth.logged), (20, 1));
     let derivatives = eth.groups.iter().find(|g| g.label == "Derivatives & options").unwrap();
     assert_eq!(derivatives.indicators[0].reading.as_ref().unwrap().signal, "NEUTRAL");
+}
+
+// Lote 4 da Fase 31: o grupo "Market sentiment" tem os seeds da migration para
+// as duas moedas, e a dominância do BTC só existe no score do ETH.
+#[tokio::test]
+async fn market_sentiment_group_is_seeded_for_both_coins_and_dominance_is_eth_only() {
+    let db = memory_db().await;
+    let for_btc = |indicator: &str, raw_value: f64| RecordCryptoIndicatorRequest {
+        coin: "BTC".to_string(),
+        ..reading(indicator, raw_value)
+    };
+
+    // Seeds: Fear & Greed 25/75, Mayer 1,3/2,0, dominância 55/65 (menor é melhor).
+    record_crypto_indicator_in(&db, reading("fear_greed_index", 12.0)).await.unwrap();
+    record_crypto_indicator_in(&db, reading("mayer_multiple", 1.6)).await.unwrap();
+    record_crypto_indicator_in(&db, reading("btc_dominance", 70.0)).await.unwrap();
+    record_crypto_indicator_in(&db, for_btc("fear_greed_index", 80.0)).await.unwrap();
+    record_crypto_indicator_in(&db, for_btc("mayer_multiple", 1.1)).await.unwrap();
+
+    let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    let sentiment = eth.groups.iter().find(|g| g.label == "Market sentiment").unwrap();
+    assert_eq!((sentiment.green, sentiment.logged, sentiment.total), (1, 3, 3));
+    let signals: Vec<&str> =
+        sentiment.indicators.iter().map(|i| i.reading.as_ref().unwrap().signal.as_str()).collect();
+    assert_eq!(signals, ["GREEN", "NEUTRAL", "RED"]);
+
+    let btc = crypto_score_for(&db, "BTC".to_string()).await.unwrap();
+    let sentiment = btc.groups.iter().find(|g| g.label == "Market sentiment").unwrap();
+    assert_eq!((sentiment.green, sentiment.logged, sentiment.total), (1, 2, 2));
+    let signals: Vec<&str> =
+        sentiment.indicators.iter().map(|i| i.reading.as_ref().unwrap().signal.as_str()).collect();
+    assert_eq!(signals, ["RED", "GREEN"]);
+
+    // O BTC não tem limite de dominância: registrar para ele é indicador desconhecido.
+    assert!(record_crypto_indicator_in(&db, for_btc("btc_dominance", 60.0)).await.is_err());
+
+    // O editor reclassifica as leituras guardadas, como nos demais indicadores.
+    apply_threshold(&db, "ETH", "mayer_multiple", 1.7, 2.5).await.unwrap();
+    let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!(eth.groups.iter().find(|g| g.label == "Market sentiment").unwrap().green, 2);
 }
 
 // ---------------------------------------------------------------------------
