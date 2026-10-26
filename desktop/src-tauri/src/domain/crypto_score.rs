@@ -63,18 +63,21 @@ pub fn classify(raw_value: f64, threshold: &Threshold) -> Result<Signal, AppErro
 // duplicados aqui só pra "Reset" funcionar sem consultar
 // o histórico de migrations. Ao mudar um seed, mude os dois.
 //
-// Limites são por moeda (`indicator_thresholds.coin`). Só ETH e BTC têm
+// Limites são por moeda (`indicator_thresholds.coin`). Só ETH, BTC e ADA têm
 // conjunto próprio; qualquer outra moeda (registro manual, ex. SOL) usa o do
 // ETH, como era antes de existir o do BTC.
 // ---------------------------------------------------------------------------
 
 pub const COIN_ETH: &str = "ETH";
 pub const COIN_BTC: &str = "BTC";
+pub const COIN_ADA: &str = "ADA";
 
 /// Moeda cujo conjunto de indicadores e limites vale para `coin`.
 pub fn threshold_coin(coin: &str) -> &'static str {
     if coin.eq_ignore_ascii_case(COIN_BTC) {
         COIN_BTC
+    } else if coin.eq_ignore_ascii_case(COIN_ADA) {
+        COIN_ADA
     } else {
         COIN_ETH
     }
@@ -124,12 +127,30 @@ pub const BTC_DEFAULT_THRESHOLDS: [(&str, f64, f64); 14] = [
     ("mayer_multiple", 1.3, 2.0),
 ];
 
+/// Calibrados com dados reais do ADA em 2026-10-26 (ver a migration
+/// `m20261116_100000`). Sem exchange netflow nem exchange supply (o CoinMetrics
+/// Community não tem `FlowInExUSD`/`FlowOutExUSD`/`SplyExNtv` para ADA), sem
+/// DVOL nem put/call (a Deribit não lista ADA), sem fundamentos de rede nem
+/// dominância do BTC (são do ETH).
+pub const ADA_DEFAULT_THRESHOLDS: [(&str, f64, f64); 10] = [
+    ("mvrv_z_score", 0.0, 3.5),
+    ("nvt_ratio", 0.9, 1.3),
+    ("puell_multiple", 0.5, 2.5),
+    ("active_addresses_trend", 0.0, -20.0),
+    ("funding_rate_7d", 5.0, 10.0),
+    ("open_interest_change_30d", 0.0, 25.0),
+    ("long_short_ratio", 1.8, 2.6),
+    ("stablecoin_supply_change_30d", 2.0, 0.0),
+    ("fear_greed_index", 25.0, 75.0),
+    ("mayer_multiple", 1.3, 2.0),
+];
+
 /// Limites de fábrica de uma moeda: `(indicador, verde, vermelho)`.
 pub fn default_thresholds(coin: &str) -> &'static [(&'static str, f64, f64)] {
-    if threshold_coin(coin) == COIN_BTC {
-        &BTC_DEFAULT_THRESHOLDS
-    } else {
-        &ETH_DEFAULT_THRESHOLDS
+    match threshold_coin(coin) {
+        COIN_BTC => &BTC_DEFAULT_THRESHOLDS,
+        COIN_ADA => &ADA_DEFAULT_THRESHOLDS,
+        _ => &ETH_DEFAULT_THRESHOLDS,
     }
 }
 
@@ -199,6 +220,19 @@ impl IndicatorGroup {
 
     /// Chaves de `indicator_thresholds`/`crypto_indicators` de cada grupo.
     pub fn indicators(&self, coin: &str) -> &'static [&'static str] {
+        if threshold_coin(coin) == COIN_ADA {
+            return match self {
+                IndicatorGroup::OnChain => {
+                    &["mvrv_z_score", "nvt_ratio", "puell_multiple", "active_addresses_trend"]
+                }
+                IndicatorGroup::Fundamentals => &[],
+                IndicatorGroup::Derivatives => {
+                    &["funding_rate_7d", "open_interest_change_30d", "long_short_ratio"]
+                }
+                IndicatorGroup::Liquidity => &["stablecoin_supply_change_30d"],
+                IndicatorGroup::Sentiment => &["fear_greed_index", "mayer_multiple"],
+            };
+        }
         if threshold_coin(coin) == COIN_BTC {
             return match self {
                 IndicatorGroup::OnChain => &[
@@ -368,7 +402,7 @@ mod tests {
 
     #[test]
     fn groups_cover_distinct_indicators_per_coin() {
-        for (coin, expected) in [("ETH", 20), ("BTC", 14)] {
+        for (coin, expected) in [("ETH", 20), ("BTC", 14), ("ADA", 10)] {
             let all = grouped(coin);
             assert_eq!(all.len(), expected, "{coin}");
             let mut unique = all.clone();
@@ -402,6 +436,26 @@ mod tests {
             assert!(!btc.contains(&eth_only), "{eth_only}");
         }
         assert_eq!(IndicatorGroup::for_coin("ETH").len(), 5);
+    }
+
+    // O ADA é o BTC sem o que o CoinMetrics Community e a Deribit não servem
+    // para ele: netflow e supply das exchanges, DVOL e put/call.
+    #[test]
+    fn ada_is_the_btc_set_minus_what_its_sources_do_not_serve() {
+        assert_eq!(
+            IndicatorGroup::for_coin("ADA"),
+            [
+                IndicatorGroup::OnChain,
+                IndicatorGroup::Derivatives,
+                IndicatorGroup::Liquidity,
+                IndicatorGroup::Sentiment
+            ]
+        );
+        let (btc, ada) = (grouped("BTC"), grouped("ADA"));
+        assert!(ada.iter().all(|name| btc.contains(name)));
+        let dropped: Vec<&str> = btc.iter().copied().filter(|name| !ada.contains(name)).collect();
+        assert_eq!(dropped, ["exchange_netflow", "exchange_supply_change_30d", "dvol", "put_call_ratio"]);
+        assert_eq!(threshold_coin("ada"), "ADA");
     }
 
     #[test]
@@ -455,6 +509,10 @@ mod tests {
         let btc = compute_score("BTC", &[]);
         assert_eq!((btc.green, btc.logged, btc.total), (0, 0, 14));
         assert_eq!(btc.groups.len(), 4);
+
+        let ada = compute_score("ADA", &[]);
+        assert_eq!((ada.green, ada.logged, ada.total), (0, 0, 10));
+        assert_eq!(ada.groups.len(), 4);
     }
 
     #[test]
@@ -497,7 +555,7 @@ mod tests {
 
     #[test]
     fn every_grouped_indicator_has_a_valid_default() {
-        for coin in ["ETH", "BTC"] {
+        for coin in ["ETH", "BTC", "ADA"] {
             for name in grouped(coin) {
                 let (green, red) = default_threshold(coin, name)
                     .unwrap_or_else(|| panic!("no default threshold for {coin} {name}"));
@@ -509,7 +567,7 @@ mod tests {
 
     #[test]
     fn defaults_have_no_unknown_indicator() {
-        for coin in ["ETH", "BTC"] {
+        for coin in ["ETH", "BTC", "ADA"] {
             let grouped = grouped(coin);
             assert!(default_thresholds(coin).iter().all(|(name, _, _)| grouped.contains(name)), "{coin}");
             assert_eq!(default_thresholds(coin).len(), grouped.len(), "{coin}");

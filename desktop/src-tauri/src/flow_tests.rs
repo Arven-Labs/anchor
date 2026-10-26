@@ -28,7 +28,8 @@ use crate::commands::option_position::{
 use crate::finance_core::b3_options::{LastTrade, OptionsMarket};
 use crate::commands::tax::{assess_workspace, simulate_tax_sale_in, SimulateTaxSaleRequest};
 use crate::domain::crypto_score::{
-    default_thresholds, ScoreVerdict, BTC_DEFAULT_THRESHOLDS, ETH_DEFAULT_THRESHOLDS,
+    default_thresholds, CryptoScore, ScoreVerdict, ADA_DEFAULT_THRESHOLDS, BTC_DEFAULT_THRESHOLDS,
+    ETH_DEFAULT_THRESHOLDS,
 };
 use crate::entity::{indicator_thresholds, tax_rules};
 use crate::commands::bank_account::{
@@ -59,7 +60,10 @@ async fn migrations_apply_from_scratch_and_are_idempotent() {
     crate::db::migrate(&db).await.expect("second migrate run");
 
     let thresholds = indicator_thresholds::Entity::find().all(&db).await.unwrap();
-    assert_eq!(thresholds.len(), ETH_DEFAULT_THRESHOLDS.len() + BTC_DEFAULT_THRESHOLDS.len());
+    assert_eq!(
+        thresholds.len(),
+        ETH_DEFAULT_THRESHOLDS.len() + BTC_DEFAULT_THRESHOLDS.len() + ADA_DEFAULT_THRESHOLDS.len()
+    );
 }
 
 #[tokio::test]
@@ -70,7 +74,7 @@ async fn seeded_thresholds_match_the_reset_defaults() {
     let db = memory_db().await;
     let rows = indicator_thresholds::Entity::find().all(&db).await.unwrap();
 
-    for coin in ["ETH", "BTC"] {
+    for coin in ["ETH", "BTC", "ADA"] {
         for (indicator, green, red) in default_thresholds(coin) {
             let row = rows
                 .iter()
@@ -387,6 +391,69 @@ async fn btc_score_has_its_own_indicators_groups_and_thresholds() {
     assert_eq!((eth.total, eth.logged), (20, 1));
     let derivatives = eth.groups.iter().find(|g| g.label == "Derivatives & options").unwrap();
     assert_eq!(derivatives.indicators[0].reading.as_ref().unwrap().signal, "NEUTRAL");
+}
+
+// Score próprio do ADA: 10 indicadores em 4 grupos, com os limites da migration
+// `m20261116_100000`, isolados dos do ETH e do BTC.
+#[tokio::test]
+async fn ada_score_has_its_own_indicators_and_thresholds_isolated_from_eth_and_btc() {
+    let db = memory_db().await;
+    let ada_reading = |indicator: &str, raw_value: f64| RecordCryptoIndicatorRequest {
+        coin: "ADA".to_string(),
+        ..reading(indicator, raw_value)
+    };
+
+    // Funding de 12% a.a.: o ETH tem vermelho em 20 (→ neutro), o ADA em 10 (→ vermelho).
+    // MVRV Z de 4,0: o ETH tem vermelho em 7 (→ neutro), o ADA em 3,5 (→ vermelho).
+    record_crypto_indicator_in(&db, ada_reading("funding_rate_7d", 12.0)).await.unwrap();
+    record_crypto_indicator_in(&db, ada_reading("mvrv_z_score", 4.0)).await.unwrap();
+    record_crypto_indicator_in(&db, ada_reading("fear_greed_index", 12.0)).await.unwrap();
+    record_crypto_indicator_in(&db, reading("funding_rate_7d", 12.0)).await.unwrap();
+    record_crypto_indicator_in(&db, reading("mvrv_z_score", 4.0)).await.unwrap();
+
+    let ada = crypto_score_for(&db, "ADA".to_string()).await.unwrap();
+    assert_eq!((ada.total, ada.logged, ada.green), (10, 3, 1)); // só o Fear & Greed
+    assert_eq!(ada.groups.len(), 4); // sem Network fundamentals
+    let group = |score: &CryptoScore, label: &str| {
+        score.groups.iter().find(|g| g.label == label).unwrap().indicators.len()
+    };
+    assert_eq!(group(&ada, "On-chain"), 4);
+    assert_eq!(group(&ada, "Derivatives & options"), 3);
+    let signal = |score: &CryptoScore, indicator: &str| {
+        score
+            .groups
+            .iter()
+            .flat_map(|g| g.indicators.iter())
+            .find(|i| i.indicator == indicator)
+            .and_then(|i| i.reading.as_ref())
+            .map(|r| r.signal.clone())
+    };
+    assert_eq!(signal(&ada, "funding_rate_7d").as_deref(), Some("RED"));
+    assert_eq!(signal(&ada, "mvrv_z_score").as_deref(), Some("RED"));
+
+    let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!((eth.total, eth.logged), (20, 2));
+    assert_eq!(signal(&eth, "funding_rate_7d").as_deref(), Some("NEUTRAL"));
+    assert_eq!(signal(&eth, "mvrv_z_score").as_deref(), Some("NEUTRAL"));
+
+    // Sem limite para o que a moeda não tem: DVOL, netflow e dominância são recusados no ADA.
+    for indicator in ["dvol", "put_call_ratio", "exchange_netflow", "btc_dominance", "staking_yield"] {
+        assert!(record_crypto_indicator_in(&db, ada_reading(indicator, 1.0)).await.is_err(), "{indicator}");
+    }
+
+    // Editar o ADA reclassifica só as leituras do ADA...
+    apply_threshold(&db, "ADA", "funding_rate_7d", 15.0, 30.0).await.unwrap();
+    let ada = crypto_score_for(&db, "ADA".to_string()).await.unwrap();
+    assert_eq!(signal(&ada, "funding_rate_7d").as_deref(), Some("GREEN"));
+    let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!(signal(&eth, "funding_rate_7d").as_deref(), Some("NEUTRAL"));
+
+    // ...e editar o ETH não toca nas do ADA (o ETH é dono das moedas sem conjunto próprio).
+    apply_threshold(&db, "ETH", "mvrv_z_score", 5.0, 6.0).await.unwrap();
+    let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!(signal(&eth, "mvrv_z_score").as_deref(), Some("GREEN"));
+    let ada = crypto_score_for(&db, "ADA".to_string()).await.unwrap();
+    assert_eq!(signal(&ada, "mvrv_z_score").as_deref(), Some("RED"));
 }
 
 // Lote 4 da Fase 31: o grupo "Market sentiment" tem os seeds da migration para

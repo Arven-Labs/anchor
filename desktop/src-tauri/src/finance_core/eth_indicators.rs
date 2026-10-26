@@ -235,6 +235,7 @@ fn coingecko_id(coin: &str) -> Result<&'static str, AppError> {
     match coin.to_ascii_uppercase().as_str() {
         "ETH" => Ok("ethereum"),
         "BTC" => Ok("bitcoin"),
+        "ADA" => Ok("cardano"),
         other => Err(AppError::NoData(format!("no CoinGecko id for '{other}'"))),
     }
 }

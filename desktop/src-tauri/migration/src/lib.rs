@@ -106,6 +106,7 @@ mod m20261112_100000_add_update_2023_value_to_assets;
 mod m20261113_100000_add_update_2023_to_offshore_entities;
 mod m20261114_100000_create_offshore_capital_events;
 mod m20261115_100000_seed_market_sentiment_thresholds;
+mod m20261116_100000_seed_ada_thresholds;
 
 pub struct Migrator;
 
@@ -219,6 +220,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261113_100000_add_update_2023_to_offshore_entities::Migration),
             Box::new(m20261114_100000_create_offshore_capital_events::Migration),
             Box::new(m20261115_100000_seed_market_sentiment_thresholds::Migration),
+            Box::new(m20261116_100000_seed_ada_thresholds::Migration),
         ]
     }
 }

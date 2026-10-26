@@ -33,6 +33,10 @@ export const INDICATOR_KEYS = Object.keys(INDICATORS) as IndicatorKey[];
 // Bitcoin has its own score (Sessão 112) with the indicators that have a direct
 // BTC counterpart: no staking, TVL, net issuance, fees vs emission, ETH/BTC or
 // BTC dominance.
+// Cardano has its own score too, with 10 indicators: on top of the BTC
+// exclusions it has no exchange netflow or exchange supply (CoinMetrics
+// Community does not serve them for ADA) and no DVOL or put/call (Deribit does
+// not list ADA).
 // Any other coin is scored with the Ethereum set, as before. Must match
 // `domain::crypto_score::IndicatorGroup::indicators` in the backend.
 const ETH_ONLY_KEYS: IndicatorKey[] = [
@@ -44,15 +48,28 @@ const ETH_ONLY_KEYS: IndicatorKey[] = [
   "btc_dominance",
 ];
 
+const ADA_ONLY_EXCLUDED_KEYS: IndicatorKey[] = [
+  "exchange_netflow",
+  "exchange_supply_change_30d",
+  "dvol",
+  "put_call_ratio",
+];
+
 /** Coins that have their own collector, score and thresholds. */
-export const SCORED_COINS = ["ETH", "BTC"];
+export const SCORED_COINS = ["ETH", "BTC", "ADA"];
 
 export function hasOwnScore(coin: string): boolean {
   return SCORED_COINS.includes(coin.toUpperCase());
 }
 
 export function indicatorKeysFor(coin: string): IndicatorKey[] {
-  return coin.toUpperCase() === "BTC"
-    ? INDICATOR_KEYS.filter((key) => !ETH_ONLY_KEYS.includes(key))
-    : INDICATOR_KEYS;
+  const btcKeys = INDICATOR_KEYS.filter((key) => !ETH_ONLY_KEYS.includes(key));
+  switch (coin.toUpperCase()) {
+    case "BTC":
+      return btcKeys;
+    case "ADA":
+      return btcKeys.filter((key) => !ADA_ONLY_EXCLUDED_KEYS.includes(key));
+    default:
+      return INDICATOR_KEYS;
+  }
 }

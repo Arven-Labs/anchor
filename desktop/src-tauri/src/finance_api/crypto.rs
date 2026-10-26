@@ -181,8 +181,9 @@ pub struct IndicatorCollection {
 }
 
 /// Indicadores do score de `coin` (`run_crypto_collector`), gravados sob essa
-/// moeda. Só ETH e BTC têm score próprio; cada um coleta o seu conjunto
-/// (`domain::crypto_score::IndicatorGroup::indicators`): 20 no ETH, 14 no BTC.
+/// moeda. Só ETH, BTC e ADA têm score próprio; cada um coleta o seu conjunto
+/// (`domain::crypto_score::IndicatorGroup::indicators`): 20 no ETH, 14 no BTC,
+/// 10 no ADA.
 /// Os que passam por `finance_core::eth_indicators` (CoinMetrics, CoinGecko,
 /// DefiLlama, ultrasound.money) e, desde a Fase 31, os coletados direto pelo
 /// Anchor (`crypto_sources`) — derivativos (Binance, com fallback Bybit),
@@ -193,9 +194,9 @@ pub async fn collect_indicators(
     coin: &str,
 ) -> Result<IndicatorCollection, AppError> {
     let coin = coin.to_ascii_uppercase();
-    if coin != crypto_score::COIN_ETH && coin != crypto_score::COIN_BTC {
+    if ![crypto_score::COIN_ETH, crypto_score::COIN_BTC, crypto_score::COIN_ADA].contains(&coin.as_str()) {
         return Err(AppError::InvalidInput(format!(
-            "the crypto score collector only supports ETH and BTC, not '{coin}'"
+            "the crypto score collector only supports ETH, BTC and ADA, not '{coin}'"
         )));
     }
     let wanted: Vec<&str> = crypto_score::IndicatorGroup::ALL
@@ -223,13 +224,22 @@ pub async fn collect_indicators(
         ("funding_rate_7d", crypto_sources::fetch_funding_rate_7d(&coin).await),
         ("open_interest_change_30d", crypto_sources::fetch_open_interest_change_30d(&coin).await),
         ("long_short_ratio", crypto_sources::fetch_long_short_ratio(&coin).await),
-        ("dvol", crypto_sources::fetch_dvol(&coin).await.map(|v| (v, "deribit"))),
-        ("put_call_ratio", crypto_sources::fetch_put_call_ratio(&coin).await.map(|v| (v, "deribit"))),
         (
             "stablecoin_supply_change_30d",
             crypto_sources::fetch_stablecoin_supply_change_30d().await.map(|v| (v, "defillama")),
         ),
     ];
+    // A Deribit só lista opções e DVOL de BTC e ETH: no ADA os dois ficam fora do
+    // conjunto, e buscá-los só geraria erro a cada rodada.
+    if wants("dvol") {
+        direct.push(("dvol", crypto_sources::fetch_dvol(&coin).await.map(|v| (v, "deribit"))));
+    }
+    if wants("put_call_ratio") {
+        direct.push((
+            "put_call_ratio",
+            crypto_sources::fetch_put_call_ratio(&coin).await.map(|v| (v, "deribit")),
+        ));
+    }
     if wants("staking_yield") {
         direct.push((
             "staking_yield",
@@ -333,7 +343,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn only_eth_and_btc_can_be_collected() {
+    #[ignore]
+    async fn live_collect_ada_indicators_writes_ten_readings() {
+        let db = dev_db().await;
+        let collection = collect_indicators(&db, "ADA").await.unwrap();
+        assert_eq!(collection.readings.len() + collection.errors.len(), 10);
+        for reading in &collection.readings {
+            assert!(matches!(reading.signal.as_str(), "GREEN" | "NEUTRAL" | "RED"));
+            assert_eq!(reading.coin, "ADA");
+        }
+    }
+
+    #[tokio::test]
+    async fn only_coins_with_their_own_score_can_be_collected() {
         let db = sea_orm::Database::connect("sqlite::memory:").await.unwrap();
         let err = collect_indicators(&db, "SOL").await.err().expect("SOL is rejected");
         assert!(matches!(err, AppError::InvalidInput(_)));

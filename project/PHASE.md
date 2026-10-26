@@ -2819,6 +2819,14 @@ efeito e do Reset.
 - **Cap. total do mercado não entrou**: não há série grátis (`/global/market_cap_chart` é do plano Pro, o `/global` só dá hoje), então não há tendência de 30 dias. Quem quiser a tendência da dominância ou do cap. total precisa guardar histórico próprio por 30+ dias de coleta.
 - Migration `m20261115_100000` (seeds por moeda), duplicados em `ETH_DEFAULT_THRESHOLDS` e `BTC_DEFAULT_THRESHOLDS`. O grupo novo é `IndicatorGroup::Sentiment`; o frontend só ganhou os rótulos (o grupo vem do backend).
 
+**Score próprio do ADA (Sessão 246)**, escolha do dono do projeto (frente "score de outra moeda"). Terceiro conjunto, ao lado de ETH 20 e BTC 14: **ADA 10 indicadores em 4 grupos**. É o conjunto do BTC menos o que as fontes não servem para o ADA, checado ao vivo em 2026-10-26:
+- Fora por falta de dado: `exchange_netflow` e `exchange_supply_change_30d` (o CoinMetrics Community responde "not supported" para `FlowInExUSD`, `FlowOutExUSD` e `SplyExNtv` de ADA), `dvol` e `put_call_ratio` (a Deribit devolve lista vazia para ADA).
+- Dentro: on-chain `mvrv_z_score`, `nvt_ratio`, `puell_multiple`, `active_addresses_trend`; derivativos `funding_rate_7d`, `open_interest_change_30d`, `long_short_ratio` (Binance, fallback Bybit); `stablecoin_supply_change_30d`; sentimento `fear_greed_index`, `mayer_multiple`.
+- Seeds calibrados com a série do ADA (migration `m20261116_100000`, duplicados em `ADA_DEFAULT_THRESHOLDS`): MVRV Z 0/3,5 (histórico de -0,61 a 4,50, hoje -0,36), Puell 0,5/2,5, endereços ativos 0/-20 (mais volátil que ETH/BTC), funding 5/10 (a Binance trava em 10,95% a.a., então 15/20 nunca seria atingido), long/short 1,8/2,6. **Palpites ou amostra curta**: o long/short só tem 30 dias de histórico na Binance; NVT, OI, stablecoins, Fear & Greed e Mayer reaproveitam os limites de ETH/BTC.
+- `threshold_coin` passou de binário para um mapa (ADA→ADA, BTC→BTC, resto→ETH). **Armadilha corrigida**: o editor de limites reclassificava as leituras com "BTC contra o resto"; com um terceiro dono, editar o ETH reclassificaria as leituras do ADA. Agora o ETH só reclassifica o que não pertence a outro dono.
+- A coleta (`collect_indicators`) buscava `dvol` e `put_call_ratio` sempre; passou a condicionar ao conjunto da moeda, senão o ADA gravaria dois erros falsos a cada rodada.
+- SOL, XRP e BNB seguem sem conjunto próprio (SOL: o Community só dá o preço, a Deribit não tem DVOL).
+
 ### Fase 32 — Inventário de ideias herdadas do Lume (levantado na Sessão 107, puro registro, nada decidido nem iniciado)
 
 **Origem**: o dono do projeto pediu pra ler o repo do Lume (`../lume`, `git pull` já em dia) e
