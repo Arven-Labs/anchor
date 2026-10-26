@@ -123,13 +123,13 @@ describe("Anchor — Research com dados de rede", function () {
     expect(Number(sql("SELECT count(*) FROM stock_quotes WHERE ticker = 'ETH'"))).toBeGreaterThan(0);
   });
 
-  it("cripto (BTC) monta o score próprio, com 12 indicadores e sem fundamentos de rede", async function () {
+  it("cripto (BTC) monta o score próprio, com 14 indicadores e sem fundamentos de rede", async function () {
     await search("Crypto", "BTC");
-    await expectQuoteScreen(this, "BTC", "of 12 logged");
+    await expectQuoteScreen(this, "BTC", "of 14 logged");
     await waitForText(
       byId("crypto-score-header"),
-      (text) => text.includes("of 12 logged"),
-      "o score do BTC deveria montar com os 12 indicadores",
+      (text) => text.includes("of 14 logged"),
+      "o score do BTC deveria montar com os 14 indicadores",
     );
     expect(await textOf($("body"))).not.toContain("Network fundamentals");
     expect(Number(sql("SELECT count(*) FROM stock_quotes WHERE ticker = 'BTC'"))).toBeGreaterThan(0);
