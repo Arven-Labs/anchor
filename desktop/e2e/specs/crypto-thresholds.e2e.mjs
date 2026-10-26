@@ -121,6 +121,10 @@ describe("Anchor — score cripto e editor de thresholds", () => {
       "o score deveria contar o verde do Fear & Greed e as 4 leituras",
     );
     expect(await textOf($("body"))).toContain("Market sentiment");
+    // Duas capturas: o cabeçalho do score (topo) e o grupo novo (embaixo do score).
+    await byId("crypto-score-header").scrollIntoView({ block: "start" });
+    await snap("crypto-score-header");
+    await $("//*[normalize-space(text())='Market sentiment']").scrollIntoView({ block: "center" });
     await snap("crypto-score-market-sentiment");
   });
 });
