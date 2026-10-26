@@ -29,7 +29,7 @@ use crate::finance_core::b3_options::{LastTrade, OptionsMarket};
 use crate::commands::tax::{assess_workspace, simulate_tax_sale_in, SimulateTaxSaleRequest};
 use crate::domain::crypto_score::{
     default_thresholds, CryptoScore, ScoreVerdict, ADA_DEFAULT_THRESHOLDS, BTC_DEFAULT_THRESHOLDS,
-    ETH_DEFAULT_THRESHOLDS,
+    ETH_DEFAULT_THRESHOLDS, XRP_DEFAULT_THRESHOLDS,
 };
 use crate::entity::{indicator_thresholds, tax_rules};
 use crate::commands::bank_account::{
@@ -62,7 +62,10 @@ async fn migrations_apply_from_scratch_and_are_idempotent() {
     let thresholds = indicator_thresholds::Entity::find().all(&db).await.unwrap();
     assert_eq!(
         thresholds.len(),
-        ETH_DEFAULT_THRESHOLDS.len() + BTC_DEFAULT_THRESHOLDS.len() + ADA_DEFAULT_THRESHOLDS.len()
+        ETH_DEFAULT_THRESHOLDS.len()
+            + BTC_DEFAULT_THRESHOLDS.len()
+            + ADA_DEFAULT_THRESHOLDS.len()
+            + XRP_DEFAULT_THRESHOLDS.len()
     );
 }
 
@@ -74,7 +77,7 @@ async fn seeded_thresholds_match_the_reset_defaults() {
     let db = memory_db().await;
     let rows = indicator_thresholds::Entity::find().all(&db).await.unwrap();
 
-    for coin in ["ETH", "BTC", "ADA"] {
+    for coin in ["ETH", "BTC", "ADA", "XRP"] {
         for (indicator, green, red) in default_thresholds(coin) {
             let row = rows
                 .iter()
@@ -454,6 +457,68 @@ async fn ada_score_has_its_own_indicators_and_thresholds_isolated_from_eth_and_b
     assert_eq!(signal(&eth, "mvrv_z_score").as_deref(), Some("GREEN"));
     let ada = crypto_score_for(&db, "ADA".to_string()).await.unwrap();
     assert_eq!(signal(&ada, "mvrv_z_score").as_deref(), Some("RED"));
+}
+
+// Score próprio do XRP: 9 indicadores em 4 grupos (o do ADA sem o Puell), com os
+// limites da migration `m20261117_100000`, isolados dos do ETH e do ADA.
+#[tokio::test]
+async fn xrp_score_has_its_own_indicators_and_thresholds_isolated_from_eth_and_ada() {
+    let db = memory_db().await;
+    let for_coin = |coin: &str, indicator: &str, raw_value: f64| RecordCryptoIndicatorRequest {
+        coin: coin.to_string(),
+        ..reading(indicator, raw_value)
+    };
+    let signal = |score: &CryptoScore, indicator: &str| {
+        score
+            .groups
+            .iter()
+            .flat_map(|g| g.indicators.iter())
+            .find(|i| i.indicator == indicator)
+            .and_then(|i| i.reading.as_ref())
+            .map(|r| r.signal.clone())
+    };
+
+    // MVRV Z de 6,0: o vermelho do ETH começa em 7 (→ neutro), o do XRP em 5 (→ vermelho),
+    // e o do ADA em 3,5 (→ vermelho). Endereços ativos a -22%: o XRP só fica vermelho em -25 (→ neutro),
+    // o ADA em -20 (→ vermelho).
+    record_crypto_indicator_in(&db, for_coin("XRP", "mvrv_z_score", 6.0)).await.unwrap();
+    record_crypto_indicator_in(&db, for_coin("XRP", "active_addresses_trend", -22.0)).await.unwrap();
+    record_crypto_indicator_in(&db, for_coin("ADA", "active_addresses_trend", -22.0)).await.unwrap();
+    record_crypto_indicator_in(&db, for_coin("ETH", "mvrv_z_score", 6.0)).await.unwrap();
+
+    let xrp = crypto_score_for(&db, "XRP".to_string()).await.unwrap();
+    assert_eq!((xrp.total, xrp.logged, xrp.green), (9, 2, 0));
+    assert_eq!(xrp.groups.len(), 4); // sem Network fundamentals
+    assert_eq!(signal(&xrp, "mvrv_z_score").as_deref(), Some("RED"));
+    assert_eq!(signal(&xrp, "active_addresses_trend").as_deref(), Some("NEUTRAL"));
+
+    let ada = crypto_score_for(&db, "ADA".to_string()).await.unwrap();
+    assert_eq!(signal(&ada, "active_addresses_trend").as_deref(), Some("RED"));
+    let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!(signal(&eth, "mvrv_z_score").as_deref(), Some("NEUTRAL"));
+
+    // O XRP não tem Puell (sem emissão no CoinMetrics) nem o que a Deribit e o netflow davam.
+    for indicator in ["puell_multiple", "dvol", "put_call_ratio", "exchange_netflow", "btc_dominance"] {
+        assert!(record_crypto_indicator_in(&db, for_coin("XRP", indicator, 1.0)).await.is_err(), "{indicator}");
+    }
+    // O ADA segue com o Puell.
+    record_crypto_indicator_in(&db, for_coin("ADA", "puell_multiple", 1.0)).await.unwrap();
+
+    // Editar o XRP reclassifica só as leituras do XRP...
+    apply_threshold(&db, "XRP", "mvrv_z_score", 8.0, 10.0).await.unwrap();
+    let xrp = crypto_score_for(&db, "XRP".to_string()).await.unwrap();
+    assert_eq!(signal(&xrp, "mvrv_z_score").as_deref(), Some("GREEN"));
+    let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!(signal(&eth, "mvrv_z_score").as_deref(), Some("NEUTRAL"));
+
+    // ...e editar o ETH não toca nas do XRP nem nas do ADA.
+    apply_threshold(&db, "ETH", "mvrv_z_score", 1.0, 2.0).await.unwrap();
+    let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!(signal(&eth, "mvrv_z_score").as_deref(), Some("RED"));
+    let xrp = crypto_score_for(&db, "XRP".to_string()).await.unwrap();
+    assert_eq!(signal(&xrp, "mvrv_z_score").as_deref(), Some("GREEN"));
+    let ada = crypto_score_for(&db, "ADA".to_string()).await.unwrap();
+    assert_eq!(signal(&ada, "active_addresses_trend").as_deref(), Some("RED"));
 }
 
 // Lote 4 da Fase 31: o grupo "Market sentiment" tem os seeds da migration para

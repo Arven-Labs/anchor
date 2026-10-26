@@ -63,7 +63,7 @@ pub fn classify(raw_value: f64, threshold: &Threshold) -> Result<Signal, AppErro
 // duplicados aqui só pra "Reset" funcionar sem consultar
 // o histórico de migrations. Ao mudar um seed, mude os dois.
 //
-// Limites são por moeda (`indicator_thresholds.coin`). Só ETH, BTC e ADA têm
+// Limites são por moeda (`indicator_thresholds.coin`). Só ETH, BTC, ADA e XRP têm
 // conjunto próprio; qualquer outra moeda (registro manual, ex. SOL) usa o do
 // ETH, como era antes de existir o do BTC.
 // ---------------------------------------------------------------------------
@@ -71,6 +71,7 @@ pub fn classify(raw_value: f64, threshold: &Threshold) -> Result<Signal, AppErro
 pub const COIN_ETH: &str = "ETH";
 pub const COIN_BTC: &str = "BTC";
 pub const COIN_ADA: &str = "ADA";
+pub const COIN_XRP: &str = "XRP";
 
 /// Moeda cujo conjunto de indicadores e limites vale para `coin`.
 pub fn threshold_coin(coin: &str) -> &'static str {
@@ -78,6 +79,8 @@ pub fn threshold_coin(coin: &str) -> &'static str {
         COIN_BTC
     } else if coin.eq_ignore_ascii_case(COIN_ADA) {
         COIN_ADA
+    } else if coin.eq_ignore_ascii_case(COIN_XRP) {
+        COIN_XRP
     } else {
         COIN_ETH
     }
@@ -145,11 +148,28 @@ pub const ADA_DEFAULT_THRESHOLDS: [(&str, f64, f64); 10] = [
     ("mayer_multiple", 1.3, 2.0),
 ];
 
+/// Calibrados com dados reais do XRP em 2026-10-26 (ver a migration
+/// `m20261117_100000`). É o conjunto do ADA sem `puell_multiple`: o CoinMetrics
+/// Community não tem `IssTotUSD` para XRP (nem netflow e supply das exchanges),
+/// e a Deribit não lista XRP.
+pub const XRP_DEFAULT_THRESHOLDS: [(&str, f64, f64); 9] = [
+    ("mvrv_z_score", 0.0, 5.0),
+    ("nvt_ratio", 0.9, 1.3),
+    ("active_addresses_trend", 0.0, -25.0),
+    ("funding_rate_7d", 5.0, 10.0),
+    ("open_interest_change_30d", 0.0, 25.0),
+    ("long_short_ratio", 2.3, 3.2),
+    ("stablecoin_supply_change_30d", 2.0, 0.0),
+    ("fear_greed_index", 25.0, 75.0),
+    ("mayer_multiple", 1.3, 2.0),
+];
+
 /// Limites de fábrica de uma moeda: `(indicador, verde, vermelho)`.
 pub fn default_thresholds(coin: &str) -> &'static [(&'static str, f64, f64)] {
     match threshold_coin(coin) {
         COIN_BTC => &BTC_DEFAULT_THRESHOLDS,
         COIN_ADA => &ADA_DEFAULT_THRESHOLDS,
+        COIN_XRP => &XRP_DEFAULT_THRESHOLDS,
         _ => &ETH_DEFAULT_THRESHOLDS,
     }
 }
@@ -220,6 +240,17 @@ impl IndicatorGroup {
 
     /// Chaves de `indicator_thresholds`/`crypto_indicators` de cada grupo.
     pub fn indicators(&self, coin: &str) -> &'static [&'static str] {
+        if threshold_coin(coin) == COIN_XRP {
+            return match self {
+                IndicatorGroup::OnChain => &["mvrv_z_score", "nvt_ratio", "active_addresses_trend"],
+                IndicatorGroup::Fundamentals => &[],
+                IndicatorGroup::Derivatives => {
+                    &["funding_rate_7d", "open_interest_change_30d", "long_short_ratio"]
+                }
+                IndicatorGroup::Liquidity => &["stablecoin_supply_change_30d"],
+                IndicatorGroup::Sentiment => &["fear_greed_index", "mayer_multiple"],
+            };
+        }
         if threshold_coin(coin) == COIN_ADA {
             return match self {
                 IndicatorGroup::OnChain => {
@@ -402,7 +433,7 @@ mod tests {
 
     #[test]
     fn groups_cover_distinct_indicators_per_coin() {
-        for (coin, expected) in [("ETH", 20), ("BTC", 14), ("ADA", 10)] {
+        for (coin, expected) in [("ETH", 20), ("BTC", 14), ("ADA", 10), ("XRP", 9)] {
             let all = grouped(coin);
             assert_eq!(all.len(), expected, "{coin}");
             let mut unique = all.clone();
@@ -456,6 +487,17 @@ mod tests {
         let dropped: Vec<&str> = btc.iter().copied().filter(|name| !ada.contains(name)).collect();
         assert_eq!(dropped, ["exchange_netflow", "exchange_supply_change_30d", "dvol", "put_call_ratio"]);
         assert_eq!(threshold_coin("ada"), "ADA");
+    }
+
+    // O XRP é o ADA sem o Puell: o CoinMetrics Community não tem `IssTotUSD` para ele.
+    #[test]
+    fn xrp_is_the_ada_set_minus_puell() {
+        assert_eq!(IndicatorGroup::for_coin("XRP"), IndicatorGroup::for_coin("ADA"));
+        let (ada, xrp) = (grouped("ADA"), grouped("XRP"));
+        assert!(xrp.iter().all(|name| ada.contains(name)));
+        let dropped: Vec<&str> = ada.iter().copied().filter(|name| !xrp.contains(name)).collect();
+        assert_eq!(dropped, ["puell_multiple"]);
+        assert_eq!(threshold_coin("xrp"), "XRP");
     }
 
     #[test]
@@ -513,6 +555,10 @@ mod tests {
         let ada = compute_score("ADA", &[]);
         assert_eq!((ada.green, ada.logged, ada.total), (0, 0, 10));
         assert_eq!(ada.groups.len(), 4);
+
+        let xrp = compute_score("XRP", &[]);
+        assert_eq!((xrp.green, xrp.logged, xrp.total), (0, 0, 9));
+        assert_eq!(xrp.groups.len(), 4);
     }
 
     #[test]
@@ -555,7 +601,7 @@ mod tests {
 
     #[test]
     fn every_grouped_indicator_has_a_valid_default() {
-        for coin in ["ETH", "BTC", "ADA"] {
+        for coin in ["ETH", "BTC", "ADA", "XRP"] {
             for name in grouped(coin) {
                 let (green, red) = default_threshold(coin, name)
                     .unwrap_or_else(|| panic!("no default threshold for {coin} {name}"));
@@ -567,7 +613,7 @@ mod tests {
 
     #[test]
     fn defaults_have_no_unknown_indicator() {
-        for coin in ["ETH", "BTC", "ADA"] {
+        for coin in ["ETH", "BTC", "ADA", "XRP"] {
             let grouped = grouped(coin);
             assert!(default_thresholds(coin).iter().all(|(name, _, _)| grouped.contains(name)), "{coin}");
             assert_eq!(default_thresholds(coin).len(), grouped.len(), "{coin}");

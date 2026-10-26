@@ -55,8 +55,12 @@ const ADA_ONLY_EXCLUDED_KEYS: IndicatorKey[] = [
   "put_call_ratio",
 ];
 
+// XRP is the Cardano set without the Puell Multiple (CoinMetrics Community has
+// no issuance for it): 9 indicators.
+const XRP_ONLY_EXCLUDED_KEYS: IndicatorKey[] = [...ADA_ONLY_EXCLUDED_KEYS, "puell_multiple"];
+
 /** Coins that have their own collector, score and thresholds. */
-export const SCORED_COINS = ["ETH", "BTC", "ADA"];
+export const SCORED_COINS = ["ETH", "BTC", "ADA", "XRP"];
 
 export function hasOwnScore(coin: string): boolean {
   return SCORED_COINS.includes(coin.toUpperCase());
@@ -69,6 +73,8 @@ export function indicatorKeysFor(coin: string): IndicatorKey[] {
       return btcKeys;
     case "ADA":
       return btcKeys.filter((key) => !ADA_ONLY_EXCLUDED_KEYS.includes(key));
+    case "XRP":
+      return btcKeys.filter((key) => !XRP_ONLY_EXCLUDED_KEYS.includes(key));
     default:
       return INDICATOR_KEYS;
   }

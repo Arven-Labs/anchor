@@ -236,6 +236,7 @@ fn coingecko_id(coin: &str) -> Result<&'static str, AppError> {
         "ETH" => Ok("ethereum"),
         "BTC" => Ok("bitcoin"),
         "ADA" => Ok("cardano"),
+        "XRP" => Ok("ripple"),
         other => Err(AppError::NoData(format!("no CoinGecko id for '{other}'"))),
     }
 }

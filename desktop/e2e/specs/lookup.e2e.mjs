@@ -149,4 +149,20 @@ describe("Anchor — Research com dados de rede", function () {
     expect(body).not.toContain("Exchange Netflow");
     expect(Number(sql("SELECT count(*) FROM stock_quotes WHERE ticker = 'ADA'"))).toBeGreaterThan(0);
   });
+
+  it("cripto (XRP) monta o score próprio, com 9 indicadores e sem fundamentos, Puell, DVOL nem netflow", async function () {
+    await search("Crypto", "XRP");
+    await expectQuoteScreen(this, "XRP", "of 9 logged");
+    await waitForText(
+      byId("crypto-score-header"),
+      (text) => text.includes("of 9 logged"),
+      "o score do XRP deveria montar com os 9 indicadores",
+    );
+    const body = await textOf($("body"));
+    expect(body).not.toContain("Network fundamentals");
+    expect(body).not.toContain("Puell");
+    expect(body).not.toContain("DVOL");
+    expect(body).not.toContain("Exchange Netflow");
+    expect(Number(sql("SELECT count(*) FROM stock_quotes WHERE ticker = 'XRP'"))).toBeGreaterThan(0);
+  });
 });
