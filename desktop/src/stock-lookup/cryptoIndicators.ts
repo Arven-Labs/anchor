@@ -1,4 +1,4 @@
-// The 20 Ethereum score indicators (Fase 3 + Fase 31) — keys match the
+// Every score indicator across coins (Fase 3 + Fase 31; Ethereum alone uses 20) — keys match the
 // `indicator` column in `indicator_thresholds`. The grouping into subscores
 // lives in the backend (`domain::crypto_score`) and comes with
 // `get_crypto_score`; this list only labels the indicators and drives the
@@ -24,6 +24,8 @@ export const INDICATORS = {
   fear_greed_index: "Fear & Greed Index (0-100)",
   mayer_multiple: "Mayer Multiple (price / 200d average)",
   btc_dominance: "BTC Dominance (% of total market cap)",
+  sopr: "SOPR (Spent Output Profit Ratio)",
+  nupl: "NUPL (Net Unrealized Profit/Loss)",
 } as const;
 
 export type IndicatorKey = keyof typeof INDICATORS;
@@ -48,9 +50,13 @@ const ETH_ONLY_KEYS: IndicatorKey[] = [
   "btc_dominance",
 ];
 
+// SOPR and NUPL come from bitcoin-data.com, which only serves Bitcoin.
+const BTC_ONLY_KEYS: IndicatorKey[] = ["sopr", "nupl"];
+
 const ADA_ONLY_EXCLUDED_KEYS: IndicatorKey[] = [
   "exchange_netflow",
   "exchange_supply_change_30d",
+  ...BTC_ONLY_KEYS,
   "dvol",
   "put_call_ratio",
 ];
@@ -76,6 +82,6 @@ export function indicatorKeysFor(coin: string): IndicatorKey[] {
     case "XRP":
       return btcKeys.filter((key) => !XRP_ONLY_EXCLUDED_KEYS.includes(key));
     default:
-      return INDICATOR_KEYS;
+      return INDICATOR_KEYS.filter((key) => !BTC_ONLY_KEYS.includes(key));
   }
 }

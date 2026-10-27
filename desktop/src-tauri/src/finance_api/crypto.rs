@@ -134,12 +134,15 @@ const ETH_INDICATORS: [(&str, &str, &str); 11] = [
     ("mayer_multiple", "mayer-multiple", "coinmetrics"),
 ];
 
-async fn record_crypto_indicator(
+/// `reading_date` é a data do dado quando a fonte a informa (bitcoin-data.com
+/// atrasa 7 dias); sem ela, vale hoje.
+pub(crate) async fn record_crypto_indicator(
     db: &DatabaseConnection,
     coin: &str,
     indicator: &str,
     raw_value: f64,
     source: &str,
+    reading_date: Option<&str>,
 ) -> Result<crypto_indicators::Model, AppError> {
     let threshold = indicator_thresholds::Entity::find()
         .filter(indicator_thresholds::Column::Coin.eq(crypto_score::threshold_coin(coin)))
@@ -160,7 +163,7 @@ async fn record_crypto_indicator(
         id: ActiveValue::NotSet,
         coin: Set(coin.to_string()),
         indicator: Set(indicator.to_string()),
-        reading_date: Set(Utc::now().date_naive().to_string()),
+        reading_date: Set(reading_date.map_or_else(|| Utc::now().date_naive().to_string(), str::to_string)),
         raw_value: Set(raw_value),
         signal: Set(signal.as_str().to_string()),
         source: Set(source.to_string()),
@@ -182,7 +185,7 @@ pub struct IndicatorCollection {
 
 /// Indicadores do score de `coin` (`run_crypto_collector`), gravados sob essa
 /// moeda. Só ETH, BTC, ADA e XRP têm score próprio; cada um coleta o seu conjunto
-/// (`domain::crypto_score::IndicatorGroup::indicators`): 20 no ETH, 14 no BTC,
+/// (`domain::crypto_score::IndicatorGroup::indicators`): 20 no ETH, 16 no BTC,
 /// 10 no ADA, 9 no XRP.
 /// Os que passam por `finance_core::eth_indicators` (CoinMetrics, CoinGecko,
 /// DefiLlama, ultrasound.money) e, desde a Fase 31, os coletados direto pelo
@@ -269,10 +272,57 @@ pub async fn collect_indicators(
         }
     }
 
+    // bitcoin-data.com (só BTC): informa a data do dado (7 dias de atraso) e tem
+    // cota de 10 chamadas por hora e 15 por dia. Quem já tem leitura de hoje não
+    // chama a fonte de novo; assim uma coleta repetida custa 0 chamadas.
+    for indicator in BITCOIN_DATA_INDICATORS {
+        if !wants(indicator) || collected_today(db, &coin, indicator).await? {
+            continue;
+        }
+        match crypto_sources::fetch_bitcoin_data(indicator).await {
+            Ok(dated) => {
+                let recorded = record_crypto_indicator(
+                    db,
+                    &coin,
+                    indicator,
+                    dated.value,
+                    "bitcoin-data.com",
+                    Some(&dated.date),
+                )
+                .await;
+                match recorded {
+                    Ok(model) => readings.push(model),
+                    Err(e) => errors.push(format!("{indicator}: {e}")),
+                }
+            }
+            Err(e) => errors.push(format!("{indicator}: {e}")),
+        }
+    }
+
     if readings.is_empty() && !errors.is_empty() {
         return Err(AppError::CryptoSource(errors.join("; ")));
     }
     Ok(IndicatorCollection { readings, errors })
+}
+
+/// Indicadores do bitcoin-data.com; o nome interno é também o campo da resposta.
+const BITCOIN_DATA_INDICATORS: [&str; 2] = ["sopr", "nupl"];
+
+/// Já existe leitura gravada hoje (UTC) deste indicador desta moeda? Vale também
+/// para leitura manual: quem registrou o valor à mão hoje não precisa da fonte.
+pub(crate) async fn collected_today(
+    db: &DatabaseConnection,
+    coin: &str,
+    indicator: &str,
+) -> Result<bool, AppError> {
+    let today = Utc::now().date_naive().to_string();
+    let found = crypto_indicators::Entity::find()
+        .filter(crypto_indicators::Column::Coin.eq(coin))
+        .filter(crypto_indicators::Column::Indicator.eq(indicator))
+        .filter(crypto_indicators::Column::CreatedAt.starts_with(today))
+        .one(db)
+        .await?;
+    Ok(found.is_some())
 }
 
 async fn record_or_collect_error(
@@ -285,7 +335,7 @@ async fn record_or_collect_error(
     errors: &mut Vec<String>,
 ) {
     let outcome = match fetched {
-        Ok(raw_value) => record_crypto_indicator(db, coin, indicator, raw_value, source).await,
+        Ok(raw_value) => record_crypto_indicator(db, coin, indicator, raw_value, source, None).await,
         Err(e) => Err(e),
     };
     match outcome {
@@ -333,10 +383,12 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn live_collect_btc_indicators_writes_fourteen_readings() {
+    async fn live_collect_btc_indicators_writes_sixteen_readings() {
         let db = dev_db().await;
         let collection = collect_indicators(&db, "BTC").await.unwrap();
-        assert_eq!(collection.readings.len() + collection.errors.len(), 14);
+        // `sopr` e `nupl` ficam fora da conta se já houver leitura de hoje (cota da fonte).
+        let total = collection.readings.len() + collection.errors.len();
+        assert!((14..=16).contains(&total), "{total}");
         for reading in &collection.readings {
             assert!(matches!(reading.signal.as_str(), "GREEN" | "NEUTRAL" | "RED"));
             assert_eq!(reading.coin, "BTC");

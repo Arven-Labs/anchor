@@ -25,6 +25,9 @@ const DEFILLAMA_STABLECOINS: &str = "https://stablecoins.llama.fi";
 const DEFILLAMA_YIELDS: &str = "https://yields.llama.fi";
 const COINMETRICS_COMMUNITY: &str = "https://community-api.coinmetrics.io/v4";
 const COINGECKO_API: &str = "https://api.coingecko.com/api/v3";
+/// SOPR e NUPL do BTC. Plano grátis: 10 chamadas por hora, 15 por dia e dado com
+/// 7 dias de atraso (o `d` da resposta é a data real do dado).
+const BITCOIN_DATA_API: &str = "https://bitcoin-data.com/v1";
 /// Pool stETH (Lido, Ethereum) na DefiLlama — o id é estável.
 const STETH_POOL_ID: &str = "747c1d2a-c668-4682-b9f9-296708a3dd90";
 
@@ -380,6 +383,47 @@ pub fn parse_btc_dominance(body: &str) -> Result<f64, AppError> {
     Ok(btc)
 }
 
+/// Leitura de uma fonte que informa a data do dado (que não é a de hoje).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DatedReading {
+    pub value: f64,
+    /// `YYYY-MM-DD`, a data do dado segundo a fonte.
+    pub date: String,
+}
+
+/// Faixa em que o valor é plausível; fora dela a fonte provavelmente mudou de formato.
+fn bitcoin_data_range(field: &str) -> Option<(f64, f64)> {
+    match field {
+        "sopr" => Some((0.0, 10.0)),
+        "nupl" => Some((-1.0, 1.0)),
+        _ => None,
+    }
+}
+
+/// Resposta de `/v1/{field}/last` do bitcoin-data.com, ex.:
+/// `{"d":"2026-10-19","unixTs":1792368000,"sopr":1.0057,"delayed":true,...}`.
+/// `field` é `sopr` ou `nupl`.
+pub fn parse_bitcoin_data(body: &str, field: &str) -> Result<DatedReading, AppError> {
+    let source = "bitcoin-data.com";
+    let (min, max) = bitcoin_data_range(field)
+        .ok_or_else(|| source_err(source, format!("unsupported field '{field}'")))?;
+    let json: serde_json::Value = serde_json::from_str(body).map_err(|e| source_err(source, e))?;
+    let value = json
+        .get(field)
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| source_err(source, format!("missing numeric '{field}'")))?;
+    // SOPR é razão (> 0) e NUPL fica em [-1, 1]; os limites são exclusivos no SOPR.
+    if !value.is_finite() || value < min || value > max || (field == "sopr" && value == min) {
+        return Err(source_err(source, format!("implausible {field} {value}")));
+    }
+    let date = json
+        .get("d")
+        .and_then(serde_json::Value::as_str)
+        .filter(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok())
+        .ok_or_else(|| source_err(source, "missing or invalid 'd' date"))?;
+    Ok(DatedReading { value, date: date.to_string() })
+}
+
 // ---------------------------------------------------------------------------
 // Fetch
 // ---------------------------------------------------------------------------
@@ -533,6 +577,14 @@ pub async fn fetch_btc_dominance() -> Result<f64, AppError> {
     parse_btc_dominance(&get_text("CoinGecko global", &format!("{COINGECKO_API}/global")).await?)
 }
 
+/// Último SOPR (`sopr`) ou NUPL (`nupl`) do BTC no bitcoin-data.com, com a data
+/// do dado (7 dias atrás no plano grátis). Cada chamada gasta a cota da fonte:
+/// o coletor só chega aqui depois de checar que não há leitura de hoje.
+pub async fn fetch_bitcoin_data(field: &str) -> Result<DatedReading, AppError> {
+    let url = format!("{BITCOIN_DATA_API}/{field}/last");
+    parse_bitcoin_data(&get_text("bitcoin-data.com", &url).await?, field)
+}
+
 /// Staking yield real do ETH: APY do stETH menos a inflação bruta.
 pub async fn fetch_staking_yield_real() -> Result<f64, AppError> {
     let apy_url = format!("{DEFILLAMA_YIELDS}/chart/{STETH_POOL_ID}");
@@ -575,6 +627,41 @@ mod tests {
         assert!(parse_btc_dominance(r#"{"data":{"market_cap_percentage":{"btc":140.0}}}"#).is_err());
         assert!(parse_btc_dominance(r#"{"status":{"error_code":429}}"#).is_err());
         assert!(parse_btc_dominance("not json").is_err());
+    }
+
+    // Respostas reais de `/v1/{sopr,nupl}/last` de 2026-10-26 (dado de 7 dias antes).
+    const SOPR_LAST: &str = r#"{"d":"2026-10-19","unixTs":1792368000,"sopr":1.0057,"delayed":true,"message":"Real-time data (last 7 days) requires an active subscription. https://bitcoin-data.com/bguser/pricing"}"#;
+    const NUPL_LAST: &str = r#"{"d":"2026-10-19","unixTs":1792368000,"nupl":0.347,"delayed":true,"message":"Real-time data (last 7 days) requires an active subscription. https://bitcoin-data.com/bguser/pricing"}"#;
+
+    #[test]
+    fn bitcoin_data_reads_the_value_and_the_date_of_the_data() {
+        let sopr = parse_bitcoin_data(SOPR_LAST, "sopr").unwrap();
+        assert!(close(sopr.value, 1.0057));
+        assert_eq!(sopr.date, "2026-10-19");
+        let nupl = parse_bitcoin_data(NUPL_LAST, "nupl").unwrap();
+        assert!(close(nupl.value, 0.347));
+        assert_eq!(nupl.date, "2026-10-19");
+    }
+
+    #[test]
+    fn bitcoin_data_rejects_the_wrong_field_a_bad_date_and_implausible_values() {
+        // O corpo de um indicador não vale para o outro.
+        assert!(parse_bitcoin_data(SOPR_LAST, "nupl").is_err());
+        assert!(parse_bitcoin_data(NUPL_LAST, "sopr").is_err());
+        // Campo que a fonte não atende aqui.
+        assert!(parse_bitcoin_data(SOPR_LAST, "mvrv").is_err());
+        // Data ausente ou fora do formato.
+        assert!(parse_bitcoin_data(r#"{"sopr":1.0}"#, "sopr").is_err());
+        assert!(parse_bitcoin_data(r#"{"d":"19/10/2026","sopr":1.0}"#, "sopr").is_err());
+        // Fora da faixa: SOPR é razão positiva, NUPL fica em [-1, 1].
+        assert!(parse_bitcoin_data(r#"{"d":"2026-10-19","sopr":0}"#, "sopr").is_err());
+        assert!(parse_bitcoin_data(r#"{"d":"2026-10-19","sopr":-1.2}"#, "sopr").is_err());
+        assert!(parse_bitcoin_data(r#"{"d":"2026-10-19","sopr":55.0}"#, "sopr").is_err());
+        assert!(parse_bitcoin_data(r#"{"d":"2026-10-19","nupl":1.4}"#, "nupl").is_err());
+        assert!(parse_bitcoin_data(r#"{"d":"2026-10-19","nupl":-0.2}"#, "nupl").is_ok());
+        // Valor como texto (formato diferente) e corpo que não é JSON (ex.: página de limite).
+        assert!(parse_bitcoin_data(r#"{"d":"2026-10-19","sopr":"1.0"}"#, "sopr").is_err());
+        assert!(parse_bitcoin_data("Too Many Requests", "sopr").is_err());
     }
 
     #[test]

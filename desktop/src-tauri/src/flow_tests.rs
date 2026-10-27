@@ -385,7 +385,7 @@ async fn btc_score_has_its_own_indicators_groups_and_thresholds() {
     record_crypto_indicator_in(&db, btc_reading("mvrv_z_score", 1.0)).await.unwrap();
 
     let btc = crypto_score_for(&db, "BTC".to_string()).await.unwrap();
-    assert_eq!((btc.total, btc.logged), (14, 2));
+    assert_eq!((btc.total, btc.logged), (16, 2));
     assert_eq!(btc.groups.len(), 4); // sem Network fundamentals
     let derivatives = btc.groups.iter().find(|g| g.label == "Derivatives & options").unwrap();
     assert_eq!(derivatives.indicators[0].reading.as_ref().unwrap().signal, "RED");
@@ -457,6 +457,62 @@ async fn ada_score_has_its_own_indicators_and_thresholds_isolated_from_eth_and_b
     assert_eq!(signal(&eth, "mvrv_z_score").as_deref(), Some("GREEN"));
     let ada = crypto_score_for(&db, "ADA".to_string()).await.unwrap();
     assert_eq!(signal(&ada, "mvrv_z_score").as_deref(), Some("RED"));
+}
+
+// SOPR e NUPL (bitcoin-data.com) só existem no BTC. A leitura grava a data do dado
+// (7 dias atrás no plano grátis), e a coleta pula quem já tem leitura de hoje para
+// não gastar a cota da fonte (10 por hora, 15 por dia).
+#[tokio::test]
+async fn btc_sopr_and_nupl_are_btc_only_dated_by_the_data_and_guarded_against_repeat_calls() {
+    use crate::finance_api::crypto::{collected_today, record_crypto_indicator};
+    use sea_orm::ConnectionTrait;
+
+    let db = memory_db().await;
+    let for_coin = |coin: &str, indicator: &str, raw_value: f64| RecordCryptoIndicatorRequest {
+        coin: coin.to_string(),
+        ..reading(indicator, raw_value)
+    };
+
+    // Seeds da migration `m20261118_100000`: SOPR 0,995/1,02 e NUPL 0,25/0,6, menor é melhor.
+    let signal = |model: crate::entity::crypto_indicators::Model| model.signal;
+    let sopr = |value: f64| for_coin("BTC", "sopr", value);
+    assert_eq!(signal(record_crypto_indicator_in(&db, sopr(0.98)).await.unwrap()), "GREEN");
+    assert_eq!(signal(record_crypto_indicator_in(&db, sopr(1.0057)).await.unwrap()), "NEUTRAL");
+    assert_eq!(signal(record_crypto_indicator_in(&db, sopr(1.05)).await.unwrap()), "RED");
+    let nupl = |value: f64| for_coin("BTC", "nupl", value);
+    assert_eq!(signal(record_crypto_indicator_in(&db, nupl(0.2)).await.unwrap()), "GREEN");
+    assert_eq!(signal(record_crypto_indicator_in(&db, nupl(0.347)).await.unwrap()), "NEUTRAL");
+    assert_eq!(signal(record_crypto_indicator_in(&db, nupl(0.7)).await.unwrap()), "RED");
+
+    // Sem limite nas outras moedas: o indicador não existe para elas.
+    for coin in ["ETH", "ADA", "XRP"] {
+        for indicator in ["sopr", "nupl"] {
+            assert!(record_crypto_indicator_in(&db, for_coin(coin, indicator, 1.0)).await.is_err(), "{coin} {indicator}");
+        }
+    }
+
+    // A leitura da fonte grava a data do dado, não a de hoje, e o score mostra essa data.
+    let db = memory_db().await;
+    assert!(!collected_today(&db, "BTC", "sopr").await.unwrap());
+    let stored =
+        record_crypto_indicator(&db, "BTC", "sopr", 1.0057, "bitcoin-data.com", Some("2026-10-19")).await.unwrap();
+    assert_eq!((stored.reading_date.as_str(), stored.signal.as_str()), ("2026-10-19", "NEUTRAL"));
+    let btc = crypto_score_for(&db, "BTC".to_string()).await.unwrap();
+    let shown = btc.groups.iter().flat_map(|g| g.indicators.iter()).find(|i| i.indicator == "sopr").unwrap();
+    assert_eq!(shown.reading.as_ref().unwrap().reading_date, "2026-10-19");
+
+    // Proteção de cota: leitura criada hoje → pula; de outro dia, de outro indicador ou de outra moeda → coleta.
+    assert!(collected_today(&db, "BTC", "sopr").await.unwrap());
+    assert!(!collected_today(&db, "BTC", "nupl").await.unwrap());
+    assert!(!collected_today(&db, "ETH", "sopr").await.unwrap());
+    let yesterday = (chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339();
+    db.execute_unprepared(&format!(
+        "INSERT INTO crypto_indicators (coin, indicator, reading_date, raw_value, signal, source, created_at) \
+         VALUES ('BTC', 'nupl', '2026-10-12', 0.3, 'NEUTRAL', 'bitcoin-data.com', '{yesterday}')"
+    ))
+    .await
+    .unwrap();
+    assert!(!collected_today(&db, "BTC", "nupl").await.unwrap());
 }
 
 // Score próprio do XRP: 9 indicadores em 4 grupos (o do ADA sem o Puell), com os

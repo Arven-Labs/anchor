@@ -112,14 +112,17 @@ pub const ETH_DEFAULT_THRESHOLDS: [(&str, f64, f64); 20] = [
 /// Calibrados com dados reais do BTC em 2026-10-17 (ver a migration
 /// `m20261017_110000`). Sem staking, TVL, net issuance, fees vs emission nem
 /// ETH/BTC: não têm análogo no BTC. Os dois de sentimento (lote 4) vêm da
-/// migration `m20261115_100000`.
-pub const BTC_DEFAULT_THRESHOLDS: [(&str, f64, f64); 14] = [
+/// migration `m20261115_100000`; `sopr` e `nupl` (bitcoin-data.com, só BTC), da
+/// `m20261118_100000`.
+pub const BTC_DEFAULT_THRESHOLDS: [(&str, f64, f64); 16] = [
     ("mvrv_z_score", 0.0, 7.0),
     ("nvt_ratio", 0.9, 1.3),
     ("puell_multiple", 0.5, 4.0),
     ("active_addresses_trend", 0.0, -10.0),
     ("exchange_netflow", -0.02, 0.03),
     ("exchange_supply_change_30d", -1.0, 2.0),
+    ("sopr", 0.995, 1.02),
+    ("nupl", 0.25, 0.6),
     ("funding_rate_7d", 5.0, 15.0),
     ("open_interest_change_30d", 0.0, 25.0),
     ("long_short_ratio", 1.3, 2.0),
@@ -273,6 +276,8 @@ impl IndicatorGroup {
                     "active_addresses_trend",
                     "exchange_netflow",
                     "exchange_supply_change_30d",
+                    "sopr",
+                    "nupl",
                 ],
                 IndicatorGroup::Fundamentals => &[],
                 IndicatorGroup::Derivatives => &[
@@ -433,7 +438,7 @@ mod tests {
 
     #[test]
     fn groups_cover_distinct_indicators_per_coin() {
-        for (coin, expected) in [("ETH", 20), ("BTC", 14), ("ADA", 10), ("XRP", 9)] {
+        for (coin, expected) in [("ETH", 20), ("BTC", 16), ("ADA", 10), ("XRP", 9)] {
             let all = grouped(coin);
             assert_eq!(all.len(), expected, "{coin}");
             let mut unique = all.clone();
@@ -485,7 +490,11 @@ mod tests {
         let (btc, ada) = (grouped("BTC"), grouped("ADA"));
         assert!(ada.iter().all(|name| btc.contains(name)));
         let dropped: Vec<&str> = btc.iter().copied().filter(|name| !ada.contains(name)).collect();
-        assert_eq!(dropped, ["exchange_netflow", "exchange_supply_change_30d", "dvol", "put_call_ratio"]);
+        // `sopr` e `nupl` vêm do bitcoin-data.com, que só atende o BTC.
+        assert_eq!(
+            dropped,
+            ["exchange_netflow", "exchange_supply_change_30d", "sopr", "nupl", "dvol", "put_call_ratio"]
+        );
         assert_eq!(threshold_coin("ada"), "ADA");
     }
 
@@ -549,7 +558,7 @@ mod tests {
         assert!(score.groups.iter().all(|g| g.indicators.iter().all(|i| i.reading.is_none())));
 
         let btc = compute_score("BTC", &[]);
-        assert_eq!((btc.green, btc.logged, btc.total), (0, 0, 14));
+        assert_eq!((btc.green, btc.logged, btc.total), (0, 0, 16));
         assert_eq!(btc.groups.len(), 4);
 
         let ada = compute_score("ADA", &[]);
