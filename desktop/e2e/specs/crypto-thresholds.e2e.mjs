@@ -160,4 +160,32 @@ describe("Anchor — score cripto e editor de thresholds", () => {
     await byId("crypto-score-history").scrollIntoView({ block: "center" });
     await snap("crypto-score-history");
   });
+
+  it("o seletor de período recorta o histórico, contando da última data de leitura", async () => {
+    // XRP semeado com 3 datas espalhadas: 01/06 (136 dias antes da última), 20/09 (25 dias) e 15/10.
+    sql(
+      "INSERT INTO stock_quotes (ticker, price, source, fetched_at, name, exchange, currency) " +
+        "VALUES ('XRP', 2.0, 'coingecko', '2026-10-16T12:00:00Z', 'XRP', 'CoinGecko', 'USD')",
+    );
+    sql(
+      "INSERT INTO crypto_indicators (coin, indicator, reading_date, raw_value, signal, source, created_at) VALUES " +
+        "('XRP', 'mvrv_z_score', '2026-06-01', -0.4, 'GREEN', 'test', '2026-10-16T12:00:00Z'), " +
+        "('XRP', 'fear_greed_index', '2026-09-20', 20, 'GREEN', 'test', '2026-10-16T12:00:00Z'), " +
+        "('XRP', 'funding_rate_7d', '2026-10-15', 2.0, 'GREEN', 'test', '2026-10-16T12:00:00Z')",
+    );
+
+    await pickOption(byId("global-search-class"), "Crypto");
+    await byId("global-search-ticker").setValue("XRP");
+    await byId("global-search-submit").click();
+
+    const summary = byId("crypto-score-history-summary");
+    await byId("crypto-score-history-periods").waitForDisplayed({ timeout: 30_000 });
+    await waitForText(summary, (text) => text.includes("3 dates"), "All deveria mostrar as 3 datas do XRP");
+
+    await $("//button[normalize-space(text())='30D']").click();
+    await waitForText(summary, (text) => text.includes("2 dates"), "30D deveria cortar o ponto de 01/06");
+
+    await $("//button[normalize-space(text())='All']").click();
+    await waitForText(summary, (text) => text.includes("3 dates"), "All deveria devolver as 3 datas");
+  });
 });
