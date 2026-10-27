@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -8,6 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Button } from "@/components/ui/button";
 
 // Same palette as PriceHistoryChart.tsx / BacktestSection.tsx: the project has
 // no shared chart-constants file on purpose.
@@ -38,6 +40,35 @@ const VERDICT_SHORT: Record<ScoreHistoryPoint["verdict"], string> = {
 
 type ChartPoint = ScoreHistoryPoint & { greenPct: number };
 
+type PeriodKey = "30d" | "90d" | "12m" | "all";
+
+const PERIODS: { key: PeriodKey; label: string }[] = [
+  { key: "30d", label: "30D" },
+  { key: "90d", label: "90D" },
+  { key: "12m", label: "12M" },
+  { key: "all", label: "All" },
+];
+
+const PERIOD_DAYS: Record<Exclude<PeriodKey, "all">, number> = {
+  "30d": 30,
+  "90d": 90,
+  "12m": 365,
+};
+
+function daysBetween(from: string, to: string): number {
+  return (new Date(to).getTime() - new Date(from).getTime()) / 86_400_000;
+}
+
+// Client-side cut of the already-fetched series, counted back from the latest
+// reading date (not from today, so an old coin does not come out empty). A
+// window with fewer than two dates cannot draw a line, so it shows everything.
+function filterByPeriod(history: ScoreHistoryPoint[], period: PeriodKey): ScoreHistoryPoint[] {
+  if (period === "all" || history.length === 0) return history;
+  const latest = history[history.length - 1].date;
+  const cut = history.filter((point) => daysBetween(point.date, latest) <= PERIOD_DAYS[period]);
+  return cut.length < 2 ? history : cut;
+}
+
 function formatDateLabel(dateStr: string): string {
   const [year, month, day] = dateStr.split("-");
   return `${day}/${month}/${year.slice(2)}`;
@@ -64,6 +95,9 @@ function HistoryTooltip({ active, payload }: { active?: boolean; payload?: { pay
 /// (`score_history`), using today's thresholds. Receives `history` already
 /// fetched, like `PriceHistoryChart` — no fetch of its own.
 function CryptoScoreHistoryChart({ history }: { history: ScoreHistoryPoint[] }) {
+  const [period, setPeriod] = useState<PeriodKey>("all");
+  const visible = useMemo(() => filterByPeriod(history, period), [history, period]);
+
   if (history.length < 2) {
     return (
       <p className="mb-4 text-sm text-muted-foreground" data-testid="crypto-score-history-empty">
@@ -72,7 +106,7 @@ function CryptoScoreHistoryChart({ history }: { history: ScoreHistoryPoint[] }) 
     );
   }
 
-  const data: ChartPoint[] = history.map((point) => ({
+  const data: ChartPoint[] = visible.map((point) => ({
     ...point,
     greenPct: point.total === 0 ? 0 : (point.green / point.total) * 100,
   }));
@@ -81,9 +115,25 @@ function CryptoScoreHistoryChart({ history }: { history: ScoreHistoryPoint[] }) 
   return (
     <div className="mb-4 flex flex-col gap-2" data-testid="crypto-score-history">
       <p className="text-sm font-medium" data-testid="crypto-score-history-summary">
-        Score history: {history.length} dates, latest {latest.green}/{latest.total} green on{" "}
+        Score history: {visible.length} dates, latest {latest.green}/{latest.total} green on{" "}
         {formatDateLabel(latest.date)}
       </p>
+      {/* Só faz sentido quando a série passa do menor recorte. */}
+      {daysBetween(history[0].date, latest.date) > PERIOD_DAYS["30d"] && (
+        <div className="flex gap-1" data-testid="crypto-score-history-periods">
+          {PERIODS.map(({ key, label }) => (
+            <Button
+              key={key}
+              type="button"
+              size="sm"
+              variant={period === key ? "default" : "outline"}
+              onClick={() => setPeriod(key)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      )}
       <p className="text-xs text-muted-foreground">
         Share of green indicators on each reading date. Past dates use the current thresholds, so editing
         one rewrites the whole line.

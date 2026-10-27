@@ -4360,3 +4360,9 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Teste novo**: `ensure_fresh_accepts_recent_rows_and_rejects_stale_or_undated_ones` (1 e 7 dias passam, 8 dias e 2019 falham, `time` inválido ou ausente falha, série vazia passa).
 - **Verificado**: `./dev.sh check` limpo; o CI do `472c8c6` passou nos três (Desktop Rust com `cargo test`, Desktop E2E e Private Files). **Não verificado**: o teste ao vivo (`live_*`) com o `time` real da fonte (não roda no CI).
 - **Pendente**: janela de validade das leituras; seletor de período; histórico no mobile; aba Finanças no aparelho; BNB; recalibrar long/short do ADA e do XRP.
+
+### Seletor de período do histórico do score (Sessão 250)
+- **Escolha**: depois de checar que o `data/anchor.db` do repositório não tem leituras cripto (não dá para contar as de long/short do ADA e do XRP), a recalibração ficou parada e peguei o seletor de período.
+- **Feito**: `CryptoScoreHistoryChart.tsx` ganhou 30D, 90D, 12M e All, no idioma do `PriceHistoryChart` (recorte no cliente, sem refetch, `Button` do tema). O recorte conta para trás a partir da **última data de leitura**, não de hoje; janela com menos de 2 datas mostra tudo, porque não desenha linha. Padrão **All**. Os botões só aparecem quando a série passa de 30 dias (`crypto-score-history-periods`); com menos que isso não há o que recortar.
+- **Verificado**: `./dev.sh check` limpo. **Não verificado**: o seletor na tela e no CI. O E2E semeia 14 dias no ADA, então os botões nem aparecem lá e nada cobre o recorte; falta teste (o `filterByPeriod` não é exportado).
+- **Pendente**: janela de validade das leituras; histórico no mobile; aba Finanças no aparelho; BNB; recalibrar long/short do ADA e do XRP (precisa do número de leituras do app do dono).
