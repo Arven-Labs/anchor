@@ -7,6 +7,7 @@
 // Cada fonte é um `EthIndicatorProvider` que declara quais códigos atende;
 // `indicator` só consulta quem atende o código pedido.
 
+use chrono::{NaiveDate, Utc};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -28,6 +29,8 @@ const MAYER_MA_WINDOW_DAYS: usize = 200;
 const NETFLOW_WINDOW_DAYS: usize = 30;
 /// Teto da página do plano Community do CoinMetrics (acima disso, HTTP 400).
 const FULL_HISTORY_PAGE_SIZE: usize = 10_000;
+/// Idade máxima da última linha de uma série do CoinMetrics (o normal é 1 a 2 dias).
+const COINMETRICS_MAX_AGE_DAYS: i64 = 7;
 
 fn bad(source: &str, detail: impl std::fmt::Display) -> AppError {
     AppError::ProviderUnavailable(format!("{source}: {detail}"))
@@ -221,9 +224,33 @@ fn metrics_url(asset: &str, metrics: &[&str], page_size: usize) -> String {
     )
 }
 
+/// Recusa a série cuja última linha é mais velha que `COINMETRICS_MAX_AGE_DAYS`
+/// (o Community para de atualizar moedas, como o BNB em 2019, e o cálculo
+/// seguiria "funcionando" com dado parado). Série vazia fica para o cálculo.
+pub fn ensure_fresh(body: &str, today: NaiveDate) -> Result<(), AppError> {
+    let response: MetricsResponse = serde_json::from_str(body).map_err(|e| bad("CoinMetrics", e))?;
+    let Some(last) = response.data.last() else {
+        return Ok(());
+    };
+    // `time` vem como `2026-10-26T00:00:00.000000000Z`; só a data importa.
+    let date = last
+        .get("time")
+        .and_then(Value::as_str)
+        .and_then(|t| t.get(..10))
+        .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+        .ok_or_else(|| bad("CoinMetrics", "last row has no valid 'time'"))?;
+    let age = (today - date).num_days();
+    if age > COINMETRICS_MAX_AGE_DAYS {
+        return Err(bad("CoinMetrics", format!("stale data, latest row is {date} ({age} days old)")));
+    }
+    Ok(())
+}
+
 /// `asset` é o id do CoinMetrics (`eth`, `btc`), em minúsculas.
 async fn coinmetrics(asset: &str, metrics: &[&str], page_size: usize) -> Result<String, AppError> {
-    http::get_text("CoinMetrics", &metrics_url(asset, metrics, page_size), http::DEFAULT_TIMEOUT).await
+    let body = http::get_text("CoinMetrics", &metrics_url(asset, metrics, page_size), http::DEFAULT_TIMEOUT).await?;
+    ensure_fresh(&body, Utc::now().date_naive())?;
+    Ok(body)
 }
 
 /// Códigos que só existem para o ETH (a fonte ou o conceito é do Ethereum); pedir
@@ -445,6 +472,20 @@ mod tests {
         assert_eq!(metric_column(&rows("AdrActCnt", &[1.0, 2.5]), "AdrActCnt").unwrap(), vec![1.0, 2.5]);
         assert!(metric_column(&rows("AdrActCnt", &[1.0]), "Other").is_err());
         assert!(metric_column(r#"{"data":[{"AdrActCnt":null}]}"#, "AdrActCnt").is_err());
+    }
+
+    #[test]
+    fn ensure_fresh_accepts_recent_rows_and_rejects_stale_or_undated_ones() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 27).unwrap();
+        let body = |time: &str| format!(r#"{{"data":[{{"time":"{time}","PriceUSD":"1"}}]}}"#);
+        assert!(ensure_fresh(&body("2026-10-26T00:00:00.000000000Z"), today).is_ok());
+        assert!(ensure_fresh(&body("2026-10-20T00:00:00.000000000Z"), today).is_ok()); // 7 dias: no limite
+        let stale = ensure_fresh(&body("2019-03-01T00:00:00.000000000Z"), today).unwrap_err();
+        assert!(stale.to_string().contains("stale data"));
+        assert!(ensure_fresh(&body("2026-10-19T00:00:00.000000000Z"), today).is_err()); // 8 dias
+        assert!(ensure_fresh(&body("t"), today).is_err());
+        assert!(ensure_fresh(r#"{"data":[{"PriceUSD":"1"}]}"#, today).is_err());
+        assert!(ensure_fresh(r#"{"data":[]}"#, today).is_ok());
     }
 
     #[test]

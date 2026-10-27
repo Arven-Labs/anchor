@@ -4352,3 +4352,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não verificado**: os rótulos das linhas de referência e os ticks em telas estreitas (a captura é de 1280 px).
 - **Próximo**: aba Finanças no aparelho (depende de o dono testar no celular).
 - **Pendente**: janela de validade das leituras; seletor de período; histórico no mobile; aba Finanças no aparelho; BNB; guard de dado velho do CoinMetrics; recalibrar long/short do ADA e do XRP.
+
+## Sessão 250 — guard de dado velho do CoinMetrics (desktop)
+- **Pedido**: "bora continuar?"; fechei o pendente da 249 (captura do gráfico confirmada) e peguei o guard de dado velho do CoinMetrics, o menor da lista.
+- **Feito**: `ensure_fresh(body, today)` em `finance_core/eth_indicators.rs` (pura): lê o `time` da última linha da série e recusa se tiver mais de 7 dias (`COINMETRICS_MAX_AGE_DAYS`), com erro `CoinMetrics: stale data, latest row is <data> (<n> days old)`; `time` ausente ou inválido também é erro; série vazia passa e fica para o cálculo. É chamada dentro de `coinmetrics()` (cobre os 7 indicadores do provedor) e em `fetch_staking_yield_real`.
+- **Escolhas**: 7 dias porque o atraso normal da fonte é de 1 a 2 dias, e o objetivo é pegar série parada (como o BNB em 2019), não atraso de fim de semana.
+- **Teste novo**: `ensure_fresh_accepts_recent_rows_and_rejects_stale_or_undated_ones` (1 e 7 dias passam, 8 dias e 2019 falham, `time` inválido ou ausente falha, série vazia passa).
+- **Verificado**: `./dev.sh check` limpo. **Não verificado**: `cargo test` e o teste ao vivo (`live_*`) com o `time` real da fonte; dependem do CI.
+- **Pendente**: janela de validade das leituras; seletor de período; histórico no mobile; aba Finanças no aparelho; BNB; recalibrar long/short do ADA e do XRP.

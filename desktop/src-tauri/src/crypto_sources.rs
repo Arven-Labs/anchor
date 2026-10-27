@@ -593,7 +593,9 @@ pub async fn fetch_staking_yield_real() -> Result<f64, AppError> {
     let cm_url = format!(
         "{COINMETRICS_COMMUNITY}/timeseries/asset-metrics?assets=eth&metrics=IssTotNtv,SplyCur&frequency=1d&limit_per_asset=1&paging_from=end"
     );
-    let (issuance, supply) = parse_issuance_and_supply(&get_text("CoinMetrics", &cm_url).await?)?;
+    let cm_body = get_text("CoinMetrics", &cm_url).await?;
+    crate::finance_core::eth_indicators::ensure_fresh(&cm_body, chrono::Utc::now().date_naive())?;
+    let (issuance, supply) = parse_issuance_and_supply(&cm_body)?;
     real_staking_yield(apy, issuance, supply)
         .ok_or_else(|| source_err("CoinMetrics", "circulating supply is zero"))
 }
