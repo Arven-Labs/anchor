@@ -128,6 +128,9 @@ function CryptoScoreHistoryChart({ history }: { history: ScoreHistoryPoint[] }) 
             stroke={LINE_COLOR}
             strokeWidth={2}
             dot={{ r: 3, fill: LINE_COLOR }}
+            // Sem animação: com poucos pontos ela dura mais que a espera do E2E, e a
+            // captura saía com a linha pela metade.
+            isAnimationActive={false}
           />
         </LineChart>
       </ResponsiveContainer>
