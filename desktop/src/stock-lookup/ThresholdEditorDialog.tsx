@@ -175,6 +175,8 @@ export default function ThresholdEditorDialog({
     queryClient.invalidateQueries({ queryKey: ["indicator-thresholds"] });
     // O sinal das leituras muda junto: refaz o score de qualquer moeda.
     queryClient.invalidateQueries({ queryKey: ["crypto-score"] });
+    // O histórico também: os sinais do passado são reclassificados com o limite novo.
+    queryClient.invalidateQueries({ queryKey: ["crypto-score-history"] });
   }
 
   return (

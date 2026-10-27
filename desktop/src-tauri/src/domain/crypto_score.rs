@@ -418,6 +418,50 @@ pub fn compute_score(coin: &str, latest: &[LatestReading]) -> CryptoScore {
     CryptoScore { groups, green, logged, total, verdict: verdict_for(green, total) }
 }
 
+/// O score num dia: o que `compute_score` daria com a última leitura de cada
+/// indicador até aquela `reading_date`.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct ScoreHistoryPoint {
+    /// `reading_date` (`YYYY-MM-DD`), não a data da coleta.
+    pub date: String,
+    pub green: usize,
+    pub logged: usize,
+    pub total: usize,
+    pub verdict: ScoreVerdict,
+}
+
+/// Evolução do score: um ponto por `reading_date` distinta, na ordem das datas.
+/// `ascending` são as leituras da moeda **já ordenadas** por `reading_date`,
+/// `created_at` e `id` crescentes (o inverso do desempate de `crypto_score_for`),
+/// de modo que a leitura mais nova de um indicador sempre substitui a anterior.
+///
+/// Usa o `signal` gravado, que já reflete os limites atuais (editar um limite
+/// reclassifica as leituras guardadas): o passado é visto com a régua de hoje.
+/// Não há janela de validade: um indicador registrado uma vez vale nos dias
+/// seguintes até ser registrado de novo.
+pub fn score_history(coin: &str, ascending: &[LatestReading]) -> Vec<ScoreHistoryPoint> {
+    let mut latest: Vec<LatestReading> = Vec::new();
+    let mut points = Vec::new();
+    for (i, reading) in ascending.iter().enumerate() {
+        match latest.iter_mut().find(|l| l.indicator == reading.indicator) {
+            Some(slot) => *slot = reading.clone(),
+            None => latest.push(reading.clone()),
+        }
+        let day_ends = ascending.get(i + 1).map_or(true, |next| next.reading_date != reading.reading_date);
+        if day_ends {
+            let score = compute_score(coin, &latest);
+            points.push(ScoreHistoryPoint {
+                date: reading.reading_date.clone(),
+                green: score.green,
+                logged: score.logged,
+                total: score.total,
+                verdict: score.verdict,
+            });
+        }
+    }
+    points
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -589,6 +633,65 @@ mod tests {
         let sentiment = &score.groups[4];
         assert_eq!((sentiment.green, sentiment.logged, sentiment.total), (0, 0, 3));
         assert_eq!((score.green, score.logged), (2, 4));
+    }
+
+    fn dated(date: &str, indicator: &str, signal: &str) -> LatestReading {
+        LatestReading { reading_date: date.to_string(), ..reading(indicator, signal) }
+    }
+
+    #[test]
+    fn history_has_one_point_per_reading_date_and_carries_indicators_forward() {
+        let points = score_history("ETH", &[
+            dated("2026-10-01", "mvrv_z_score", "GREEN"),
+            dated("2026-10-01", "nvt_ratio", "RED"),
+            dated("2026-10-05", "funding_rate_7d", "GREEN"),
+            // O MVRV de 10/10 substitui o de 01/10; o NVT de 01/10 segue valendo.
+            dated("2026-10-10", "mvrv_z_score", "RED"),
+        ]);
+        let shape: Vec<(&str, usize, usize, usize)> =
+            points.iter().map(|p| (p.date.as_str(), p.green, p.logged, p.total)).collect();
+        assert_eq!(
+            shape,
+            [("2026-10-01", 1, 2, 20), ("2026-10-05", 2, 3, 20), ("2026-10-10", 1, 3, 20)]
+        );
+        assert!(points.iter().all(|p| p.verdict == ScoreVerdict::ReduceRisk));
+    }
+
+    #[test]
+    fn history_takes_the_last_reading_of_the_day_and_total_follows_the_coin() {
+        // Duas leituras do mesmo indicador no mesmo dia: vale a última da ordem recebida.
+        let points = score_history("BTC", &[
+            dated("2026-10-01", "mvrv_z_score", "RED"),
+            dated("2026-10-01", "mvrv_z_score", "GREEN"),
+        ]);
+        assert_eq!(points.len(), 1);
+        assert_eq!((points[0].green, points[0].logged, points[0].total), (1, 1, 16));
+    }
+
+    #[test]
+    fn history_places_a_delayed_reading_on_its_own_date_and_ignores_unknown_indicators() {
+        // O SOPR chega com a data do dado (D-7), então aparece no seu dia e não antes;
+        // a ordem de entrada já é por `reading_date`, como a consulta faz.
+        let points = score_history("BTC", &[
+            dated("2026-10-12", "sopr", "GREEN"),
+            dated("2026-10-12", "made_up", "GREEN"),
+            dated("2026-10-19", "mvrv_z_score", "GREEN"),
+        ]);
+        let shape: Vec<(&str, usize, usize)> = points.iter().map(|p| (p.date.as_str(), p.green, p.logged)).collect();
+        assert_eq!(shape, [("2026-10-12", 1, 1), ("2026-10-19", 2, 2)]);
+    }
+
+    #[test]
+    fn history_without_readings_is_empty_and_verdicts_follow_the_green_share() {
+        assert!(score_history("ETH", &[]).is_empty());
+        // 15 verdes de 20 = 75%: tese intacta.
+        let greens: Vec<LatestReading> = grouped("ETH")
+            .into_iter()
+            .take(15)
+            .map(|name| dated("2026-10-01", name, "GREEN"))
+            .collect();
+        let points = score_history("ETH", &greens);
+        assert_eq!((points[0].green, points[0].verdict), (15, ScoreVerdict::Intact));
     }
 
     #[test]

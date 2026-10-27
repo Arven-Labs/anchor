@@ -78,6 +78,7 @@ pub fn run() {
             commands::crypto_indicator::record_crypto_indicator,
             commands::crypto_indicator::list_crypto_indicators,
             commands::crypto_indicator::get_crypto_score,
+            commands::crypto_indicator::list_crypto_score_history,
             commands::crypto_indicator::list_indicator_thresholds,
             commands::crypto_indicator::update_indicator_threshold,
             commands::crypto_indicator::reset_indicator_threshold,

@@ -13,6 +13,7 @@ import {
 } from "./cryptoIndicators";
 import { AddToAssetsButton, CryptoFearGreedGauge, StatTile, type StockNote } from "./shared";
 import PriceHistoryChart from "./PriceHistoryChart";
+import CryptoScoreHistoryChart, { type ScoreHistoryPoint } from "./CryptoScoreHistoryChart";
 import ThresholdEditorDialog from "./ThresholdEditorDialog";
 import Field from "../components/Field";
 import { Input } from "@/components/ui/input";
@@ -263,10 +264,19 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
     queryFn: () => invoke("get_crypto_score", { coin: ticker }),
   });
 
+  // Evolution of the same score, one point per reading date. Anything that
+  // changes readings or thresholds must invalidate it next to ["crypto-score"]
+  // (it does not match by prefix: "crypto-score-history" is another key).
+  const scoreHistoryQuery = useQuery<ScoreHistoryPoint[], AppError>({
+    queryKey: ["crypto-score-history", ticker],
+    queryFn: () => invoke("list_crypto_score_history", { coin: ticker }),
+  });
+
   const runCryptoCollectorMutation = useMutation<CollectorSummary, AppError, void>({
     mutationFn: () => invoke("run_crypto_collector", { coin: ticker }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["crypto-score", ticker] });
+      queryClient.invalidateQueries({ queryKey: ["crypto-score-history", ticker] });
     },
   });
 
@@ -288,6 +298,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["crypto-score", ticker] });
+      queryClient.invalidateQueries({ queryKey: ["crypto-score-history", ticker] });
       setDrafts(emptyDrafts());
     },
   });
@@ -412,6 +423,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
                 ? `These indicators are split into groups, each with its own subscore. ${ticker} has its own green/red thresholds, calibrated for it.`
                 : `These indicators are split into groups, each with its own subscore, and were calibrated for Ethereum — logging them under ${ticker} is fine, but the green/red thresholds are ETH's, not ${ticker}'s.`}
             </p>
+            {scoreHistoryQuery.data && <CryptoScoreHistoryChart history={scoreHistoryQuery.data} />}
             <Button
               type="button"
               variant="outline"

@@ -248,6 +248,43 @@ pub async fn crypto_score_for(
     Ok(crypto_score::compute_score(&coin, &latest))
 }
 
+/// Evolução do score da moeda, um ponto por `reading_date` (ver
+/// `domain::crypto_score::score_history`). Ordena por `reading_date`, não por
+/// `created_at`: SOPR e NUPL chegam com a data do dado, 7 dias antes da coleta.
+#[tauri::command]
+pub async fn list_crypto_score_history(
+    db: tauri::State<'_, DatabaseConnection>,
+    coin: String,
+) -> Result<Vec<crypto_score::ScoreHistoryPoint>, AppError> {
+    crypto_score_history_for(db.inner(), coin).await
+}
+
+pub async fn crypto_score_history_for(
+    db: &DatabaseConnection,
+    coin: String,
+) -> Result<Vec<crypto_score::ScoreHistoryPoint>, AppError> {
+    let readings = crypto_indicators::Entity::find()
+        .filter(crypto_indicators::Column::Coin.eq(&coin))
+        .order_by_asc(crypto_indicators::Column::ReadingDate)
+        .order_by_asc(crypto_indicators::Column::CreatedAt)
+        .order_by_asc(crypto_indicators::Column::Id)
+        .all(db)
+        .await?;
+
+    let ascending: Vec<crypto_score::LatestReading> = readings
+        .into_iter()
+        .map(|r| crypto_score::LatestReading {
+            indicator: r.indicator,
+            raw_value: r.raw_value,
+            signal: r.signal,
+            reading_date: r.reading_date,
+            source: r.source,
+        })
+        .collect();
+
+    Ok(crypto_score::score_history(&coin, &ascending))
+}
+
 #[tauri::command]
 pub async fn list_crypto_indicators(
     db: tauri::State<'_, DatabaseConnection>,

@@ -2837,6 +2837,11 @@ efeito e do Reset.
 - **Seeds** (migration `m20261118_100000`, duplicados em `BTC_DEFAULT_THRESHOLDS`; menor é melhor), calibrados com 1448 dias de 2022-10-26 a 2026-10-12: SOPR 0,995/1,02 (p05 0,986, mediana 1,005, p95 1,033; verde em 14% dos dias, vermelho em 13%); NUPL 0,25/0,6 (mediana 0,431, máximo 0,640). **O vermelho do NUPL é parte palpite**: a janela não inclui o topo de 2021, então a borda clássica de 0,75 não seria alcançada.
 - **Efeito cascata das contagens**: BTC 14 → 16 em `crypto_score.rs`, `flow_tests.rs`, no teste `#[ignore]` e no E2E; o ADA e o XRP passam a excluir `sopr` e `nupl` do conjunto do BTC; no frontend, `BTC_ONLY_KEYS` evita que ETH, ADA e XRP mostrem os dois.
 
+**Histórico do score (Sessão 249)**, última frente de indicadores da ordem combinada. Gráfico "como o score evoluiu" na tela de cada moeda, abaixo do veredito.
+- **Como é calculado**: `domain::crypto_score::score_history` emite um ponto por `reading_date` distinta, aplicando `compute_score` à última leitura de cada indicador até aquela data (desempate `reading_date`, `created_at`, `id`). Nada novo é gravado: `crypto_indicators` já é append-only. Comando `list_crypto_score_history`.
+- **Escolhas**: ordena por `reading_date`, não por `created_at` (SOPR e NUPL chegam com a data do dado); a linha é a fração de verdes sobre o **total** da moeda, a base do veredito, com referências em 40% e 70%; menos de 2 datas mostra um aviso.
+- **Limitações**: usa os **limites de hoje** (editar um limite reescreve o passado, porque o `signal` gravado é reclassificado); **sem janela de validade** das leituras; começa onde há leituras gravadas, sem backfill; sem seletor de período; só no desktop.
+
 ### Fase 32 — Inventário de ideias herdadas do Lume (levantado na Sessão 107, puro registro, nada decidido nem iniciado)
 
 **Origem**: o dono do projeto pediu pra ler o repo do Lume (`../lume`, `git pull` já em dia) e

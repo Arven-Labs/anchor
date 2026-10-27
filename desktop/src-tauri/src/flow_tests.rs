@@ -7,7 +7,8 @@
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 use crate::commands::crypto_indicator::{
-    apply_threshold, crypto_score_for, record_crypto_indicator_in, RecordCryptoIndicatorRequest,
+    apply_threshold, crypto_score_for, crypto_score_history_for, record_crypto_indicator_in,
+    RecordCryptoIndicatorRequest,
 };
 use crate::commands::currency::{base_currency, positions_in_base, save_base_currency, sum_in_base};
 use crate::commands::profitability::{compare_with_benchmarks, compute_profitability};
@@ -457,6 +458,53 @@ async fn ada_score_has_its_own_indicators_and_thresholds_isolated_from_eth_and_b
     assert_eq!(signal(&eth, "mvrv_z_score").as_deref(), Some("GREEN"));
     let ada = crypto_score_for(&db, "ADA".to_string()).await.unwrap();
     assert_eq!(signal(&ada, "mvrv_z_score").as_deref(), Some("RED"));
+}
+
+// Histórico do score: um ponto por `reading_date`, recomposto das leituras guardadas.
+#[tokio::test]
+async fn score_history_follows_the_reading_dates_and_the_current_thresholds() {
+    let db = memory_db().await;
+    let on = |coin: &str, date: &str, indicator: &str, raw_value: f64| RecordCryptoIndicatorRequest {
+        coin: coin.to_string(),
+        reading_date: date.to_string(),
+        ..reading(indicator, raw_value)
+    };
+
+    // Gravadas fora de ordem de propósito: a série sai ordenada por `reading_date`.
+    // Seeds do ETH: MVRV Z 0/7 e funding 5/20, menor é melhor.
+    record_crypto_indicator_in(&db, on("ETH", "2026-10-10", "mvrv_z_score", 9.0)).await.unwrap(); // RED
+    record_crypto_indicator_in(&db, on("ETH", "2026-10-01", "mvrv_z_score", -1.0)).await.unwrap(); // GREEN
+    record_crypto_indicator_in(&db, on("ETH", "2026-10-01", "funding_rate_7d", 12.0)).await.unwrap(); // NEUTRAL
+    record_crypto_indicator_in(&db, on("ETH", "2026-10-05", "funding_rate_7d", 3.0)).await.unwrap(); // GREEN
+    // Outra moeda não vaza para a série do ETH.
+    record_crypto_indicator_in(&db, on("ADA", "2026-10-03", "mvrv_z_score", -0.3)).await.unwrap();
+
+    let shape = |points: &[crate::domain::crypto_score::ScoreHistoryPoint]| {
+        points.iter().map(|p| (p.date.clone(), p.green, p.logged, p.total)).collect::<Vec<_>>()
+    };
+    let eth = crypto_score_history_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!(
+        shape(&eth),
+        [
+            ("2026-10-01".to_string(), 1, 2, 20),
+            ("2026-10-05".to_string(), 2, 2, 20),
+            ("2026-10-10".to_string(), 1, 2, 20),
+        ]
+    );
+    let ada = crypto_score_history_for(&db, "ADA".to_string()).await.unwrap();
+    assert_eq!(shape(&ada), [("2026-10-03".to_string(), 1, 1, 10)]);
+
+    // O último ponto é o score de hoje.
+    let score = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    let last = eth.last().unwrap();
+    assert_eq!((last.green, last.logged, last.total, last.verdict), (score.green, score.logged, score.total, score.verdict));
+
+    // Afrouxar o limite do funding reclassifica as leituras guardadas, inclusive as de 01/10 (12% passa a verde).
+    apply_threshold(&db, "ETH", "funding_rate_7d", 15.0, 30.0).await.unwrap();
+    let eth = crypto_score_history_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!(eth[0].green, 2);
+
+    assert!(crypto_score_history_for(&db, "SOL".to_string()).await.unwrap().is_empty());
 }
 
 // SOPR e NUPL (bitcoin-data.com) só existem no BTC. A leitura grava a data do dado

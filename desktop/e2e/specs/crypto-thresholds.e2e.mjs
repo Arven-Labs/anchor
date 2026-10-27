@@ -127,4 +127,37 @@ describe("Anchor — score cripto e editor de thresholds", () => {
     await $("//*[normalize-space(text())='Market sentiment']").scrollIntoView({ block: "center" });
     await snap("crypto-score-market-sentiment");
   });
+
+  it("o histórico do score pede duas datas e desenha a série com leituras em dias diferentes", async () => {
+    // Todas as leituras manuais do ETH acima entraram no mesmo dia: ainda não há série.
+    await byId("crypto-score-history-empty").waitForDisplayed({ timeout: 10_000 });
+
+    // O ADA entra semeado direto no banco (cotação e leituras em 3 datas), sem rede e sem mexer
+    // nas contagens do ETH dos casos anteriores. As datas são as dos dados, como no SOPR/NUPL.
+    sql(
+      "INSERT INTO stock_quotes (ticker, price, source, fetched_at, name, exchange, currency) " +
+        "VALUES ('ADA', 0.2, 'coingecko', '2026-10-16T12:00:00Z', 'Cardano', 'CoinGecko', 'USD')",
+    );
+    sql(
+      "INSERT INTO crypto_indicators (coin, indicator, reading_date, raw_value, signal, source, created_at) VALUES " +
+        "('ADA', 'mvrv_z_score', '2026-10-01', -0.4, 'GREEN', 'test', '2026-10-16T12:00:00Z'), " +
+        "('ADA', 'funding_rate_7d', '2026-10-01', 7.0, 'NEUTRAL', 'test', '2026-10-16T12:00:00Z'), " +
+        "('ADA', 'fear_greed_index', '2026-10-08', 20, 'GREEN', 'test', '2026-10-16T12:00:00Z'), " +
+        "('ADA', 'funding_rate_7d', '2026-10-15', 2.0, 'GREEN', 'test', '2026-10-16T12:00:00Z')",
+    );
+
+    await pickOption(byId("global-search-class"), "Crypto");
+    await byId("global-search-ticker").setValue("ADA");
+    await byId("global-search-submit").click();
+
+    await byId("crypto-score-history").waitForDisplayed({ timeout: 30_000 });
+    // 01/10: MVRV verde + funding neutro (1 verde); 08/10: + Fear & Greed (2); 15/10: funding vira verde (3).
+    await waitForText(
+      byId("crypto-score-history-summary"),
+      (text) => text.includes("3 dates") && text.includes("3/10 green") && text.includes("15/10/26"),
+      "o resumo do histórico do ADA deveria ter 3 datas e terminar em 3/10 verdes em 15/10/26",
+    );
+    await byId("crypto-score-history").scrollIntoView({ block: "center" });
+    await snap("crypto-score-history");
+  });
 });
