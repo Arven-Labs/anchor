@@ -342,10 +342,36 @@ fn reading(indicator: &str, raw_value: f64) -> RecordCryptoIndicatorRequest {
     RecordCryptoIndicatorRequest {
         coin: "ETH".to_string(),
         indicator: indicator.to_string(),
-        reading_date: "2026-10-16".to_string(),
+        // De hoje: o score atual descarta leitura vencida (`reading_max_age_days`).
+        reading_date: chrono::Utc::now().date_naive().to_string(),
         raw_value,
         source: "test".to_string(),
     }
+}
+
+#[tokio::test]
+async fn crypto_score_ignores_expired_readings_but_still_shows_them() {
+    let db = memory_db().await;
+    let days_ago = |days: i64| (chrono::Utc::now().date_naive() - chrono::Duration::days(days)).to_string();
+    let on = |date: String, indicator: &str, raw_value: f64| RecordCryptoIndicatorRequest {
+        reading_date: date,
+        ..reading(indicator, raw_value)
+    };
+
+    // Funding vale 7 dias e o MVRV, 14: com 8 e 8 dias, só o funding venceu.
+    record_crypto_indicator_in(&db, on(days_ago(8), "funding_rate_7d", 3.0)).await.unwrap(); // GREEN
+    record_crypto_indicator_in(&db, on(days_ago(8), "mvrv_z_score", -1.0)).await.unwrap(); // GREEN
+
+    let score = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!((score.green, score.logged, score.total), (1, 1, 20));
+    let funding = score.groups.iter().flat_map(|g| g.indicators.iter()).find(|i| i.indicator == "funding_rate_7d").unwrap();
+    assert!(funding.expired);
+    assert_eq!(funding.reading.as_ref().map(|r| r.raw_value), Some(3.0));
+
+    // Registrar de novo hoje devolve a leitura ao score.
+    record_crypto_indicator_in(&db, reading("funding_rate_7d", 3.0)).await.unwrap();
+    let score = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!((score.green, score.logged), (2, 2));
 }
 
 #[tokio::test]
@@ -494,9 +520,11 @@ async fn score_history_follows_the_reading_dates_and_the_current_thresholds() {
     let ada = crypto_score_history_for(&db, "ADA".to_string()).await.unwrap();
     assert_eq!(shape(&ada), [("2026-10-03".to_string(), 1, 1, 10)]);
 
-    // O último ponto é o score de hoje.
+    // Com uma leitura de hoje, o último ponto da série é o score de hoje (as de outubro já venceram).
+    record_crypto_indicator_in(&db, reading("dvol", 50.0)).await.unwrap();
+    let eth_now = crypto_score_history_for(&db, "ETH".to_string()).await.unwrap();
     let score = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
-    let last = eth.last().unwrap();
+    let last = eth_now.last().unwrap();
     assert_eq!((last.green, last.logged, last.total, last.verdict), (score.green, score.logged, score.total, score.verdict));
 
     // Afrouxar o limite do funding reclassifica as leituras guardadas, inclusive as de 01/10 (12% passa a verde).

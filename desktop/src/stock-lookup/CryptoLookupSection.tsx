@@ -95,7 +95,7 @@ type GroupScore = {
   green: number;
   logged: number;
   total: number;
-  indicators: { indicator: IndicatorKey; reading: ScoreReading | null }[];
+  indicators: { indicator: IndicatorKey; reading: ScoreReading | null; expired: boolean }[];
 };
 
 type CryptoScore = {
@@ -147,9 +147,11 @@ function sma(history: StockPriceHistory[], window: number): number | null {
 function IndicatorTile({
   indicatorKey,
   reading,
+  expired,
 }: {
   indicatorKey: IndicatorKey;
   reading?: ScoreReading | null;
+  expired?: boolean;
 }) {
   return (
     <div
@@ -157,11 +159,16 @@ function IndicatorTile({
       data-testid={`indicator-tile-${indicatorKey}`}
     >
       <p className="text-sm text-muted-foreground">{INDICATORS[indicatorKey]}</p>
-      <p className="mt-1 text-2xl font-semibold">
+      <p className={`mt-1 text-2xl font-semibold ${expired ? "text-muted-foreground" : ""}`}>
         {reading ? reading.raw_value.toFixed(2) : "—"}
       </p>
       <div className="mt-2 flex items-center justify-between gap-2">
-        {reading ? (
+        {reading && expired ? (
+          // Past its validity window: still shown, but out of the score until logged again.
+          <Badge variant="outline" data-testid={`indicator-expired-${indicatorKey}`}>
+            EXPIRED
+          </Badge>
+        ) : reading ? (
           <Badge
             className={SIGNAL_STYLE[reading.signal]}
             data-testid={`indicator-signal-${indicatorKey}`}
@@ -483,6 +490,7 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
                       key={item.indicator}
                       indicatorKey={item.indicator}
                       reading={item.reading}
+                      expired={item.expired}
                     />
                   ))}
                 </div>

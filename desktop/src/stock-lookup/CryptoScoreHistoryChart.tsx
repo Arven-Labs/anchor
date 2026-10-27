@@ -135,8 +135,8 @@ function CryptoScoreHistoryChart({ history }: { history: ScoreHistoryPoint[] }) 
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        Share of green indicators on each reading date. Past dates use the current thresholds, so editing
-        one rewrites the whole line.
+        Share of green indicators on each reading date. A reading stops counting once it is older than its
+        validity window. Past dates use the current thresholds, so editing one rewrites the whole line.
       </p>
       <ResponsiveContainer width="100%" height={220}>
         <LineChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>

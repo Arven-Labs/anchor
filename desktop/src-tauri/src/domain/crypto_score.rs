@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use serde::Serialize;
 
 use crate::error::AppError;
@@ -332,6 +333,31 @@ pub struct GroupIndicator {
     pub indicator: &'static str,
     /// `None` = nunca coletado/registrado.
     pub reading: Option<LatestReading>,
+    /// A leitura existe mas passou do prazo (`reading_max_age_days`): continua
+    /// visível, só que não conta como verde nem como registrada.
+    pub expired: bool,
+}
+
+/// Prazo de validade da leitura, em dias, contado da `reading_date` (a data do
+/// dado, não a da coleta). Mercado e sentimento mudam todo dia; on-chain e
+/// tendências de 30 dias andam mais devagar; SOPR e NUPL já chegam com 7 dias
+/// de atraso da fonte grátis. Indicador desconhecido cai no prazo do on-chain.
+pub fn reading_max_age_days(indicator: &str) -> i64 {
+    match indicator {
+        "funding_rate_7d" | "open_interest_change_30d" | "long_short_ratio" | "dvol" | "put_call_ratio"
+        | "fear_greed_index" | "btc_dominance" | "mayer_multiple" | "nvt_ratio" | "staking_yield"
+        | "stablecoin_supply_change_30d" => 7,
+        "sopr" | "nupl" => 21,
+        _ => 14,
+    }
+}
+
+/// A leitura passou do prazo na data `as_of`. Data ilegível conta como vencida.
+pub fn is_expired(indicator: &str, reading_date: &str, as_of: NaiveDate) -> bool {
+    match NaiveDate::parse_from_str(reading_date, "%Y-%m-%d") {
+        Ok(date) => (as_of - date).num_days() > reading_max_age_days(indicator),
+        Err(_) => true,
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -380,10 +406,11 @@ fn verdict_for(green: usize, total: usize) -> ScoreVerdict {
     }
 }
 
-/// Monta o score a partir da última leitura de cada indicador. Indicador
-/// sem leitura conta no `total` mas não como verde, e leitura de indicador
-/// fora dos grupos é ignorada.
-pub fn compute_score(coin: &str, latest: &[LatestReading]) -> CryptoScore {
+/// Monta o score a partir da última leitura de cada indicador, vista na data
+/// `as_of`. Indicador sem leitura, ou com leitura vencida, conta no `total` mas
+/// não como verde nem como registrado, e leitura de indicador fora dos grupos
+/// é ignorada.
+pub fn compute_score(coin: &str, latest: &[LatestReading], as_of: NaiveDate) -> CryptoScore {
     let mut groups = Vec::with_capacity(IndicatorGroup::ALL.len());
     let (mut green, mut logged, mut total) = (0, 0, 0);
 
@@ -391,16 +418,17 @@ pub fn compute_score(coin: &str, latest: &[LatestReading]) -> CryptoScore {
         let indicators: Vec<GroupIndicator> = group
             .indicators(coin)
             .iter()
-            .map(|name| GroupIndicator {
-                indicator: name,
-                reading: latest.iter().find(|r| r.indicator == *name).cloned(),
+            .map(|name| {
+                let reading = latest.iter().find(|r| r.indicator == *name).cloned();
+                let expired = reading.as_ref().is_some_and(|r| is_expired(name, &r.reading_date, as_of));
+                GroupIndicator { indicator: name, reading, expired }
             })
             .collect();
         let group_green = indicators
             .iter()
-            .filter(|i| i.reading.as_ref().is_some_and(|r| r.signal == "GREEN"))
+            .filter(|i| !i.expired && i.reading.as_ref().is_some_and(|r| r.signal == "GREEN"))
             .count();
-        let group_logged = indicators.iter().filter(|i| i.reading.is_some()).count();
+        let group_logged = indicators.iter().filter(|i| i.reading.is_some() && !i.expired).count();
 
         green += group_green;
         logged += group_logged;
@@ -437,8 +465,9 @@ pub struct ScoreHistoryPoint {
 ///
 /// Usa o `signal` gravado, que já reflete os limites atuais (editar um limite
 /// reclassifica as leituras guardadas): o passado é visto com a régua de hoje.
-/// Não há janela de validade: um indicador registrado uma vez vale nos dias
-/// seguintes até ser registrado de novo.
+/// Cada ponto respeita a janela de validade vista da própria data: um indicador
+/// registrado vale nos dias seguintes só até `reading_max_age_days`, depois
+/// deixa de contar até ser registrado de novo.
 pub fn score_history(coin: &str, ascending: &[LatestReading]) -> Vec<ScoreHistoryPoint> {
     let mut latest: Vec<LatestReading> = Vec::new();
     let mut points = Vec::new();
@@ -449,7 +478,10 @@ pub fn score_history(coin: &str, ascending: &[LatestReading]) -> Vec<ScoreHistor
         }
         let day_ends = ascending.get(i + 1).map_or(true, |next| next.reading_date != reading.reading_date);
         if day_ends {
-            let score = compute_score(coin, &latest);
+            // `reading_date` ilegível não chega aqui na prática (a tela grava `YYYY-MM-DD`);
+            // se chegar, o ponto é visto sem janela em vez de sumir da série.
+            let as_of = NaiveDate::parse_from_str(&reading.reading_date, "%Y-%m-%d").unwrap_or(NaiveDate::MIN);
+            let score = compute_score(coin, &latest, as_of);
             points.push(ScoreHistoryPoint {
                 date: reading.reading_date.clone(),
                 green: score.green,
@@ -474,6 +506,11 @@ mod tests {
             reading_date: "2026-10-16".to_string(),
             source: "test".to_string(),
         }
+    }
+
+    /// A data de `reading()`: nos testes de score, as leituras são do próprio dia.
+    fn today() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 10, 16).unwrap()
     }
 
     fn grouped(coin: &str) -> Vec<&'static str> {
@@ -596,20 +633,20 @@ mod tests {
 
     #[test]
     fn empty_score_has_full_total_and_nothing_logged() {
-        let score = compute_score("ETH", &[]);
+        let score = compute_score("ETH", &[], today());
         assert_eq!((score.green, score.logged, score.total), (0, 0, 20));
         assert_eq!(score.verdict, ScoreVerdict::ReduceRisk);
         assert!(score.groups.iter().all(|g| g.indicators.iter().all(|i| i.reading.is_none())));
 
-        let btc = compute_score("BTC", &[]);
+        let btc = compute_score("BTC", &[], today());
         assert_eq!((btc.green, btc.logged, btc.total), (0, 0, 16));
         assert_eq!(btc.groups.len(), 4);
 
-        let ada = compute_score("ADA", &[]);
+        let ada = compute_score("ADA", &[], today());
         assert_eq!((ada.green, ada.logged, ada.total), (0, 0, 10));
         assert_eq!(ada.groups.len(), 4);
 
-        let xrp = compute_score("XRP", &[]);
+        let xrp = compute_score("XRP", &[], today());
         assert_eq!((xrp.green, xrp.logged, xrp.total), (0, 0, 9));
         assert_eq!(xrp.groups.len(), 4);
     }
@@ -621,7 +658,7 @@ mod tests {
             reading("nvt_ratio", "RED"),
             reading("funding_rate_7d", "GREEN"),
             reading("long_short_ratio", "NEUTRAL"),
-        ]);
+        ], today());
         let on_chain = &score.groups[0];
         assert_eq!((on_chain.green, on_chain.logged, on_chain.total), (1, 2, 6));
         let fundamentals = &score.groups[1];
@@ -645,16 +682,67 @@ mod tests {
             dated("2026-10-01", "mvrv_z_score", "GREEN"),
             dated("2026-10-01", "nvt_ratio", "RED"),
             dated("2026-10-05", "funding_rate_7d", "GREEN"),
-            // O MVRV de 10/10 substitui o de 01/10; o NVT de 01/10 segue valendo.
+            // O MVRV de 10/10 substitui o de 01/10; o NVT de 01/10 (prazo de 7 dias) já
+            // venceu em 10/10 (9 dias) e sai da contagem.
             dated("2026-10-10", "mvrv_z_score", "RED"),
         ]);
         let shape: Vec<(&str, usize, usize, usize)> =
             points.iter().map(|p| (p.date.as_str(), p.green, p.logged, p.total)).collect();
         assert_eq!(
             shape,
-            [("2026-10-01", 1, 2, 20), ("2026-10-05", 2, 3, 20), ("2026-10-10", 1, 3, 20)]
+            [("2026-10-01", 1, 2, 20), ("2026-10-05", 2, 3, 20), ("2026-10-10", 1, 2, 20)]
         );
         assert!(points.iter().all(|p| p.verdict == ScoreVerdict::ReduceRisk));
+    }
+
+    #[test]
+    fn expiry_is_per_indicator_and_counts_from_the_reading_date() {
+        let on = |day: u32| NaiveDate::from_ymd_opt(2026, 10, day).unwrap();
+        // Mercado (7 dias): 8 dias depois vence; 7 ainda vale.
+        assert!(!is_expired("funding_rate_7d", "2026-10-01", on(8)));
+        assert!(is_expired("funding_rate_7d", "2026-10-01", on(9)));
+        // On-chain (14 dias).
+        assert!(!is_expired("mvrv_z_score", "2026-10-01", on(15)));
+        assert!(is_expired("mvrv_z_score", "2026-10-01", on(16)));
+        // SOPR e NUPL (21 dias, contando o atraso de 7 da fonte).
+        assert!(!is_expired("sopr", "2026-10-01", on(22)));
+        assert!(is_expired("nupl", "2026-10-01", on(23)));
+        // Leitura de dia futuro nunca vence, e data ilegível sempre vence.
+        assert!(!is_expired("dvol", "2026-10-20", on(16)));
+        assert!(is_expired("dvol", "not-a-date", on(16)));
+    }
+
+    #[test]
+    fn an_expired_reading_stays_visible_but_does_not_count() {
+        let mut stale = dated("2026-10-01", "funding_rate_7d", "GREEN"); // 15 dias: vencida
+        stale.raw_value = 3.0;
+        let score = compute_score("ETH", &[stale, dated("2026-10-16", "mvrv_z_score", "GREEN")], today());
+        assert_eq!((score.green, score.logged, score.total), (1, 1, 20));
+        let funding = score
+            .groups
+            .iter()
+            .flat_map(|g| g.indicators.iter())
+            .find(|i| i.indicator == "funding_rate_7d")
+            .unwrap();
+        assert!(funding.expired);
+        assert_eq!(funding.reading.as_ref().map(|r| r.raw_value), Some(3.0));
+        let derivatives = &score.groups[2];
+        assert_eq!((derivatives.green, derivatives.logged, derivatives.total), (0, 0, 5));
+    }
+
+    #[test]
+    fn history_drops_a_reading_once_it_expires_and_takes_it_back_when_logged_again() {
+        let points = score_history("ETH", &[
+            dated("2026-10-01", "funding_rate_7d", "GREEN"),
+            dated("2026-10-08", "mvrv_z_score", "GREEN"), // funding com 7 dias: vale
+            dated("2026-10-09", "mvrv_z_score", "GREEN"), // funding com 8 dias: venceu
+            dated("2026-10-10", "funding_rate_7d", "GREEN"), // registrado de novo
+        ]);
+        let shape: Vec<(&str, usize, usize)> = points.iter().map(|p| (p.date.as_str(), p.green, p.logged)).collect();
+        assert_eq!(
+            shape,
+            [("2026-10-01", 1, 1), ("2026-10-08", 2, 2), ("2026-10-09", 1, 1), ("2026-10-10", 2, 2)]
+        );
     }
 
     #[test]
@@ -696,7 +784,7 @@ mod tests {
 
     #[test]
     fn unknown_indicators_are_ignored() {
-        let score = compute_score("ETH", &[reading("made_up", "GREEN")]);
+        let score = compute_score("ETH", &[reading("made_up", "GREEN")], today());
         assert_eq!((score.green, score.logged), (0, 0));
     }
 

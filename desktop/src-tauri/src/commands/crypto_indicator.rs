@@ -245,7 +245,7 @@ pub async fn crypto_score_for(
         });
     }
 
-    Ok(crypto_score::compute_score(&coin, &latest))
+    Ok(crypto_score::compute_score(&coin, &latest, chrono::Utc::now().date_naive()))
 }
 
 /// Evolução do score da moeda, um ponto por `reading_date` (ver
