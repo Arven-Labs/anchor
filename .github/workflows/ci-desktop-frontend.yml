@@ -15,21 +15,13 @@ on:
       - 'desktop/vite.config.ts'
       - 'desktop/components.json'
       - '.github/workflows/ci-desktop-frontend.yml'
-  pull_request:
-    paths:
-      - 'desktop/src/**'
-      - 'desktop/public/**'
-      - 'desktop/index.html'
-      - 'desktop/package.json'
-      - 'desktop/package-lock.json'
-      - 'desktop/tsconfig*.json'
-      - 'desktop/vite.config.ts'
-      - 'desktop/components.json'
-      - '.github/workflows/ci-desktop-frontend.yml'
+  # Em PR quem chama é o ci.yml (filtro de caminho + job `gate`), por `workflow_call`.
+  workflow_call:
   workflow_dispatch:
 
+# Grupo fixo: em `workflow_call`, `github.workflow` é o nome do chamador e os 5 CIs se cancelariam.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-desktop-frontend-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -14,17 +14,13 @@ on:
       - 'desktop/e2e/**'
       - 'desktop/package*.json'
       - '.github/workflows/ci-desktop-e2e.yml'
-  pull_request:
-    paths:
-      - 'desktop/src/**'
-      - 'desktop/src-tauri/**'
-      - 'desktop/e2e/**'
-      - 'desktop/package*.json'
-      - '.github/workflows/ci-desktop-e2e.yml'
+  # Em PR quem chama é o ci.yml (filtro de caminho + job `gate`), por `workflow_call`.
+  workflow_call:
   workflow_dispatch:
 
+# Grupo fixo: em `workflow_call`, `github.workflow` é o nome do chamador e os 5 CIs se cancelariam.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-desktop-e2e-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
