@@ -1,4 +1,4 @@
-# Practice Valuation — Estado do Projeto
+# Anchor — Estado do Projeto
 
 > Este projeto usa a mesma estrutura de arquivos do TruthID (outro projeto do mesmo dono): o estado
 > foi dividido em arquivos menores dentro desta pasta (`project/`), em vez de um único
