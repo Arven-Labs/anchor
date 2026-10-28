@@ -4420,3 +4420,9 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Manutenção**: as regex do `changes` repetem os `paths:` do push de cada `ci-*.yml`; mudou um, mude o outro.
 - **Não verificado**: PR que mexe só em `desktop/package.json` ou `tsconfig` (as regex foram testadas à mão, não em PR); `workflow_dispatch` dos `ci-*.yml` depois da troca de gatilho (só o `apk` do mobile depende dele).
 - **Pendente**: trocar o ruleset `protect-main` para exigir `gate` + `guard` (§4, depende da confirmação do dono; este PR **não** mexe nele); título "Practice Valuation" do `INDEX.md`; pendentes do app iguais à Sessão 252.
+
+### Ruleset `protect-main` passa a exigir `gate` (Sessão 253)
+- **Feito pelo dono**: depois do merge do PR #8, o ruleset `protect-main` (id `26004036`) trocou `required_status_checks` de `[guard]` para `[guard, gate]`. A troca foi feita por `gh api -X PUT` rodado pelo dono (`!`), porque o classificador de permissões do Claude Code bloqueou a mesma chamada feita por mim ("CI Bypass"); não contornei. O ruleset anterior ficou guardado no scratchpad da sessão, para desfazer.
+- **Verificado**: `GET /rules/branches/main` lista `required_status_checks` com `guard` e `gate`. O resto do ruleset não mudou (PR obrigatório, 0 aprovações, sem force push, sem apagar a `main`, Admin só contorna via PR).
+- **Prova de que PR de docs não trava**: este próprio PR, só de docs, deve ter `gate` verde com os cinco CIs pulados e ficar mesclável (resultado no PR).
+- **Item 4 do processo**: fechado. **Pendente de processo**: só o título "Practice Valuation" do `INDEX.md`. Pendentes do app iguais à Sessão 252.
