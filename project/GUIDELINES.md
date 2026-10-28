@@ -1,3 +1,9 @@
+> **Fluxo de trabalho (IA + dono)**: branch + Pull Request, plano antes de código, testes como contrato e
+> checklist de fechamento de sessão estão no `CLAUDE.md` na raiz do repositório. Este arquivo cobre as
+> diretrizes do código e do ensino neste projeto; se algo aqui conflitar com o `CLAUDE.md`, pare e pergunte ao dono.
+
+---
+
 # Diretriz de código (IMPORTANTE — sempre seguir)
 
 **Todo código novo deve ser escrito em inglês — sem exceção.** O repositório será público no GitHub.

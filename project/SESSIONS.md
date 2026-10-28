@@ -4404,3 +4404,10 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   - Só o `guard` é exigido na `main`: ele barra arquivo privado, mas não código quebrado. Os CIs de código (Rust, Frontend, E2E, Contratos, Mobile) filtram por caminho; para exigi-los seria preciso fazê-los rodar em todo PR ou criar um job agregado, o que é mudança de CI/CD e decisão à parte.
   - Decidir se o `GUIDELINES.md` ganha uma linha apontando para o `CLAUDE.md`.
   - Os pendentes do app seguem os da Sessão 250: histórico no mobile, aba Finanças no aparelho, recalibrar long/short do ADA, XRP e BNB.
+
+## Sessão 252 — `INDEX.md` e `GUIDELINES.md` alinhados ao fluxo de PR (processo, sem código do app)
+- **Pedido**: "vamos de processo"; propus 4 itens com opções e o dono decidiu: (1) bloco "Última atualização" do `INDEX.md` trocado por ponteiro (opção A); (2) `GUIDELINES.md` ganha linha para o `CLAUDE.md`; (3) sincronia dos `CLAUDE.md` do `anchor` e do `warden` **fica só manual** (opção A: cópia e `cmp`); (4) CIs de código exigidos na `main` viram **tarefa à parte**.
+- **Feito**: `project/INDEX.md` perdeu as ~40 linhas de resumo parado na Sessão 106 (as sessões citadas seguem no log; conferi os cabeçalhos 51, 59, 60, 78, 81, 94, 97, 98, 99 e 106 em `SESSIONS.md`, não li o corpo de cada uma para comparar com o resumo apagado) e aponta para a última entrada do `SESSIONS.md`; a tabela "Como Usar" cita o `CLAUDE.md`; "Ao começar" ganhou a conferência de PR/branch sobrando e "Ao terminar" virou branch + PR + checklist da §14. `project/GUIDELINES.md` ganhou um aviso no topo apontando para o `CLAUDE.md`. O `CLAUDE.md` não foi tocado (§0).
+- **Não mexi**: o título "Practice Valuation" do `INDEX.md` (nome antigo do projeto; fora de escopo).
+- **Pendente de processo**: CIs de código obrigatórios na `main` (job agregado ou rodar em todo PR; é CI/CD, §4, precisa de plano e confirmação); mecanismo de sincronia dos `CLAUDE.md` foi descartado por ora.
+- **Pendente do app** (igual à Sessão 251): histórico e score cripto no mobile, aba Finanças no aparelho, recalibrar long/short do ADA, XRP e BNB.
