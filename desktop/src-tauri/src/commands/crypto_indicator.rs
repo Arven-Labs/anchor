@@ -66,7 +66,7 @@ pub async fn record_crypto_indicator_in(
 
 #[derive(Serialize)]
 pub struct IndicatorThresholdView {
-    /// Moeda dona dos limites (`ETH`, `BTC`, `ADA` ou `XRP`); as demais usam os do ETH.
+    /// Moeda dona dos limites (`ETH`, `BTC`, `ADA`, `XRP` ou `BNB`); as demais usam os do ETH.
     pub coin: String,
     pub indicator: String,
     pub green_boundary: f64,
@@ -126,7 +126,7 @@ pub async fn list_indicator_thresholds(
 /// (o `raw_value` fica; só o `signal` muda), na mesma transação. Sem isso o
 /// score e os alertas, que leem o `signal` gravado, ficariam com a regra
 /// antiga até a próxima coleta. Só as leituras que usam esses limites: editar
-/// o BTC mexe só nas leituras do BTC, o ADA só nas do ADA, o XRP só nas do XRP;
+/// o BTC mexe só nas leituras do BTC, o ADA só nas do ADA, o XRP só nas do XRP, o BNB só nas do BNB;
 /// editar o ETH, nas das demais moedas.
 pub(crate) async fn apply_threshold(
     db: &DatabaseConnection,
@@ -162,6 +162,7 @@ pub(crate) async fn apply_threshold(
                 crypto_score::COIN_BTC,
                 crypto_score::COIN_ADA,
                 crypto_score::COIN_XRP,
+                crypto_score::COIN_BNB,
             ]))
     } else {
         owned_readings.filter(crypto_indicators::Column::Coin.eq(owner))

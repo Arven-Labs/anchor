@@ -264,7 +264,18 @@ fn coingecko_id(coin: &str) -> Result<&'static str, AppError> {
         "BTC" => Ok("bitcoin"),
         "ADA" => Ok("cardano"),
         "XRP" => Ok("ripple"),
+        "BNB" => Ok("binancecoin"),
         other => Err(AppError::NoData(format!("no CoinGecko id for '{other}'"))),
+    }
+}
+
+/// Cadeia do DefiLlama cujo TVL a moeda usa no `tvl-trend`; só as moedas que têm
+/// uma cadeia própria com TVL relevante (ETH e BNB).
+fn tvl_chain(coin: &str) -> Option<&'static str> {
+    match coin.to_ascii_uppercase().as_str() {
+        "ETH" => Some("Ethereum"),
+        "BNB" => Some("BSC"),
+        _ => None,
     }
 }
 
@@ -309,9 +320,11 @@ impl EthIndicatorProvider for DefiLlama {
     fn supports(&self, code: &str) -> bool {
         code == "tvl-trend"
     }
-    fn indicator<'a>(&'a self, _coin: &'a str, _code: &'a str) -> BoxFuture<'a, Result<f64, AppError>> {
-        Box::pin(async {
-            let url = format!("{DEFILLAMA}/v2/historicalChainTvl/Ethereum");
+    fn indicator<'a>(&'a self, coin: &'a str, _code: &'a str) -> BoxFuture<'a, Result<f64, AppError>> {
+        Box::pin(async move {
+            let chain = tvl_chain(coin)
+                .ok_or_else(|| AppError::NoData(format!("no DefiLlama chain for '{coin}'")))?;
+            let url = format!("{DEFILLAMA}/v2/historicalChainTvl/{chain}");
             tvl_trend_mom(&http::get_text("DefiLlama", &url, http::DEFAULT_TIMEOUT).await?)
         })
     }
@@ -404,11 +417,13 @@ fn providers() -> Vec<Box<dyn EthIndicatorProvider>> {
     vec![Box::new(DefiLlama), Box::new(Ultrasound), Box::new(CoinGeckoNvt), Box::new(CoinMetrics)]
 }
 
-/// Valor bruto do indicador `code` da moeda `coin` (`ETH` ou `BTC`; como na
-/// Finance API). Código fora do catálogo, ou que só existe para o ETH pedido
-/// para outra moeda, é `NoData`.
+/// Valor bruto do indicador `code` da moeda `coin` (`ETH`, `BTC`, `ADA`, `XRP` ou
+/// `BNB`; como na Finance API). Código fora do catálogo, ou que só existe para o
+/// ETH pedido para outra moeda, é `NoData`; o `tvl-trend` também vale para o BNB
+/// (TVL da BSC).
 pub async fn indicator(coin: &str, code: &str) -> Result<Sourced<f64>, AppError> {
-    if !coin.eq_ignore_ascii_case("ETH") && ETH_ONLY_CODES.contains(&code) {
+    let has_own_tvl = code == "tvl-trend" && tvl_chain(coin).is_some();
+    if !coin.eq_ignore_ascii_case("ETH") && ETH_ONLY_CODES.contains(&code) && !has_own_tvl {
         return Err(AppError::NoData(format!("indicator '{code}' only exists for ETH")));
     }
     let providers = providers();
@@ -579,10 +594,26 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn tvl_trend_is_only_for_coins_with_their_own_chain() {
+        // Sem cadeia no DefiLlama, é `NoData` antes de qualquer rede (BTC, ADA, XRP).
+        for coin in ["BTC", "ADA", "XRP"] {
+            assert!(matches!(indicator(coin, "tvl-trend").await.unwrap_err(), AppError::NoData(_)), "{coin}");
+        }
+        assert_eq!(tvl_chain("eth"), Some("Ethereum"));
+        assert_eq!(tvl_chain("BNB"), Some("BSC"));
+        assert_eq!(tvl_chain("BTC"), None);
+        // Os demais códigos só do ETH seguem recusados para o BNB.
+        for code in ["net-issuance", "fees-vs-emission", "eth-btc-trend"] {
+            assert!(matches!(indicator("BNB", code).await.unwrap_err(), AppError::NoData(_)), "{code}");
+        }
+    }
+
     #[test]
     fn coinmetrics_url_uses_the_requested_asset() {
         assert!(metrics_url("btc", &["AdrActCnt"], 35).contains("assets=btc&metrics=AdrActCnt"));
         assert_eq!(coingecko_id("btc").unwrap(), "bitcoin");
+        assert_eq!(coingecko_id("bnb").unwrap(), "binancecoin");
         assert_eq!(coingecko_id("ETH").unwrap(), "ethereum");
         assert!(matches!(coingecko_id("SOL"), Err(AppError::NoData(_))));
     }

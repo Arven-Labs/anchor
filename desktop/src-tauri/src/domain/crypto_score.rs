@@ -73,6 +73,7 @@ pub const COIN_ETH: &str = "ETH";
 pub const COIN_BTC: &str = "BTC";
 pub const COIN_ADA: &str = "ADA";
 pub const COIN_XRP: &str = "XRP";
+pub const COIN_BNB: &str = "BNB";
 
 /// Moeda cujo conjunto de indicadores e limites vale para `coin`.
 pub fn threshold_coin(coin: &str) -> &'static str {
@@ -82,6 +83,8 @@ pub fn threshold_coin(coin: &str) -> &'static str {
         COIN_ADA
     } else if coin.eq_ignore_ascii_case(COIN_XRP) {
         COIN_XRP
+    } else if coin.eq_ignore_ascii_case(COIN_BNB) {
+        COIN_BNB
     } else {
         COIN_ETH
     }
@@ -168,12 +171,29 @@ pub const XRP_DEFAULT_THRESHOLDS: [(&str, f64, f64); 9] = [
     ("mayer_multiple", 1.3, 2.0),
 ];
 
+/// Calibrados com dados reais do BNB em 2026-10-27 (ver a migration
+/// `m20261119_100000`). **Score só de mercado**: o CoinMetrics Community parou o
+/// on-chain do BNB em 2019 e não há fonte grátis sem chave, então ficam fora
+/// MVRV, Puell, endereços ativos, netflow e supply das exchanges. Sem DVOL nem
+/// put/call (a Deribit não lista BNB). O único sinal da rede é o TVL da BSC.
+pub const BNB_DEFAULT_THRESHOLDS: [(&str, f64, f64); 8] = [
+    ("nvt_ratio", 0.9, 1.3),
+    ("tvl_trend", 0.0, -10.0),
+    ("funding_rate_7d", 5.0, 10.0),
+    ("open_interest_change_30d", 0.0, 25.0),
+    ("long_short_ratio", 2.2, 3.0),
+    ("stablecoin_supply_change_30d", 2.0, 0.0),
+    ("fear_greed_index", 25.0, 75.0),
+    ("mayer_multiple", 1.3, 2.0),
+];
+
 /// Limites de fábrica de uma moeda: `(indicador, verde, vermelho)`.
 pub fn default_thresholds(coin: &str) -> &'static [(&'static str, f64, f64)] {
     match threshold_coin(coin) {
         COIN_BTC => &BTC_DEFAULT_THRESHOLDS,
         COIN_ADA => &ADA_DEFAULT_THRESHOLDS,
         COIN_XRP => &XRP_DEFAULT_THRESHOLDS,
+        COIN_BNB => &BNB_DEFAULT_THRESHOLDS,
         _ => &ETH_DEFAULT_THRESHOLDS,
     }
 }
@@ -244,6 +264,17 @@ impl IndicatorGroup {
 
     /// Chaves de `indicator_thresholds`/`crypto_indicators` de cada grupo.
     pub fn indicators(&self, coin: &str) -> &'static [&'static str] {
+        if threshold_coin(coin) == COIN_BNB {
+            return match self {
+                IndicatorGroup::OnChain => &["nvt_ratio"],
+                IndicatorGroup::Fundamentals => &["tvl_trend"],
+                IndicatorGroup::Derivatives => {
+                    &["funding_rate_7d", "open_interest_change_30d", "long_short_ratio"]
+                }
+                IndicatorGroup::Liquidity => &["stablecoin_supply_change_30d"],
+                IndicatorGroup::Sentiment => &["fear_greed_index", "mayer_multiple"],
+            };
+        }
         if threshold_coin(coin) == COIN_XRP {
             return match self {
                 IndicatorGroup::OnChain => &["mvrv_z_score", "nvt_ratio", "active_addresses_trend"],
@@ -519,7 +550,7 @@ mod tests {
 
     #[test]
     fn groups_cover_distinct_indicators_per_coin() {
-        for (coin, expected) in [("ETH", 20), ("BTC", 16), ("ADA", 10), ("XRP", 9)] {
+        for (coin, expected) in [("ETH", 20), ("BTC", 16), ("ADA", 10), ("XRP", 9), ("BNB", 8)] {
             let all = grouped(coin);
             assert_eq!(all.len(), expected, "{coin}");
             let mut unique = all.clone();
@@ -588,6 +619,26 @@ mod tests {
         let dropped: Vec<&str> = ada.iter().copied().filter(|name| !xrp.contains(name)).collect();
         assert_eq!(dropped, ["puell_multiple"]);
         assert_eq!(threshold_coin("xrp"), "XRP");
+    }
+
+    // O BNB é só de mercado: o CoinMetrics Community parou o on-chain dele em 2019.
+    // Só mantém o NVT (CoinGecko) e o TVL da BSC (DefiLlama) além dos de mercado.
+    #[test]
+    fn bnb_is_a_market_only_set_with_nvt_and_bsc_tvl() {
+        assert_eq!(IndicatorGroup::for_coin("BNB").len(), 5);
+        assert_eq!(IndicatorGroup::OnChain.indicators("BNB"), ["nvt_ratio"]);
+        assert_eq!(IndicatorGroup::Fundamentals.indicators("BNB"), ["tvl_trend"]);
+        let bnb = grouped("BNB");
+        for missing in ["mvrv_z_score", "puell_multiple", "active_addresses_trend", "exchange_netflow", "dvol"] {
+            assert!(!bnb.contains(&missing), "{missing}");
+        }
+        // É o conjunto do XRP sem o on-chain que a fonte não serve, mais o TVL da BSC.
+        let from_xrp = grouped("XRP")
+            .into_iter()
+            .filter(|name| !["mvrv_z_score", "active_addresses_trend"].contains(name));
+        assert!(from_xrp.into_iter().all(|name| bnb.contains(&name)));
+        assert!(bnb.contains(&"tvl_trend"));
+        assert_eq!(threshold_coin("bnb"), "BNB");
     }
 
     #[test]
@@ -801,7 +852,7 @@ mod tests {
 
     #[test]
     fn every_grouped_indicator_has_a_valid_default() {
-        for coin in ["ETH", "BTC", "ADA", "XRP"] {
+        for coin in ["ETH", "BTC", "ADA", "XRP", "BNB"] {
             for name in grouped(coin) {
                 let (green, red) = default_threshold(coin, name)
                     .unwrap_or_else(|| panic!("no default threshold for {coin} {name}"));
@@ -813,7 +864,7 @@ mod tests {
 
     #[test]
     fn defaults_have_no_unknown_indicator() {
-        for coin in ["ETH", "BTC", "ADA", "XRP"] {
+        for coin in ["ETH", "BTC", "ADA", "XRP", "BNB"] {
             let grouped = grouped(coin);
             assert!(default_thresholds(coin).iter().all(|(name, _, _)| grouped.contains(name)), "{coin}");
             assert_eq!(default_thresholds(coin).len(), grouped.len(), "{coin}");

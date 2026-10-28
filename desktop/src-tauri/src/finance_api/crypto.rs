@@ -184,9 +184,9 @@ pub struct IndicatorCollection {
 }
 
 /// Indicadores do score de `coin` (`run_crypto_collector`), gravados sob essa
-/// moeda. Só ETH, BTC, ADA e XRP têm score próprio; cada um coleta o seu conjunto
+/// moeda. Só ETH, BTC, ADA, XRP e BNB têm score próprio; cada um coleta o seu conjunto
 /// (`domain::crypto_score::IndicatorGroup::indicators`): 20 no ETH, 16 no BTC,
-/// 10 no ADA, 9 no XRP.
+/// 10 no ADA, 9 no XRP, 8 no BNB (só de mercado).
 /// Os que passam por `finance_core::eth_indicators` (CoinMetrics, CoinGecko,
 /// DefiLlama, ultrasound.money) e, desde a Fase 31, os coletados direto pelo
 /// Anchor (`crypto_sources`) — derivativos (Binance, com fallback Bybit),
@@ -197,10 +197,16 @@ pub async fn collect_indicators(
     coin: &str,
 ) -> Result<IndicatorCollection, AppError> {
     let coin = coin.to_ascii_uppercase();
-    let scored = [crypto_score::COIN_ETH, crypto_score::COIN_BTC, crypto_score::COIN_ADA, crypto_score::COIN_XRP];
+    let scored = [
+        crypto_score::COIN_ETH,
+        crypto_score::COIN_BTC,
+        crypto_score::COIN_ADA,
+        crypto_score::COIN_XRP,
+        crypto_score::COIN_BNB,
+    ];
     if !scored.contains(&coin.as_str()) {
         return Err(AppError::InvalidInput(format!(
-            "the crypto score collector only supports ETH, BTC, ADA and XRP, not '{coin}'"
+            "the crypto score collector only supports ETH, BTC, ADA, XRP and BNB, not '{coin}'"
         )));
     }
     let wanted: Vec<&str> = crypto_score::IndicatorGroup::ALL
@@ -416,6 +422,18 @@ mod tests {
         for reading in &collection.readings {
             assert!(matches!(reading.signal.as_str(), "GREEN" | "NEUTRAL" | "RED"));
             assert_eq!(reading.coin, "XRP");
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_collect_bnb_indicators_writes_eight_readings() {
+        let db = dev_db().await;
+        let collection = collect_indicators(&db, "BNB").await.unwrap();
+        assert_eq!(collection.readings.len() + collection.errors.len(), 8);
+        for reading in &collection.readings {
+            assert!(matches!(reading.signal.as_str(), "GREEN" | "NEUTRAL" | "RED"));
+            assert_eq!(reading.coin, "BNB");
         }
     }
 

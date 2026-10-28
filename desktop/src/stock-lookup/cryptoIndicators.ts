@@ -65,8 +65,28 @@ const ADA_ONLY_EXCLUDED_KEYS: IndicatorKey[] = [
 // no issuance for it): 9 indicators.
 const XRP_ONLY_EXCLUDED_KEYS: IndicatorKey[] = [...ADA_ONLY_EXCLUDED_KEYS, "puell_multiple"];
 
+// BNB is a market-only score (8 indicators): CoinMetrics Community stopped its
+// on-chain data in 2019 and no free keyless source replaces it. It keeps NVT,
+// the BSC TVL trend (the only network signal), derivatives, stablecoins and
+// sentiment — so it is listed explicitly, not derived from the BTC set.
+const BNB_KEYS: IndicatorKey[] = [
+  "nvt_ratio",
+  "tvl_trend",
+  "funding_rate_7d",
+  "open_interest_change_30d",
+  "long_short_ratio",
+  "stablecoin_supply_change_30d",
+  "fear_greed_index",
+  "mayer_multiple",
+];
+
 /** Coins that have their own collector, score and thresholds. */
-export const SCORED_COINS = ["ETH", "BTC", "ADA", "XRP"];
+export const SCORED_COINS = ["ETH", "BTC", "ADA", "XRP", "BNB"];
+
+/** Coins whose score has no on-chain valuation data (the screen says so). */
+export function isMarketOnlyScore(coin: string): boolean {
+  return coin.toUpperCase() === "BNB";
+}
 
 export function hasOwnScore(coin: string): boolean {
   return SCORED_COINS.includes(coin.toUpperCase());
@@ -81,6 +101,8 @@ export function indicatorKeysFor(coin: string): IndicatorKey[] {
       return btcKeys.filter((key) => !ADA_ONLY_EXCLUDED_KEYS.includes(key));
     case "XRP":
       return btcKeys.filter((key) => !XRP_ONLY_EXCLUDED_KEYS.includes(key));
+    case "BNB":
+      return BNB_KEYS;
     default:
       return INDICATOR_KEYS.filter((key) => !BTC_ONLY_KEYS.includes(key));
   }

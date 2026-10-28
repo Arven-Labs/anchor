@@ -165,4 +165,23 @@ describe("Anchor — Research com dados de rede", function () {
     expect(body).not.toContain("Exchange Netflow");
     expect(Number(sql("SELECT count(*) FROM stock_quotes WHERE ticker = 'XRP'"))).toBeGreaterThan(0);
   });
+
+  it("cripto (BNB) monta o score só de mercado, com 8 indicadores, TVL da rede e o aviso", async function () {
+    await search("Crypto", "BNB");
+    await expectQuoteScreen(this, "BNB", "of 8 logged");
+    await waitForText(
+      byId("crypto-score-header"),
+      (text) => text.includes("of 8 logged"),
+      "o score do BNB deveria montar com os 8 indicadores",
+    );
+    await byId("crypto-market-only-notice").waitForDisplayed({ timeout: 10_000 });
+    const body = await textOf($("body"));
+    expect(body).toContain("Network fundamentals");
+    expect(body).toContain("TVL Trend");
+    expect(body).not.toContain("MVRV Z-Score");
+    expect(body).not.toContain("Puell");
+    expect(body).not.toContain("DVOL");
+    expect(body).not.toContain("Exchange Netflow");
+    expect(Number(sql("SELECT count(*) FROM stock_quotes WHERE ticker = 'BNB'"))).toBeGreaterThan(0);
+  });
 });

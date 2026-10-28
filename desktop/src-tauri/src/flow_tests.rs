@@ -29,8 +29,8 @@ use crate::commands::option_position::{
 use crate::finance_core::b3_options::{LastTrade, OptionsMarket};
 use crate::commands::tax::{assess_workspace, simulate_tax_sale_in, SimulateTaxSaleRequest};
 use crate::domain::crypto_score::{
-    default_thresholds, CryptoScore, ScoreVerdict, ADA_DEFAULT_THRESHOLDS, BTC_DEFAULT_THRESHOLDS,
-    ETH_DEFAULT_THRESHOLDS, XRP_DEFAULT_THRESHOLDS,
+    default_thresholds, CryptoScore, ScoreVerdict, ADA_DEFAULT_THRESHOLDS, BNB_DEFAULT_THRESHOLDS,
+    BTC_DEFAULT_THRESHOLDS, ETH_DEFAULT_THRESHOLDS, XRP_DEFAULT_THRESHOLDS,
 };
 use crate::entity::{indicator_thresholds, tax_rules};
 use crate::commands::bank_account::{
@@ -67,6 +67,7 @@ async fn migrations_apply_from_scratch_and_are_idempotent() {
             + BTC_DEFAULT_THRESHOLDS.len()
             + ADA_DEFAULT_THRESHOLDS.len()
             + XRP_DEFAULT_THRESHOLDS.len()
+            + BNB_DEFAULT_THRESHOLDS.len()
     );
 }
 
@@ -78,7 +79,7 @@ async fn seeded_thresholds_match_the_reset_defaults() {
     let db = memory_db().await;
     let rows = indicator_thresholds::Entity::find().all(&db).await.unwrap();
 
-    for coin in ["ETH", "BTC", "ADA", "XRP"] {
+    for coin in ["ETH", "BTC", "ADA", "XRP", "BNB"] {
         for (indicator, green, red) in default_thresholds(coin) {
             let row = rows
                 .iter()
@@ -651,6 +652,74 @@ async fn xrp_score_has_its_own_indicators_and_thresholds_isolated_from_eth_and_a
     assert_eq!(signal(&xrp, "mvrv_z_score").as_deref(), Some("GREEN"));
     let ada = crypto_score_for(&db, "ADA".to_string()).await.unwrap();
     assert_eq!(signal(&ada, "active_addresses_trend").as_deref(), Some("RED"));
+}
+
+// Score próprio do BNB: 8 indicadores em 5 grupos, só de mercado (sem on-chain de
+// valuation), com os limites da migration `m20261119_100000`, isolados dos do ETH.
+#[tokio::test]
+async fn bnb_score_is_market_only_with_its_own_thresholds_isolated_from_eth() {
+    let db = memory_db().await;
+    let for_coin = |coin: &str, indicator: &str, raw_value: f64| RecordCryptoIndicatorRequest {
+        coin: coin.to_string(),
+        ..reading(indicator, raw_value)
+    };
+    let signal = |score: &CryptoScore, indicator: &str| {
+        score
+            .groups
+            .iter()
+            .flat_map(|g| g.indicators.iter())
+            .find(|i| i.indicator == indicator)
+            .and_then(|i| i.reading.as_ref())
+            .map(|r| r.signal.clone())
+    };
+
+    // Long/short a 3,2: o vermelho do ETH começa em 3,5 (→ neutro) e o do BNB em 3,0 (→ vermelho).
+    // Funding a 12% a.a.: o vermelho do ETH é 20 (→ neutro) e o do BNB, 10 (→ vermelho).
+    record_crypto_indicator_in(&db, for_coin("BNB", "long_short_ratio", 3.2)).await.unwrap();
+    record_crypto_indicator_in(&db, for_coin("BNB", "funding_rate_7d", 12.0)).await.unwrap();
+    record_crypto_indicator_in(&db, for_coin("BNB", "tvl_trend", 4.0)).await.unwrap(); // verde (≥ 0)
+    record_crypto_indicator_in(&db, for_coin("ETH", "long_short_ratio", 3.2)).await.unwrap();
+
+    let bnb = crypto_score_for(&db, "BNB".to_string()).await.unwrap();
+    assert_eq!((bnb.total, bnb.logged, bnb.green), (8, 3, 1));
+    assert_eq!(bnb.groups.len(), 5);
+    assert_eq!(signal(&bnb, "long_short_ratio").as_deref(), Some("RED"));
+    assert_eq!(signal(&bnb, "funding_rate_7d").as_deref(), Some("RED"));
+    assert_eq!(signal(&bnb, "tvl_trend").as_deref(), Some("GREEN"));
+    let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!(signal(&eth, "long_short_ratio").as_deref(), Some("NEUTRAL"));
+
+    // O BNB não tem o on-chain de valuation nem o que a Deribit e o ETH davam.
+    for indicator in [
+        "mvrv_z_score",
+        "puell_multiple",
+        "active_addresses_trend",
+        "exchange_netflow",
+        "dvol",
+        "put_call_ratio",
+        "btc_dominance",
+        "staking_yield",
+    ] {
+        assert!(record_crypto_indicator_in(&db, for_coin("BNB", indicator, 1.0)).await.is_err(), "{indicator}");
+    }
+    // O TVL é do BNB (BSC) e do ETH, mas não do ADA nem do XRP.
+    for coin in ["ADA", "XRP"] {
+        assert!(record_crypto_indicator_in(&db, for_coin(coin, "tvl_trend", 1.0)).await.is_err(), "{coin}");
+    }
+
+    // Editar o BNB reclassifica só as leituras do BNB...
+    apply_threshold(&db, "BNB", "long_short_ratio", 3.0, 4.0).await.unwrap();
+    let bnb = crypto_score_for(&db, "BNB".to_string()).await.unwrap();
+    assert_eq!(signal(&bnb, "long_short_ratio").as_deref(), Some("NEUTRAL"));
+    let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!(signal(&eth, "long_short_ratio").as_deref(), Some("NEUTRAL"));
+
+    // ...e editar o ETH não toca nas do BNB.
+    apply_threshold(&db, "ETH", "long_short_ratio", 1.0, 2.0).await.unwrap();
+    let eth = crypto_score_for(&db, "ETH".to_string()).await.unwrap();
+    assert_eq!(signal(&eth, "long_short_ratio").as_deref(), Some("RED"));
+    let bnb = crypto_score_for(&db, "BNB".to_string()).await.unwrap();
+    assert_eq!(signal(&bnb, "long_short_ratio").as_deref(), Some("NEUTRAL"));
 }
 
 // Lote 4 da Fase 31: o grupo "Market sentiment" tem os seeds da migration para

@@ -9,6 +9,7 @@ import {
   INDICATOR_KEYS,
   hasOwnScore,
   indicatorKeysFor,
+  isMarketOnlyScore,
   type IndicatorKey,
 } from "./cryptoIndicators";
 import { AddToAssetsButton, CryptoFearGreedGauge, StatTile, type StockNote } from "./shared";
@@ -430,6 +431,12 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
                 ? `These indicators are split into groups, each with its own subscore. ${ticker} has its own green/red thresholds, calibrated for it.`
                 : `These indicators are split into groups, each with its own subscore, and were calibrated for Ethereum — logging them under ${ticker} is fine, but the green/red thresholds are ETH's, not ${ticker}'s.`}
             </p>
+            {isMarketOnlyScore(ticker) && (
+              <p className="mb-4 text-sm text-muted-foreground" data-testid="crypto-market-only-notice">
+                Market-only score: no on-chain valuation data (MVRV, Puell, active addresses) is available for{" "}
+                {ticker}, so it leans on derivatives, sentiment and the chain's TVL.
+              </p>
+            )}
             {scoreHistoryQuery.data && <CryptoScoreHistoryChart history={scoreHistoryQuery.data} />}
             <Button
               type="button"
