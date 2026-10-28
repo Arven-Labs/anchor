@@ -2,16 +2,17 @@ name: CI Desktop Rust
 
 # Testes do backend Rust do app desktop, só quando algo em desktop/src-tauri/ muda.
 # O frontend tem workflow próprio (ci-desktop-frontend.yml).
+# Em PR quem chama é o ci.yml (filtro de caminho + job `gate`), por `workflow_call`.
 on:
   push:
     branches: [main]
     paths: ['desktop/src-tauri/**', '.github/workflows/ci-desktop-rust.yml']
-  pull_request:
-    paths: ['desktop/src-tauri/**', '.github/workflows/ci-desktop-rust.yml']
+  workflow_call:
   workflow_dispatch:
 
+# Grupo fixo: em `workflow_call`, `github.workflow` é o nome do chamador e os 5 CIs se cancelariam.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-desktop-rust-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

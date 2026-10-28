@@ -2,16 +2,17 @@ name: CI Mobile
 
 # Análise e testes do companion Flutter a cada push/PR que mexa em mobile/.
 # Substitui rodar `./dev.sh flutter test` no Docker local.
+# Em PR quem chama é o ci.yml (filtro de caminho + job `gate`), por `workflow_call`.
 on:
   push:
     branches: [main]
     paths: ['mobile/**', '.github/workflows/ci-mobile.yml']
-  pull_request:
-    paths: ['mobile/**', '.github/workflows/ci-mobile.yml']
+  workflow_call:
   workflow_dispatch:
 
+# Grupo fixo: em `workflow_call`, `github.workflow` é o nome do chamador e os 5 CIs se cancelariam.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-mobile-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

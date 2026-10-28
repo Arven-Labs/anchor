@@ -4411,3 +4411,12 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não mexi**: o título "Practice Valuation" do `INDEX.md` (nome antigo do projeto; fora de escopo).
 - **Pendente de processo**: CIs de código obrigatórios na `main` (job agregado ou rodar em todo PR; é CI/CD, §4, precisa de plano e confirmação); mecanismo de sincronia dos `CLAUDE.md` foi descartado por ora.
 - **Pendente do app** (igual à Sessão 251): histórico e score cripto no mobile, aba Finanças no aparelho, recalibrar long/short do ADA, XRP e BNB.
+
+## Sessão 253 — job `gate` único para PR (CI/CD, sem código do app)
+- **Pedido**: item 4 do processo ("CIs de código exigidos na `main`"); plano com 3 opções, o dono escolheu a **B** (workflows reutilizáveis + `gate`).
+- **Feito**: novo `.github/workflows/ci.yml` (só `pull_request`): job `changes` lista os arquivos do PR pela API do GitHub (sem action de terceiros) e decide quais CIs rodam; chama `ci-contracts`, `ci-desktop-rust`, `ci-desktop-frontend`, `ci-desktop-e2e` e `ci-mobile` por `workflow_call`; job `gate` com `if: always()` passa só se nenhum resultado for `failure`/`cancelled` (pulado conta como ok). Os cinco `ci-*.yml` trocaram `pull_request` por `workflow_call` (push na `main` e dispatch seguem) e o `concurrency.group` virou fixo por workflow. `ci-private-files.yml` (`guard`) não mudou. Mexer no `ci.yml` roda todos os CIs.
+- **Armadilha achada na leitura**: em `workflow_call`, `github.workflow` é o nome do **chamador**; com o grupo antigo (`${{ github.workflow }}-...`) os cinco CIs cairiam no mesmo grupo e se cancelariam.
+- **Provado no CI** (base `ci/gate-job-agregado`): PR #8 (mexe no `ci.yml`): `changes`, 5 CIs e `gate` verdes (E2E 5m11s, Rust 2m37s). PR #9 descartável, só docs: `gate` verde com os 5 CIs pulados. PR #10 descartável, contrato Solidity quebrado de propósito: `contracts / test` e `gate` **vermelhos**, o resto pulado. Os dois foram fechados sem mesclar e as branches apagadas.
+- **Manutenção**: as regex do `changes` repetem os `paths:` do push de cada `ci-*.yml`; mudou um, mude o outro.
+- **Não verificado**: PR que mexe só em `desktop/package.json` ou `tsconfig` (as regex foram testadas à mão, não em PR); `workflow_dispatch` dos `ci-*.yml` depois da troca de gatilho (só o `apk` do mobile depende dele).
+- **Pendente**: trocar o ruleset `protect-main` para exigir `gate` + `guard` (§4, depende da confirmação do dono; este PR **não** mexe nele); título "Practice Valuation" do `INDEX.md`; pendentes do app iguais à Sessão 252.

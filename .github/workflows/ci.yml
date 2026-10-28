@@ -1,0 +1,93 @@
+name: CI
+
+# Porta única de CI para Pull Request. Os CIs de código só valem quando o PR mexe nos
+# caminhos deles (rodar tudo em todo PR de docs custaria ~9 min de E2E à toa). Só que um
+# check que nem dispara não pode ser exigido na `main`. Então: este workflow decide quais
+# CIs rodam, chama cada um (`workflow_call`) e termina num job `gate` que SEMPRE roda e só
+# passa se nada falhou (pulado conta como ok). A `main` exige `gate` + `guard`.
+#
+# Push na `main` e botão "Run workflow" continuam nos próprios workflows (`ci-*.yml`).
+# `ci-private-files.yml` (guard) fica de fora: já roda em todo PR, sem filtro.
+on:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      contracts: ${{ steps.filter.outputs.contracts }}
+      rust: ${{ steps.filter.outputs.rust }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      e2e: ${{ steps.filter.outputs.e2e }}
+      mobile: ${{ steps.filter.outputs.mobile }}
+    steps:
+      # Sem actions de terceiros: a lista de arquivos do PR vem da API do próprio GitHub.
+      # As expressões repetem os `paths:` dos push de cada ci-*.yml; mudou um, mude o outro.
+      - name: Which CIs apply
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
+          echo "$files"
+          match() { echo "$files" | grep -qE "$1" && echo true || echo false; }
+
+          # Mexer neste arquivo roda tudo: é o jeito de testar o próprio gate.
+          if echo "$files" | grep -qE '^\.github/workflows/ci\.yml$'; then
+            for k in contracts rust frontend e2e mobile; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
+            exit 0
+          fi
+
+          {
+            echo "contracts=$(match '^contracts/|^\.github/workflows/ci-contracts\.yml$')"
+            echo "rust=$(match '^desktop/src-tauri/|^\.github/workflows/ci-desktop-rust\.yml$')"
+            echo "frontend=$(match '^desktop/(src/|public/|index\.html$|package\.json$|package-lock\.json$|tsconfig[^/]*\.json$|vite\.config\.ts$|components\.json$)|^\.github/workflows/ci-desktop-frontend\.yml$')"
+            echo "e2e=$(match '^desktop/(src/|src-tauri/|e2e/|package[^/]*\.json$)|^\.github/workflows/ci-desktop-e2e\.yml$')"
+            echo "mobile=$(match '^mobile/|^\.github/workflows/ci-mobile\.yml$')"
+          } >> "$GITHUB_OUTPUT"
+
+  contracts:
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    uses: ./.github/workflows/ci-contracts.yml
+
+  rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    uses: ./.github/workflows/ci-desktop-rust.yml
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    uses: ./.github/workflows/ci-desktop-frontend.yml
+
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    uses: ./.github/workflows/ci-desktop-e2e.yml
+
+  mobile:
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    uses: ./.github/workflows/ci-mobile.yml
+
+  # O único check de código exigido pela `main`. `if: always()` é o ponto: sem ele o job é
+  # pulado quando um dependente falha, e check pulado conta como passado para a proteção.
+  gate:
+    needs: [changes, contracts, rust, frontend, e2e, mobile]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: All required CIs passed or were skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' > /dev/null
