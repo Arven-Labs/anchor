@@ -4426,3 +4426,9 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Verificado**: `GET /rules/branches/main` lista `required_status_checks` com `guard` e `gate`. O resto do ruleset não mudou (PR obrigatório, 0 aprovações, sem force push, sem apagar a `main`, Admin só contorna via PR).
 - **Prova de que PR de docs não trava**: este próprio PR, só de docs, deve ter `gate` verde com os cinco CIs pulados e ficar mesclável (resultado no PR).
 - **Item 4 do processo**: fechado. **Pendente de processo**: só o título "Practice Valuation" do `INDEX.md`. Pendentes do app iguais à Sessão 252.
+
+## Sessão 254 — título do `INDEX.md` (processo, sem código do app)
+- **Pedido**: "vamos no primeiro" dos pendentes de processo (o título "Practice Valuation" do `INDEX.md`).
+- **Feito**: título do `project/INDEX.md` vira "Anchor — Estado do Projeto" (linha 1, única mudança fora este registro).
+- **Não mexi**: as outras ~38 ocorrências de "Practice Valuation". `OVERVIEW.md` ainda abre com "O que é o Practice Valuation" e `GUIDELINES.md`, `ARCHITECTURE.md`, comentários de `SyncRegistry.sol`, `ipns_key.rs` e `ecies.rs` também citam o nome; `SESSIONS.md` e `PHASE.md` ficam como estão por serem histórico.
+- **Pendente de processo**: título do `OVERVIEW.md` (se o dono quiser); `workflow_dispatch` dos `ci-*.yml` sem teste depois da Sessão 253. Pendentes do app iguais à Sessão 252.
