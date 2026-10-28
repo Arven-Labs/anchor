@@ -178,8 +178,10 @@ describe("Anchor — Research com dados de rede", function () {
     const body = await textOf($("body"));
     expect(body).toContain("Network fundamentals");
     expect(body).toContain("TVL Trend");
+    // Rótulos dos indicadores, não só a palavra: o aviso do BNB cita MVRV e Puell de propósito.
     expect(body).not.toContain("MVRV Z-Score");
-    expect(body).not.toContain("Puell");
+    expect(body).not.toContain("Puell Multiple");
+    expect(body).not.toContain("Active Addresses Trend");
     expect(body).not.toContain("DVOL");
     expect(body).not.toContain("Exchange Netflow");
     expect(Number(sql("SELECT count(*) FROM stock_quotes WHERE ticker = 'BNB'"))).toBeGreaterThan(0);
