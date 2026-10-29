@@ -10,6 +10,14 @@ import '../models/indicator_threshold_view.dart';
 /// somar, janela de validade) fica em `domain/crypto_score.dart`, pura; aqui só
 /// entra o que precisa de banco. Espelha `commands/crypto_indicator.rs` do desktop.
 class CryptoScoreRepository {
+  final DateTime Function() _now;
+
+  /// [now] é o relógio (injetável nos testes). `created_at` das leituras é
+  /// gravado em UTC, como no desktop: "coletado hoje" é por dia UTC, e a hora
+  /// local sem fuso que o resto do app usa contaria o dia errado.
+  CryptoScoreRepository({DateTime Function()? now})
+    : _now = now ?? DateTime.now;
+
   /// Classifica a leitura pelos limites da moeda e a grava. Recusa valor não
   /// finito (o `classify` o trataria como neutro, sem avisar), data que não é
   /// `YYYY-MM-DD` de um dia real e indicador que a moeda não tem.
@@ -43,11 +51,26 @@ class CryptoScoreRepository {
         'raw_value': rawValue,
         'signal': signal.wire,
         'source': source,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': _now().toUtc().toIso8601String(),
       };
       final id = await txn.insert('crypto_indicators', row);
       return CryptoReading.fromMap({...row, 'id': id});
     });
+  }
+
+  /// Indicadores da moeda com leitura **criada** hoje (dia UTC), venha da fonte
+  /// ou digitada à mão. Conta a criação e não a `reading_date`: SOPR e NUPL
+  /// chegam com a data do dado 7 dias antes, e o que evita gastar a cota da
+  /// fonte é saber que já foram buscados hoje.
+  Future<Set<String>> indicatorsCollectedToday(String coin) async {
+    final today = _now().toUtc().toIso8601String().substring(0, 10);
+    final db = await AppDatabase.instance();
+    final rows = await db.rawQuery(
+      'SELECT DISTINCT indicator FROM crypto_indicators '
+      'WHERE coin = ? AND substr(created_at, 1, 10) = ?',
+      [coin, today],
+    );
+    return {for (final row in rows) row['indicator']! as String};
   }
 
   /// Leituras da moeda, da data mais nova para a mais antiga.

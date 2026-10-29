@@ -359,6 +359,85 @@ void main() {
     });
   });
 
+  group('created_at em UTC e "coletado hoje"', () {
+    CryptoScoreRepository repoAt(DateTime Function() now) =>
+        CryptoScoreRepository(now: now);
+
+    Future<void> recordWith(
+      CryptoScoreRepository repo,
+      String coin,
+      String indicator,
+    ) => repo.recordReading(
+      coin: coin,
+      indicator: indicator,
+      readingDate: '2026-10-28',
+      rawValue: 3,
+      source: 'teste',
+    );
+
+    test('created_at é gravado em UTC, pelo relógio do repositório', () async {
+      final repo = repoAt(() => DateTime.utc(2026, 10, 29, 23, 30));
+
+      final reading = await repo.recordReading(
+        coin: coinEth,
+        indicator: 'funding_rate_7d',
+        readingDate: '2026-10-29',
+        rawValue: 3,
+        source: 'teste',
+      );
+
+      expect(reading.createdAt, DateTime.utc(2026, 10, 29, 23, 30));
+      expect(reading.createdAt.isUtc, isTrue);
+      final db = await AppDatabase.instance();
+      final rows = await db.query('crypto_indicators');
+      expect(rows.single['created_at'], '2026-10-29T23:30:00.000Z');
+    });
+
+    test(
+      'lista só os indicadores da moeda com leitura criada hoje (UTC)',
+      () async {
+        final repo = repoAt(() => DateTime.utc(2026, 10, 29, 12));
+        await recordWith(repo, coinEth, 'funding_rate_7d');
+        await recordWith(repo, coinEth, 'dvol');
+        await recordWith(repo, coinBtc, 'sopr');
+
+        expect(await repo.indicatorsCollectedToday(coinEth), {
+          'funding_rate_7d',
+          'dvol',
+        });
+        expect(await repo.indicatorsCollectedToday(coinBtc), {'sopr'});
+        expect(await repo.indicatorsCollectedToday(coinAda), isEmpty);
+      },
+    );
+
+    test('a virada do dia UTC separa hoje de ontem', () async {
+      var current = DateTime.utc(2026, 10, 29, 23, 59, 59);
+      final repo = repoAt(() => current);
+      await recordWith(repo, coinEth, 'funding_rate_7d');
+
+      expect(await repo.indicatorsCollectedToday(coinEth), {'funding_rate_7d'});
+
+      current = DateTime.utc(2026, 10, 30);
+
+      expect(await repo.indicatorsCollectedToday(coinEth), isEmpty);
+    });
+
+    test('a data da leitura não conta, só quando ela foi criada', () async {
+      // SOPR/NUPL chegam com a data do dado 7 dias antes; o que vale para não
+      // gastar a cota da fonte é o dia em que a leitura foi gravada.
+      final repo = repoAt(() => DateTime.utc(2026, 10, 29, 12));
+      await repo.recordReading(
+        coin: coinBtc,
+        indicator: 'sopr',
+        readingDate: '2026-10-22',
+        rawValue: 1.0,
+        source: 'teste',
+      );
+
+      expect(await repo.indicatorsCollectedToday(coinBtc), {'sopr'});
+    });
+  });
+
   group('score e histórico lidos do banco', () {
     test('score usa a última leitura de cada indicador', () async {
       await record(coinEth, 'funding_rate_7d', 3);
