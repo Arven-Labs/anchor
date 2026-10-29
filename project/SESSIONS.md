@@ -4549,7 +4549,8 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 
 ## Sessão 263 — `CLAUDE.md` sai do repositório; o fluxo passa a viver no `AGENTS.md` do workspace (processo, sem código do app)
 - **Pedido**: o dono pediu para resolver a duplicação do `CLAUDE.md`. O fluxo IA + humano agora tem uma fonte única, o `AGENTS.md` na raiz do workspace (repo `masterlxz/workspace`, privado), e o `CLAUDE.md` do `anchor` e do `warden` (cópias mantidas à mão por `cmp`) passou a carregar uma segunda vez, e com instruções diferentes (`docs/decisoes/` contra `<projeto>/project/adr/`).
-- **Decisão do dono**: remover o arquivo (as opções eram ponteiro, remoção ou manter alinhado) e entregar em branch local, sem push, para revisão. Isso fecha o mecanismo de sincronia que a Sessão 251 deixou "só registrado, para depois".
-- **Feito** (branch `docs/remove-claude-md`, sem push): `git rm CLAUDE.md`; `project/INDEX.md` (tabela "Como Usar", "Ao começar" e "Ao terminar") e `project/GUIDELINES.md` passam a apontar para o `AGENTS.md` do workspace. As menções antigas neste log são históricas e não mudaram.
-- **Não verificado**: nenhum CI rodou (nada foi enviado). O `guard` da `main` só barra arquivo privado, então a remoção não deve afetá-lo, mas isso é leitura do que ele faz e não resultado. Quem clonar este repo sozinho, fora do workspace, fica sem o fluxo escrito.
-- **Pendente**: o dono revisar o diff e mandar o push; mesma remoção no `warden`.
+- **Decisão do dono**: remover o arquivo (as opções eram ponteiro, remoção ou manter alinhado) e entregar em branch para revisão (publicada pelo dono depois, PR #22). Isso fecha o mecanismo de sincronia que a Sessão 251 deixou "só registrado, para depois".
+- **Feito** (branch `docs/remove-claude-md`, PR #22): `git rm CLAUDE.md`; `project/INDEX.md` (tabela "Como Usar", "Ao começar" e "Ao terminar") e `project/GUIDELINES.md` passam a apontar para o `AGENTS.md` do workspace. As menções antigas neste log são históricas e não mudaram.
+- **CI** (PR #22, visto com `gh pr view`): `changes`, `guard` e `gate` verdes; `contracts`, `rust`, `frontend`, `e2e` e `mobile` pulados, como esperado num PR só de documentação; estado `CLEAN` e `MERGEABLE`.
+- **Consequência**: quem clonar este repo sozinho, fora do workspace, fica sem o fluxo escrito. Além do CI acima, a verificação é a leitura do diff.
+- **Pendente**: o dono mesclar o PR #22; a mesma remoção no `warden` está no PR #14 de lá.
