@@ -392,6 +392,9 @@ DateTime? _parseDate(String text) {
   return date;
 }
 
+/// `readingDate` que o score sabe ler: `YYYY-MM-DD` de um dia que existe.
+bool isValidReadingDate(String text) => _parseDate(text) != null;
+
 DateTime _dateOnly(DateTime date) => DateTime.utc(date.year, date.month, date.day);
 
 /// A leitura passou do prazo na data [asOf]. Data ilegível conta como vencida;

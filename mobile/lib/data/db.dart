@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../domain/crypto_score.dart';
+
 /// Banco local do portfolio — 13 classes de ativo (as 9 com cotação
 /// automática via `QuoteDispatcher`, mais Tesouro Direto/Renda Fixa — sem
 /// cotação, só campos `fi_*` na transação de compra — e Imóvel/Empresa não
@@ -35,7 +37,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 20,
+      version: 21,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -112,6 +114,7 @@ class AppDatabase {
         ''');
         await _createFundTables(db);
         await _createFinanceTables(db);
+        await _createCryptoScoreTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -309,8 +312,57 @@ class AppDatabase {
         if (oldVersion >= 16 && oldVersion < 20) {
           await _createLoanTables(db);
         }
+        if (oldVersion < 21) {
+          await _createCryptoScoreTables(db);
+        }
       },
     );
+  }
+
+  /// Score cripto: os limites editáveis de cada indicador, semeados com os de
+  /// fábrica de `domain/crypto_score.dart`, e as leituras gravadas. As leituras
+  /// são append-only (sem índice único: o score pega a mais recente) e guardam o
+  /// `signal` já classificado, que o repositório recalcula ao editar um limite.
+  /// A semeadura roda uma vez (no `onCreate` ou no upgrade para a v21); o
+  /// `ignore` só impede que a `UNIQUE (coin, indicator)` derrube a migração.
+  static Future<void> _createCryptoScoreTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE indicator_thresholds (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        coin TEXT NOT NULL,
+        indicator TEXT NOT NULL,
+        green_boundary REAL NOT NULL,
+        red_boundary REAL NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (coin, indicator)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE crypto_indicators (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        coin TEXT NOT NULL,
+        indicator TEXT NOT NULL,
+        reading_date TEXT NOT NULL,
+        raw_value REAL NOT NULL,
+        signal TEXT NOT NULL,
+        source TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    final now = DateTime.now().toIso8601String();
+    final batch = db.batch();
+    for (final coin in [coinEth, coinBtc, coinAda, coinXrp, coinBnb]) {
+      for (final (indicator, green, red) in defaultThresholds(coin)) {
+        batch.insert('indicator_thresholds', {
+          'coin': coin,
+          'indicator': indicator,
+          'green_boundary': green,
+          'red_boundary': red,
+          'updated_at': now,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    }
+    await batch.commit(noResult: true);
   }
 
   /// Finanças Gerais: contas em qualquer moeda, lançamentos de receita e
