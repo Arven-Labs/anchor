@@ -1,6 +1,6 @@
 > **Fluxo de trabalho (IA + dono)**: branch + Pull Request, plano antes de código, testes como contrato e
-> checklist de fechamento de sessão estão no `CLAUDE.md` na raiz do repositório. Este arquivo cobre as
-> diretrizes do código e do ensino neste projeto; se algo aqui conflitar com o `CLAUDE.md`, pare e pergunte ao dono.
+> checklist de fechamento de sessão estão no `AGENTS.md` do workspace (`../AGENTS.md`, relativo à raiz deste repositório). Este arquivo cobre as
+> diretrizes do código e do ensino neste projeto; se algo aqui conflitar com o `AGENTS.md`, pare e pergunte ao dono.
 
 ---
 
