@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -11,13 +12,16 @@ import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/crypto_score.dart';
 import 'package:anchor_mobile/models/crypto_reading.dart';
 import 'package:anchor_mobile/services/coingecko_global_service.dart';
+import 'package:anchor_mobile/services/coingecko_nvt_service.dart';
 import 'package:anchor_mobile/services/crypto_collector.dart';
 import 'package:anchor_mobile/services/crypto_score_repository.dart';
 import 'package:anchor_mobile/services/crypto_source_http.dart';
 import 'package:anchor_mobile/services/defillama_stablecoins_service.dart';
+import 'package:anchor_mobile/services/defillama_tvl_service.dart';
 import 'package:anchor_mobile/services/deribit_service.dart';
 import 'package:anchor_mobile/services/fear_greed_service.dart';
 import 'package:anchor_mobile/services/perp_derivatives_service.dart';
+import 'package:anchor_mobile/services/ultrasound_service.dart';
 
 // Respostas reais (ou copiadas dos testes do desktop) de cada fonte, as mesmas
 // dos testes dos serviços. Servem a qualquer moeda: o coletor não olha o corpo.
@@ -44,15 +48,39 @@ const _fearGreed =
 const _global =
     r'{"data":{"market_cap_percentage":{"btc":59.98151875544407,"eth":10.6}}}';
 
+// TVL, ultrasound.money e NVT: os parsers têm respostas reais nos testes de
+// cada serviço; aqui bastam corpos válidos de valor conhecido.
+/// 31 pontos de 100 a 130: TVL +30 % em 30 posições.
+final _tvl =
+    '[${[for (var i = 0; i < 31; i++) '{"date":${1700000000 + i * 86400},"tvl":${100 + i}}'].join(',')}]';
+
+/// Oferta 1000 → 1010 em 30 dias: +1 %, vezes 365/30 = 12,1667 % ao ano.
+const _supply = r'{"d30":[{"supply":1000.0},{"supply":1010.0}]}';
+
+/// Queima 30 sobre emissão bruta 10 + 30: razão 0,75.
+const _burn = r'{"d30":{"sum":{"eth":30.0,"usd":1}}}';
+
+/// 61 dias com NVT 20 todos os dias: hoje ÷ média = 1,0.
+final _nvtChart = jsonEncode({
+  'market_caps': [
+    for (var i = 0; i < 61; i++) [1700000000000 + i * 86400000, 200],
+  ],
+  'total_volumes': [
+    for (var i = 0; i < 61; i++) [1700000000000 + i * 86400000, 10],
+  ],
+});
+
 const _binance = 'fapi.binance.com';
 const _bybit = 'api.bybit.com';
 const _deribit = 'www.deribit.com';
 const _llama = 'stablecoins.llama.fi';
+const _llamaChain = 'api.llama.fi';
+const _ultrasound = 'ultrasound.money';
 const _alternative = 'api.alternative.me';
 const _coingecko = 'api.coingecko.com';
 
-/// O que o coletor sabe buscar hoje, por moeda; o resto do conjunto de cada
-/// moeda (TVL, NVT, on-chain...) entra nas próximas tarefas.
+/// O que o coletor sabe buscar hoje, por moeda; o on-chain (CoinMetrics e
+/// bitcoin-data) entra na tarefa 4.
 const _ethIndicators = {
   'funding_rate_7d',
   'open_interest_change_30d',
@@ -62,6 +90,10 @@ const _ethIndicators = {
   'stablecoin_supply_change_30d',
   'fear_greed_index',
   'btc_dominance',
+  'tvl_trend',
+  'net_issuance',
+  'fees_vs_emission',
+  'nvt_ratio',
 };
 const _btcIndicators = {
   'funding_rate_7d',
@@ -71,14 +103,26 @@ const _btcIndicators = {
   'put_call_ratio',
   'stablecoin_supply_change_30d',
   'fear_greed_index',
+  'nvt_ratio',
 };
+
+/// ADA e XRP.
 const _altIndicators = {
   'funding_rate_7d',
   'open_interest_change_30d',
   'long_short_ratio',
   'stablecoin_supply_change_30d',
   'fear_greed_index',
+  'nvt_ratio',
 };
+const _bnbIndicators = {..._altIndicators, 'tvl_trend'};
+
+/// Todas as moedas juntas, para contar o que uma rodada completa coleta.
+final _allCoinsTotal =
+    _ethIndicators.length +
+    _btcIndicators.length +
+    2 * _altIndicators.length +
+    _bnbIndicators.length;
 
 typedef _Handler = FutureOr<http.Response> Function(Uri url);
 
@@ -104,6 +148,14 @@ http.Response _deribitOk(Uri url) =>
     ? http.Response(_dvol, 200)
     : http.Response(_options, 200);
 
+http.Response _ultrasoundOk(Uri url) => url.path.endsWith('burn-sums')
+    ? http.Response(_burn, 200)
+    : http.Response(_supply, 200);
+
+http.Response _coingeckoOk(Uri url) => url.path.endsWith('/global')
+    ? http.Response(_global, 200)
+    : http.Response(_nvtChart, 200);
+
 http.Response _unavailable(Uri url) => http.Response('', 503);
 
 /// Rede falsa: cada host tem um handler (trocável por teste) e todo pedido fica
@@ -115,8 +167,10 @@ class _Net {
     _bybit: _bybitOk,
     _deribit: _deribitOk,
     _llama: (_) => http.Response(_stablecoins, 200),
+    _llamaChain: (_) => http.Response(_tvl, 200),
+    _ultrasound: _ultrasoundOk,
     _alternative: (_) => http.Response(_fearGreed, 200),
-    _coingecko: (_) => http.Response(_global, 200),
+    _coingecko: _coingeckoOk,
   };
 
   late final MockClient client = MockClient((request) async {
@@ -156,6 +210,9 @@ void main() {
       stablecoins: DefiLlamaStablecoinsService(client: net.client),
       fearGreed: FearGreedService(client: net.client),
       coinGeckoGlobal: CoinGeckoGlobalService(client: net.client),
+      tvl: DefiLlamaTvlService(client: net.client),
+      ultrasound: UltrasoundService(client: net.client),
+      nvt: CoinGeckoNvtService(client: net.client),
       now: () => current,
     );
   });
@@ -172,7 +229,7 @@ void main() {
 
   group('o que coleta', () {
     test(
-      'ETH grava os 8 indicadores que já têm fonte, cada um com a sua',
+      'ETH grava os 12 indicadores que já têm fonte, cada um com a sua',
       () async {
         final result = await collector.collect(['ETH']);
 
@@ -189,12 +246,31 @@ void main() {
             'stablecoin_supply_change_30d': 'defillama',
             'fear_greed_index': 'alternative.me',
             'btc_dominance': 'coingecko',
+            'tvl_trend': 'defillama',
+            'net_issuance': 'ultrasound.money',
+            'fees_vs_emission': 'ultrasound.money',
+            'nvt_ratio': 'coingecko',
           },
         );
         expect(result.errors, isEmpty);
         expect(result.skipped, 0);
         // O que o dono vê no banco, não só no resultado.
-        expect(await repository.listReadings('ETH'), hasLength(8));
+        expect(
+          await repository.listReadings('ETH'),
+          hasLength(_ethIndicators.length),
+        );
+      },
+    );
+
+    test(
+      'TVL, ultrasound.money e NVT gravam o valor que o parser calcula',
+      () async {
+        final readings = byIndicator(await collector.collect(['ETH']), 'ETH');
+
+        expect(readings['tvl_trend']!.rawValue, closeTo(30.0, 1e-9));
+        expect(readings['net_issuance']!.rawValue, closeTo(12.1667, 1e-4));
+        expect(readings['fees_vs_emission']!.rawValue, closeTo(0.75, 1e-12));
+        expect(readings['nvt_ratio']!.rawValue, closeTo(1.0, 1e-12));
       },
     );
 
@@ -210,42 +286,62 @@ void main() {
       ); // 5 a 20
     });
 
-    test('indicadores sem fonte ainda não viram erro nem leitura', () async {
-      final result = await collector.collect(['ETH']);
+    test(
+      'indicadores on-chain (sem fonte ainda) não viram erro nem leitura',
+      () async {
+        final result = await collector.collect(['ETH']);
 
-      expect(result.errors, isEmpty);
-      expect(
-        byIndicator(
-          result,
-          'ETH',
-        ).keys.toSet().intersection({'tvl_trend', 'mvrv_z_score', 'nvt_ratio'}),
-        isEmpty,
-      );
-    });
+        expect(result.errors, isEmpty);
+        expect(
+          byIndicator(result, 'ETH').keys.toSet().intersection({
+            'mvrv_z_score',
+            'puell_multiple',
+            'staking_yield',
+            'mayer_multiple',
+          }),
+          isEmpty,
+        );
+      },
+    );
 
     test('cada moeda pega só os indicadores do seu conjunto', () async {
       final result = await collector.collect(['BTC', 'ADA', 'XRP', 'BNB']);
 
       expect(byIndicator(result, 'BTC').keys.toSet(), _btcIndicators);
-      for (final coin in ['ADA', 'XRP', 'BNB']) {
+      for (final coin in ['ADA', 'XRP']) {
         expect(
           byIndicator(result, coin).keys.toSet(),
           _altIndicators,
           reason: coin,
         );
       }
+      expect(byIndicator(result, 'BNB').keys.toSet(), _bnbIndicators);
       expect(result.errors, isEmpty);
     });
 
     test(
-      'a Deribit só é chamada para ETH e BTC; a dominância, só para o ETH',
+      'Deribit só para ETH e BTC; dominância e ultrasound.money, só para o ETH',
       () async {
         await collector.collect(['ADA', 'XRP', 'BNB']);
 
         expect(net.count(_deribit), 0);
-        expect(net.count(_coingecko), 0);
+        expect(net.count(_ultrasound), 0);
+        // A CoinGecko só é chamada para o NVT, nunca para o /global.
+        expect(net.paths(_coingecko), everyElement(contains('market_chart')));
       },
     );
+
+    test('o TVL só é pedido para ETH e BNB, cada um na sua cadeia', () async {
+      await collector.collect(['BTC', 'ADA', 'XRP']);
+      expect(net.count(_llamaChain), 0);
+
+      await collector.collect(['ETH', 'BNB']);
+
+      expect(net.paths(_llamaChain), [
+        '/v2/historicalChainTvl/Ethereum',
+        '/v2/historicalChainTvl/BSC',
+      ]);
+    });
 
     test(
       'Binance bloqueada: a leitura sai da Bybit e a fonte diz isso',
@@ -269,7 +365,10 @@ void main() {
 
         expect(net.count(_llama), 1);
         expect(net.count(_alternative), 1);
-        expect(net.count(_coingecko), 1);
+        expect(
+          net.paths(_coingecko).where((p) => p.endsWith('/global')),
+          hasLength(1),
+        );
         for (final coin in ['ETH', 'BTC', 'ADA']) {
           final readings = byIndicator(result, coin);
           expect(readings['fear_greed_index']!.rawValue, 34, reason: coin);
@@ -307,9 +406,12 @@ void main() {
 
       expect(second.readings, isEmpty);
       expect(second.errors, isEmpty);
-      expect(second.skipped, 8);
+      expect(second.skipped, _ethIndicators.length);
       expect(net.requests.length, before);
-      expect(await repository.listReadings('ETH'), hasLength(8));
+      expect(
+        await repository.listReadings('ETH'),
+        hasLength(_ethIndicators.length),
+      );
     });
 
     test(
@@ -326,7 +428,7 @@ void main() {
         final result = await collector.collect(['ETH']);
 
         expect(result.skipped, 1);
-        expect(result.readings, hasLength(7));
+        expect(result.readings, hasLength(_ethIndicators.length - 1));
         expect(net.paths(_binance), isNot(contains('/fapi/v1/fundingRate')));
       },
     );
@@ -338,7 +440,7 @@ void main() {
       current = DateTime.utc(2026, 10, 30, 0, 1);
       final second = await collector.collect(['ETH']);
 
-      expect(second.readings, hasLength(8));
+      expect(second.readings, hasLength(_ethIndicators.length));
       expect(second.skipped, 0);
       expect(
         byIndicator(second, 'ETH')['funding_rate_7d']!.readingDate,
@@ -349,7 +451,7 @@ void main() {
     test('só o que falhou é tentado de novo', () async {
       net.handlers[_deribit] = _unavailable;
       final first = await collector.collect(['ETH']);
-      expect(first.readings, hasLength(6));
+      expect(first.readings, hasLength(_ethIndicators.length - 2));
       expect(first.errors, hasLength(2));
 
       net.handlers[_deribit] = _deribitOk;
@@ -360,7 +462,7 @@ void main() {
         'dvol',
         'put_call_ratio',
       });
-      expect(second.skipped, 6);
+      expect(second.skipped, _ethIndicators.length - 2);
       expect(net.requests.skip(callsBefore).map((u) => u.host).toSet(), {
         _deribit,
       });
@@ -375,7 +477,10 @@ void main() {
 
         final result = await collector.collect(['ETH']);
 
-        expect(byIndicator(result, 'ETH'), hasLength(6));
+        expect(
+          byIndicator(result, 'ETH'),
+          hasLength(_ethIndicators.length - 2),
+        );
         expect(result.errors, hasLength(2));
         expect(
           result.errors,
@@ -394,6 +499,8 @@ void main() {
           _bybit,
           _deribit,
           _llama,
+          _llamaChain,
+          _ultrasound,
           _alternative,
           _coingecko,
         ]) {
@@ -406,12 +513,10 @@ void main() {
             isA<CryptoSourceException>().having(
               (e) => e.toString(),
               'mensagem',
-              allOf(
-                contains('ETH funding_rate_7d'),
-                contains('ETH dvol'),
-                contains('ETH fear_greed_index'),
-                contains('ETH btc_dominance'),
-              ),
+              allOf([
+                for (final indicator in _ethIndicators)
+                  contains('ETH $indicator'),
+              ]),
             ),
           ),
         );
@@ -428,7 +533,7 @@ void main() {
         final second = await collector.collect(['ETH']);
 
         expect(second.readings, isEmpty);
-        expect(second.skipped, 6);
+        expect(second.skipped, _ethIndicators.length - 2);
         expect(second.errors, hasLength(2));
       },
     );
@@ -457,9 +562,12 @@ void main() {
     test('aceita minúsculas e coleta uma vez moeda repetida', () async {
       final result = await collector.collect(['eth', 'ETH', 'Eth']);
 
-      expect(byIndicator(result, 'ETH'), hasLength(8));
+      expect(byIndicator(result, 'ETH'), hasLength(_ethIndicators.length));
       expect(net.count(_alternative), 1);
-      expect(await repository.listReadings('ETH'), hasLength(8));
+      expect(
+        await repository.listReadings('ETH'),
+        hasLength(_ethIndicators.length),
+      );
     });
 
     test('lista vazia não faz nada', () async {
@@ -470,6 +578,161 @@ void main() {
       expect(result.skipped, 0);
       expect(net.requests, isEmpty);
     });
+  });
+
+  group('oferta do ultrasound.money', () {
+    test('é baixada uma vez e serve aos dois indicadores', () async {
+      await collector.collect(['ETH']);
+
+      expect(net.paths(_ultrasound), [
+        '/api/v2/fees/supply-over-time',
+        '/api/v2/fees/burn-sums',
+      ]);
+    });
+
+    test(
+      'queima fora: só o fees vs emission falha, o net issuance sai',
+      () async {
+        net.handlers[_ultrasound] = (url) => url.path.endsWith('burn-sums')
+            ? http.Response('', 503)
+            : _ultrasoundOk(url);
+
+        final result = await collector.collect(['ETH']);
+
+        expect(byIndicator(result, 'ETH').keys, contains('net_issuance'));
+        expect(
+          byIndicator(result, 'ETH').keys,
+          isNot(contains('fees_vs_emission')),
+        );
+        expect(result.errors, hasLength(1));
+        expect(
+          result.errors.single,
+          allOf(
+            contains('ETH fees_vs_emission'),
+            contains('ultrasound.money burn'),
+          ),
+        );
+      },
+    );
+
+    test(
+      'oferta fora: os dois falham com uma tentativa só, sem pedir a queima',
+      () async {
+        net.handlers[_ultrasound] = _unavailable;
+
+        final result = await collector.collect(['ETH']);
+
+        expect(
+          result.errors.where((e) => e.contains('ultrasound.money supply')),
+          hasLength(2),
+        );
+        expect(
+          result.errors.any((e) => e.contains('ETH net_issuance')),
+          isTrue,
+        );
+        expect(
+          result.errors.any((e) => e.contains('ETH fees_vs_emission')),
+          isTrue,
+        );
+        expect(net.paths(_ultrasound), ['/api/v2/fees/supply-over-time']);
+      },
+    );
+  });
+
+  group('limite da CoinGecko (429)', () {
+    const allCoins = ['ETH', 'BTC', 'ADA', 'XRP', 'BNB'];
+
+    test(
+      'a dominância é a última da faixa, mesmo sendo do primeiro da lista',
+      () async {
+        await collector.collect(['ETH', 'BTC']);
+
+        expect(net.paths(_coingecko), [
+          '/api/v3/coins/ethereum/market_chart',
+          '/api/v3/coins/bitcoin/market_chart',
+          '/api/v3/global',
+        ]);
+      },
+    );
+
+    test('os pedidos à CoinGecko saem um de cada vez', () async {
+      var inFlight = 0;
+      var maxInFlight = 0;
+      net.handlers[_coingecko] = (url) async {
+        inFlight++;
+        maxInFlight = math.max(maxInFlight, inFlight);
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        inFlight--;
+        return _coingeckoOk(url);
+      };
+
+      await collector.collect(allCoins);
+
+      expect(net.count(_coingecko), 6); // 5 de NVT e a dominância
+      expect(maxInFlight, 1);
+    });
+
+    test(
+      'a 6ª chamada seguida leva 429: só a dominância fica de fora e o toque seguinte a completa',
+      () async {
+        // Medido ao vivo: 5 chamadas passam e a 6ª dá 429 com Retry-After de 60 s.
+        var calls = 0;
+        net.handlers[_coingecko] = (url) {
+          calls++;
+          return calls == 6 ? http.Response('', 429) : _coingeckoOk(url);
+        };
+
+        final first = await collector.collect(allCoins);
+
+        expect(first.errors, hasLength(1));
+        expect(
+          first.errors.single,
+          allOf(contains('ETH btc_dominance'), contains('CoinGecko global')),
+        );
+        expect(first.readings, hasLength(_allCoinsTotal - 1));
+        expect(
+          first.readings.where((r) => r.indicator == 'nvt_ratio'),
+          hasLength(5),
+        );
+
+        net.handlers[_coingecko] = _coingeckoOk; // 60 s depois
+        final callsBefore = net.requests.length;
+        final second = await collector.collect(allCoins);
+
+        expect(second.readings.map((r) => r.indicator), ['btc_dominance']);
+        expect(second.errors, isEmpty);
+        expect(second.skipped, _allCoinsTotal - 1);
+        expect(net.requests.skip(callsBefore).map((u) => u.path), [
+          '/api/v3/global',
+        ]);
+      },
+    );
+  });
+
+  group('DefiLlama', () {
+    test(
+      'TVL e stablecoins saem um de cada vez, mesmo em hosts diferentes',
+      () async {
+        var inFlight = 0;
+        var maxInFlight = 0;
+        Future<http.Response> slow(String body) async {
+          inFlight++;
+          maxInFlight = math.max(maxInFlight, inFlight);
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+          inFlight--;
+          return http.Response(body, 200);
+        }
+
+        net.handlers[_llama] = (_) => slow(_stablecoins);
+        net.handlers[_llamaChain] = (_) => slow(_tvl);
+
+        await collector.collect(['ETH', 'BNB']);
+
+        // Stablecoins uma vez (valor global) e o TVL de ETH e de BNB.
+        expect(net.count(_llama) + net.count(_llamaChain), 3);
+        expect(maxInFlight, 1);
+      },
+    );
   });
 
   group('ordem dos pedidos', () {
