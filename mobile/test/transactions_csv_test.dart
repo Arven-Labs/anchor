@@ -2,10 +2,19 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anchor_mobile/domain/transactions_csv.dart';
 import 'package:anchor_mobile/models/asset.dart';
+import 'package:anchor_mobile/models/custodia.dart';
 import 'package:anchor_mobile/models/portfolio_transaction.dart';
 
 void main() {
   final created = DateTime(2026, 1, 1);
+
+  // Com titular: o rótulo de tela ("XP (Fulano)") difere do nome que o desktop casa ("XP").
+  Custodia custodia(int id, String instituicao) => Custodia(
+    id: id,
+    instituicao: instituicao,
+    titular: 'Fulano',
+    createdAt: created,
+  );
 
   Asset asset(
     int id,
@@ -52,7 +61,7 @@ void main() {
       'fund_structure,fund_estoque_option';
 
   test('o cabeçalho é idêntico ao CSV_HEADER do desktop (16 colunas)', () {
-    final result = transactionsCsv([], {}, []);
+    final result = transactionsCsv([], [], []);
 
     expect(result.csv, '$header\n');
     expect(result.exported, 0);
@@ -62,7 +71,7 @@ void main() {
   test('compra sai com ticker, classe, moeda, custódia por nome e só a data', () {
     final result = transactionsCsv(
       [asset(1, 'PETR4')],
-      {7: 'XP'},
+      [custodia(7, 'XP')],
       [
         tx(
           assetId: 1,
@@ -82,8 +91,20 @@ void main() {
     expect(result.exported, 1);
   });
 
+  test('a custódia sai só com o nome da instituição, sem o titular do rótulo de tela', () {
+    final result = transactionsCsv(
+      [asset(1, 'PETR4')],
+      [custodia(7, 'XP')],
+      [tx(assetId: 1, quantity: 1, unitPrice: 10, total: 10, custodiaId: 7)],
+    );
+
+    // o desktop casa por instituição: "XP (Fulano)" criaria uma custódia duplicada lá
+    expect(result.csv, contains(',10,10,,XP,'));
+    expect(result.csv, isNot(contains('Fulano')));
+  });
+
   test('aporte e retirada saem sem ticker, classe, quantidade e preço', () {
-    final result = transactionsCsv([], {}, [
+    final result = transactionsCsv([], [], [
       tx(type: TransactionType.aporte, total: 5000),
       tx(type: TransactionType.retirada, total: 200),
     ]);
@@ -96,7 +117,7 @@ void main() {
   test('provento e come-cotas são exportados', () {
     final result = transactionsCsv(
       [asset(1, 'HGLG11', assetClass: AssetClass.fii)],
-      {},
+      [],
       [
         tx(assetId: 1, type: TransactionType.provento, total: 80),
         tx(
@@ -118,7 +139,7 @@ void main() {
   test('transferência e amortização são puladas e contadas, não somem em silêncio', () {
     final result = transactionsCsv(
       [asset(1, 'PETR4')],
-      {1: 'XP', 2: 'Rico'},
+      [custodia(1, 'XP'), custodia(2, 'Rico')],
       [
         tx(assetId: 1, quantity: 10, unitPrice: 100),
         tx(
@@ -142,7 +163,7 @@ void main() {
   test('texto com vírgula, aspas ou quebra de linha é escapado', () {
     final result = transactionsCsv(
       [asset(1, 'PETR4')],
-      {1: 'Corretora "A", filial'},
+      [custodia(1, 'Corretora "A", filial')],
       [
         tx(
           assetId: 1,
@@ -162,7 +183,7 @@ void main() {
   test('quantidade fracionada sai sem zeros à direita e com ponto decimal', () {
     final result = transactionsCsv(
       [asset(1, 'BTC', assetClass: AssetClass.cripto, currency: 'USD')],
-      {},
+      [],
       [tx(assetId: 1, quantity: 0.00123456, unitPrice: 60000, total: 74.07)],
     );
 
@@ -172,7 +193,7 @@ void main() {
   test('as linhas saem em ordem cronológica, e a mesma data mantém a ordem de entrada', () {
     final result = transactionsCsv(
       [asset(1, 'PETR4')],
-      {},
+      [],
       [
         tx(assetId: 1, date: DateTime(2026, 5, 2), total: 3),
         tx(assetId: 1, date: DateTime(2026, 1, 2), total: 1),
@@ -190,7 +211,7 @@ void main() {
   });
 
   test('transação de ativo que não existe mais é pulada e contada', () {
-    final result = transactionsCsv([], {}, [
+    final result = transactionsCsv([], [], [
       tx(assetId: 99, quantity: 1, unitPrice: 10, total: 10),
     ]);
 

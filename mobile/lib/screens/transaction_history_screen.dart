@@ -69,9 +69,11 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
   Future<void> _exportCsv() async {
     final messenger = ScaffoldMessenger.of(context);
     final day = DateTime.now().toIso8601String().substring(0, 10);
-    final result = transactionsCsv(_assetsById.values.toList(), {
-      for (final c in _custodiasById.values) c.id!: c.label,
-    }, _transactions);
+    final result = transactionsCsv(
+      _assetsById.values.toList(),
+      _custodiasById.values.toList(),
+      _transactions,
+    );
     try {
       final path = await FilePicker.platform.saveFile(
         dialogTitle: 'Salvar transações para o desktop',
