@@ -202,8 +202,8 @@ void main() {
       final rows = homeRows([
         config(HomeWidgetKey.totalValue),
         config(HomeWidgetKey.profit, visible: false),
-        config(HomeWidgetKey.allocation),
-        config(HomeWidgetKey.netWorth),
+        config(HomeWidgetKey.allocation, wide: true),
+        config(HomeWidgetKey.netWorth, wide: true),
       ]);
 
       expect([for (final r in rows) keys(r)], [

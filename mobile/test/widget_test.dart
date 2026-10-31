@@ -9,7 +9,7 @@ void main() {
   ) async {
     await tester.pumpWidget(const AnchorApp());
 
-    expect(find.text('Anchor'), findsWidgets);
+    expect(find.text('Início'), findsWidgets);
     expect(find.byKey(const Key('home-customize')), findsOneWidget);
     expect(find.byKey(const Key('home-card-total_value')), findsOneWidget);
   });
