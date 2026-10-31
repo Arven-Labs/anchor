@@ -1570,6 +1570,29 @@ mod tests {
         }
     }
 
+    /// Fixture com a saída de `transactionsCsv` do mobile (`mobile/lib/domain/transactions_csv.dart`): o
+    /// importador do desktop tem de ler o que o celular exporta, sem erro, com data só em `AAAA-MM-DD` (a chave de
+    /// duplicata compara o texto da data) e com o escape de aspas e quebra de linha preservado.
+    #[test]
+    fn a_csv_exported_by_the_mobile_app_parses_without_issues() {
+        let text = "date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,loss_credit_used,fund_term,fund_structure,fund_estoque_option\n\
+                    2026-03-10,compra,PETR4,acao_br,BRL,10,100,1000,1.5,\"Corretora \"\"A\"\", filial\",,\"linha 1\nlinha 2\",,,,\n\
+                    2026-03-11,aporte,,,,,,5000,,,,,,,,\n\
+                    2026-03-12,provento,HGLG11,fii,BRL,,,80,,,,,,,,\n\
+                    2026-03-13,come_cotas,FUNDO1,fundo,BRL,0.5,120,60,,,,,,,,\n";
+        let parsed = parse_anchor_csv(text);
+        assert_eq!(parsed.len(), 4);
+        assert!(parsed.iter().all(|row| row.is_ok()), "{parsed:?}");
+
+        let buy = parsed[0].as_ref().unwrap();
+        assert_eq!(buy.transaction_date, "2026-03-10");
+        assert_eq!(buy.custody.as_deref(), Some("Corretora \"A\", filial"));
+        assert_eq!(buy.notes.as_deref(), Some("linha 1\nlinha 2"));
+
+        let deposit = parsed[1].as_ref().unwrap();
+        assert_eq!((deposit.ticker.as_str(), deposit.quantity, deposit.total_value), ("", None, 5000.0));
+    }
+
     #[test]
     fn a_csv_from_before_the_fund_columns_still_parses() {
         let old = "date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes\n\
