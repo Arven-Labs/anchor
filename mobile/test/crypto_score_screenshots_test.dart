@@ -91,6 +91,12 @@ void main() {
       );
     });
     await tester.runAsync(AppDatabase.instance);
+    // Árvore nova a cada captura: sem isso o estado da anterior (uma rota aberta,
+    // por exemplo) continua por cima da tela.
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 300)),
+    );
     await tester.pumpWidget(
       RepaintBoundary(
         key: const Key('shot'),
