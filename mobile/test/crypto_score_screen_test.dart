@@ -117,7 +117,7 @@ void main() {
 
   /// Grava [count] leituras VERDES do conjunto da moeda (pega os limites do banco
   /// e vai um passo para o lado verde de cada um).
-  Future<void> seedGreens(String coin, int count) async {
+  Future<void> seedGreens(String coin, int count, {String date = '2026-10-28'}) async {
     final limits = await repository.listThresholds(coin);
     final names = [
       for (final group in IndicatorGroup.forCoin(coin)) ...group.indicators(coin),
@@ -128,6 +128,7 @@ void main() {
         coin,
         name,
         limit.higherIsBetter ? limit.greenBoundary + 1 : limit.greenBoundary - 1,
+        date: date,
       );
     }
   }
@@ -396,6 +397,66 @@ void main() {
 
       expect(inRow('mvrv_z_score', 'Verde'), findsOneWidget);
       expect(find.text('1 verde de 20'), findsOneWidget);
+    });
+  });
+
+  group('histórico (cartão com o gráfico)', () {
+    Finder summary(String text) => find.descendant(
+      of: find.byKey(const Key('history-summary')),
+      matching: find.textContaining(text),
+    );
+
+    testWidgets('sem nenhuma leitura o cartão avisa que não há histórico', (tester) async {
+      await pumpScreen(tester);
+
+      expect(find.byKey(const Key('history-card')), findsOneWidget);
+      expect(find.text('Sem histórico ainda.'), findsOneWidget);
+      expect(find.byKey(const Key('history-chart')), findsNothing);
+    });
+
+    testWidgets('com leituras o cartão mostra a série da moeda, abaixo do veredito', (tester) async {
+      await inDb(tester, () async {
+        await seedGreens(coinEth, 2);
+        // Os mesmos 2 indicadores em outro dia, para a série ter dois pontos.
+        await seedGreens(coinEth, 2, date: '2026-10-29');
+      });
+      await pumpScreen(tester);
+      await settle(tester, () => find.byKey(const Key('history-chart')).evaluate().isNotEmpty);
+
+      expect(find.byKey(const Key('history-chart')), findsOneWidget);
+      expect(summary('2 datas'), findsOneWidget);
+      // Ordem na tela: o veredito vem antes do histórico, que vem antes dos grupos.
+      final verdictY = tester.getTopLeft(find.text('2 verdes de 20')).dy;
+      final historyY = tester.getTopLeft(find.byKey(const Key('history-card'))).dy;
+      final groupY = tester.getTopLeft(find.byKey(const ValueKey('group-onChain'))).dy;
+      expect(verdictY, lessThan(historyY));
+      expect(historyY, lessThan(groupY));
+    });
+
+    testWidgets('trocar de moeda recarrega o histórico daquela moeda', (tester) async {
+      await inDb(tester, () async {
+        await seedGreens(coinEth, 2);
+        await seedGreens(coinBtc, 1);
+      });
+      await pumpScreen(tester);
+      await settle(tester, () => summary('2 verdes de 20').evaluate().isNotEmpty);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'BTC'));
+      await settle(tester, () => summary('1 verde de 16').evaluate().isNotEmpty);
+
+      expect(summary('1 verde de 16'), findsOneWidget);
+      expect(summary('2 verdes de 20'), findsNothing);
+    });
+
+    testWidgets('moeda sem leitura troca o gráfico pelo aviso', (tester) async {
+      await inDb(tester, () => seedGreens(coinEth, 2));
+      await pumpScreen(tester);
+      await settle(tester, () => find.byKey(const Key('history-chart')).evaluate().isNotEmpty);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'ADA'));
+      await settle(tester, () => find.text('Sem histórico ainda.').evaluate().isNotEmpty);
+
+      expect(find.byKey(const Key('history-chart')), findsNothing);
     });
   });
 
