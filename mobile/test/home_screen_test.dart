@@ -142,7 +142,11 @@ void main() {
     expect(text(tester, 'home-total-value-text'), formatMoney(370, 'BRL'));
     expect(
       text(tester, 'home-profit-text'),
-      homeProfitLabel(70, 70 / 300 * 100, 'BRL'),
+      homeProfitPercentLabel(70 / 300 * 100),
+    );
+    expect(
+      text(tester, 'home-profit-amount'),
+      homeProfitAmountLabel(70, 'BRL'),
     );
     // caixa 1000 + carteira 370
     expect(text(tester, 'home-net-worth-text'), formatMoney(1370, 'BRL'));
@@ -179,9 +183,14 @@ void main() {
     expect(text(tester, 'home-total-value-text'), formatMoney(250, 'BRL'));
     expect(
       text(tester, 'home-profit-text'),
-      homeProfitLabel(50, 25, 'BRL'),
+      homeProfitPercentLabel(25),
       reason: 'o custo da VALE3 sem cotação não entra',
     );
+    expect(
+      text(tester, 'home-profit-amount'),
+      homeProfitAmountLabel(50, 'BRL'),
+    );
+    expect(has('home-profit-excluded'), isTrue);
     expect(has('home-total-value-missing'), isTrue);
   });
 

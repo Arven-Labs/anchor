@@ -13,13 +13,15 @@ import '../services/portfolio_repository.dart';
 import '../services/quote_dispatcher.dart';
 import '../services/yahoo_quote_service.dart';
 
-/// "+R$ 70,00 (+23,3%)": lucro com sinal e, quando há custo, o percentual.
+/// "+BRL 70,00": o lucro com sinal, na moeda base.
 @visibleForTesting
-String homeProfitLabel(double profit, double? percent, String base) {
-  final money = '${profit >= 0 ? '+' : '-'}${formatMoney(profit.abs(), base)}';
-  if (percent == null) return money;
-  return '$money (${percent >= 0 ? '+' : '-'}${percent.abs().toStringAsFixed(1)}%)';
-}
+String homeProfitAmountLabel(double profit, String base) =>
+    '${profit >= 0 ? '+' : '-'}${formatMoney(profit.abs(), base)}';
+
+/// "+23,3%": o lucro sobre o custo, com sinal.
+@visibleForTesting
+String homeProfitPercentLabel(double percent) =>
+    '${percent >= 0 ? '+' : '-'}${percent.abs().toStringAsFixed(1)}%';
 
 const _allocationColors = [
   Color(0xFF4ADE80),
@@ -381,23 +383,38 @@ class _HomeScreenState extends State<HomeScreen> {
     final summary = _summary;
     if (summary == null) return _placeholder();
     final profit = summary.profit;
+    final percent = summary.profitPercent;
     final scheme = Theme.of(context).colorScheme;
+    final color = profit == null
+        ? null
+        : (profit >= 0 ? scheme.primary : scheme.error);
+    // O percentual é o número grande (cabe na meia largura); o valor em reais vai
+    // embaixo. Sem custo para dividir (percentual nulo), o valor em reais é o grande.
+    final amount = profit == null
+        ? null
+        : homeProfitAmountLabel(profit, summary.base);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _bigNumber(
           Text(
-            profit == null
-                ? '—'
-                : homeProfitLabel(profit, summary.profitPercent, summary.base),
+            percent != null ? homeProfitPercentLabel(percent) : (amount ?? '—'),
             key: const Key('home-profit-text'),
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: profit == null
-                  ? null
-                  : (profit >= 0 ? scheme.primary : scheme.error),
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(color: color),
           ),
         ),
+        if (percent != null && amount != null)
+          _bigNumber(
+            Text(
+              amount,
+              key: const Key('home-profit-amount'),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: color),
+            ),
+          ),
         if (summary.profitExcluded > 0)
           Text(
             '${summary.profitExcluded} fora do cálculo',
