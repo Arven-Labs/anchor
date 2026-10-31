@@ -20,7 +20,6 @@ Contagem: **110 abertos** antes (2026-10-31). Depois do PR #37: a reler da API a
 | P3 | **`deepmerge` 4.3.1, 1 alerta baixo, sem patch.** Vem só de `shadcn` (ferramenta de scaffolding). Fica aberto até o PR 2 e a releitura da API; depois, candidato a `not_used`. | Sessão 272 | 🟡 Baixa |
 | P4 | **`extract-zip` (2, sem patch) e `serialize-javascript` (3) em `desktop/e2e/package-lock.json`**, escopo `development`: entram por `@wdio/cli` e `mocha`, só no teste E2E. `serialize-javascript` 6.0.2 → 7.x cruza major. Candidatos a `not_used` (**não dispensados**). | Sessão 272 | 🟡 Baixa |
 | P5 | **`glib` 0.18.5, 1 alerta médio (`VariantStrIter`), corrigido em 0.20.** Vem de `tauri → muda → gtk → glib` (GTK3); só o Tauri pode trocar. Não li o código do Tauri/GTK. Candidato a `tolerable_risk` (**não dispensado**). | Sessão 272 | 🟡 Baixa |
-| P6 | **`shadcn` em `dependencies` (PR 2):** mover para `devDependencies` (o app só usa `shadcn/tailwind.css` na build). Verificar com `npm ls --omit=dev --package-lock-only` e com o build. | Sessão 272 | 🟠 Média |
 | P7 | **`react-is` não declarado:** é peer dependency do `recharts`, só existe no lock por acidente; um `npm update --legacy-peer-deps` o remove e quebra o build. Declará-lo no `package.json` é mudança de manifesto (decisão sua). | Sessão 272 | 🟠 Média |
 
 ### Não verificado pelo procedimento
@@ -30,4 +29,6 @@ Contagem: **110 abertos** antes (2026-10-31). Depois do PR #37: a reler da API a
 
 ## Resolvidas
 
-Nenhuma ainda. Os alertas de `rustls`, `vite`, `source-map-js` e os 20 pacotes puxados por `shadcn` entram aqui depois do merge do PR #37, com a contagem relida da API.
+- **P6 — `shadcn` em `dependencies`** ✅ Resolvida na Sessão 272 (PR #38): movido para `devDependencies`; o lockfile só ganhou marcadores `"dev": true` e `npm ls --omit=dev --package-lock-only` não lista mais `shadcn`. CI do PR (commit `ae6f364`): `e2e`, `frontend / build`, `gate`, `guard` e `changes` verdes; `rust` pulado.
+
+**Ainda por registrar:** os alertas de `rustls`, `vite`, `source-map-js` e os 20 pacotes puxados por `shadcn` (corrigidos no lockfile pelo PR #37, na `main` desde `fad3252`) só entram aqui quando o GitHub fechá-los. Em 2026-10-31, 20 minutos depois do merge, a API ainda mostrava **110 abertos e 0 fechados**, embora a `main` já tenha as versões corrigidas (`vite` 7.3.7, `undici` 7.30.1, `rustls` 0.23.46); o warden teve o mesmo atraso. Reler a contagem depois.
