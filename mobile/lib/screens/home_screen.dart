@@ -5,7 +5,6 @@ import '../domain/general_finance.dart';
 import '../domain/home_layout.dart';
 import '../domain/home_summary.dart';
 import '../domain/money_format.dart';
-import '../models/asset.dart';
 import '../services/general_finance_repository.dart';
 import '../services/home_layout_repository.dart';
 import '../services/live_positions.dart';
@@ -33,8 +32,17 @@ const _allocationColors = [
   Color(0xFF94A3B8),
 ];
 
-Color _colorOf(AssetClass assetClass) =>
-    _allocationColors[assetClass.index % _allocationColors.length];
+/// Pela posição na lista ordenada, não pela classe: com 15 classes e 8 cores, a cor
+/// por classe repetiria (cripto e ação BR saíam do mesmo verde).
+Color _colorAt(int rank) => _allocationColors[rank % _allocationColors.length];
+
+/// O valor grande do card numa linha só: na meia largura "BRL 28.860,00" quebrava em
+/// duas linhas, então ele encolhe para caber em vez de quebrar.
+Widget _bigNumber(Text text) => FittedBox(
+  fit: BoxFit.scaleDown,
+  alignment: Alignment.centerLeft,
+  child: text,
+);
 
 /// Aba Início: cards-resumo da carteira e do patrimônio na moeda base, que o dono
 /// reordena, esconde e alterna entre meia e cheia largura (modo Personalizar). O
@@ -226,20 +234,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(
+                      TextButton(
                         key: Key('home-wide-${draft[i].key.id}'),
-                        tooltip: draft[i].wide
-                            ? 'Largura cheia (toque para meia)'
-                            : 'Meia largura (toque para cheia)',
-                        icon: Icon(
-                          draft[i].wide
-                              ? Icons.view_agenda_outlined
-                              : Icons.view_column_outlined,
-                        ),
                         onPressed: () => _updateDraft(
                           i,
                           (c) => c.copyWith(wide: !c.wide),
                         ),
+                        child: Text(draft[i].wide ? 'Cheia' : 'Meia'),
                       ),
                       Switch(
                         key: Key('home-visible-${draft[i].key.id}'),
@@ -359,10 +360,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          formatMoney(summary.totalValue, summary.base),
-          key: const Key('home-total-value-text'),
-          style: Theme.of(context).textTheme.headlineSmall,
+        _bigNumber(
+          Text(
+            formatMoney(summary.totalValue, summary.base),
+            key: const Key('home-total-value-text'),
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
         ),
         if (summary.itemsMissing > 0)
           Text(
@@ -382,15 +385,17 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          profit == null
-              ? '—'
-              : homeProfitLabel(profit, summary.profitPercent, summary.base),
-          key: const Key('home-profit-text'),
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: profit == null
-                ? null
-                : (profit >= 0 ? scheme.primary : scheme.error),
+        _bigNumber(
+          Text(
+            profit == null
+                ? '—'
+                : homeProfitLabel(profit, summary.profitPercent, summary.base),
+            key: const Key('home-profit-text'),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: profit == null
+                  ? null
+                  : (profit >= 0 ? scheme.primary : scheme.error),
+            ),
           ),
         ),
         if (summary.profitExcluded > 0)
@@ -414,16 +419,16 @@ class _HomeScreenState extends State<HomeScreen> {
           borderRadius: BorderRadius.circular(6),
           child: Row(
             children: [
-              for (final slice in summary.allocation)
+              for (final (i, slice) in summary.allocation.indexed)
                 Expanded(
                   flex: (slice.share * 1000).round().clamp(1, 1000),
-                  child: Container(height: 14, color: _colorOf(slice.assetClass)),
+                  child: Container(height: 14, color: _colorAt(i)),
                 ),
             ],
           ),
         ),
         const SizedBox(height: 12),
-        for (final slice in summary.allocation)
+        for (final (i, slice) in summary.allocation.indexed)
           Padding(
             key: Key('home-allocation-row-${slice.assetClass.value}'),
             padding: const EdgeInsets.symmetric(vertical: 2),
@@ -433,7 +438,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 10,
                   height: 10,
                   decoration: BoxDecoration(
-                    color: _colorOf(slice.assetClass),
+                    color: _colorAt(i),
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -462,10 +467,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          formatMoney(net.total, net.base),
-          key: const Key('home-net-worth-text'),
-          style: Theme.of(context).textTheme.headlineSmall,
+        _bigNumber(
+          Text(
+            formatMoney(net.total, net.base),
+            key: const Key('home-net-worth-text'),
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
         ),
         const SizedBox(height: 8),
         line('Caixa', net.cash),
