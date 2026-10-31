@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../domain/transactions_csv.dart';
+import '../domain/transactions_csv_import.dart';
 import '../models/asset.dart';
 import '../models/custodia.dart';
 import '../models/portfolio_transaction.dart';
@@ -96,12 +97,55 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
     }
   }
 
+  /// Lê um CSV "Anchor CSV" exportado pelo desktop, mostra o que entraria (novas,
+  /// duplicadas, erros) e só grava depois da confirmação. Só acrescenta.
+  Future<void> _importCsv() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['csv'],
+        withData: true,
+      );
+      final bytes = picked?.files.firstOrNull?.bytes;
+      if (bytes == null) return;
+
+      final plan = planTransactionsImport(
+        parseTransactionsCsv(utf8.decode(bytes, allowMalformed: true)),
+        assets: await _repository.listAssets(),
+        custodias: await _repository.listCustodias(),
+        transactions: await _repository.listAllTransactions(),
+      );
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => _ImportPreviewDialog(plan: plan),
+      );
+      if (confirmed != true) return;
+
+      final written = await _repository.applyTransactionsImport(plan);
+      await _load();
+      messenger.showSnackBar(
+        SnackBar(content: Text('$written transações importadas.')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Não consegui importar o CSV: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Histórico'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.file_download_outlined),
+            tooltip: 'Importar CSV do desktop',
+            onPressed: _importCsv,
+          ),
           IconButton(
             icon: const Icon(Icons.ios_share),
             tooltip: 'Exportar CSV para o desktop',
@@ -133,6 +177,66 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                 },
               ),
             ),
+    );
+  }
+}
+
+class _ImportPreviewDialog extends StatelessWidget {
+  final ImportPlan plan;
+
+  const _ImportPreviewDialog({required this.plan});
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = <String>[
+      '${plan.rows.length} transações novas',
+      if (plan.newAssets.isNotEmpty) '${plan.newAssets.length} ativos novos',
+      if (plan.newCustodias.isNotEmpty)
+        '${plan.newCustodias.length} custódias novas',
+      if (plan.duplicates > 0) '${plan.duplicates} já existem (ignoradas)',
+      if (plan.skipped > 0)
+        '${plan.skipped} transferências ignoradas (o CSV não traz o destino)',
+    ];
+    final shownIssues = plan.issues.take(5).toList();
+
+    return AlertDialog(
+      title: const Text('Importar do desktop'),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final line in lines) Text(line),
+            if (plan.issues.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                '${plan.issues.length} linhas com problema (não entram):',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              for (final issue in shownIssues)
+                Text(
+                  issue.line == 0
+                      ? issue.message
+                      : 'linha ${issue.line}: ${issue.message}',
+                ),
+              if (plan.issues.length > shownIssues.length)
+                Text('… e mais ${plan.issues.length - shownIssues.length}'),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: plan.rows.isEmpty
+              ? null
+              : () => Navigator.of(context).pop(true),
+          child: const Text('Importar'),
+        ),
+      ],
     );
   }
 }
