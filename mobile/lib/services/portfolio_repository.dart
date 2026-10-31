@@ -7,6 +7,7 @@ import '../data/db.dart';
 import '../domain/cvm_inf_diario.dart' show formatCnpj, normalizeCnpj;
 import '../domain/dirpf.dart';
 import '../domain/fund_compensation.dart' show collapseAdministrator;
+import '../domain/transactions_csv_import.dart';
 import '../models/asset.dart';
 import '../models/asset_attachment.dart';
 import '../models/asset_valuation.dart';
@@ -628,6 +629,84 @@ class PortfolioRepository {
           transaction.toMap()..remove('id'),
         );
       }
+    });
+  }
+
+  /// Grava o plano de import (ver `planTransactionsImport`) numa só transação do
+  /// banco: ativos novos, custódias novas e as transações entram juntos ou não
+  /// entra nada. Devolve quantas transações foram gravadas.
+  Future<int> applyTransactionsImport(ImportPlan plan) async {
+    final db = await AppDatabase.instance();
+    final now = DateTime.now();
+    return db.transaction((txn) async {
+      final assetIds = <String, int>{
+        for (final row in await txn.query('assets', columns: ['id', 'ticker']))
+          (row['ticker'] as String).toUpperCase(): row['id'] as int,
+      };
+      for (final newAsset in plan.newAssets) {
+        assetIds[newAsset.ticker.toUpperCase()] = await txn.insert(
+          'assets',
+          Asset(
+            ticker: newAsset.ticker,
+            name: newAsset.ticker,
+            assetClass: newAsset.assetClass,
+            currency: newAsset.currency,
+            createdAt: now,
+          ).toMap()..remove('id'),
+        );
+      }
+
+      final custodiaIds = <String, int>{
+        for (final row in await txn.query(
+          'custodias',
+          columns: ['id', 'instituicao'],
+        ))
+          (row['instituicao'] as String).toLowerCase(): row['id'] as int,
+      };
+      for (final name in plan.newCustodias) {
+        custodiaIds[name.toLowerCase()] = await txn.insert(
+          'custodias',
+          Custodia(
+            instituicao: name,
+            titular: 'Importado',
+            createdAt: now,
+          ).toMap()..remove('id'),
+        );
+      }
+
+      for (final row in plan.rows) {
+        int? assetId;
+        if (row.type.needsAsset) {
+          assetId = assetIds[row.ticker.toUpperCase()];
+          if (assetId == null) {
+            throw StateError("ativo '${row.ticker}' não existe nem foi planejado");
+          }
+        }
+        final custody = row.custody;
+        final custodiaId = custody == null
+            ? null
+            : custodiaIds[custody.toLowerCase()];
+        if (custody != null && custodiaId == null) {
+          throw StateError("custódia '$custody' não existe nem foi planejada");
+        }
+        await txn.insert(
+          'portfolio_transactions',
+          PortfolioTransaction(
+            assetId: assetId,
+            type: row.type,
+            quantity: row.quantity,
+            unitPrice: row.unitPrice,
+            totalValue: row.totalValue,
+            fee: row.fee,
+            lossCreditUsed: row.lossCreditUsed,
+            custodiaId: custodiaId,
+            date: row.date,
+            notes: row.notes,
+            createdAt: now,
+          ).toMap()..remove('id'),
+        );
+      }
+      return plan.rows.length;
     });
   }
 

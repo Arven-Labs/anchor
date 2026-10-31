@@ -1,9 +1,9 @@
 name: CI Private Files
 
-# O repositório é público. Planilhas da B3 e extratos bancários do dono do projeto
-# ficam só na máquina dele (o `.gitignore` os barra), mas `git add -f` ou um nome
-# fora do padrão passariam em silêncio. Este guarda falha se algum arquivo
-# rastreado parecer um deles. Roda em todo push e PR, sem filtro de caminho.
+# Barra arquivos que não devem ser rastreados (segredos, chaves, credenciais).
+# Roda em todo push na main e em todo PR, sem filtro de caminho, para o check
+# `guard` sempre reportar (a main exige esse check). Padrões extras do projeto
+# ficam em .github/guard-patterns.txt (uma regex ERE por linha; # comenta).
 on:
   push:
     branches: [main]
@@ -17,11 +17,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: No private samples are tracked
+      - name: No private files are tracked
         run: |
-          bad=$(git ls-files | grep -i -E '(^|/)(negociacao|movimentacao|extrato)[-_ ]|\.(ofx|qfx)$|\.xlsx?$' || true)
+          defaults='(^|/)\.env(\.[^/]+)?$|\.(pem|key|p12|pfx|jks|keystore)$|(^|/)id_(rsa|ed25519|ecdsa)$|(^|/)credentials(\.json)?$|\.kdbx$'
+          extra=''
+          if [ -f .github/guard-patterns.txt ]; then
+            extra=$(grep -vE '^[[:space:]]*(#|$)' .github/guard-patterns.txt | paste -sd'|' - || true)
+          fi
+          pattern="$defaults${extra:+|$extra}"
+          bad=$(git ls-files | grep -iE "$pattern" | grep -viE '\.env\.(example|sample|template)$' || true)
           if [ -n "$bad" ]; then
-            echo "::error::Arquivos que parecem planilha ou extrato privado estão rastreados:"
+            echo "::error::Arquivos que parecem segredo, chave ou dado privado estão rastreados:"
             echo "$bad"
             exit 1
           fi

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'screens/financas_screen.dart';
+import 'screens/home_screen.dart';
 import 'screens/portfolio_screen.dart';
 import 'screens/quote_search_screen.dart';
 import 'theme.dart';
@@ -34,6 +35,7 @@ class _AnchorHomeState extends State<AnchorHome> {
   int _tabIndex = 0;
 
   static const _screens = [
+    HomeScreen(),
     QuoteSearchScreen(),
     PortfolioScreen(),
     FinancasScreen(),
@@ -47,6 +49,7 @@ class _AnchorHomeState extends State<AnchorHome> {
         selectedIndex: _tabIndex,
         onDestinationSelected: (index) => setState(() => _tabIndex = index),
         destinations: const [
+          NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Início'),
           NavigationDestination(icon: Icon(Icons.search), label: 'Cotação'),
           NavigationDestination(
             icon: Icon(Icons.pie_chart),

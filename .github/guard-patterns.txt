@@ -1,0 +1,4 @@
+# Planilhas da B3 e extratos bancários do dono ficam só na máquina dele
+# (o .gitignore os barra), mas `git add -f` ou um nome fora do padrão passariam
+# em silêncio. Este padrão era o do ci-private-files.yml original do anchor.
+(^|/)(negociacao|movimentacao|extrato)[-_ ]|\.(ofx|qfx)$|\.xlsx?$

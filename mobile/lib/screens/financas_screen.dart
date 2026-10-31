@@ -5,9 +5,9 @@ import '../domain/fx_history.dart';
 import '../domain/general_finance.dart';
 import '../domain/money_format.dart';
 import '../models/bank_account.dart';
-import '../services/fx_rates_loader.dart';
 import '../services/general_finance_repository.dart';
 import '../services/live_positions.dart';
+import '../services/net_worth_loader.dart';
 import '../services/portfolio_repository.dart';
 import '../services/quote_dispatcher.dart';
 import '../services/yahoo_quote_service.dart';
@@ -97,54 +97,21 @@ class _FinancasScreenState extends State<FinancasScreen> {
     setState(() => _summaryLoading = true);
 
     final rows = await (widget.loadPositions ?? _livePositions)();
-    final cashItems = [
-      for (final account in _accounts)
-        ValuedItem(account.currency, _balances[account.id] ?? 0),
-    ];
-    final portfolioItems = portfolioValuedItems(rows);
-    final currencyOf = {for (final a in _accounts) a.id!: a.currency};
-    final today = toIsoDay(DateTime.now());
-    final debtItems = [
-      for (final l in await _repository.listLiabilities())
-        ValuedItem(
-          currencyOf[l.liability.bankAccountId] ?? defaultBaseCurrency,
-          l.balanceOn(today),
-        ),
-    ];
-    final now = DateTime.now();
-    final loanItems = [
-      for (final l in await _repository.listLoans())
-        if (l.loan.includeInNetWorth)
-          ValuedItem(l.loan.currency, l.balanceOn(now)),
-    ];
-    final fx = await loadRatesToBrl(
-      {
-        _base,
-        for (final item in [
-          ...cashItems,
-          ...portfolioItems,
-          ...debtItems,
-          ...loanItems,
-        ])
-          item.currency,
-      },
-      fetch: widget.fetchFx ?? _fetchFx,
-    );
-    final net = computeNetWorth(
+    final summary = await loadNetWorth(
+      repository: _repository,
+      accounts: _accounts,
+      balances: _balances,
       base: _base,
-      cashItems: cashItems,
-      portfolioItems: portfolioItems,
-      debtItems: debtItems,
-      loanItems: loanItems,
-      ratesToBrl: fx.ratesToBrl,
+      rows: rows,
+      fetchFx: widget.fetchFx ?? _fetchFx,
     );
 
     // Uma troca de base ou um refresh no meio deixa esta rodada velha.
     if (!mounted || run != _summaryRun) return;
     setState(() {
-      _netWorth = net;
-      _rates = fx.ratesToBrl;
-      _fxFailed = fx.failed;
+      _netWorth = summary.netWorth;
+      _rates = summary.ratesToBrl;
+      _fxFailed = summary.fxFailed;
       _summaryLoading = false;
     });
   }
