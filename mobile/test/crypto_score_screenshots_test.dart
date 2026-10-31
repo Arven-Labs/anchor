@@ -193,10 +193,11 @@ void main() {
       coin: 'ETH',
       beforeCapture: () async {
         await tester.tap(find.widgetWithText(ChoiceChip, '90D'));
-        await tester.pump();
+        // Espera a animação do chip: sem isso a captura pega o quadro do meio.
+        await tester.pump(const Duration(milliseconds: 400));
         final rect = tester.getRect(find.byKey(const Key('history-chart')));
         await tester.tapAt(Offset(rect.left + rect.width * 0.55, rect.center.dy));
-        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
       },
     );
 

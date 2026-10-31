@@ -102,7 +102,9 @@ class _CryptoHistoryCardState extends State<CryptoHistoryCard> {
                       percentages: [for (final p in visible) greenPercent(p)],
                       selected: selected,
                       lineColor: anchorPrimary,
-                      textColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                      labelStyle: Theme.of(context).textTheme.bodySmall!.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ),
@@ -138,13 +140,16 @@ class CryptoHistoryPainter extends CustomPainter {
   final List<double> percentages;
   final int? selected;
   final Color lineColor;
-  final Color textColor;
+
+  /// Estilo dos rótulos das réguas. Vem do tema: um `TextStyle` solto não herda a
+  /// fonte do app (na captura de teste saía como retângulos).
+  final TextStyle labelStyle;
 
   const CryptoHistoryPainter({
     required this.percentages,
     required this.selected,
     required this.lineColor,
-    required this.textColor,
+    required this.labelStyle,
   });
 
   /// Índice do ponto mais próximo de [dx] numa área de largura [width] com
@@ -227,7 +232,7 @@ class CryptoHistoryPainter extends CustomPainter {
 
   void _label(Canvas canvas, String text, Offset offset) {
     final painter = TextPainter(
-      text: TextSpan(text: text, style: TextStyle(color: textColor, fontSize: 11)),
+      text: TextSpan(text: text, style: labelStyle),
       textDirection: TextDirection.ltr,
     )..layout();
     painter.paint(canvas, offset);
@@ -237,7 +242,7 @@ class CryptoHistoryPainter extends CustomPainter {
   bool shouldRepaint(CryptoHistoryPainter old) =>
       old.selected != selected ||
       old.lineColor != lineColor ||
-      old.textColor != textColor ||
+      old.labelStyle != labelStyle ||
       !_sameValues(old.percentages, percentages);
 
   static bool _sameValues(List<double> a, List<double> b) {
