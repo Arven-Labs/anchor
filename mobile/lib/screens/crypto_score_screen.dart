@@ -7,6 +7,7 @@ import '../services/crypto_collector.dart';
 import '../services/crypto_score_repository.dart';
 import '../services/crypto_source_http.dart';
 import '../theme.dart';
+import 'crypto_history_card.dart';
 
 const _coins = [coinEth, coinBtc, coinAda, coinXrp, coinBnb];
 
@@ -50,6 +51,7 @@ class _CryptoScoreScreenState extends State<CryptoScoreScreen> {
 
   String _coin = coinEth;
   CryptoScore? _score;
+  List<ScoreHistoryPoint> _history = const [];
   bool _collecting = false;
   final _autoCollected = <String>{};
 
@@ -72,8 +74,12 @@ class _CryptoScoreScreenState extends State<CryptoScoreScreen> {
   Future<void> _load() async {
     final coin = _coin;
     final score = await _repository.score(coin, _now());
+    final history = await _repository.scoreHistory(coin);
     if (!mounted || coin != _coin) return;
-    setState(() => _score = score);
+    setState(() {
+      _score = score;
+      _history = history;
+    });
   }
 
   void _select(String coin) {
@@ -81,6 +87,7 @@ class _CryptoScoreScreenState extends State<CryptoScoreScreen> {
     setState(() {
       _coin = coin;
       _score = null;
+      _history = const [];
     });
     _load();
     _autoCollect();
@@ -164,6 +171,7 @@ class _CryptoScoreScreenState extends State<CryptoScoreScreen> {
             )
           else ...[
             _VerdictCard(score: score),
+            CryptoHistoryCard(history: _history),
             if (_hasNoReading(score))
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12, horizontal: 4),
