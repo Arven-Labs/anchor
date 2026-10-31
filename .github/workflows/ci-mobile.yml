@@ -48,7 +48,7 @@ jobs:
           SCREENSHOT_DIR: ${{ runner.temp }}/financas-shots
         run: |
           export FLUTTER_ROOT="$(dirname "$(dirname "$(readlink -f "$(which flutter)")")")"
-          flutter test test/financas_screenshots_test.dart
+          flutter test test/financas_screenshots_test.dart test/crypto_score_screenshots_test.dart
 
       - name: Upload capturas
         uses: actions/upload-artifact@v4

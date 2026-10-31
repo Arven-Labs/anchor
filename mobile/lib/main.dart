@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'screens/crypto_score_screen.dart';
 import 'screens/financas_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/portfolio_screen.dart';
@@ -34,17 +35,22 @@ class AnchorHome extends StatefulWidget {
 class _AnchorHomeState extends State<AnchorHome> {
   int _tabIndex = 0;
 
-  static const _screens = [
-    HomeScreen(),
-    QuoteSearchScreen(),
-    PortfolioScreen(),
-    FinancasScreen(),
-  ];
+  /// Posição da aba "Cripto": só ela coleta sozinha, e só quando está à vista.
+  static const _cryptoTab = 4;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _tabIndex, children: _screens),
+      body: IndexedStack(
+        index: _tabIndex,
+        children: [
+          const HomeScreen(),
+          const QuoteSearchScreen(),
+          const PortfolioScreen(),
+          const FinancasScreen(),
+          CryptoScoreScreen(active: _tabIndex == _cryptoTab),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tabIndex,
         onDestinationSelected: (index) => setState(() => _tabIndex = index),
@@ -58,6 +64,10 @@ class _AnchorHomeState extends State<AnchorHome> {
           NavigationDestination(
             icon: Icon(Icons.account_balance_wallet_outlined),
             label: 'Finanças',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.currency_bitcoin),
+            label: 'Cripto',
           ),
         ],
       ),
