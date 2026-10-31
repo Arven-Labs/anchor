@@ -91,6 +91,12 @@ void main() {
       );
     });
     await tester.runAsync(AppDatabase.instance);
+    // Árvore nova a cada captura: sem isso o estado da anterior (uma rota aberta,
+    // por exemplo) continua por cima da tela.
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 300)),
+    );
     await tester.pumpWidget(
       RepaintBoundary(
         key: const Key('shot'),
@@ -197,6 +203,43 @@ void main() {
         await tester.pump(const Duration(milliseconds: 400));
         final rect = tester.getRect(find.byKey(const Key('history-chart')));
         await tester.tapAt(Offset(rect.left + rect.width * 0.55, rect.center.dy));
+        await tester.pump(const Duration(milliseconds: 400));
+      },
+    );
+
+    // Tela de limites (um limite editado, para aparecer "Editado") e o diálogo
+    // com um rascunho inválido (erro visível, Salvar desabilitado).
+    await tester.runAsync(
+      () => repository.updateThreshold('ETH', 'mvrv_z_score', 1, 6),
+    );
+    await show(
+      tester,
+      'cripto_limites',
+      coin: 'ETH',
+      beforeCapture: () async {
+        await tester.tap(find.byKey(const Key('open-thresholds')));
+        await tester.pump();
+        await settle(
+          tester,
+          () => find.byKey(const ValueKey('threshold-mvrv_z_score')).evaluate().isNotEmpty,
+        );
+      },
+    );
+    await show(
+      tester,
+      'cripto_limites_dialogo',
+      coin: 'ETH',
+      beforeCapture: () async {
+        await tester.tap(find.byKey(const Key('open-thresholds')));
+        await tester.pump();
+        await settle(
+          tester,
+          () => find.byKey(const ValueKey('threshold-mvrv_z_score')).evaluate().isNotEmpty,
+        );
+        await tester.tap(find.byKey(const ValueKey('threshold-mvrv_z_score')));
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.enterText(find.byKey(const Key('threshold-green')), '5');
+        await tester.enterText(find.byKey(const Key('threshold-red')), '5');
         await tester.pump(const Duration(milliseconds: 400));
       },
     );

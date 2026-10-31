@@ -463,6 +463,73 @@ void main() {
     });
   });
 
+  group('limites (tela aberta pelo ícone do AppBar)', () {
+    testWidgets('o ícone abre os limites da moeda selecionada', (tester) async {
+      await pumpScreen(tester);
+
+      await tester.tap(find.byKey(const Key('open-thresholds')));
+      await tester.pump();
+      await settle(tester, () => find.text('MVRV Z-Score').evaluate().isNotEmpty);
+
+      expect(find.byKey(const ValueKey('threshold-mvrv_z_score')), findsOneWidget);
+    });
+
+    testWidgets('com outra moeda selecionada abre os limites dela', (tester) async {
+      await pumpScreen(tester);
+      await tester.tap(find.widgetWithText(ChoiceChip, 'ADA'));
+      await settle(tester);
+
+      await tester.tap(find.byKey(const Key('open-thresholds')));
+      await tester.pump();
+      final rows = find.byWidgetPredicate(
+        (w) => w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('threshold-'),
+      );
+      await settle(tester, () => rows.evaluate().isNotEmpty);
+
+      // ADA tem 10 indicadores.
+      expect(rows.evaluate().length, 10);
+    });
+
+    testWidgets('editar um limite e voltar refaz o veredito e o histórico', (tester) async {
+      await inDb(tester, () => seedGreens(coinEth, 2));
+      await pumpScreen(tester);
+      expect(find.text('2 verdes de 20'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('open-thresholds')));
+      await tester.pump();
+      await settle(tester, () => find.text('MVRV Z-Score').evaluate().isNotEmpty);
+      await tester.tap(find.byKey(const ValueKey('threshold-mvrv_z_score')));
+      await tester.pump(const Duration(milliseconds: 300));
+      // O MVRV gravado é verde (menor é melhor); com verde até -100 e vermelho a
+      // partir de -50 ele passa a vermelho.
+      await tester.enterText(find.byKey(const Key('threshold-green')), '-100');
+      await tester.enterText(find.byKey(const Key('threshold-red')), '-50');
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('threshold-save')));
+      await settle(
+        tester,
+        () => find.byKey(const Key('threshold-save')).evaluate().isEmpty,
+      );
+
+      await tester.pageBack();
+      await settle(tester, () => find.text('1 verde de 20').evaluate().isNotEmpty);
+
+      expect(find.text('1 verde de 20'), findsOneWidget);
+      expect(find.text('2 verdes de 20'), findsNothing);
+      // O histórico também foi relido: o último ponto agora tem 1 verde.
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Text &&
+              w.key == const Key('history-summary') &&
+              (w.data ?? '').contains('1 verde de 20'),
+        ),
+        findsOneWidget,
+      );
+    });
+  });
+
   group('falhas da coleta', () {
     testWidgets('as linhas de erro aparecem e somem na coleta seguinte sem erro', (
       tester,
