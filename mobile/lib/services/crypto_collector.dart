@@ -1,5 +1,6 @@
 import '../domain/crypto_score.dart';
 import '../models/crypto_reading.dart';
+import 'bitcoin_data_service.dart';
 import 'coingecko_global_service.dart';
 import 'coingecko_nvt_service.dart';
 import 'coinmetrics_service.dart';
@@ -61,6 +62,10 @@ const _laneOf = {
   'tvl_trend': 'defillama',
   // O APY vem da DefiLlama (por isso a faixa dela); a inflação, do CoinMetrics.
   'staking_yield': 'defillama',
+  // Cota de 10 chamadas por hora e 15 por dia: SOPR e NUPL em sequência, e só depois
+  // de checar que não há leitura de hoje (feito antes de montar os jobs).
+  'sopr': 'bitcoin-data',
+  'nupl': 'bitcoin-data',
   'net_issuance': 'ultrasound',
   'fees_vs_emission': 'ultrasound',
   'fear_greed_index': 'alternative.me',
@@ -99,6 +104,7 @@ class CryptoCollector {
   final CoinGeckoNvtService _nvt;
   final CoinMetricsService _coinmetrics;
   final DefiLlamaYieldsService _yields;
+  final BitcoinDataService _bitcoinData;
   final DateTime Function() _now;
 
   /// [now] é o relógio (injetável nos testes) e deve ser o mesmo do
@@ -115,6 +121,7 @@ class CryptoCollector {
     CoinGeckoNvtService? nvt,
     CoinMetricsService? coinmetrics,
     DefiLlamaYieldsService? yields,
+    BitcoinDataService? bitcoinData,
     DateTime Function()? now,
   }) : _perp = perp ?? PerpDerivativesService(),
        _deribit = deribit ?? DeribitService(),
@@ -126,6 +133,7 @@ class CryptoCollector {
        _nvt = nvt ?? CoinGeckoNvtService(),
        _coinmetrics = coinmetrics ?? CoinMetricsService(now: now),
        _yields = yields ?? DefiLlamaYieldsService(now: now),
+       _bitcoinData = bitcoinData ?? BitcoinDataService(now: now),
        _now = now ?? DateTime.now;
 
   /// Coleta o que falta hoje das [coins] (ETH, BTC, ADA, XRP e BNB; as demais
@@ -246,6 +254,12 @@ class CryptoCollector {
       return (value: value, source: source, readingDate: null);
     }
 
+    _Fetched dated(DatedValue reading) => (
+      value: reading.value,
+      source: 'bitcoin-data.com',
+      readingDate: reading.date,
+    );
+
     Future<_Fetched> coinMetrics(Future<double> pending) async => (
       value: await pending,
       source: 'coinmetrics',
@@ -333,6 +347,9 @@ class CryptoCollector {
           readingDate: null,
         );
       },
+      // A data da leitura é a do dado, não a de hoje.
+      'sopr' => () async => dated(await _bitcoinData.sopr()),
+      'nupl' => () async => dated(await _bitcoinData.nupl()),
       'mvrv_z_score' => () => coinMetrics(_coinmetrics.mvrvZScore(coin)),
       'puell_multiple' => () => coinMetrics(_coinmetrics.puellMultiple(coin)),
       'active_addresses_trend' => () => coinMetrics(

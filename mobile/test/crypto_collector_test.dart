@@ -11,6 +11,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/crypto_score.dart';
 import 'package:anchor_mobile/models/crypto_reading.dart';
+import 'package:anchor_mobile/services/bitcoin_data_service.dart';
 import 'package:anchor_mobile/services/coingecko_global_service.dart';
 import 'package:anchor_mobile/services/coingecko_nvt_service.dart';
 import 'package:anchor_mobile/services/coinmetrics_service.dart';
@@ -120,6 +121,17 @@ final _stethChart = jsonEncode({
   ],
 });
 
+/// SOPR e NUPL com a data do dado 7 dias antes de "hoje" (2026-10-29), como o
+/// plano grátis documenta: a data do dado e a da coleta são diferentes de propósito.
+const _soprBody = r'{"d":"2026-10-22","unixTs":1792627200,"sopr":1.0057}';
+const _nuplBody = r'{"d":"2026-10-22","unixTs":1792627200,"nupl":0.347}';
+
+http.Response _bitcoinDataOk(Uri url) => http.Response(switch (url.path) {
+  '/v1/sopr/last' => _soprBody,
+  '/v1/nupl/last' => _nuplBody,
+  _ => '',
+}, url.path == '/v1/sopr/last' || url.path == '/v1/nupl/last' ? 200 : 404);
+
 const _binance = 'fapi.binance.com';
 const _bybit = 'api.bybit.com';
 const _deribit = 'www.deribit.com';
@@ -129,9 +141,11 @@ const _ultrasound = 'ultrasound.money';
 const _alternative = 'api.alternative.me';
 const _coingecko = 'api.coingecko.com';
 const _yields = 'yields.llama.fi';
+const _bitcoinData = 'bitcoin-data.com';
 const _coinmetrics = 'community-api.coinmetrics.io';
 
-/// O que o coletor sabe buscar hoje, por moeda. Faltam SOPR e NUPL do BTC (4c).
+/// O que o coletor busca, por moeda: o conjunto inteiro do score (o teste de
+/// cobertura confere com `IndicatorGroup`).
 const _ethIndicators = {
   'funding_rate_7d',
   'open_interest_change_30d',
@@ -169,6 +183,8 @@ const _btcIndicators = {
   'exchange_netflow',
   'exchange_supply_change_30d',
   'mayer_multiple',
+  'sopr',
+  'nupl',
 };
 
 /// O que ADA, XRP e BNB têm em comum (mercado, stablecoins, Fear & Greed, NVT).
@@ -257,6 +273,7 @@ class _Net {
     _llama: (_) => http.Response(_stablecoins, 200),
     _llamaChain: (_) => http.Response(_tvl, 200),
     _yields: (_) => http.Response(_stethChart, 200),
+    _bitcoinData: _bitcoinDataOk,
     _ultrasound: _ultrasoundOk,
     _alternative: (_) => http.Response(_fearGreed, 200),
     _coingecko: _coingeckoOk,
@@ -305,6 +322,7 @@ void main() {
       nvt: CoinGeckoNvtService(client: net.client),
       coinmetrics: CoinMetricsService(client: net.client, now: () => current),
       yields: DefiLlamaYieldsService(client: net.client, now: () => current),
+      bitcoinData: BitcoinDataService(client: net.client, now: () => current),
       now: () => current,
     );
   });
@@ -427,19 +445,31 @@ void main() {
       },
     );
 
-    test(
-      'indicadores sem fonte ainda (SOPR, NUPL) não viram erro nem leitura',
-      () async {
-        final result = await collector.collect(['ETH', 'BTC']);
+    test('toda moeda é coletada por inteiro: o conjunto do score, sem sobra', () async {
+      // Fecha a tarefa 4: nenhum indicador do score ficou sem fonte.
+      final result = await collector.collect(_everyCoin);
 
-        expect(result.errors, isEmpty);
-        final missing = {'sopr', 'nupl'};
-        expect(
-          result.readings.map((r) => r.indicator).toSet().intersection(missing),
-          isEmpty,
-        );
-      },
-    );
+      expect(result.errors, isEmpty);
+      for (final coin in _everyCoin) {
+        final expected = {
+          for (final group in IndicatorGroup.forCoin(coin))
+            ...group.indicators(coin),
+        };
+        expect(byIndicator(result, coin).keys.toSet(), expected, reason: coin);
+      }
+    });
+
+    test('SOPR e NUPL gravam o valor da fonte com a data do dado, não a de hoje', () async {
+      final readings = byIndicator(await collector.collect(['BTC']), 'BTC');
+
+      expect(readings['sopr']!.rawValue, closeTo(1.0057, 1e-12));
+      expect(readings['nupl']!.rawValue, closeTo(0.347, 1e-12));
+      for (final indicator in ['sopr', 'nupl']) {
+        expect(readings[indicator]!.source, 'bitcoin-data.com', reason: indicator);
+        // A data do dado (7 dias antes), e não a da coleta (2026-10-29).
+        expect(readings[indicator]!.readingDate, '2026-10-22', reason: indicator);
+      }
+    });
 
     test('cada moeda pega só os indicadores do seu conjunto', () async {
       final result = await collector.collect(['BTC', 'ADA', 'XRP', 'BNB']);
@@ -451,11 +481,11 @@ void main() {
       expect(result.errors, isEmpty);
     });
 
-    test('uma rodada completa grava 61 leituras', () async {
+    test('uma rodada completa grava 63 leituras', () async {
       final result = await collector.collect(_everyCoin);
 
-      expect(_allCoinsTotal, 61);
-      expect(result.readings, hasLength(61));
+      expect(_allCoinsTotal, 63);
+      expect(result.readings, hasLength(63));
       expect(result.errors, isEmpty);
     });
 
@@ -694,6 +724,7 @@ void main() {
           _llama,
           _llamaChain,
           _yields,
+          _bitcoinData,
           _ultrasound,
           _alternative,
           _coingecko,
@@ -1042,6 +1073,106 @@ void main() {
 
       expect(second.readings, isEmpty);
       expect(net.count(_coinmetrics), before);
+    });
+  });
+
+  group('cota do bitcoin-data.com (10 por hora, 15 por dia)', () {
+    test('só o BTC chama a fonte, uma chamada por indicador', () async {
+      await collector.collect(['ETH', 'ADA', 'XRP', 'BNB']);
+      expect(net.count(_bitcoinData), 0);
+
+      await collector.collect(['BTC']);
+
+      expect(net.paths(_bitcoinData), ['/v1/sopr/last', '/v1/nupl/last']);
+    });
+
+    test('a segunda coleta no mesmo dia não gasta nenhuma chamada', () async {
+      await collector.collect(['BTC']);
+      expect(net.count(_bitcoinData), 2);
+
+      // As leituras têm `reading_date` de 7 dias atrás; o que impede a chamada é
+      // terem sido CRIADAS hoje.
+      final second = await collector.collect(['BTC']);
+
+      expect(second.readings, isEmpty);
+      expect(net.count(_bitcoinData), 2);
+    });
+
+    test('SOPR coletado e NUPL com erro: o toque seguinte faz só 1 chamada, a do NUPL', () async {
+      net.handlers[_bitcoinData] = (url) => url.path.contains('nupl')
+          ? http.Response('', 503)
+          : _bitcoinDataOk(url);
+      final first = await collector.collect(['BTC']);
+      expect(byIndicator(first, 'BTC').keys, contains('sopr'));
+      expect(byIndicator(first, 'BTC').keys, isNot(contains('nupl')));
+      expect(
+        first.errors.where((e) => e.contains('BTC nupl') && e.contains('bitcoin-data.com')),
+        hasLength(1),
+      );
+
+      net.handlers[_bitcoinData] = _bitcoinDataOk;
+      final before = net.count(_bitcoinData);
+      final second = await collector.collect(['BTC']);
+
+      expect(second.readings.map((r) => r.indicator), ['nupl']);
+      expect(net.count(_bitcoinData) - before, 1);
+      expect(net.paths(_bitcoinData).last, '/v1/nupl/last');
+    });
+
+    test('depois da meia-noite UTC busca de novo as duas', () async {
+      current = DateTime.utc(2026, 10, 29, 23, 59);
+      await collector.collect(['BTC']);
+
+      current = DateTime.utc(2026, 10, 30, 0, 1);
+      await collector.collect(['BTC']);
+
+      expect(net.count(_bitcoinData), 4);
+    });
+
+    test('429 (cota esgotada): os dois falham com uma tentativa cada, sem retry, e o resto do BTC sai', () async {
+      net.handlers[_bitcoinData] = (_) => http.Response('', 429);
+
+      final result = await collector.collect(['BTC']);
+
+      expect(net.count(_bitcoinData), 2);
+      expect(result.errors, hasLength(2));
+      expect(
+        result.errors,
+        everyElement(allOf(startsWith('BTC '), contains('bitcoin-data.com'))),
+      );
+      expect(
+        byIndicator(result, 'BTC').keys.toSet(),
+        _btcIndicators.difference({'sopr', 'nupl'}),
+      );
+    });
+
+    test('dado parado da fonte (mais de 10 dias) falha sem gravar leitura velha', () async {
+      net.handlers[_bitcoinData] = (url) => http.Response(
+        _bitcoinDataOk(url).body.replaceAll('2026-10-22', '2026-10-01'),
+        200,
+      );
+
+      final result = await collector.collect(['BTC']);
+
+      expect(byIndicator(result, 'BTC').keys, isNot(contains('sopr')));
+      expect(result.errors.where((e) => e.contains('stale')), hasLength(2));
+    });
+
+    test('SOPR e NUPL saem um de cada vez (mesmo host)', () async {
+      var inFlight = 0;
+      var maxInFlight = 0;
+      net.handlers[_bitcoinData] = (url) async {
+        inFlight++;
+        maxInFlight = math.max(maxInFlight, inFlight);
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        inFlight--;
+        return _bitcoinDataOk(url);
+      };
+
+      await collector.collect(['BTC']);
+
+      expect(net.count(_bitcoinData), 2);
+      expect(maxInFlight, 1);
     });
   });
 
