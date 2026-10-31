@@ -19,6 +19,7 @@ import 'package:anchor_mobile/services/crypto_score_repository.dart';
 import 'package:anchor_mobile/services/crypto_source_http.dart';
 import 'package:anchor_mobile/services/defillama_stablecoins_service.dart';
 import 'package:anchor_mobile/services/defillama_tvl_service.dart';
+import 'package:anchor_mobile/services/defillama_yields_service.dart';
 import 'package:anchor_mobile/services/deribit_service.dart';
 import 'package:anchor_mobile/services/fear_greed_service.dart';
 import 'package:anchor_mobile/services/perp_derivatives_service.dart';
@@ -87,6 +88,9 @@ String _coinmetricsBody(Uri url) {
     'AdrActCnt' || 'SplyExNtv' || 'PriceBTC' => '${100 + i}',
     'FlowInExUSD' => '3',
     'FlowOutExUSD' => '1',
+    // 3000 ETH por dia sobre 120 M: inflação bruta de 0,9125 % ao ano.
+    'IssTotNtv' => '3000',
+    'SplyCur' => '120000000',
     _ => throw StateError('métrica inesperada: $metric'),
   };
   return jsonEncode({
@@ -102,6 +106,20 @@ String _coinmetricsBody(Uri url) {
   });
 }
 
+/// Série do stETH na DefiLlama yields: um ponto antigo absurdo (99) fora da janela
+/// de 7 e 7 pontos de APY 3,0, o último de 2026-10-28. Staking real = 3,0 − 0,9125.
+final _stethChart = jsonEncode({
+  'status': 'success',
+  'data': [
+    for (var i = 0; i < 8; i++)
+      {
+        'timestamp': '2026-10-${21 + i}T23:01:00.000Z',
+        'tvlUsd': 1000000,
+        'apy': i == 0 ? 99 : 3.0,
+      },
+  ],
+});
+
 const _binance = 'fapi.binance.com';
 const _bybit = 'api.bybit.com';
 const _deribit = 'www.deribit.com';
@@ -110,10 +128,10 @@ const _llamaChain = 'api.llama.fi';
 const _ultrasound = 'ultrasound.money';
 const _alternative = 'api.alternative.me';
 const _coingecko = 'api.coingecko.com';
+const _yields = 'yields.llama.fi';
 const _coinmetrics = 'community-api.coinmetrics.io';
 
-/// O que o coletor sabe buscar hoje, por moeda. Faltam o staking do ETH
-/// (tarefa 4b) e SOPR e NUPL do BTC (4c).
+/// O que o coletor sabe buscar hoje, por moeda. Faltam SOPR e NUPL do BTC (4c).
 const _ethIndicators = {
   'funding_rate_7d',
   'open_interest_change_30d',
@@ -134,6 +152,7 @@ const _ethIndicators = {
   'exchange_supply_change_30d',
   'eth_btc_trend_30d',
   'mayer_multiple',
+  'staking_yield',
 };
 const _btcIndicators = {
   'funding_rate_7d',
@@ -237,6 +256,7 @@ class _Net {
     _deribit: _deribitOk,
     _llama: (_) => http.Response(_stablecoins, 200),
     _llamaChain: (_) => http.Response(_tvl, 200),
+    _yields: (_) => http.Response(_stethChart, 200),
     _ultrasound: _ultrasoundOk,
     _alternative: (_) => http.Response(_fearGreed, 200),
     _coingecko: _coingeckoOk,
@@ -284,6 +304,7 @@ void main() {
       ultrasound: UltrasoundService(client: net.client),
       nvt: CoinGeckoNvtService(client: net.client),
       coinmetrics: CoinMetricsService(client: net.client, now: () => current),
+      yields: DefiLlamaYieldsService(client: net.client, now: () => current),
       now: () => current,
     );
   });
@@ -300,7 +321,7 @@ void main() {
 
   group('o que coleta', () {
     test(
-      'ETH grava os 19 indicadores que já têm fonte, cada um com a sua',
+      'ETH grava os 20 indicadores, cada um com a sua fonte',
       () async {
         final result = await collector.collect(['ETH']);
 
@@ -328,6 +349,7 @@ void main() {
             'exchange_supply_change_30d': 'coinmetrics',
             'eth_btc_trend_30d': 'coinmetrics',
             'mayer_multiple': 'coinmetrics',
+            'staking_yield': 'defillama+coinmetrics',
           },
         );
         expect(result.errors, isEmpty);
@@ -393,12 +415,25 @@ void main() {
     );
 
     test(
-      'indicadores sem fonte ainda (staking, SOPR, NUPL) não viram erro nem leitura',
+      'staking yield real: a mediana do APY menos a inflação bruta (0,9125 %)',
+      () async {
+        final readings = byIndicator(await collector.collect(['ETH']), 'ETH');
+
+        // Mediana 3,0 (o 99 antigo fica fora da janela de 7) − 0,9125.
+        expect(
+          readings['staking_yield']!.rawValue,
+          closeTo(2.0875, 1e-12),
+        );
+      },
+    );
+
+    test(
+      'indicadores sem fonte ainda (SOPR, NUPL) não viram erro nem leitura',
       () async {
         final result = await collector.collect(['ETH', 'BTC']);
 
         expect(result.errors, isEmpty);
-        final missing = {'staking_yield', 'sopr', 'nupl'};
+        final missing = {'sopr', 'nupl'};
         expect(
           result.readings.map((r) => r.indicator).toSet().intersection(missing),
           isEmpty,
@@ -416,11 +451,11 @@ void main() {
       expect(result.errors, isEmpty);
     });
 
-    test('uma rodada completa grava 60 leituras', () async {
+    test('uma rodada completa grava 61 leituras', () async {
       final result = await collector.collect(_everyCoin);
 
-      expect(_allCoinsTotal, 60);
-      expect(result.readings, hasLength(60));
+      expect(_allCoinsTotal, 61);
+      expect(result.readings, hasLength(61));
       expect(result.errors, isEmpty);
     });
 
@@ -455,6 +490,9 @@ void main() {
         'SplyExNtv',
         'PriceBTC',
         'PriceUSD',
+        // O staking real desconta a inflação bruta (só o ETH).
+        'IssTotNtv',
+        'SplyCur',
       });
       // O ETH/BTC é só do ETH; o BTC tem o resto.
       expect(metricsOf('btc'), {
@@ -655,6 +693,7 @@ void main() {
           _deribit,
           _llama,
           _llamaChain,
+          _yields,
           _ultrasound,
           _alternative,
           _coingecko,
@@ -881,14 +920,47 @@ void main() {
 
         net.handlers[_llama] = (_) => slow(_stablecoins);
         net.handlers[_llamaChain] = (_) => slow(_tvl);
+        net.handlers[_yields] = (_) => slow(_stethChart);
 
         await collector.collect(['ETH', 'BNB']);
 
-        // Stablecoins uma vez (valor global) e o TVL de ETH e de BNB.
-        expect(net.count(_llama) + net.count(_llamaChain), 3);
+        // Stablecoins uma vez (valor global), o TVL de ETH e de BNB e o APY do
+        // stETH (staking do ETH).
+        expect(
+          net.count(_llama) + net.count(_llamaChain) + net.count(_yields),
+          4,
+        );
         expect(maxInFlight, 1);
       },
     );
+
+    test('yields fora do ar: só o staking yield falha, o resto sai', () async {
+      net.handlers[_yields] = _unavailable;
+
+      final result = await collector.collect(['ETH']);
+
+      expect(
+        byIndicator(result, 'ETH').keys.toSet(),
+        _ethIndicators.difference({'staking_yield'}),
+      );
+      expect(result.errors, hasLength(1));
+      expect(
+        result.errors.single,
+        allOf(contains('ETH staking_yield'), contains('DefiLlama yields')),
+      );
+    });
+
+    test('APY velho (série parada) falha o staking, sem gravar valor velho', () async {
+      net.handlers[_yields] = (_) => http.Response(
+        _stethChart.replaceAll('2026-10-', '2026-09-'),
+        200,
+      );
+
+      final result = await collector.collect(['ETH']);
+
+      expect(byIndicator(result, 'ETH').keys, isNot(contains('staking_yield')));
+      expect(result.errors.single, allOf(contains('staking_yield'), contains('stale')));
+    });
   });
 
   group('CoinMetrics', () {
@@ -903,10 +975,14 @@ void main() {
         return http.Response(_coinmetricsBody(url), 200);
       };
 
-      await collector.collect(_everyCoin);
+      // Sem o ETH: o job do staking pede a inflação ao CoinMetrics de dentro da faixa
+      // `defillama` (de propósito, para a DefiLlama seguir um pedido por vez), então
+      // pode sobrepor a faixa `coinmetrics`. O limite do servidor (6.000 por 20 s)
+      // torna isso irrelevante.
+      await collector.collect(['BTC', 'ADA', 'XRP', 'BNB']);
 
-      // ETH 7, BTC 6, ADA 4, XRP 3 e BNB 1 (Mayer): um pedido por indicador.
-      expect(net.count(_coinmetrics), 21);
+      // BTC 6, ADA 4, XRP 3 e BNB 1 (Mayer): um pedido por indicador.
+      expect(net.count(_coinmetrics), 14);
       expect(maxInFlight, 1);
     });
 
@@ -918,6 +994,7 @@ void main() {
       expect(
         byIndicator(result, 'ETH').keys.toSet(),
         _ethIndicators.difference({
+          'staking_yield', // a inflação bruta também vem do CoinMetrics
           'mvrv_z_score',
           'puell_multiple',
           'active_addresses_trend',
@@ -927,7 +1004,7 @@ void main() {
           'mayer_multiple',
         }),
       );
-      expect(result.errors, hasLength(7));
+      expect(result.errors, hasLength(8));
       expect(
         result.errors,
         everyElement(allOf(startsWith('ETH '), contains('CoinMetrics'))),

@@ -18,6 +18,10 @@ const _ethAddresses =
 const _ethPriceBtc =
     r'{"data":[{"asset":"eth","time":"2026-09-30T00:00:00.000000000Z","PriceBTC":"0.03213775921282206"},{"asset":"eth","time":"2026-10-01T00:00:00.000000000Z","PriceBTC":"0.03189067083930242"},{"asset":"eth","time":"2026-10-02T00:00:00.000000000Z","PriceBTC":"0.03156757322151605"},{"asset":"eth","time":"2026-10-03T00:00:00.000000000Z","PriceBTC":"0.03170453136738679"},{"asset":"eth","time":"2026-10-04T00:00:00.000000000Z","PriceBTC":"0.031532023296238956"},{"asset":"eth","time":"2026-10-05T00:00:00.000000000Z","PriceBTC":"0.03160740872788796"},{"asset":"eth","time":"2026-10-06T00:00:00.000000000Z","PriceBTC":"0.031542434016940867"},{"asset":"eth","time":"2026-10-07T00:00:00.000000000Z","PriceBTC":"0.030899721373671436"},{"asset":"eth","time":"2026-10-08T00:00:00.000000000Z","PriceBTC":"0.030270865397781583"},{"asset":"eth","time":"2026-10-09T00:00:00.000000000Z","PriceBTC":"0.030113370396223863"},{"asset":"eth","time":"2026-10-10T00:00:00.000000000Z","PriceBTC":"0.0301980534751811"},{"asset":"eth","time":"2026-10-11T00:00:00.000000000Z","PriceBTC":"0.030293528909719116"},{"asset":"eth","time":"2026-10-12T00:00:00.000000000Z","PriceBTC":"0.029942039275368527"},{"asset":"eth","time":"2026-10-13T00:00:00.000000000Z","PriceBTC":"0.030037320767780453"},{"asset":"eth","time":"2026-10-14T00:00:00.000000000Z","PriceBTC":"0.02965350506673841"},{"asset":"eth","time":"2026-10-15T00:00:00.000000000Z","PriceBTC":"0.029704965765346415"},{"asset":"eth","time":"2026-10-16T00:00:00.000000000Z","PriceBTC":"0.02968039519785179"},{"asset":"eth","time":"2026-10-17T00:00:00.000000000Z","PriceBTC":"0.02946930041712068"},{"asset":"eth","time":"2026-10-18T00:00:00.000000000Z","PriceBTC":"0.029330459731608832"},{"asset":"eth","time":"2026-10-19T00:00:00.000000000Z","PriceBTC":"0.029367217863030367"},{"asset":"eth","time":"2026-10-20T00:00:00.000000000Z","PriceBTC":"0.02950939663985285"},{"asset":"eth","time":"2026-10-21T00:00:00.000000000Z","PriceBTC":"0.029385795986138066"},{"asset":"eth","time":"2026-10-22T00:00:00.000000000Z","PriceBTC":"0.029322334160244316"},{"asset":"eth","time":"2026-10-23T00:00:00.000000000Z","PriceBTC":"0.029388747440576932"},{"asset":"eth","time":"2026-10-24T00:00:00.000000000Z","PriceBTC":"0.02914504550628711"},{"asset":"eth","time":"2026-10-25T00:00:00.000000000Z","PriceBTC":"0.02905832574539534"},{"asset":"eth","time":"2026-10-26T00:00:00.000000000Z","PriceBTC":"0.028975616358177612"},{"asset":"eth","time":"2026-10-27T00:00:00.000000000Z","PriceBTC":"0.029053794709038575"},{"asset":"eth","time":"2026-10-28T00:00:00.000000000Z","PriceBTC":"0.029013575170587634"},{"asset":"eth","time":"2026-10-29T00:00:00.000000000Z","PriceBTC":"0.028851939320297684"},{"asset":"eth","time":"2026-10-30T00:00:00.000000000Z","PriceBTC":"0.029052546621210748"}]}';
 
+/// Uma linha real (`page_size=1`): emissão bruta diária em ETH e oferta circulante.
+const _ethIssuance =
+    r'{"data":[{"asset":"eth","time":"2026-10-30T00:00:00.000000000Z","IssTotNtv":"2992.561249519","SplyCur":"122158026.107449378823202721"}]}';
+
 /// Dia seguinte à última linha dos corpos reais.
 final _today = DateTime.utc(2026, 10, 31);
 
@@ -104,6 +108,13 @@ final Map<String, _Case> _cases = {
     body: (last, {bad}) => _body({
       'FlowInExUSD': _withLast(_same('3', 30), bad),
       'FlowOutExUSD': _same('1', 30),
+    }, last: last),
+  ),
+  'gross_inflation_pct': (
+    parse: parseGrossInflationPct,
+    body: (last, {bad}) => _body({
+      'IssTotNtv': _withLast(['3000'], bad),
+      'SplyCur': ['120000000'],
     }, last: last),
   ),
 };
@@ -408,6 +419,63 @@ void main() {
     });
   });
 
+  group('inflação bruta anual (para o staking yield real)', () {
+    test('linha real do ETH: emissão × 365 ÷ oferta × 100', () {
+      // 2992,561249519 × 365 ÷ 122158026,107449378823 × 100, calculado à parte.
+      expect(
+        parseGrossInflationPct(_ethIssuance, today: _today),
+        closeTo(0.8941572575130418, 1e-12),
+      );
+    });
+
+    test('3000 ETH por dia sobre 120 M: 0,9125 % ao ano', () {
+      final body = _body({
+        'IssTotNtv': ['3000'],
+        'SplyCur': ['120000000'],
+      });
+
+      expect(
+        parseGrossInflationPct(body, today: _today),
+        closeTo(0.9125, 1e-12),
+      );
+    });
+
+    test('só a última linha conta', () {
+      final body = _body({
+        'IssTotNtv': ['1', '1', '3000'],
+        'SplyCur': ['1', '1', '120000000'],
+      });
+
+      expect(
+        parseGrossInflationPct(body, today: _today),
+        closeTo(0.9125, 1e-12),
+      );
+    });
+
+    test('emissão zero é uma inflação válida de 0 %', () {
+      final body = _body({
+        'IssTotNtv': ['0'],
+        'SplyCur': ['120000000'],
+      });
+
+      expect(parseGrossInflationPct(body, today: _today), 0.0);
+    });
+
+    test('oferta zero ou nula é recusada (não divide por zero)', () {
+      for (final supply in <Object?>['0', null]) {
+        final body = _body({
+          'IssTotNtv': ['3000'],
+          'SplyCur': [supply],
+        });
+        expect(
+          () => parseGrossInflationPct(body, today: _today),
+          _sourceError(),
+          reason: '$supply',
+        );
+      }
+    });
+  });
+
   group('regras de todos os parsers', () {
     test('os corpos válidos de cada caso dão um número finito', () {
       for (final MapEntry(:key, :value) in _cases.entries) {
@@ -538,6 +606,12 @@ void main() {
             metrics: 'FlowInExUSD,FlowOutExUSD',
             pageSize: '30',
             body: _cases['exchange_netflow']!.body('2026-10-30'),
+          ),
+          'gross_inflation_pct': (
+            call: (s, c) => s.grossInflationPct(c),
+            metrics: 'IssTotNtv,SplyCur',
+            pageSize: '1',
+            body: _ethIssuance,
           ),
         };
 

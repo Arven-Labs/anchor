@@ -154,6 +154,17 @@ double parseExchangeNetflow(String body, {required DateTime today}) {
   return (inSum - outSum) / total;
 }
 
+/// Inflação bruta anual da última linha, em %: `IssTotNtv × 365 ÷ SplyCur × 100`
+/// (emissão diária em unidades da moeda, antes de qualquer queima). Emissão zero
+/// é uma inflação válida de 0 %; oferta zero é erro.
+double parseGrossInflationPct(String body, {required DateTime today}) {
+  final last = [_rows(body, today).last];
+  final issuance = _column(last, 'IssTotNtv').single;
+  final supply = _column(last, 'SplyCur').single;
+  if (supply <= 0) throw _unexpected('circulating supply is zero');
+  return issuance * 365 / supply * 100;
+}
+
 /// Id do ativo no CoinMetrics; só as moedas que o score cobre.
 const _assets = {
   'ETH': 'eth',
@@ -227,6 +238,12 @@ class CoinMetricsService {
 
   Future<double> exchangeNetflow(String coin) async => parseExchangeNetflow(
     await _fetch(coin, 'FlowInExUSD,FlowOutExUSD', _netflowWindow),
+    today: _now(),
+  );
+
+  /// Só a linha mais recente: o staking real desconta a inflação de hoje.
+  Future<double> grossInflationPct(String coin) async => parseGrossInflationPct(
+    await _fetch(coin, 'IssTotNtv,SplyCur', 1),
     today: _now(),
   );
 }

@@ -7,6 +7,7 @@ import 'crypto_score_repository.dart';
 import 'crypto_source_http.dart';
 import 'defillama_stablecoins_service.dart';
 import 'defillama_tvl_service.dart';
+import 'defillama_yields_service.dart';
 import 'deribit_service.dart';
 import 'fear_greed_service.dart';
 import 'perp_derivatives_service.dart';
@@ -58,6 +59,8 @@ const _laneOf = {
   // O TVL fica na faixa das stablecoins: são dois hosts da DefiLlama, e o limite de
   // requisições é da DefiLlama, não de cada host.
   'tvl_trend': 'defillama',
+  // O APY vem da DefiLlama (por isso a faixa dela); a inflação, do CoinMetrics.
+  'staking_yield': 'defillama',
   'net_issuance': 'ultrasound',
   'fees_vs_emission': 'ultrasound',
   'fear_greed_index': 'alternative.me',
@@ -95,6 +98,7 @@ class CryptoCollector {
   final UltrasoundService _ultrasound;
   final CoinGeckoNvtService _nvt;
   final CoinMetricsService _coinmetrics;
+  final DefiLlamaYieldsService _yields;
   final DateTime Function() _now;
 
   /// [now] é o relógio (injetável nos testes) e deve ser o mesmo do
@@ -110,6 +114,7 @@ class CryptoCollector {
     UltrasoundService? ultrasound,
     CoinGeckoNvtService? nvt,
     CoinMetricsService? coinmetrics,
+    DefiLlamaYieldsService? yields,
     DateTime Function()? now,
   }) : _perp = perp ?? PerpDerivativesService(),
        _deribit = deribit ?? DeribitService(),
@@ -120,6 +125,7 @@ class CryptoCollector {
        _ultrasound = ultrasound ?? UltrasoundService(),
        _nvt = nvt ?? CoinGeckoNvtService(),
        _coinmetrics = coinmetrics ?? CoinMetricsService(now: now),
+       _yields = yields ?? DefiLlamaYieldsService(now: now),
        _now = now ?? DateTime.now;
 
   /// Coleta o que falta hoje das [coins] (ETH, BTC, ADA, XRP e BNB; as demais
@@ -316,6 +322,17 @@ class CryptoCollector {
         source: 'coingecko',
         readingDate: null,
       ),
+      // Um pedido depois do outro (e não os dois juntos): se um falha, o outro não
+      // fica solto como erro sem dono.
+      'staking_yield' => () async {
+        final apy = await _yields.stethApy();
+        final inflation = await _coinmetrics.grossInflationPct(coin);
+        return (
+          value: realStakingYield(apy, inflation),
+          source: 'defillama+coinmetrics',
+          readingDate: null,
+        );
+      },
       'mvrv_z_score' => () => coinMetrics(_coinmetrics.mvrvZScore(coin)),
       'puell_multiple' => () => coinMetrics(_coinmetrics.puellMultiple(coin)),
       'active_addresses_trend' => () => coinMetrics(
