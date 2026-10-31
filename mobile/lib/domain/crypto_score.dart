@@ -443,16 +443,16 @@ class CryptoScore {
   });
 }
 
-const _verdictIntactMinPct = 70.0;
-const _verdictNeutralMinPct = 40.0;
+const verdictIntactMinPct = 70.0;
+const verdictNeutralMinPct = 40.0;
 
 /// Veredito pela fração de verdes sobre o **total** do conjunto da moeda (não
 /// sobre o registrado, para um score com poucas leituras não parecer melhor).
 ScoreVerdict verdictFor(int green, int total) {
   if (total == 0) return ScoreVerdict.reduceRisk;
   final pct = green / total * 100.0;
-  if (pct >= _verdictIntactMinPct) return ScoreVerdict.intact;
-  if (pct >= _verdictNeutralMinPct) return ScoreVerdict.neutral;
+  if (pct >= verdictIntactMinPct) return ScoreVerdict.intact;
+  if (pct >= verdictNeutralMinPct) return ScoreVerdict.neutral;
   return ScoreVerdict.reduceRisk;
 }
 

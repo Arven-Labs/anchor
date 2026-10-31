@@ -78,6 +78,7 @@ void main() {
     String name, {
     required String coin,
     CollectionResult? result,
+    Future<void> Function()? beforeCapture,
   }) async {
     // 390 x 2700 lógicos: a tela do ETH tem 20 linhas e precisa caber inteira.
     tester.view.physicalSize = const Size(780, 5400);
@@ -111,7 +112,40 @@ void main() {
       await tester.tap(find.widgetWithText(ChoiceChip, coin));
       await settle(tester, () => find.text('Atualizar').evaluate().isNotEmpty);
     }
+    await beforeCapture?.call();
     await capture(tester, name);
+  }
+
+  /// Série inventada de 4 meses para o gráfico do histórico: em cada data, os
+  /// primeiros N indicadores do conjunto da moeda ficam verdes.
+  Future<void> seedHistory(String coin) async {
+    final limits = await repository.listThresholds(coin);
+    final names = [
+      for (final group in IndicatorGroup.forCoin(coin)) ...group.indicators(coin),
+    ];
+    const dates = [
+      '2026-06-30',
+      '2026-07-20',
+      '2026-08-10',
+      '2026-09-01',
+      '2026-09-20',
+      '2026-10-10',
+    ];
+    const greens = [3, 6, 5, 9, 12, 15];
+    for (var d = 0; d < dates.length; d++) {
+      for (final name in names.take(greens[d])) {
+        final limit = limits.firstWhere((t) => t.indicator == name);
+        await repository.recordReading(
+          coin: coin,
+          indicator: name,
+          readingDate: dates[d],
+          rawValue: limit.higherIsBetter
+              ? limit.greenBoundary + 1
+              : limit.greenBoundary - 1,
+          source: 'coinmetrics',
+        );
+      }
+    }
   }
 
   /// Leituras inventadas do conjunto da moeda: verde, neutro e vermelho em rodízio
@@ -146,8 +180,26 @@ void main() {
     if (outDir == null) return;
     await tester.runAsync(loadFonts);
 
-    await tester.runAsync(() => seedMix('ETH', skip: 7, expired: 5));
+    await tester.runAsync(() async {
+      await seedHistory('ETH');
+      await seedMix('ETH', skip: 7, expired: 5);
+    });
     await show(tester, 'cripto_eth', coin: 'ETH');
+
+    // Mesmo histórico, 90D marcado e um ponto tocado.
+    await show(
+      tester,
+      'cripto_eth_historico_toque',
+      coin: 'ETH',
+      beforeCapture: () async {
+        await tester.tap(find.widgetWithText(ChoiceChip, '90D'));
+        // Espera a animação do chip: sem isso a captura pega o quadro do meio.
+        await tester.pump(const Duration(milliseconds: 400));
+        final rect = tester.getRect(find.byKey(const Key('history-chart')));
+        await tester.tapAt(Offset(rect.left + rect.width * 0.55, rect.center.dy));
+        await tester.pump(const Duration(milliseconds: 400));
+      },
+    );
 
     await tester.runAsync(() async {
       await seedMix('BTC', expired: 11);
