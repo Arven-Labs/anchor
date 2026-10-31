@@ -39,11 +39,11 @@ hex = "0.4"
 rand = "0.8"
 base64 = "0.22"
 # Fase 26 — zips da B3 (curva DI) e, adiante, da CVM e do COTAHIST.
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # Fase 26 — CSVs `;` da CVM (DFP, FII).
 csv = "1"
 # Fase 34 — planilha "Negociação" da Área do Investidor da B3 (xlsx).
-calamine = { version = "0.31", default-features = false, features = ["chrono"] }
+calamine = { version = "0.37", default-features = false, features = ["chrono"] }
 # Fase 32 — `erf` pro Black-Scholes das opções (a std não tem).
 libm = "0.2"
 futures = "0.3"

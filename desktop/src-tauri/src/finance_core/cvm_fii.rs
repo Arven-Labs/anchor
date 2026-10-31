@@ -84,8 +84,9 @@ fn read_table(zip_path: &Path, prefix: &str, cnpj_digits: Option<&str>) -> Resul
     let mut archive = zip::ZipArchive::new(BufReader::new(file)).map_err(unavailable)?;
     let name = archive
         .file_names()
+        .filter_map(Result::ok)
         .find(|n| n.starts_with(prefix))
-        .map(str::to_string)
+        .map(|n| n.into_owned())
         .ok_or_else(|| unavailable(format!("no file '{prefix}*' in the zip")))?;
     let entry = archive.by_name(&name).map_err(unavailable)?;
     let mut reader = csv::ReaderBuilder::new().delimiter(b';').flexible(true).from_reader(entry);

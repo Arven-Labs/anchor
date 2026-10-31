@@ -91,8 +91,9 @@ pub fn extract(zip_path: &Path, targets: &[Target]) -> Result<Extract, AppError>
     let mut archive = zip::ZipArchive::new(BufReader::new(file)).map_err(unavailable)?;
     let name = archive
         .file_names()
+        .filter_map(Result::ok)
         .find(|n| n.starts_with("inf_diario_fi_") && n.ends_with(".csv"))
-        .map(str::to_string)
+        .map(|n| n.into_owned())
         .ok_or_else(|| unavailable("no inf_diario_fi_*.csv in the zip"))?;
     let entry = archive.by_name(&name).map_err(unavailable)?;
     let mut reader = csv::ReaderBuilder::new().delimiter(b';').flexible(true).from_reader(entry);
