@@ -201,6 +201,43 @@ void main() {
       },
     );
 
+    // Tela de limites (um limite editado, para aparecer "Editado") e o diálogo
+    // com um rascunho inválido (erro visível, Salvar desabilitado).
+    await tester.runAsync(
+      () => repository.updateThreshold('ETH', 'mvrv_z_score', 1, 6),
+    );
+    await show(
+      tester,
+      'cripto_limites',
+      coin: 'ETH',
+      beforeCapture: () async {
+        await tester.tap(find.byKey(const Key('open-thresholds')));
+        await tester.pump();
+        await settle(
+          tester,
+          () => find.byKey(const ValueKey('threshold-mvrv_z_score')).evaluate().isNotEmpty,
+        );
+      },
+    );
+    await show(
+      tester,
+      'cripto_limites_dialogo',
+      coin: 'ETH',
+      beforeCapture: () async {
+        await tester.tap(find.byKey(const Key('open-thresholds')));
+        await tester.pump();
+        await settle(
+          tester,
+          () => find.byKey(const ValueKey('threshold-mvrv_z_score')).evaluate().isNotEmpty,
+        );
+        await tester.tap(find.byKey(const ValueKey('threshold-mvrv_z_score')));
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.enterText(find.byKey(const Key('threshold-green')), '5');
+        await tester.enterText(find.byKey(const Key('threshold-red')), '5');
+        await tester.pump(const Duration(milliseconds: 400));
+      },
+    );
+
     await tester.runAsync(() async {
       await seedMix('BTC', expired: 11);
     });
