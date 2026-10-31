@@ -1,5 +1,9 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../domain/transactions_csv.dart';
 import '../models/asset.dart';
 import '../models/custodia.dart';
 import '../models/portfolio_transaction.dart';
@@ -60,10 +64,49 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
     await _load();
   }
 
+  /// Salva as transações num CSV no formato "Anchor CSV" do desktop, que importa
+  /// pela fila de revisão (só acrescenta, nunca apaga nada lá).
+  Future<void> _exportCsv() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final day = DateTime.now().toIso8601String().substring(0, 10);
+    final result = transactionsCsv(_assetsById.values.toList(), {
+      for (final c in _custodiasById.values) c.id!: c.label,
+    }, _transactions);
+    try {
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Salvar transações para o desktop',
+        fileName: 'anchor-transactions-$day.csv',
+        type: FileType.custom,
+        allowedExtensions: const ['csv'],
+        bytes: utf8.encode(result.csv),
+      );
+      if (path == null) return;
+      final skipped = result.skipped == 0
+          ? ''
+          : ' ${result.skipped} ficaram de fora (transferência, amortização ou ativo removido).';
+      messenger.showSnackBar(
+        SnackBar(content: Text('${result.exported} linhas salvas.$skipped')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Não consegui salvar o CSV: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Histórico')),
+      appBar: AppBar(
+        title: const Text('Histórico'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'Exportar CSV para o desktop',
+            onPressed: _transactions.isEmpty ? null : _exportCsv,
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _transactions.isEmpty
