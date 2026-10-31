@@ -8,6 +8,7 @@ import '../services/crypto_score_repository.dart';
 import '../services/crypto_source_http.dart';
 import '../theme.dart';
 import 'crypto_history_card.dart';
+import 'crypto_thresholds_screen.dart';
 
 const _coins = [coinEth, coinBtc, coinAda, coinXrp, coinBnb];
 
@@ -82,6 +83,19 @@ class _CryptoScoreScreenState extends State<CryptoScoreScreen> {
     });
   }
 
+  /// Abre os limites da moeda selecionada. Ao voltar relê o score e o histórico:
+  /// editar um limite reclassifica as leituras gravadas, então os dois mudam.
+  Future<void> _openThresholds() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) =>
+            CryptoThresholdsScreen(coin: _coin, repository: _repository),
+      ),
+    );
+    if (!mounted) return;
+    await _load();
+  }
+
   void _select(String coin) {
     if (coin == _coin) return;
     setState(() {
@@ -133,7 +147,17 @@ class _CryptoScoreScreenState extends State<CryptoScoreScreen> {
     final score = _score;
     final errors = _errors[_coin] ?? const <String>[];
     return Scaffold(
-      appBar: AppBar(title: const Text('Score cripto')),
+      appBar: AppBar(
+        title: const Text('Score cripto'),
+        actions: [
+          IconButton(
+            key: const Key('open-thresholds'),
+            icon: const Icon(Icons.tune),
+            tooltip: 'Limites',
+            onPressed: _openThresholds,
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
