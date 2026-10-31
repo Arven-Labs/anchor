@@ -13,6 +13,7 @@ import 'package:anchor_mobile/domain/crypto_score.dart';
 import 'package:anchor_mobile/models/crypto_reading.dart';
 import 'package:anchor_mobile/services/coingecko_global_service.dart';
 import 'package:anchor_mobile/services/coingecko_nvt_service.dart';
+import 'package:anchor_mobile/services/coinmetrics_service.dart';
 import 'package:anchor_mobile/services/crypto_collector.dart';
 import 'package:anchor_mobile/services/crypto_score_repository.dart';
 import 'package:anchor_mobile/services/crypto_source_http.dart';
@@ -70,6 +71,37 @@ final _nvtChart = jsonEncode({
   ],
 });
 
+/// Corpo do CoinMetrics para as métricas pedidas, igual para qualquer moeda (o
+/// coletor não olha o corpo). Valores conhecidos: MVRV Z 1,7889 (a série do MVRV
+/// pede 10.000 linhas; 4 bastam), Puell 365 ÷ 183, Mayer 200 ÷ 100,5, as três
+/// tendências +30 % e netflow 0,5. A última linha é de 2026-10-28.
+String _coinmetricsBody(Uri url) {
+  final metrics = url.queryParameters['metrics']!.split(',');
+  final pageSize = int.parse(url.queryParameters['page_size']!);
+  final count = pageSize == 10000 ? 4 : pageSize;
+  final lastDay = DateTime.utc(2026, 10, 28);
+  Object cell(String metric, int i) => switch (metric) {
+    'CapMrktCurUSD' => '${10 * (i + 1)}',
+    'CapMVRVCur' => '2',
+    'IssTotUSD' || 'PriceUSD' => '${i + 1}',
+    'AdrActCnt' || 'SplyExNtv' || 'PriceBTC' => '${100 + i}',
+    'FlowInExUSD' => '3',
+    'FlowOutExUSD' => '1',
+    _ => throw StateError('métrica inesperada: $metric'),
+  };
+  return jsonEncode({
+    'data': [
+      for (var i = 0; i < count; i++)
+        {
+          'asset': 'eth',
+          'time':
+              '${lastDay.subtract(Duration(days: count - 1 - i)).toIso8601String().substring(0, 10)}T00:00:00.000000000Z',
+          for (final metric in metrics) metric: cell(metric, i),
+        },
+    ],
+  });
+}
+
 const _binance = 'fapi.binance.com';
 const _bybit = 'api.bybit.com';
 const _deribit = 'www.deribit.com';
@@ -78,9 +110,10 @@ const _llamaChain = 'api.llama.fi';
 const _ultrasound = 'ultrasound.money';
 const _alternative = 'api.alternative.me';
 const _coingecko = 'api.coingecko.com';
+const _coinmetrics = 'community-api.coinmetrics.io';
 
-/// O que o coletor sabe buscar hoje, por moeda; o on-chain (CoinMetrics e
-/// bitcoin-data) entra na tarefa 4.
+/// O que o coletor sabe buscar hoje, por moeda. Faltam o staking do ETH
+/// (tarefa 4b) e SOPR e NUPL do BTC (4c).
 const _ethIndicators = {
   'funding_rate_7d',
   'open_interest_change_30d',
@@ -94,6 +127,13 @@ const _ethIndicators = {
   'net_issuance',
   'fees_vs_emission',
   'nvt_ratio',
+  'mvrv_z_score',
+  'puell_multiple',
+  'active_addresses_trend',
+  'exchange_netflow',
+  'exchange_supply_change_30d',
+  'eth_btc_trend_30d',
+  'mayer_multiple',
 };
 const _btcIndicators = {
   'funding_rate_7d',
@@ -104,9 +144,15 @@ const _btcIndicators = {
   'stablecoin_supply_change_30d',
   'fear_greed_index',
   'nvt_ratio',
+  'mvrv_z_score',
+  'puell_multiple',
+  'active_addresses_trend',
+  'exchange_netflow',
+  'exchange_supply_change_30d',
+  'mayer_multiple',
 };
 
-/// ADA e XRP.
+/// O que ADA, XRP e BNB têm em comum (mercado, stablecoins, Fear & Greed, NVT).
 const _altIndicators = {
   'funding_rate_7d',
   'open_interest_change_30d',
@@ -114,14 +160,37 @@ const _altIndicators = {
   'stablecoin_supply_change_30d',
   'fear_greed_index',
   'nvt_ratio',
+  'mayer_multiple',
 };
+
+/// O CoinMetrics tem MVRV, Puell e endereços ativos do ADA, mas não os fluxos nem
+/// a oferta nas exchanges.
+const _adaIndicators = {
+  ..._altIndicators,
+  'mvrv_z_score',
+  'puell_multiple',
+  'active_addresses_trend',
+};
+
+/// O XRP não tem emissão em USD (`IssTotUSD` nulo), então fica sem Puell.
+const _xrpIndicators = {
+  ..._altIndicators,
+  'mvrv_z_score',
+  'active_addresses_trend',
+};
+
+/// As métricas on-chain do BNB no CoinMetrics são nulas (a série parou em 2019);
+/// só o preço é atual, então só o Mayer entra.
 const _bnbIndicators = {..._altIndicators, 'tvl_trend'};
+
+const _everyCoin = ['ETH', 'BTC', 'ADA', 'XRP', 'BNB'];
 
 /// Todas as moedas juntas, para contar o que uma rodada completa coleta.
 final _allCoinsTotal =
     _ethIndicators.length +
     _btcIndicators.length +
-    2 * _altIndicators.length +
+    _adaIndicators.length +
+    _xrpIndicators.length +
     _bnbIndicators.length;
 
 typedef _Handler = FutureOr<http.Response> Function(Uri url);
@@ -171,6 +240,7 @@ class _Net {
     _ultrasound: _ultrasoundOk,
     _alternative: (_) => http.Response(_fearGreed, 200),
     _coingecko: _coingeckoOk,
+    _coinmetrics: (url) => http.Response(_coinmetricsBody(url), 200),
   };
 
   late final MockClient client = MockClient((request) async {
@@ -213,6 +283,7 @@ void main() {
       tvl: DefiLlamaTvlService(client: net.client),
       ultrasound: UltrasoundService(client: net.client),
       nvt: CoinGeckoNvtService(client: net.client),
+      coinmetrics: CoinMetricsService(client: net.client, now: () => current),
       now: () => current,
     );
   });
@@ -229,7 +300,7 @@ void main() {
 
   group('o que coleta', () {
     test(
-      'ETH grava os 12 indicadores que já têm fonte, cada um com a sua',
+      'ETH grava os 19 indicadores que já têm fonte, cada um com a sua',
       () async {
         final result = await collector.collect(['ETH']);
 
@@ -250,6 +321,13 @@ void main() {
             'net_issuance': 'ultrasound.money',
             'fees_vs_emission': 'ultrasound.money',
             'nvt_ratio': 'coingecko',
+            'mvrv_z_score': 'coinmetrics',
+            'puell_multiple': 'coinmetrics',
+            'active_addresses_trend': 'coinmetrics',
+            'exchange_netflow': 'coinmetrics',
+            'exchange_supply_change_30d': 'coinmetrics',
+            'eth_btc_trend_30d': 'coinmetrics',
+            'mayer_multiple': 'coinmetrics',
           },
         );
         expect(result.errors, isEmpty);
@@ -287,18 +365,42 @@ void main() {
     });
 
     test(
-      'indicadores on-chain (sem fonte ainda) não viram erro nem leitura',
+      'CoinMetrics grava o valor que o parser calcula para cada indicador',
       () async {
-        final result = await collector.collect(['ETH']);
+        final readings = byIndicator(await collector.collect(['ETH']), 'ETH');
+
+        expect(
+          readings['mvrv_z_score']!.rawValue,
+          closeTo(1.7888543819998317, 1e-9),
+        );
+        expect(
+          readings['puell_multiple']!.rawValue,
+          closeTo(1.994535519125683, 1e-12),
+        );
+        expect(
+          readings['mayer_multiple']!.rawValue,
+          closeTo(1.9900497512437811, 1e-12),
+        );
+        for (final trend in [
+          'active_addresses_trend',
+          'exchange_supply_change_30d',
+          'eth_btc_trend_30d',
+        ]) {
+          expect(readings[trend]!.rawValue, closeTo(30.0, 1e-9), reason: trend);
+        }
+        expect(readings['exchange_netflow']!.rawValue, closeTo(0.5, 1e-12));
+      },
+    );
+
+    test(
+      'indicadores sem fonte ainda (staking, SOPR, NUPL) não viram erro nem leitura',
+      () async {
+        final result = await collector.collect(['ETH', 'BTC']);
 
         expect(result.errors, isEmpty);
+        final missing = {'staking_yield', 'sopr', 'nupl'};
         expect(
-          byIndicator(result, 'ETH').keys.toSet().intersection({
-            'mvrv_z_score',
-            'puell_multiple',
-            'staking_yield',
-            'mayer_multiple',
-          }),
+          result.readings.map((r) => r.indicator).toSet().intersection(missing),
           isEmpty,
         );
       },
@@ -308,14 +410,17 @@ void main() {
       final result = await collector.collect(['BTC', 'ADA', 'XRP', 'BNB']);
 
       expect(byIndicator(result, 'BTC').keys.toSet(), _btcIndicators);
-      for (final coin in ['ADA', 'XRP']) {
-        expect(
-          byIndicator(result, coin).keys.toSet(),
-          _altIndicators,
-          reason: coin,
-        );
-      }
+      expect(byIndicator(result, 'ADA').keys.toSet(), _adaIndicators);
+      expect(byIndicator(result, 'XRP').keys.toSet(), _xrpIndicators);
       expect(byIndicator(result, 'BNB').keys.toSet(), _bnbIndicators);
+      expect(result.errors, isEmpty);
+    });
+
+    test('uma rodada completa grava 60 leituras', () async {
+      final result = await collector.collect(_everyCoin);
+
+      expect(_allCoinsTotal, 60);
+      expect(result.readings, hasLength(60));
       expect(result.errors, isEmpty);
     });
 
@@ -330,6 +435,56 @@ void main() {
         expect(net.paths(_coingecko), everyElement(contains('market_chart')));
       },
     );
+
+    test('cada moeda pede ao CoinMetrics só as métricas do seu conjunto', () async {
+      Set<String> metricsOf(String asset) => {
+        for (final url in net.requests)
+          if (url.host == _coinmetrics && url.queryParameters['assets'] == asset)
+            ...url.queryParameters['metrics']!.split(','),
+      };
+
+      await collector.collect(_everyCoin);
+
+      expect(metricsOf('eth'), {
+        'CapMrktCurUSD',
+        'CapMVRVCur',
+        'IssTotUSD',
+        'AdrActCnt',
+        'FlowInExUSD',
+        'FlowOutExUSD',
+        'SplyExNtv',
+        'PriceBTC',
+        'PriceUSD',
+      });
+      // O ETH/BTC é só do ETH; o BTC tem o resto.
+      expect(metricsOf('btc'), {
+        'CapMrktCurUSD',
+        'CapMVRVCur',
+        'IssTotUSD',
+        'AdrActCnt',
+        'FlowInExUSD',
+        'FlowOutExUSD',
+        'SplyExNtv',
+        'PriceUSD',
+      });
+      // Sem fluxos nem oferta nas exchanges no ADA.
+      expect(metricsOf('ada'), {
+        'CapMrktCurUSD',
+        'CapMVRVCur',
+        'IssTotUSD',
+        'AdrActCnt',
+        'PriceUSD',
+      });
+      // Sem emissão em USD no XRP.
+      expect(metricsOf('xrp'), {
+        'CapMrktCurUSD',
+        'CapMVRVCur',
+        'AdrActCnt',
+        'PriceUSD',
+      });
+      // As métricas on-chain do BNB são nulas: só o preço.
+      expect(metricsOf('bnb'), {'PriceUSD'});
+    });
 
     test('o TVL só é pedido para ETH e BNB, cada um na sua cadeia', () async {
       await collector.collect(['BTC', 'ADA', 'XRP']);
@@ -503,6 +658,7 @@ void main() {
           _ultrasound,
           _alternative,
           _coingecko,
+          _coinmetrics,
         ]) {
           net.handlers[host] = _unavailable;
         }
@@ -733,6 +889,83 @@ void main() {
         expect(maxInFlight, 1);
       },
     );
+  });
+
+  group('CoinMetrics', () {
+    test('os pedidos saem um de cada vez (mesmo host)', () async {
+      var inFlight = 0;
+      var maxInFlight = 0;
+      net.handlers[_coinmetrics] = (url) async {
+        inFlight++;
+        maxInFlight = math.max(maxInFlight, inFlight);
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        inFlight--;
+        return http.Response(_coinmetricsBody(url), 200);
+      };
+
+      await collector.collect(_everyCoin);
+
+      // ETH 7, BTC 6, ADA 4, XRP 3 e BNB 1 (Mayer): um pedido por indicador.
+      expect(net.count(_coinmetrics), 21);
+      expect(maxInFlight, 1);
+    });
+
+    test('fora do ar: só os indicadores dele falham, o resto sai', () async {
+      net.handlers[_coinmetrics] = _unavailable;
+
+      final result = await collector.collect(['ETH']);
+
+      expect(
+        byIndicator(result, 'ETH').keys.toSet(),
+        _ethIndicators.difference({
+          'mvrv_z_score',
+          'puell_multiple',
+          'active_addresses_trend',
+          'exchange_netflow',
+          'exchange_supply_change_30d',
+          'eth_btc_trend_30d',
+          'mayer_multiple',
+        }),
+      );
+      expect(result.errors, hasLength(7));
+      expect(
+        result.errors,
+        everyElement(allOf(startsWith('ETH '), contains('CoinMetrics'))),
+      );
+    });
+
+    test('dado velho de uma moeda vira erro só dela e deixa as outras', () async {
+      // O Community parou de atualizar o BNB em 2019: a última linha é antiga.
+      net.handlers[_coinmetrics] = (url) {
+        if (url.queryParameters['assets'] != 'bnb') {
+          return http.Response(_coinmetricsBody(url), 200);
+        }
+        return http.Response(
+          _coinmetricsBody(url).replaceAll('2026-10-', '2019-04-'),
+          200,
+        );
+      };
+
+      final result = await collector.collect(['ETH', 'BNB']);
+
+      expect(byIndicator(result, 'ETH').keys.toSet(), _ethIndicators);
+      expect(byIndicator(result, 'BNB').keys, isNot(contains('mayer_multiple')));
+      expect(result.errors, hasLength(1));
+      expect(
+        result.errors.single,
+        allOf(contains('BNB mayer_multiple'), contains('stale')),
+      );
+    });
+
+    test('depois de coletado hoje, nada é pedido de novo', () async {
+      await collector.collect(_everyCoin);
+      final before = net.count(_coinmetrics);
+
+      final second = await collector.collect(_everyCoin);
+
+      expect(second.readings, isEmpty);
+      expect(net.count(_coinmetrics), before);
+    });
   });
 
   group('ordem dos pedidos', () {

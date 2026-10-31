@@ -2,6 +2,7 @@ import '../domain/crypto_score.dart';
 import '../models/crypto_reading.dart';
 import 'coingecko_global_service.dart';
 import 'coingecko_nvt_service.dart';
+import 'coinmetrics_service.dart';
 import 'crypto_score_repository.dart';
 import 'crypto_source_http.dart';
 import 'defillama_stablecoins_service.dart';
@@ -62,6 +63,15 @@ const _laneOf = {
   'fear_greed_index': 'alternative.me',
   'btc_dominance': 'coingecko',
   'nvt_ratio': 'coingecko',
+  // Um host só, e o servidor aceita 6.000 pedidos por 20 s: sequencial por regra,
+  // sem espaçamento.
+  'mvrv_z_score': 'coinmetrics',
+  'puell_multiple': 'coinmetrics',
+  'active_addresses_trend': 'coinmetrics',
+  'exchange_netflow': 'coinmetrics',
+  'exchange_supply_change_30d': 'coinmetrics',
+  'eth_btc_trend_30d': 'coinmetrics',
+  'mayer_multiple': 'coinmetrics',
 };
 
 /// A dominância do BTC vai por último na faixa da CoinGecko. Uma rodada completa são
@@ -84,6 +94,7 @@ class CryptoCollector {
   final DefiLlamaTvlService _tvl;
   final UltrasoundService _ultrasound;
   final CoinGeckoNvtService _nvt;
+  final CoinMetricsService _coinmetrics;
   final DateTime Function() _now;
 
   /// [now] é o relógio (injetável nos testes) e deve ser o mesmo do
@@ -98,6 +109,7 @@ class CryptoCollector {
     DefiLlamaTvlService? tvl,
     UltrasoundService? ultrasound,
     CoinGeckoNvtService? nvt,
+    CoinMetricsService? coinmetrics,
     DateTime Function()? now,
   }) : _perp = perp ?? PerpDerivativesService(),
        _deribit = deribit ?? DeribitService(),
@@ -107,6 +119,7 @@ class CryptoCollector {
        _tvl = tvl ?? DefiLlamaTvlService(),
        _ultrasound = ultrasound ?? UltrasoundService(),
        _nvt = nvt ?? CoinGeckoNvtService(),
+       _coinmetrics = coinmetrics ?? CoinMetricsService(now: now),
        _now = now ?? DateTime.now;
 
   /// Coleta o que falta hoje das [coins] (ETH, BTC, ADA, XRP e BNB; as demais
@@ -227,6 +240,12 @@ class CryptoCollector {
       return (value: value, source: source, readingDate: null);
     }
 
+    Future<_Fetched> coinMetrics(Future<double> pending) async => (
+      value: await pending,
+      source: 'coinmetrics',
+      readingDate: null,
+    );
+
     Future<String> supplyBody() =>
         bodies.putIfAbsent('supply', () => _ultrasound.fetchSupply());
     Future<String> burnBody() =>
@@ -297,6 +316,21 @@ class CryptoCollector {
         source: 'coingecko',
         readingDate: null,
       ),
+      'mvrv_z_score' => () => coinMetrics(_coinmetrics.mvrvZScore(coin)),
+      'puell_multiple' => () => coinMetrics(_coinmetrics.puellMultiple(coin)),
+      'active_addresses_trend' => () => coinMetrics(
+        _coinmetrics.activeAddressesTrend(coin),
+      ),
+      'exchange_netflow' => () => coinMetrics(
+        _coinmetrics.exchangeNetflow(coin),
+      ),
+      'exchange_supply_change_30d' => () => coinMetrics(
+        _coinmetrics.exchangeSupplyChange30d(coin),
+      ),
+      'eth_btc_trend_30d' => () => coinMetrics(
+        _coinmetrics.ethBtcTrend30d(coin),
+      ),
+      'mayer_multiple' => () => coinMetrics(_coinmetrics.mayerMultiple(coin)),
       _ => throw StateError('indicador sem fonte: $indicator'),
     };
   }
