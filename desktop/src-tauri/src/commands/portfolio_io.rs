@@ -1688,4 +1688,97 @@ mod tests {
             println!("provento de {} ({})", row.ticker, row.payment_type.as_deref().unwrap_or("-"));
         }
     }
+
+    /// Monta à mão um xlsx mínimo (zip de partes XML), sem crate de escrita de planilha.
+    fn minimal_xlsx(sheet_xml: &str) -> Vec<u8> {
+        use std::io::Write;
+        const MAIN: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        const PKG_REL: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
+        let head = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#;
+        let parts: Vec<(&str, String)> = vec![
+            (
+                "[Content_Types].xml",
+                format!(
+                    r#"{head}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>"#
+                ),
+            ),
+            (
+                "_rels/.rels",
+                format!(
+                    r#"{head}<Relationships xmlns="{PKG_REL}"><Relationship Id="rId1" Type="{REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>"#
+                ),
+            ),
+            (
+                "xl/workbook.xml",
+                format!(
+                    r#"{head}<workbook xmlns="{MAIN}" xmlns:r="{REL}"><sheets><sheet name="Negociação" sheetId="1" r:id="rId1"/></sheets></workbook>"#
+                ),
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                format!(
+                    r#"{head}<Relationships xmlns="{PKG_REL}"><Relationship Id="rId1" Type="{REL}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="{REL}/styles" Target="styles.xml"/></Relationships>"#
+                ),
+            ),
+            // Estilo 0 = geral; estilo 1 = formato de data (numFmtId 14).
+            (
+                "xl/styles.xml",
+                format!(
+                    r#"{head}<styleSheet xmlns="{MAIN}"><cellXfs count="2"><xf numFmtId="0"/><xf numFmtId="14" applyNumberFormat="1"/></cellXfs></styleSheet>"#
+                ),
+            ),
+            ("xl/worksheets/sheet1.xml", format!(r#"{head}<worksheet xmlns="{MAIN}"><sheetData>{sheet_xml}</sheetData></worksheet>"#)),
+        ];
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let mut writer = zip::ZipWriter::new(&mut buf);
+        for (name, xml) in &parts {
+            writer
+                .start_file(*name, zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated))
+                .unwrap();
+            writer.write_all(xml.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+        buf.into_inner()
+    }
+
+    /// Teste de caracterização de `read_xlsx_rows`: texto, inteiro, decimal,
+    /// booleano, data (`dd/mm/aaaa`) e célula vazia. Fixa o comportamento da
+    /// leitura (calamine + zip) para que uma troca de versão dessas crates não
+    /// passe despercebida; a planilha real da B3 só roda sob `ANCHOR_B3_SAMPLE`.
+    #[test]
+    fn read_xlsx_rows_reads_text_numbers_bool_and_date() {
+        let sheet = concat!(
+            r#"<row r="1"><c r="A1" t="inlineStr"><is><t>PETR4</t></is></c><c r="B1"><v>100</v></c><c r="C1"><v>12.5</v></c>"#,
+            r#"<c r="D1" t="b"><v>1</v></c><c r="E1" s="1"><v>45292</v></c></row>"#,
+            r#"<row r="2"><c r="A2" t="inlineStr"><is><t>só texto</t></is></c></row>"#,
+        );
+        let path = std::env::temp_dir().join(format!(
+            "anchor_xlsx_test_{}_{}.xlsx",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::write(&path, minimal_xlsx(sheet)).unwrap();
+
+        let rows = read_xlsx_rows(path.to_str().unwrap());
+        std::fs::remove_file(&path).ok();
+        let rows = rows.expect("xlsx mínimo abre");
+
+        assert_eq!(
+            rows,
+            vec![
+                vec!["PETR4", "100", "12.5", "true", "01/01/2024"],
+                vec!["só texto", "", "", "", ""],
+            ]
+        );
+    }
+
+    #[test]
+    fn read_xlsx_rows_rejects_a_file_that_is_not_a_spreadsheet() {
+        let path = std::env::temp_dir().join(format!("anchor_not_xlsx_{}.xlsx", std::process::id()));
+        std::fs::write(&path, b"isto nao e um zip").unwrap();
+        let result = read_xlsx_rows(path.to_str().unwrap());
+        std::fs::remove_file(&path).ok();
+        assert!(matches!(result, Err(AppError::InvalidInput(m)) if m.contains("planilha ilegível")));
+    }
 }
