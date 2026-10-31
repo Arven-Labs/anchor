@@ -11,7 +11,11 @@ import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/fx_history.dart';
 import 'package:anchor_mobile/domain/general_finance.dart';
 import 'package:anchor_mobile/domain/liability.dart';
+import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/liability.dart';
+import 'package:anchor_mobile/models/position.dart';
+import 'package:anchor_mobile/screens/home_screen.dart';
+import 'package:anchor_mobile/services/live_positions.dart';
 import 'package:anchor_mobile/models/loan.dart';
 import 'package:anchor_mobile/screens/financas_loans_screen.dart';
 import 'package:anchor_mobile/screens/financas_liabilities_screen.dart';
@@ -271,5 +275,81 @@ void main() {
     await tester.pumpWidget(app(FinancasTransactionsScreen(account: nubank)));
     await settle(tester, () => find.text('Salário').evaluate().isNotEmpty);
     await capture(tester, 'lancamentos');
+  }, skip: outDir == null);
+
+  // A aba Início fica neste arquivo para o CI publicá-la no mesmo artefato, sem
+  // mexer no workflow. Só dados inventados (o repositório é público).
+  testWidgets('capturas da aba Início e do modo Personalizar', (tester) async {
+    tester.view.physicalSize = const Size(780, 1688);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    await tester.runAsync(loadFonts);
+
+    LivePositionRow position(
+      String ticker,
+      AssetClass assetClass,
+      String currency,
+      double quantity,
+      double average,
+      double price,
+    ) => LivePositionRow(
+      Position(
+        asset: Asset(
+          id: 1,
+          ticker: ticker,
+          name: ticker,
+          assetClass: assetClass,
+          currency: currency,
+          createdAt: DateTime(2026, 1, 1),
+        ),
+        netQuantity: quantity,
+        averageBuyPrice: average,
+      ),
+      price,
+    );
+
+    await tester.runAsync(() async {
+      final id = await repository.insertAccount(
+        BankAccount(
+          nome: 'Conta exemplo',
+          titular: 'Eu',
+          currency: 'BRL',
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+      await repository.insertTransaction(
+        GeneralTransaction(
+          bankAccountId: id,
+          type: GeneralTransactionType.receita,
+          valor: 4800,
+          date: '2026-01-02',
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+    });
+
+    await tester.pumpWidget(
+      app(
+        HomeScreen(
+          fetchFx: (currency) async =>
+              FxHistory([(DateTime.now(), currency == 'USD' ? 5.0 : 1.0)]),
+          loadPositions: () async => [
+            position('PETR4', AssetClass.acaoBr, 'BRL', 100, 30, 36.5),
+            position('HGLG11', AssetClass.fii, 'BRL', 20, 150, 148),
+            position('AAPL', AssetClass.acaoInternacional, 'USD', 5, 150, 190),
+            position('BTC', AssetClass.cripto, 'BRL', 0.05, 200000, 350000),
+          ],
+        ),
+      ),
+    );
+    await settle(
+      tester,
+      () => find.byKey(const Key('home-net-worth-text')).evaluate().isNotEmpty,
+    );
+    await capture(tester, 'inicio');
+
+    await tester.tap(find.byKey(const Key('home-customize')));
+    await tester.pumpAndSettle();
+    await capture(tester, 'inicio-personalizar');
   }, skip: outDir == null);
 }
