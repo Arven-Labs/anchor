@@ -9,6 +9,7 @@
 // tela avisar em vez de descartar em silêncio.
 
 import '../models/asset.dart';
+import '../models/custodia.dart';
 import '../models/portfolio_transaction.dart';
 
 const transactionsCsvHeader = [
@@ -73,15 +74,21 @@ String _day(DateTime date) {
 }
 
 /// Uma linha por transação, em ordem cronológica (a ordem de entrada desempata o
-/// mesmo dia). `custodiaLabels` dá o nome de cada custódia.
+/// mesmo dia). A custódia sai pelo nome da instituição, que é o que o desktop casa:
+/// o `Custodia.label` ("XP (Fulano)") é rótulo de tela e criaria uma custódia
+/// duplicada lá.
 TransactionsCsv transactionsCsv(
   List<Asset> assets,
-  Map<int, String> custodiaLabels,
+  List<Custodia> custodias,
   List<PortfolioTransaction> transactions,
 ) {
   final assetsById = {
     for (final asset in assets)
       if (asset.id != null) asset.id!: asset,
+  };
+  final custodiaNames = {
+    for (final custodia in custodias)
+      if (custodia.id != null) custodia.id!: custodia.instituicao,
   };
   final ordered = [
     for (var i = 0; i < transactions.length; i++) (i, transactions[i]),
@@ -110,7 +117,7 @@ TransactionsCsv transactionsCsv(
         _number(t.unitPrice),
         _number(t.totalValue),
         _number(t.fee),
-        t.custodiaId == null ? '' : custodiaLabels[t.custodiaId] ?? '',
+        t.custodiaId == null ? '' : custodiaNames[t.custodiaId] ?? '',
         '', // payment_type: o mobile não guarda
         t.notes ?? '',
         _number(t.lossCreditUsed),
