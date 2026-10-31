@@ -44,6 +44,12 @@ void main() {
     point('2026-10-29', green: 8, verdict: ScoreVerdict.intact),
   ];
 
+  /// O `Text` com a chave [key] cujo conteúdo contém [part]. A chave está no
+  /// próprio `Text`, então `find.descendant` (que só olha os filhos) não serve.
+  Finder keyedText(String key, String part) => find.byWidgetPredicate(
+    (w) => w is Text && w.key == Key(key) && (w.data ?? '').contains(part),
+  );
+
   /// Os pontos que o gráfico desenha, lidos do painter (a asserção é sobre dado,
   /// não sobre pixel).
   List<double> plotted(WidgetTester tester) {
@@ -58,18 +64,9 @@ void main() {
       expect(find.byKey(const Key('history-card')), findsOneWidget);
       expect(find.text('Histórico'), findsOneWidget);
       expect(find.byKey(const Key('history-chart')), findsOneWidget);
+      expect(keyedText('history-summary', '3 datas'), findsOneWidget);
       expect(
-        find.descendant(
-          of: find.byKey(const Key('history-summary')),
-          matching: find.textContaining('3 datas'),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('history-summary')),
-          matching: find.textContaining('8 verdes de 10'),
-        ),
+        keyedText('history-summary', '8 verdes de 10'),
         findsOneWidget,
         reason: 'o último ponto',
       );
@@ -177,30 +174,16 @@ void main() {
 
       await tester.tapAt(Offset(rect.left + 1, rect.center.dy));
       await tester.pump();
-      var detail = find.byKey(const Key('history-detail'));
+      expect(keyedText('history-detail', '20/10/26'), findsOneWidget);
       expect(
-        find.descendant(of: detail, matching: find.textContaining('20/10/26')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: detail,
-          matching: find.textContaining('2 verdes de 10 · 10 registrados · Reduzir risco'),
-        ),
+        keyedText('history-detail', '2 verdes de 10 · 10 registrados · Reduzir risco'),
         findsOneWidget,
       );
 
       await tester.tapAt(Offset(rect.right - 1, rect.center.dy));
       await tester.pump();
-      detail = find.byKey(const Key('history-detail'));
-      expect(
-        find.descendant(of: detail, matching: find.textContaining('29/10/26')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: detail, matching: find.textContaining('Tese intacta')),
-        findsOneWidget,
-      );
+      expect(keyedText('history-detail', '29/10/26'), findsOneWidget);
+      expect(keyedText('history-detail', 'Tese intacta'), findsOneWidget);
     });
 
     testWidgets('trocar o período limpa o ponto selecionado', (tester) async {

@@ -401,9 +401,12 @@ void main() {
   });
 
   group('histórico (cartão com o gráfico)', () {
-    Finder summary(String text) => find.descendant(
-      of: find.byKey(const Key('history-summary')),
-      matching: find.textContaining(text),
+    // A chave está no próprio `Text`; `find.descendant` só olha os filhos.
+    Finder summary(String text) => find.byWidgetPredicate(
+      (w) =>
+          w is Text &&
+          w.key == const Key('history-summary') &&
+          (w.data ?? '').contains(text),
     );
 
     testWidgets('sem nenhuma leitura o cartão avisa que não há histórico', (tester) async {
