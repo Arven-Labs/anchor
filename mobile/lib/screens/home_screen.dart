@@ -210,7 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Expanded(
           child: ReorderableListView(
             buildDefaultDragHandles: false,
-            onReorder: (oldIndex, newIndex) => setState(
+            onReorderItem: (oldIndex, newIndex) => setState(
               () => _draft = reorderHomeLayout(draft, oldIndex, newIndex),
             ),
             children: [

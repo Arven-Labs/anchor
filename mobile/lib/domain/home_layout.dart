@@ -108,17 +108,16 @@ List<HomeWidgetConfig> decodeHomeLayout(String? source) {
   return layout;
 }
 
-/// Move o item de `oldIndex` para `newIndex`, com a convenção do
-/// `ReorderableListView`: ao descer, `newIndex` conta antes da remoção. Devolve
-/// uma lista nova.
+/// Move o item de `oldIndex` para a posição `newIndex`, com a convenção do
+/// `onReorderItem` do `ReorderableListView`: `newIndex` já é o índice final, depois de
+/// tirar o item do lugar de origem. Devolve uma lista nova.
 List<HomeWidgetConfig> reorderHomeLayout(
   List<HomeWidgetConfig> layout,
   int oldIndex,
   int newIndex,
 ) {
   final result = [...layout];
-  final target = newIndex > oldIndex ? newIndex - 1 : newIndex;
-  result.insert(target, result.removeAt(oldIndex));
+  result.insert(newIndex, result.removeAt(oldIndex));
   return result;
 }
 

@@ -133,7 +133,7 @@ void main() {
     });
   });
 
-  group('reorderHomeLayout (índices do ReorderableListView)', () {
+  group('reorderHomeLayout (índice final, como no onReorderItem)', () {
     final base = [
       config(HomeWidgetKey.totalValue),
       config(HomeWidgetKey.profit),
@@ -141,8 +141,8 @@ void main() {
       config(HomeWidgetKey.netWorth),
     ];
 
-    test('descer: o novo índice conta antes da remoção', () {
-      final result = reorderHomeLayout(base, 0, 3);
+    test('descer: o item termina no índice pedido', () {
+      final result = reorderHomeLayout(base, 0, 2);
 
       expect(keys(result), [
         HomeWidgetKey.profit,
@@ -165,13 +165,23 @@ void main() {
 
     test('soltar no mesmo lugar não muda nada, e a lista original fica intacta', () {
       expect(keys(reorderHomeLayout(base, 1, 1)), keys(base));
-      expect(keys(reorderHomeLayout(base, 1, 2)), keys(base));
-      reorderHomeLayout(base, 0, 3);
+      reorderHomeLayout(base, 0, 2);
       expect(keys(base).first, HomeWidgetKey.totalValue);
     });
 
+    test('trocar vizinhos', () {
+      final result = reorderHomeLayout(base, 1, 2);
+
+      expect(keys(result), [
+        HomeWidgetKey.totalValue,
+        HomeWidgetKey.allocation,
+        HomeWidgetKey.profit,
+        HomeWidgetKey.netWorth,
+      ]);
+    });
+
     test('mover para o fim', () {
-      final result = reorderHomeLayout(base, 1, 4);
+      final result = reorderHomeLayout(base, 1, 3);
 
       expect(keys(result).last, HomeWidgetKey.profit);
     });
