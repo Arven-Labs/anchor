@@ -3,7 +3,7 @@
 > Criado na Sessão 272 para os alertas do Dependabot (procedimento `padrao/dependencias.md`, ADR 0006 do workspace). As demais pendências do anchor continuam no fim do `SESSIONS.md` (decisões da Sessão 271 e anteriores).
 > Resolvida: marcar `✅ Resolvida` com a sessão. Contagem de alertas sempre relida da API.
 >
-> Última atualização: 2026-10-31 (Sessão 272).
+> Última atualização: 2026-10-31 (Sessões 272 e 273).
 
 ---
 
@@ -11,7 +11,11 @@
 
 ### Dependências (Dependabot)
 
-Contagem: **110 abertos** antes (2026-10-31). Depois dos PRs #37, #38 e #39 mesclados: **ainda 110 abertos e 0 `fixed`**, relida da API ao fim da Sessão 272 (mais de um dia depois do merge do #37); todos os alertas têm `updated_at` de 2026-10-29, sem reavaliação. Causa não confirmada (atraso do GitHub ou algo que impede o fechamento automático). Conferir a aba *Security → Dependabot* do repo; se a contagem seguir em 110 em um ou dois dias, abrir um PR mínimo que toque o lockfile para forçar a reavaliação. **Dispensas feitas por você na Sessão 272** (P2, P3 e parte do P4, abaixo): 5 alertas, e a API passou a mostrar **106 abertos** (não explico a diferença de 1 para 105). Dispensar não corrige nada: só tira o alerta da contagem, com motivo registrado.
+Contagem: **110 abertos** antes (2026-10-31). **Fim da Sessão 272, relida da API (2026-10-31): 0 abertos, 101 `fixed`, 11 `dismissed`, 2 `auto_dismissed`.**
+- **Os 101 `fixed`** são os alertas cujo lockfile corrigido (PRs #37, #38, #39 e #44) o GitHub só reavaliou **mais de um dia depois** do merge do #37 (a API ficou em 110 abertos, 0 `fixed`, e depois passou de 101 para 2 de uma vez). Era atraso do GitHub, não problema nosso. Antes disso a contagem intermediária passou por 106, 105 e 104 (atraso de leitura da API).
+- **Os 11 `dismissed` são as dispensas feitas por você**, cada uma com motivo e comentário no GitHub: #1, #2, #6 (`serialize-javascript`), #3, #4 (`extract-zip`), #95 (`deepmerge`), #113, #114 (`minimatch`) como `not_used`; #7, #8 (`xlsx`) e #100 (`glib`) como `tolerable_risk`. **Dispensar não corrige nada**: só tira o alerta da contagem. Os `auto_dismissed` (2) foram fechados pelo GitHub, não por nós; não investiguei quais são.
+- **`minimatch` (#113, #114, GHSA-g3hv-75wg-m249, médio)**: surgiu às 21:25, logo depois da reavaliação. Só a 11.0.1 corrige, e nenhum pai aceita a 11.x (`@ts-morph/common` 0.29 pede `^10`, `readdir-glob` `^10.2.2`, `@wdio/config` usa `glob` 13 → 10.x; no E2E há 4 versões no lock: 3.1.5, 5.1.9, 9.0.9, 10.2.6). Ambos `development` (`shadcn` → `ts-morph`; `wdio`/`mocha`/`webdriverio`). `overrides` para a 11.x foi descartado: quebra a API que os pais esperam. **Reabrir se `ts-morph`, `wdio` ou `mocha` passarem a aceitar `minimatch` 11.** Não li o código de cada ferramenta para confirmar que o glob vem só de configuração local.
+- **Lição do processo**: o `dependabot/alerts` pode demorar **mais de um dia** para refletir lockfile corrigido, e novos advisories aparecem na reavaliação. Reler a contagem depois, em vez de abrir PR para "forçar".
 
 | ID | Item | Onde se originou | Prioridade |
 |---|---|---|---|
