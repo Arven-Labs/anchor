@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
@@ -18,19 +20,46 @@ import '../domain/crypto_score.dart';
 /// usuário/DBA rodando migração à mão num app mobile. `onUpgrade` cobre só
 /// quem já tinha o app instalado antes de uma coluna nova aparecer.
 class AppDatabase {
-  static Database? _instance;
+  // Guarda o Future da abertura, não o Database: chamadas concorrentes antes de
+  // a primeira terminar esperam o mesmo Future em vez de abrir de novo
+  // (`_instance ??= await _open()` só atribuía depois do await).
+  static Future<Database>? _opening;
 
-  static Future<Database> instance() async {
-    _instance ??= await _open();
-    return _instance!;
+  /// Quem abre o arquivo. Só para teste: contar aberturas e simular falha.
+  @visibleForTesting
+  static Future<Database> Function() openerForTest = _open;
+
+  static Future<Database> instance() {
+    final existing = _opening;
+    if (existing != null) return existing;
+    final opening = _opening = openerForTest();
+    // Uma abertura que falhou não pode ficar em cache: a próxima tenta de novo.
+    // O `identical` evita apagar uma abertura mais nova (após `resetForTest`).
+    // Quem chamou continua recebendo o erro pelo `opening` devolvido.
+    unawaited(
+      opening.then<void>(
+        (_) {},
+        onError: (Object _) {
+          if (identical(_opening, opening)) _opening = null;
+        },
+      ),
+    );
+    return opening;
   }
 
   /// Fecha e esquece a conexão: o próximo `instance()` reabre (e migra) o arquivo
   /// que `getDatabasesPath()` apontar nesse momento. Só para teste.
   @visibleForTesting
   static Future<void> resetForTest() async {
-    await _instance?.close();
-    _instance = null;
+    final opening = _opening;
+    _opening = null;
+    if (opening != null) {
+      try {
+        await (await opening).close();
+      } catch (_) {
+        // Abertura que falhou: não há conexão para fechar.
+      }
+    }
   }
 
   static Future<Database> _open() async {
