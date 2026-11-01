@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../domain/general_finance.dart';
 import '../domain/money_format.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/finance_labels.dart';
 import '../models/bank_account.dart';
 import '../models/general_transaction.dart';
 import '../models/general_transaction_category.dart';
@@ -61,6 +63,7 @@ class _FinancasTransactionsScreenState
       0;
 
   Future<void> _add() async {
+    final l = AppLocalizations.of(context);
     final valorController = TextEditingController();
     final notesController = TextEditingController();
     var type = GeneralTransactionType.despesa;
@@ -71,14 +74,14 @@ class _FinancasTransactionsScreenState
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Novo lançamento'),
+          title: Text(l.txNewTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               SegmentedButton<GeneralTransactionType>(
                 segments: [
                   for (final t in GeneralTransactionType.manual)
-                    ButtonSegment(value: t, label: Text(t.label)),
+                    ButtonSegment(value: t, label: Text(transactionTypeName(l, t))),
                 ],
                 selected: {type},
                 onSelectionChanged: (selection) =>
@@ -90,11 +93,11 @@ class _FinancasTransactionsScreenState
                 DropdownButtonFormField<int?>(
                   key: const Key('financas-tx-category'),
                   initialValue: categoryId,
-                  decoration: const InputDecoration(labelText: 'Categoria'),
+                  decoration: InputDecoration(labelText: l.txCategory),
                   items: [
-                    const DropdownMenuItem(
+                    DropdownMenuItem(
                       value: null,
-                      child: Text('Sem categoria'),
+                      child: Text(l.txNoCategory),
                     ),
                     for (final c in _categories)
                       DropdownMenuItem(value: c.id, child: Text(c.nome)),
@@ -110,13 +113,13 @@ class _FinancasTransactionsScreenState
                   decimal: true,
                 ),
                 decoration: InputDecoration(
-                  labelText: 'Valor (${_account.currency})',
+                  labelText: l.finAmount(_account.currency),
                 ),
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 icon: const Icon(Icons.calendar_today_outlined),
-                label: Text(formatIsoDay(toIsoDay(date))),
+                label: Text(formatReadingDate(toIsoDay(date), locale: l.localeName)),
                 onPressed: () async {
                   final picked = await showDatePicker(
                     context: context,
@@ -130,18 +133,18 @@ class _FinancasTransactionsScreenState
               const SizedBox(height: 12),
               TextField(
                 controller: notesController,
-                decoration: const InputDecoration(labelText: 'Observação'),
+                decoration: InputDecoration(labelText: l.finNotes),
               ),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancelar'),
+              child: Text(l.actionCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Salvar'),
+              child: Text(l.actionSave),
             ),
           ],
         ),
@@ -157,7 +160,7 @@ class _FinancasTransactionsScreenState
     final messenger = ScaffoldMessenger.of(context);
     if (valor == null) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Informe um valor maior que zero.')),
+        SnackBar(content: Text(l.txAmountRequired)),
       );
       return;
     }
@@ -176,23 +179,27 @@ class _FinancasTransactionsScreenState
   }
 
   Future<void> _delete(GeneralTransaction tx) async {
+    final l = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Excluir lançamento?'),
+        title: Text(l.txDeleteTitle),
         content: Text(
-          '${tx.type.label} de ${formatMoney(tx.valor, _account.currency)} '
-          'em ${formatIsoDay(tx.date)}.'
-          '${tx.transferId == null ? '' : '\nA outra perna da transferência também será apagada.'}',
+          l.txDeleteBody(
+                transactionTypeName(l, tx.type),
+                formatMoney(tx.valor, _account.currency, locale: l.localeName),
+                formatReadingDate(tx.date, locale: l.localeName),
+              ) +
+              (tx.transferId == null ? '' : '\n${l.txDeleteTransferLeg}'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
+            child: Text(l.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Excluir'),
+            child: Text(l.actionDelete),
           ),
         ],
       ),
@@ -204,13 +211,14 @@ class _FinancasTransactionsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final today = toIsoDay(DateTime.now());
     return Scaffold(
       appBar: AppBar(title: Text(_account.label)),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _add,
         icon: const Icon(Icons.add),
-        label: const Text('Lançamento'),
+        label: Text(l.txFab),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -223,11 +231,11 @@ class _FinancasTransactionsScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Saldo',
+                        l.txBalance,
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       Text(
-                        formatMoney(_balance, _account.currency),
+                        formatMoney(_balance, _account.currency, locale: l.localeName),
                         key: const Key('financas-account-balance'),
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
@@ -236,9 +244,7 @@ class _FinancasTransactionsScreenState
                 ),
                 Expanded(
                   child: _transactions.isEmpty
-                      ? const Center(
-                          child: Text('Nenhum lançamento nesta conta ainda.'),
-                        )
+                      ? Center(child: Text(l.txEmpty))
                       : ListView.builder(
                           itemCount: _transactions.length,
                           itemBuilder: (context, index) {
@@ -249,16 +255,16 @@ class _FinancasTransactionsScreenState
                               margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                               child: ListTile(
                                 title: Text(
-                                  formatMoney(signed, _account.currency),
+                                  formatMoney(signed, _account.currency, locale: l.localeName),
                                 ),
                                 subtitle: Text(
                                   [
                                     [
-                                      tx.type.label,
+                                      transactionTypeName(l, tx.type),
                                       ?_categoryName(tx.categoryId),
-                                      formatIsoDay(tx.date),
+                                      formatReadingDate(tx.date, locale: l.localeName),
                                     ].join(' · '),
-                                    if (future) 'ainda não entra no saldo',
+                                    if (future) l.txFuture,
                                     if (tx.notes != null) tx.notes!,
                                   ].join('\n'),
                                 ),

@@ -22,11 +22,22 @@ import 'package:anchor_mobile/screens/financas_screen.dart';
 import 'package:anchor_mobile/services/general_finance_repository.dart';
 import 'package:anchor_mobile/services/live_positions.dart';
 import 'package:anchor_mobile/services/quote_exceptions.dart';
+import 'package:anchor_mobile/l10n/app_localizations.dart';
+
+import 'support/localized_app.dart';
 
 // A aba de Finanças montada de verdade (SQLite ffi, sem rede).
 void main() {
   final repository = GeneralFinanceRepository();
   late Directory dir;
+
+  late AppLocalizations en;
+  late AppLocalizations pt;
+
+  setUpAll(() async {
+    en = await AppLocalizations.delegate.load(const Locale('en'));
+    pt = await AppLocalizations.delegate.load(const Locale('pt'));
+  });
 
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('anchor-financas-screen-');
@@ -84,17 +95,20 @@ void main() {
   // O SQLite ffi responde em tempo real, fora do relógio falso do teste: sonda até o
   // indicador de carregamento sair, em vez de esperar um tempo fixo.
   // A tela só fica pronta quando o resumo (patrimônio) aparece.
+  // Idioma fixado em pt: as asserções são o texto que o app já mostrava (ADR 0001).
   Future<void> pumpScreen(
     WidgetTester tester, {
     Future<FxHistory> Function(String currency)? fetchFx,
     List<LivePositionRow> positions = const [],
+    String locale = 'pt',
   }) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: FinancasScreen(
+      localizedApp(
+        FinancasScreen(
           fetchFx: fetchFx ?? (_) async => throw QuoteNotFoundException('sem rede nos testes'),
           loadPositions: () async => positions,
         ),
+        locale: locale,
       ),
     );
     for (var i = 0; i < 200; i++) {
@@ -106,6 +120,17 @@ void main() {
   }
 
   Text textOf(WidgetTester tester, String key) => tester.widget<Text>(find.byKey(Key(key)));
+
+  // Espera algo que depende do SQLite real (fora do relógio falso) aparecer e deixa as
+  // animações de rota terminarem.
+  Future<void> waitFor(WidgetTester tester, Finder finder) async {
+    for (var i = 0; i < 200; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+      await tester.pump(const Duration(milliseconds: 50));
+      if (finder.evaluate().isNotEmpty) break;
+    }
+    await tester.pumpAndSettle();
+  }
 
   testWidgets('sem conta, a aba avisa que não há nada cadastrado', (tester) async {
     await pumpScreen(tester);
@@ -185,7 +210,7 @@ void main() {
 
     expect(textOf(tester, 'financas-cash').data, 'Caixa BRL 50,00');
     expect(textOf(tester, 'financas-missing').data, '1 item fora da soma por falta de câmbio ou cotação.');
-    expect(textOf(tester, 'financas-fx-banner').data, fxUnavailableBanner({'PYG'}));
+    expect(textOf(tester, 'financas-fx-banner').data, fxUnavailableBanner(pt, {'PYG'}));
     expect(textOf(tester, 'financas-equivalent-$pyg').data, 'sem câmbio PYG/BRL');
     expect(textOf(tester, 'financas-balance-$pyg').data, 'PYG 1.000.000,00');
   });
@@ -227,8 +252,8 @@ void main() {
     });
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: FinancasCategoriesScreen(
+      localizedApp(
+        FinancasCategoriesScreen(
           base: 'BRL',
           ratesToBrl: const {},
           accounts: [
@@ -309,7 +334,8 @@ void main() {
     await tester.enterText(find.byKey(const Key('financas-transfer-in')), '100');
     await tester.pump();
 
-    expect(find.textContaining('Taxa efetiva: 1 BRL = 0.1923 USD'), findsOneWidget);
+    // A taxa segue o idioma: em pt a vírgula (antes saía "0.1923", com ponto).
+    expect(find.textContaining('Taxa efetiva: 1 BRL = 0,1923 USD'), findsOneWidget);
   });
 
   testWidgets('a dívida abate o patrimônio e aparece no resumo', (tester) async {
@@ -522,8 +548,340 @@ void main() {
   });
 
   test('textos do aviso: moedas em ordem e plural dos itens fora', () {
-    expect(fxUnavailableBanner({'PYG', 'ARS'}), contains('ARS, PYG'));
-    expect(missingItemsNote(0), isNull);
-    expect(missingItemsNote(3), '3 itens fora da soma por falta de câmbio ou cotação.');
+    expect(fxUnavailableBanner(pt, {'PYG', 'ARS'}), contains('ARS, PYG'));
+    expect(missingItemsNote(pt, 0), isNull);
+    expect(missingItemsNote(pt, 1), '1 item fora da soma por falta de câmbio ou cotação.');
+    expect(missingItemsNote(pt, 3), '3 itens fora da soma por falta de câmbio ou cotação.');
+  });
+
+  test('textos do aviso em inglês', () {
+    expect(
+      fxUnavailableBanner(en, {'PYG', 'ARS'}),
+      'Exchange rate unavailable right now for ARS, PYG. '
+      'Items in those currencies are left out of net worth.',
+    );
+    expect(missingItemsNote(en, 0), isNull);
+    expect(missingItemsNote(en, 1), '1 item left out of the sum for lack of exchange rate or quote.');
+    expect(missingItemsNote(en, 3), '3 items left out of the sum for lack of exchange rate or quote.');
+  });
+
+  // Idioma do aparelho em inglês (ADR 0001).
+  group('em inglês', () {
+    testWidgets('a aba: título, resumo com ponto decimal, aviso de câmbio e botões', (tester) async {
+      late int pyg;
+      await tester.runAsync(() async {
+        pyg = await account('Banco', 'PYG');
+        final brl = await account('Nubank', 'BRL');
+        await add(pyg, GeneralTransactionType.receita, 1000000, '2026-01-02');
+        await add(brl, GeneralTransactionType.receita, 50, '2026-01-06');
+      });
+      await pumpScreen(tester, locale: 'en');
+
+      expect(find.text('Finances'), findsOneWidget);
+      expect(find.text('Net worth'), findsOneWidget);
+      expect(textOf(tester, 'financas-cash').data, 'Cash BRL 50.00');
+      expect(textOf(tester, 'financas-portfolio').data, 'Portfolio BRL 0.00');
+      expect(textOf(tester, 'financas-missing').data, '1 item left out of the sum for lack of exchange rate or quote.');
+      expect(textOf(tester, 'financas-fx-banner').data, fxUnavailableBanner(en, {'PYG'}));
+      expect(textOf(tester, 'financas-equivalent-$pyg').data, 'no exchange rate PYG/BRL');
+      expect(textOf(tester, 'financas-balance-$pyg').data, 'PYG 1,000,000.00');
+      for (final tooltip in ['Transfer', 'Loans', 'Debts', 'Categories', 'Refresh']) {
+        expect(find.byTooltip(tooltip), findsOneWidget, reason: tooltip);
+      }
+      expect(find.widgetWithText(FloatingActionButton, 'Account'), findsOneWidget);
+      for (final pt in ['Caixa', 'Carteira', 'Patrimônio', 'Transferir', 'Nenhuma']) {
+        expect(find.textContaining(pt), findsNothing, reason: pt);
+      }
+    });
+
+    testWidgets('sem conta: aviso em inglês', (tester) async {
+      await pumpScreen(tester, locale: 'en');
+      expect(find.text('No accounts yet.'), findsOneWidget);
+    });
+
+    testWidgets('transferir com uma conta só avisa em inglês', (tester) async {
+      await tester.runAsync(() => account('Alfa', 'BRL'));
+      await pumpScreen(tester, locale: 'en');
+
+      await tester.tap(find.byTooltip('Transfer'));
+      await tester.pump();
+
+      expect(find.text('Add two accounts to transfer.'), findsOneWidget);
+    });
+
+    testWidgets('moedas diferentes: rótulos e taxa efetiva com ponto decimal', (tester) async {
+      await tester.runAsync(() async {
+        await account('Alfa', 'BRL');
+        await account('Beta', 'USD');
+      });
+      await pumpScreen(tester, locale: 'en');
+
+      await tester.tap(find.byTooltip('Transfer'));
+      await tester.pumpAndSettle();
+      expect(find.text('From'), findsOneWidget);
+      expect(find.text('To'), findsOneWidget);
+      expect(find.text('Sent (BRL)'), findsOneWidget);
+      expect(find.text('Received (USD)'), findsOneWidget);
+      expect(find.textContaining('Spread and fees already included'), findsOneWidget);
+      await tester.enterText(find.byKey(const Key('financas-transfer-out')), '520');
+      await tester.enterText(find.byKey(const Key('financas-transfer-in')), '100');
+      await tester.pump();
+
+      expect(find.textContaining('Effective rate: 1 BRL = 0.1923 USD'), findsOneWidget);
+    });
+
+    testWidgets('transferir sem valores avisa em inglês e não grava', (tester) async {
+      await tester.runAsync(() async {
+        await account('Alfa', 'BRL');
+        await account('Beta', 'BRL');
+      });
+      await pumpScreen(tester, locale: 'en');
+
+      await tester.tap(find.byTooltip('Transfer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Transfer'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Enter the amounts, greater than zero.'), findsOneWidget);
+      final all = await tester.runAsync(repository.listTransactions);
+      expect(all, isEmpty);
+    });
+
+    testWidgets('nova conta: diálogo em inglês', (tester) async {
+      await pumpScreen(tester, locale: 'en');
+
+      await tester.tap(find.widgetWithText(FloatingActionButton, 'Account'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('New account'), findsOneWidget);
+      expect(find.text('Name'), findsOneWidget);
+      expect(find.text('Holder'), findsOneWidget);
+      expect(find.text('Currency'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
+      expect(find.text('Save'), findsOneWidget);
+    });
+
+    testWidgets('conta com lançamentos: a moeda aparece travada, com o nome da moeda em inglês', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        final id = await account('Nubank', 'BRL');
+        await add(id, GeneralTransactionType.receita, 10, '2026-01-02');
+      });
+      await pumpScreen(tester, locale: 'en');
+
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit'));
+      await waitFor(tester, find.text('Edit account'));
+
+      expect(find.text('Edit account'), findsOneWidget);
+      expect(find.text("Can't change on an account that already has transactions."), findsOneWidget);
+      expect(find.text('BRL — Brazilian real'), findsOneWidget);
+    });
+
+    testWidgets('editar uma conta que sumiu mostra o erro traduzido no SnackBar', (tester) async {
+      late int id;
+      await tester.runAsync(() async => id = await account('Nubank', 'BRL'));
+      await pumpScreen(tester, locale: 'en');
+
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit'));
+      await waitFor(tester, find.text('Edit account'));
+      // A conta some do banco com o diálogo aberto: salvar bate em `accountNotFound`.
+      await tester.runAsync(() => repository.deleteAccount(id));
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await waitFor(tester, find.text('Account not found'));
+
+      expect(find.text('Account not found'), findsOneWidget);
+    });
+
+    testWidgets('excluir conta: confirmação em inglês', (tester) async {
+      await tester.runAsync(() async {
+        final id = await account('Nubank', 'BRL');
+        await add(id, GeneralTransactionType.receita, 10, '2026-01-02');
+      });
+      await pumpScreen(tester, locale: 'en');
+
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await waitFor(tester, find.text('Delete Nubank?'));
+
+      expect(find.text('Delete Nubank?'), findsOneWidget);
+      expect(find.text('The transactions of this account will also be deleted.'), findsOneWidget);
+    });
+  });
+
+  // A tela de Lançamentos de uma conta, nos dois idiomas.
+  group('lançamentos de uma conta', () {
+    late int cartao;
+    late int mercado;
+
+    Future<void> seedAccount(WidgetTester tester) async {
+      final month = toIsoDay(DateTime.now()).substring(0, 7);
+      await tester.runAsync(() async {
+        cartao = await account('Nubank', 'BRL');
+        mercado = await repository.insertCategory(
+          GeneralTransactionCategory(nome: 'Mercado', createdAt: DateTime(2026, 1, 1)),
+        );
+        await add(cartao, GeneralTransactionType.receita, 1000, '2026-01-02');
+        await repository.insertTransaction(
+          GeneralTransaction(
+            bankAccountId: cartao,
+            type: GeneralTransactionType.despesa,
+            categoryId: mercado,
+            valor: 250.5,
+            date: '$month-01',
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        );
+        await add(cartao, GeneralTransactionType.receita, 99, '2999-01-01'); // futuro
+      });
+    }
+
+    Future<void> openAccount(WidgetTester tester, String locale) async {
+      await seedAccount(tester);
+      await pumpScreen(tester, locale: locale);
+      await tester.tap(find.text('Nubank'));
+      await waitFor(tester, find.byKey(const Key('financas-account-balance')));
+      // O saldo aparece antes da lista; espera também os lançamentos carregarem.
+      await waitFor(tester, find.byType(Card));
+    }
+
+    testWidgets('pt: saldo, tipos, categoria, data e o aviso de lançamento futuro', (tester) async {
+      await openAccount(tester, 'pt');
+
+      expect(find.text('Saldo'), findsOneWidget);
+      expect(textOf(tester, 'financas-account-balance').data, 'BRL 749,50');
+      expect(find.text('Nenhum lançamento nesta conta ainda.'), findsNothing);
+      expect(find.textContaining('Despesa · Mercado · '), findsOneWidget);
+      expect(find.textContaining('Receita · 02/01/2026'), findsOneWidget);
+      expect(find.textContaining('ainda não entra no saldo'), findsOneWidget);
+      expect(find.widgetWithText(FloatingActionButton, 'Lançamento'), findsOneWidget);
+    });
+
+    testWidgets('en: o mesmo, em inglês e com datas mês/dia/ano', (tester) async {
+      await openAccount(tester, 'en');
+
+      expect(find.text('Balance'), findsOneWidget);
+      expect(textOf(tester, 'financas-account-balance').data, 'BRL 749.50');
+      expect(find.textContaining('Expense · Mercado · '), findsOneWidget); // nome da categoria é dado
+      expect(find.textContaining('Income · 01/02/2026'), findsOneWidget);
+      expect(find.textContaining('not in the balance yet'), findsOneWidget);
+      expect(find.widgetWithText(FloatingActionButton, 'Transaction'), findsOneWidget);
+      for (final pt in ['Saldo', 'Receita', 'Despesa', 'ainda não']) {
+        expect(find.textContaining(pt), findsNothing, reason: pt);
+      }
+    });
+
+    testWidgets('en: novo lançamento, validação e exclusão em inglês', (tester) async {
+      await openAccount(tester, 'en');
+
+      await tester.tap(find.widgetWithText(FloatingActionButton, 'Transaction'));
+      await tester.pumpAndSettle();
+      expect(find.text('New transaction'), findsOneWidget);
+      expect(find.text('Income'), findsWidgets);
+      expect(find.text('Expense'), findsWidgets);
+      expect(find.text('Category'), findsOneWidget);
+      expect(find.text('Amount (BRL)'), findsOneWidget);
+      expect(find.text('Notes'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('Enter an amount greater than zero.'), findsOneWidget);
+    });
+
+    testWidgets('en: confirmar a exclusão diz o tipo, o valor e a data em inglês', (tester) async {
+      await openAccount(tester, 'en');
+
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Delete transaction?'), findsOneWidget);
+      expect(find.textContaining(' of BRL '), findsWidgets);
+      expect(find.textContaining(' on '), findsWidgets);
+    });
+
+    testWidgets('sem lançamentos: aviso nos dois idiomas', (tester) async {
+      await tester.runAsync(() => account('Vazia', 'BRL'));
+      await pumpScreen(tester, locale: 'en');
+      await tester.tap(find.text('Vazia'));
+      await waitFor(tester, find.text('No transactions in this account yet.'));
+      expect(find.text('No transactions in this account yet.'), findsOneWidget);
+    });
+  });
+
+  // Categorias nos dois idiomas.
+  group('categorias em inglês', () {
+    testWidgets('lista, limite, gasto do mês e estouro com ponto decimal', (tester) async {
+      late int mercado;
+      late int cartao;
+      final month = toIsoDay(DateTime.now()).substring(0, 7);
+      await tester.runAsync(() async {
+        cartao = await account('Nubank', 'BRL');
+        mercado = await repository.insertCategory(
+          GeneralTransactionCategory(nome: 'Mercado', limiteMensal: 500, createdAt: DateTime(2026, 1, 1)),
+        );
+        await repository.insertTransaction(
+          GeneralTransaction(
+            bankAccountId: cartao,
+            type: GeneralTransactionType.despesa,
+            categoryId: mercado,
+            valor: 600,
+            date: '$month-01',
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        );
+      });
+      await tester.pumpWidget(
+        localizedApp(
+          FinancasCategoriesScreen(
+            base: 'BRL',
+            ratesToBrl: const {},
+            accounts: [
+              BankAccount(id: cartao, nome: 'Nubank', titular: 'Eu', currency: 'BRL', createdAt: DateTime(2026, 1, 1)),
+            ],
+          ),
+          locale: 'en',
+        ),
+      );
+      for (var i = 0; i < 200; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump();
+        if (find.byKey(Key('financas-category-spent-$mercado')).evaluate().isNotEmpty) break;
+      }
+
+      expect(find.text('Categories'), findsOneWidget);
+      expect(textOf(tester, 'financas-category-spent-$mercado').data, 'BRL 600.00 of BRL 500.00');
+      expect(textOf(tester, 'financas-category-over-$mercado').data, 'Over by BRL 100.00');
+      expect(find.widgetWithText(FloatingActionButton, 'Category'), findsOneWidget);
+    });
+
+    testWidgets('sem categorias, novo diálogo e validação em inglês', (tester) async {
+      await tester.pumpWidget(
+        localizedApp(
+          const FinancasCategoriesScreen(base: 'BRL', ratesToBrl: {}, accounts: []),
+          locale: 'en',
+        ),
+      );
+      for (var i = 0; i < 100; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump();
+        if (find.text('No categories yet.').evaluate().isNotEmpty) break;
+      }
+      expect(find.text('No categories yet.'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FloatingActionButton, 'Category'));
+      await tester.pumpAndSettle();
+      expect(find.text('New category'), findsOneWidget);
+      expect(find.text('Monthly limit (BRL)'), findsOneWidget);
+      expect(find.text('Empty = no limit.'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('Enter the name and, if any, a limit greater than zero.'), findsOneWidget);
+    });
   });
 }

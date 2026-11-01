@@ -883,6 +883,681 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Share: {percent}% — {value}'**
   String portfolioShare(String percent, String value);
+
+  /// No description provided for @actionEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit'**
+  String get actionEdit;
+
+  /// No description provided for @actionDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get actionDelete;
+
+  /// No description provided for @finTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Finances'**
+  String get finTitle;
+
+  /// No description provided for @finTransfer.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer'**
+  String get finTransfer;
+
+  /// No description provided for @finLoans.
+  ///
+  /// In en, this message translates to:
+  /// **'Loans'**
+  String get finLoans;
+
+  /// No description provided for @finDebts.
+  ///
+  /// In en, this message translates to:
+  /// **'Debts'**
+  String get finDebts;
+
+  /// No description provided for @finCategories.
+  ///
+  /// In en, this message translates to:
+  /// **'Categories'**
+  String get finCategories;
+
+  /// No description provided for @finRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get finRefresh;
+
+  /// No description provided for @finFabAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get finFabAccount;
+
+  /// No description provided for @finEmptyAccounts.
+  ///
+  /// In en, this message translates to:
+  /// **'No accounts yet.'**
+  String get finEmptyAccounts;
+
+  /// No description provided for @finNetWorth.
+  ///
+  /// In en, this message translates to:
+  /// **'Net worth'**
+  String get finNetWorth;
+
+  /// No description provided for @finCalculating.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating…'**
+  String get finCalculating;
+
+  /// No description provided for @finCash.
+  ///
+  /// In en, this message translates to:
+  /// **'Cash {value}'**
+  String finCash(String value);
+
+  /// No description provided for @finPortfolio.
+  ///
+  /// In en, this message translates to:
+  /// **'Portfolio {value}'**
+  String finPortfolio(String value);
+
+  /// No description provided for @finLoansReceivable.
+  ///
+  /// In en, this message translates to:
+  /// **'Loans receivable {value}'**
+  String finLoansReceivable(String value);
+
+  /// No description provided for @finDebtsLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Debts −{value}'**
+  String finDebtsLine(String value);
+
+  /// No description provided for @finMissingItems.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 item left out of the sum for lack of exchange rate or quote.} other{{count} items left out of the sum for lack of exchange rate or quote.}}'**
+  String finMissingItems(int count);
+
+  /// No description provided for @finFxBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Exchange rate unavailable right now for {currencies}. Items in those currencies are left out of net worth.'**
+  String finFxBanner(String currencies);
+
+  /// No description provided for @finNoRate.
+  ///
+  /// In en, this message translates to:
+  /// **'no exchange rate {pair}'**
+  String finNoRate(String pair);
+
+  /// No description provided for @finNewAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'New account'**
+  String get finNewAccount;
+
+  /// No description provided for @finEditAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit account'**
+  String get finEditAccount;
+
+  /// No description provided for @finFieldName.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get finFieldName;
+
+  /// No description provided for @finFieldHolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Holder'**
+  String get finFieldHolder;
+
+  /// No description provided for @finFieldCurrency.
+  ///
+  /// In en, this message translates to:
+  /// **'Currency'**
+  String get finFieldCurrency;
+
+  /// No description provided for @finAccountNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Nubank'**
+  String get finAccountNameHint;
+
+  /// No description provided for @finCurrencyLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Can\'t change on an account that already has transactions.'**
+  String get finCurrencyLocked;
+
+  /// No description provided for @finDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {name}?'**
+  String finDeleteTitle(String name);
+
+  /// No description provided for @finDeleteWithTx.
+  ///
+  /// In en, this message translates to:
+  /// **'The transactions of this account will also be deleted.'**
+  String get finDeleteWithTx;
+
+  /// No description provided for @finDeleteNoTx.
+  ///
+  /// In en, this message translates to:
+  /// **'The account has no transactions.'**
+  String get finDeleteNoTx;
+
+  /// No description provided for @finTransferNeedTwo.
+  ///
+  /// In en, this message translates to:
+  /// **'Add two accounts to transfer.'**
+  String get finTransferNeedTwo;
+
+  /// No description provided for @finFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'From'**
+  String get finFrom;
+
+  /// No description provided for @finTo.
+  ///
+  /// In en, this message translates to:
+  /// **'To'**
+  String get finTo;
+
+  /// No description provided for @finAmountSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent ({currency})'**
+  String finAmountSent(String currency);
+
+  /// No description provided for @finAmount.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount ({currency})'**
+  String finAmount(String currency);
+
+  /// No description provided for @finAmountReceived.
+  ///
+  /// In en, this message translates to:
+  /// **'Received ({currency})'**
+  String finAmountReceived(String currency);
+
+  /// No description provided for @finEffectiveRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Effective rate: 1 {from} = {rate} {to}'**
+  String finEffectiveRate(String from, String rate, String to);
+
+  /// No description provided for @finSpreadIncluded.
+  ///
+  /// In en, this message translates to:
+  /// **'Spread and fees already included in the amounts.'**
+  String get finSpreadIncluded;
+
+  /// No description provided for @finNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get finNotes;
+
+  /// No description provided for @finSameAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose two different accounts.'**
+  String get finSameAccount;
+
+  /// No description provided for @finAmountsRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the amounts, greater than zero.'**
+  String get finAmountsRequired;
+
+  /// No description provided for @txNewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'New transaction'**
+  String get txNewTitle;
+
+  /// No description provided for @txCategory.
+  ///
+  /// In en, this message translates to:
+  /// **'Category'**
+  String get txCategory;
+
+  /// No description provided for @txNoCategory.
+  ///
+  /// In en, this message translates to:
+  /// **'No category'**
+  String get txNoCategory;
+
+  /// No description provided for @txAmountRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an amount greater than zero.'**
+  String get txAmountRequired;
+
+  /// No description provided for @txDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete transaction?'**
+  String get txDeleteTitle;
+
+  /// No description provided for @txDeleteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{type} of {value} on {date}.'**
+  String txDeleteBody(String type, String value, String date);
+
+  /// No description provided for @txDeleteTransferLeg.
+  ///
+  /// In en, this message translates to:
+  /// **'The other leg of the transfer will also be deleted.'**
+  String get txDeleteTransferLeg;
+
+  /// No description provided for @txFab.
+  ///
+  /// In en, this message translates to:
+  /// **'Transaction'**
+  String get txFab;
+
+  /// No description provided for @txBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Balance'**
+  String get txBalance;
+
+  /// No description provided for @txEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No transactions in this account yet.'**
+  String get txEmpty;
+
+  /// No description provided for @txFuture.
+  ///
+  /// In en, this message translates to:
+  /// **'not in the balance yet'**
+  String get txFuture;
+
+  /// No description provided for @txTypeReceita.
+  ///
+  /// In en, this message translates to:
+  /// **'Income'**
+  String get txTypeReceita;
+
+  /// No description provided for @txTypeDespesa.
+  ///
+  /// In en, this message translates to:
+  /// **'Expense'**
+  String get txTypeDespesa;
+
+  /// No description provided for @txTypeTransferenciaSaida.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer (out)'**
+  String get txTypeTransferenciaSaida;
+
+  /// No description provided for @txTypeTransferenciaEntrada.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer (in)'**
+  String get txTypeTransferenciaEntrada;
+
+  /// No description provided for @txTypeParcelaDivida.
+  ///
+  /// In en, this message translates to:
+  /// **'Debt installment'**
+  String get txTypeParcelaDivida;
+
+  /// No description provided for @txTypeEmprestimoConcedido.
+  ///
+  /// In en, this message translates to:
+  /// **'Loan granted'**
+  String get txTypeEmprestimoConcedido;
+
+  /// No description provided for @txTypeRecebimentoEmprestimo.
+  ///
+  /// In en, this message translates to:
+  /// **'Loan repayment'**
+  String get txTypeRecebimentoEmprestimo;
+
+  /// No description provided for @catTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Categories'**
+  String get catTitle;
+
+  /// No description provided for @catFab.
+  ///
+  /// In en, this message translates to:
+  /// **'Category'**
+  String get catFab;
+
+  /// No description provided for @catEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No categories yet.'**
+  String get catEmpty;
+
+  /// No description provided for @catNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New category'**
+  String get catNew;
+
+  /// No description provided for @catEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit category'**
+  String get catEdit;
+
+  /// No description provided for @catNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Groceries'**
+  String get catNameHint;
+
+  /// No description provided for @catMonthlyLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'Monthly limit ({base})'**
+  String catMonthlyLimit(String base);
+
+  /// No description provided for @catNoLimitHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty = no limit.'**
+  String get catNoLimitHelp;
+
+  /// No description provided for @catInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the name and, if any, a limit greater than zero.'**
+  String get catInvalid;
+
+  /// No description provided for @catDeleteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Its transactions become uncategorized; none is deleted.'**
+  String get catDeleteBody;
+
+  /// No description provided for @catSpentMonth.
+  ///
+  /// In en, this message translates to:
+  /// **'Spent this month: {value}'**
+  String catSpentMonth(String value);
+
+  /// No description provided for @catSpentOfLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'{spent} of {limit}'**
+  String catSpentOfLimit(String spent, String limit);
+
+  /// No description provided for @catOver.
+  ///
+  /// In en, this message translates to:
+  /// **'Over by {value}'**
+  String catOver(String value);
+
+  /// No description provided for @catMissingFx.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} expense(s) left out of the sum for lack of exchange rate.'**
+  String catMissingFx(int count);
+
+  /// No description provided for @currencyUsd.
+  ///
+  /// In en, this message translates to:
+  /// **'US dollar'**
+  String get currencyUsd;
+
+  /// No description provided for @currencyEur.
+  ///
+  /// In en, this message translates to:
+  /// **'Euro'**
+  String get currencyEur;
+
+  /// No description provided for @currencyGbp.
+  ///
+  /// In en, this message translates to:
+  /// **'Pound sterling'**
+  String get currencyGbp;
+
+  /// No description provided for @currencyJpy.
+  ///
+  /// In en, this message translates to:
+  /// **'Yen'**
+  String get currencyJpy;
+
+  /// No description provided for @currencyChf.
+  ///
+  /// In en, this message translates to:
+  /// **'Swiss franc'**
+  String get currencyChf;
+
+  /// No description provided for @currencyCad.
+  ///
+  /// In en, this message translates to:
+  /// **'Canadian dollar'**
+  String get currencyCad;
+
+  /// No description provided for @currencyAud.
+  ///
+  /// In en, this message translates to:
+  /// **'Australian dollar'**
+  String get currencyAud;
+
+  /// No description provided for @currencyNzd.
+  ///
+  /// In en, this message translates to:
+  /// **'New Zealand dollar'**
+  String get currencyNzd;
+
+  /// No description provided for @currencyCny.
+  ///
+  /// In en, this message translates to:
+  /// **'Yuan'**
+  String get currencyCny;
+
+  /// No description provided for @currencyBrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Brazilian real'**
+  String get currencyBrl;
+
+  /// No description provided for @currencyArs.
+  ///
+  /// In en, this message translates to:
+  /// **'Argentine peso'**
+  String get currencyArs;
+
+  /// No description provided for @currencyUyu.
+  ///
+  /// In en, this message translates to:
+  /// **'Uruguayan peso'**
+  String get currencyUyu;
+
+  /// No description provided for @currencyPyg.
+  ///
+  /// In en, this message translates to:
+  /// **'Guarani'**
+  String get currencyPyg;
+
+  /// No description provided for @currencyClp.
+  ///
+  /// In en, this message translates to:
+  /// **'Chilean peso'**
+  String get currencyClp;
+
+  /// No description provided for @currencyCop.
+  ///
+  /// In en, this message translates to:
+  /// **'Colombian peso'**
+  String get currencyCop;
+
+  /// No description provided for @currencyPen.
+  ///
+  /// In en, this message translates to:
+  /// **'Peruvian sol'**
+  String get currencyPen;
+
+  /// No description provided for @currencyMxn.
+  ///
+  /// In en, this message translates to:
+  /// **'Mexican peso'**
+  String get currencyMxn;
+
+  /// No description provided for @finErrUnknownCurrency.
+  ///
+  /// In en, this message translates to:
+  /// **'Currency not in the catalog: {currency}'**
+  String finErrUnknownCurrency(String currency);
+
+  /// No description provided for @finErrAmountMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The amount must be greater than zero'**
+  String get finErrAmountMustBePositive;
+
+  /// No description provided for @finErrInvalidDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid date: {date}'**
+  String finErrInvalidDate(String date);
+
+  /// No description provided for @finErrManualTypeOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Only income and expense are entered by hand; a transfer is created with Transfer, a debt installment by creating a debt, and a loan by granting a loan'**
+  String get finErrManualTypeOnly;
+
+  /// No description provided for @finErrLiabilityNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the debt name'**
+  String get finErrLiabilityNameRequired;
+
+  /// No description provided for @finErrBorrowerNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the borrower\'s name'**
+  String get finErrBorrowerNameRequired;
+
+  /// No description provided for @finErrPrincipalMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The principal must be greater than zero'**
+  String get finErrPrincipalMustBePositive;
+
+  /// No description provided for @finErrTermMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The term (in months) must be greater than zero'**
+  String get finErrTermMustBePositive;
+
+  /// No description provided for @finErrNegativeMonthlyRate.
+  ///
+  /// In en, this message translates to:
+  /// **'The monthly rate can\'t be negative'**
+  String get finErrNegativeMonthlyRate;
+
+  /// No description provided for @finErrRepaidAmountMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The amount repaid must be greater than zero'**
+  String get finErrRepaidAmountMustBePositive;
+
+  /// No description provided for @finErrReceivedAmountNegative.
+  ///
+  /// In en, this message translates to:
+  /// **'The amount received can\'t be negative'**
+  String get finErrReceivedAmountNegative;
+
+  /// No description provided for @finErrLoanCurrencyMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'The loan is in {loanCurrency} and the account in {accountCurrency}'**
+  String finErrLoanCurrencyMismatch(
+    String loanCurrency,
+    String accountCurrency,
+  );
+
+  /// No description provided for @finErrCategoryNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the category name'**
+  String get finErrCategoryNameRequired;
+
+  /// No description provided for @finErrCategoryLimitMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The monthly limit must be greater than zero'**
+  String get finErrCategoryLimitMustBePositive;
+
+  /// No description provided for @finErrTransferAmountsMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The amounts must be greater than zero'**
+  String get finErrTransferAmountsMustBePositive;
+
+  /// No description provided for @finErrTransferSameAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose two different accounts'**
+  String get finErrTransferSameAccount;
+
+  /// No description provided for @finErrTransferSameCurrencyAmountsDiffer.
+  ///
+  /// In en, this message translates to:
+  /// **'Accounts in the same currency receive exactly what left'**
+  String get finErrTransferSameCurrencyAmountsDiffer;
+
+  /// No description provided for @finErrAccountNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Account not found'**
+  String get finErrAccountNotFound;
+
+  /// No description provided for @finErrAccountCurrencyLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'The currency can\'t change on an account that already has transactions'**
+  String get finErrAccountCurrencyLocked;
+
+  /// No description provided for @finErrBorrowerHasLoans.
+  ///
+  /// In en, this message translates to:
+  /// **'This borrower still has loans: delete them first'**
+  String get finErrBorrowerHasLoans;
+
+  /// No description provided for @finErrBorrowerNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Borrower not found'**
+  String get finErrBorrowerNotFound;
+
+  /// No description provided for @finErrLoanNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Loan not found'**
+  String get finErrLoanNotFound;
+
+  /// No description provided for @finErrLinkedTransactionLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'A debt installment and a loan transaction are only deleted together with the debt or the loan'**
+  String get finErrLinkedTransactionLocked;
 }
 
 class _AppLocalizationsDelegate

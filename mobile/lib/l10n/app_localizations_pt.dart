@@ -474,4 +474,406 @@ class AppLocalizationsPt extends AppLocalizations {
   String portfolioShare(String percent, String value) {
     return 'Participação: $percent% — $value';
   }
+
+  @override
+  String get actionEdit => 'Editar';
+
+  @override
+  String get actionDelete => 'Excluir';
+
+  @override
+  String get finTitle => 'Finanças';
+
+  @override
+  String get finTransfer => 'Transferir';
+
+  @override
+  String get finLoans => 'Empréstimos';
+
+  @override
+  String get finDebts => 'Dívidas';
+
+  @override
+  String get finCategories => 'Categorias';
+
+  @override
+  String get finRefresh => 'Atualizar';
+
+  @override
+  String get finFabAccount => 'Conta';
+
+  @override
+  String get finEmptyAccounts => 'Nenhuma conta cadastrada ainda.';
+
+  @override
+  String get finNetWorth => 'Patrimônio';
+
+  @override
+  String get finCalculating => 'Calculando…';
+
+  @override
+  String finCash(String value) {
+    return 'Caixa $value';
+  }
+
+  @override
+  String finPortfolio(String value) {
+    return 'Carteira $value';
+  }
+
+  @override
+  String finLoansReceivable(String value) {
+    return 'Empréstimos a receber $value';
+  }
+
+  @override
+  String finDebtsLine(String value) {
+    return 'Dívidas −$value';
+  }
+
+  @override
+  String finMissingItems(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count itens fora da soma por falta de câmbio ou cotação.',
+      one: '1 item fora da soma por falta de câmbio ou cotação.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String finFxBanner(String currencies) {
+    return 'Câmbio indisponível agora para $currencies. Os itens dessas moedas ficam fora do patrimônio.';
+  }
+
+  @override
+  String finNoRate(String pair) {
+    return 'sem câmbio $pair';
+  }
+
+  @override
+  String get finNewAccount => 'Nova conta';
+
+  @override
+  String get finEditAccount => 'Editar conta';
+
+  @override
+  String get finFieldName => 'Nome';
+
+  @override
+  String get finFieldHolder => 'Titular';
+
+  @override
+  String get finFieldCurrency => 'Moeda';
+
+  @override
+  String get finAccountNameHint => 'Nubank';
+
+  @override
+  String get finCurrencyLocked => 'Não muda numa conta que já tem lançamentos.';
+
+  @override
+  String finDeleteTitle(String name) {
+    return 'Excluir $name?';
+  }
+
+  @override
+  String get finDeleteWithTx =>
+      'Os lançamentos desta conta também serão apagados.';
+
+  @override
+  String get finDeleteNoTx => 'A conta não tem lançamentos.';
+
+  @override
+  String get finTransferNeedTwo => 'Cadastre duas contas para transferir.';
+
+  @override
+  String get finFrom => 'De';
+
+  @override
+  String get finTo => 'Para';
+
+  @override
+  String finAmountSent(String currency) {
+    return 'Saiu ($currency)';
+  }
+
+  @override
+  String finAmount(String currency) {
+    return 'Valor ($currency)';
+  }
+
+  @override
+  String finAmountReceived(String currency) {
+    return 'Chegou ($currency)';
+  }
+
+  @override
+  String finEffectiveRate(String from, String rate, String to) {
+    return 'Taxa efetiva: 1 $from = $rate $to';
+  }
+
+  @override
+  String get finSpreadIncluded => 'Spread e tarifa já embutidos nos valores.';
+
+  @override
+  String get finNotes => 'Observação';
+
+  @override
+  String get finSameAccount => 'Escolha duas contas diferentes.';
+
+  @override
+  String get finAmountsRequired => 'Informe os valores, maiores que zero.';
+
+  @override
+  String get txNewTitle => 'Novo lançamento';
+
+  @override
+  String get txCategory => 'Categoria';
+
+  @override
+  String get txNoCategory => 'Sem categoria';
+
+  @override
+  String get txAmountRequired => 'Informe um valor maior que zero.';
+
+  @override
+  String get txDeleteTitle => 'Excluir lançamento?';
+
+  @override
+  String txDeleteBody(String type, String value, String date) {
+    return '$type de $value em $date.';
+  }
+
+  @override
+  String get txDeleteTransferLeg =>
+      'A outra perna da transferência também será apagada.';
+
+  @override
+  String get txFab => 'Lançamento';
+
+  @override
+  String get txBalance => 'Saldo';
+
+  @override
+  String get txEmpty => 'Nenhum lançamento nesta conta ainda.';
+
+  @override
+  String get txFuture => 'ainda não entra no saldo';
+
+  @override
+  String get txTypeReceita => 'Receita';
+
+  @override
+  String get txTypeDespesa => 'Despesa';
+
+  @override
+  String get txTypeTransferenciaSaida => 'Transferência (saída)';
+
+  @override
+  String get txTypeTransferenciaEntrada => 'Transferência (entrada)';
+
+  @override
+  String get txTypeParcelaDivida => 'Parcela de dívida';
+
+  @override
+  String get txTypeEmprestimoConcedido => 'Empréstimo concedido';
+
+  @override
+  String get txTypeRecebimentoEmprestimo => 'Recebimento de empréstimo';
+
+  @override
+  String get catTitle => 'Categorias';
+
+  @override
+  String get catFab => 'Categoria';
+
+  @override
+  String get catEmpty => 'Nenhuma categoria cadastrada ainda.';
+
+  @override
+  String get catNew => 'Nova categoria';
+
+  @override
+  String get catEdit => 'Editar categoria';
+
+  @override
+  String get catNameHint => 'Mercado';
+
+  @override
+  String catMonthlyLimit(String base) {
+    return 'Limite mensal ($base)';
+  }
+
+  @override
+  String get catNoLimitHelp => 'Vazio = sem limite.';
+
+  @override
+  String get catInvalid =>
+      'Informe o nome e, se houver, um limite maior que zero.';
+
+  @override
+  String get catDeleteBody =>
+      'Os lançamentos dela ficam sem categoria; nenhum é apagado.';
+
+  @override
+  String catSpentMonth(String value) {
+    return 'Gasto no mês: $value';
+  }
+
+  @override
+  String catSpentOfLimit(String spent, String limit) {
+    return '$spent de $limit';
+  }
+
+  @override
+  String catOver(String value) {
+    return 'Estourou em $value';
+  }
+
+  @override
+  String catMissingFx(int count) {
+    return '$count despesa(s) fora da soma por falta de câmbio.';
+  }
+
+  @override
+  String get currencyUsd => 'Dólar americano';
+
+  @override
+  String get currencyEur => 'Euro';
+
+  @override
+  String get currencyGbp => 'Libra esterlina';
+
+  @override
+  String get currencyJpy => 'Iene';
+
+  @override
+  String get currencyChf => 'Franco suíço';
+
+  @override
+  String get currencyCad => 'Dólar canadense';
+
+  @override
+  String get currencyAud => 'Dólar australiano';
+
+  @override
+  String get currencyNzd => 'Dólar neozelandês';
+
+  @override
+  String get currencyCny => 'Yuan';
+
+  @override
+  String get currencyBrl => 'Real';
+
+  @override
+  String get currencyArs => 'Peso argentino';
+
+  @override
+  String get currencyUyu => 'Peso uruguaio';
+
+  @override
+  String get currencyPyg => 'Guarani';
+
+  @override
+  String get currencyClp => 'Peso chileno';
+
+  @override
+  String get currencyCop => 'Peso colombiano';
+
+  @override
+  String get currencyPen => 'Sol peruano';
+
+  @override
+  String get currencyMxn => 'Peso mexicano';
+
+  @override
+  String finErrUnknownCurrency(String currency) {
+    return 'Moeda fora do catálogo: $currency';
+  }
+
+  @override
+  String get finErrAmountMustBePositive => 'O valor deve ser maior que zero';
+
+  @override
+  String finErrInvalidDate(String date) {
+    return 'Data inválida: $date';
+  }
+
+  @override
+  String get finErrManualTypeOnly =>
+      'Só receita e despesa são lançadas à mão; transferência nasce em Transferir, parcela de dívida ao criar a dívida e o empréstimo ao conceder o empréstimo';
+
+  @override
+  String get finErrLiabilityNameRequired => 'Informe o nome da dívida';
+
+  @override
+  String get finErrBorrowerNameRequired => 'Informe o nome do devedor';
+
+  @override
+  String get finErrPrincipalMustBePositive =>
+      'O principal deve ser maior que zero';
+
+  @override
+  String get finErrTermMustBePositive =>
+      'O prazo (em meses) deve ser maior que zero';
+
+  @override
+  String get finErrNegativeMonthlyRate => 'A taxa mensal não pode ser negativa';
+
+  @override
+  String get finErrRepaidAmountMustBePositive =>
+      'O valor baixado deve ser maior que zero';
+
+  @override
+  String get finErrReceivedAmountNegative =>
+      'O valor recebido não pode ser negativo';
+
+  @override
+  String finErrLoanCurrencyMismatch(
+    String loanCurrency,
+    String accountCurrency,
+  ) {
+    return 'O empréstimo é em $loanCurrency e a conta em $accountCurrency';
+  }
+
+  @override
+  String get finErrCategoryNameRequired => 'Informe o nome da categoria';
+
+  @override
+  String get finErrCategoryLimitMustBePositive =>
+      'O limite mensal deve ser maior que zero';
+
+  @override
+  String get finErrTransferAmountsMustBePositive =>
+      'Os valores devem ser maiores que zero';
+
+  @override
+  String get finErrTransferSameAccount => 'Escolha duas contas diferentes';
+
+  @override
+  String get finErrTransferSameCurrencyAmountsDiffer =>
+      'Contas na mesma moeda recebem exatamente o que saiu';
+
+  @override
+  String get finErrAccountNotFound => 'Conta não encontrada';
+
+  @override
+  String get finErrAccountCurrencyLocked =>
+      'A moeda não muda numa conta que já tem lançamentos';
+
+  @override
+  String get finErrBorrowerHasLoans =>
+      'Este devedor ainda tem empréstimos: apague-os antes';
+
+  @override
+  String get finErrBorrowerNotFound => 'Devedor não encontrado';
+
+  @override
+  String get finErrLoanNotFound => 'Empréstimo não encontrado';
+
+  @override
+  String get finErrLinkedTransactionLocked =>
+      'Parcela de dívida e lançamento de empréstimo só se apagam junto com a dívida ou o empréstimo';
 }
