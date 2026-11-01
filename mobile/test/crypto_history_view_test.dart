@@ -153,48 +153,27 @@ void main() {
     });
   });
 
-  group('describeHistoryPoint', () {
-    test('verdes e registrados sobre o total, com o veredito curto', () {
-      expect(
-        describeHistoryPoint(
-          point('2026-10-29', green: 14, logged: 18, total: 20, verdict: ScoreVerdict.intact),
-        ),
-        '14 verdes de 20 · 18 registrados · Tese intacta',
-      );
-      expect(
-        describeHistoryPoint(
-          point('2026-10-29', green: 8, logged: 20, total: 20, verdict: ScoreVerdict.neutral),
-        ),
-        '8 verdes de 20 · 20 registrados · Neutro',
-      );
-      expect(
-        describeHistoryPoint(
-          point('2026-10-29', green: 2, logged: 5, total: 20, verdict: ScoreVerdict.reduceRisk),
-        ),
-        '2 verdes de 20 · 5 registrados · Reduzir risco',
-      );
-    });
-
-    test('singular com 1 e "0 verdes" no zero', () {
-      expect(
-        describeHistoryPoint(
-          point('2026-10-29', green: 1, logged: 1, total: 8, verdict: ScoreVerdict.reduceRisk),
-        ),
-        '1 verde de 8 · 1 registrado · Reduzir risco',
-      );
-      expect(
-        describeHistoryPoint(
-          point('2026-10-29', green: 0, logged: 0, total: 8, verdict: ScoreVerdict.reduceRisk),
-        ),
-        '0 verdes de 8 · 0 registrados · Reduzir risco',
-      );
-    });
-  });
+  // A frase do ponto tocado ("14 verdes de 20 · 18 registrados · Tese intacta") saiu do
+  // domínio (`describeHistoryPoint`): plural e veredito são do `.arb` e são cobertos em
+  // `crypto_labels_test.dart` nos dois idiomas.
 
   group('formatHistoryDate', () {
-    test('dia/mês/ano de 2 dígitos', () {
-      expect(formatHistoryDate('2026-10-29'), '29/10/26');
-      expect(formatHistoryDate('2026-01-05'), '05/01/26');
+    test('pt: dia/mês/ano de 2 dígitos', () {
+      expect(formatHistoryDate('2026-10-29', locale: 'pt'), '29/10/26');
+      expect(formatHistoryDate('2026-01-05', locale: 'pt'), '05/01/26');
+    });
+
+    test('en: mês/dia/ano de 2 dígitos', () {
+      expect(formatHistoryDate('2026-10-29', locale: 'en'), '10/29/26');
+      expect(formatHistoryDate('2026-01-05', locale: 'en'), '01/05/26');
+    });
+
+    test('data ilegível volta como veio, em qualquer idioma', () {
+      for (final locale in ['pt', 'en']) {
+        expect(formatHistoryDate('hoje', locale: locale), 'hoje', reason: locale);
+        expect(formatHistoryDate('26-10-29', locale: locale), '26-10-29', reason: locale);
+        expect(formatHistoryDate('', locale: locale), '', reason: locale);
+      }
     });
   });
 }

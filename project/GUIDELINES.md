@@ -7,7 +7,7 @@
 # Diretriz de código (IMPORTANTE — sempre seguir)
 
 **Todo código novo deve ser escrito em inglês — sem exceção.** O repositório será público no GitHub.
-- Strings visíveis ao usuário (UI, mensagens de erro, labels, placeholders): inglês
+- Strings visíveis ao usuário (UI, mensagens de erro, labels, placeholders): em inglês no código-fonte. No mobile, nenhum texto de UI fica fixo no código: vai para `mobile/lib/l10n/app_en.arb` (modelo) e ganha tradução em `app_pt.arb`. O idioma da tela segue o do aparelho, com inglês como padrão (ADR 0001; a migração das telas antigas está em andamento).
 - Nomes de variáveis, funções, classes, arquivos: inglês
 - Comentários no código: podem ficar em português (não são visíveis ao usuário e facilitam o aprendizado)
 - Esta regra vale para qualquer linguagem que venha a ser usada (Python, TypeScript, Rust, etc. — a decidir)

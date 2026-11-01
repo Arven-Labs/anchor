@@ -55,14 +55,19 @@ void main() {
       expect(boundaryDraftError('2,5', '-1'), isNull);
     });
 
-    test('pede dois números quando um deles não é número', () {
-      expect(boundaryDraftError('', '7'), 'Digite dois números.');
-      expect(boundaryDraftError('0', 'x'), 'Digite dois números.');
+    // O domínio devolve um código; o texto (inglês e português) vem do `.arb`.
+    test('devolve needTwoNumbers quando um deles não é número', () {
+      expect(boundaryDraftError('', '7'), BoundaryDraftError.needTwoNumbers);
+      expect(boundaryDraftError('0', 'x'), BoundaryDraftError.needTwoNumbers);
     });
 
-    test('pede números diferentes quando são iguais', () {
-      expect(boundaryDraftError('5', '5'), 'Use dois números diferentes.');
-      expect(boundaryDraftError('5,0', '5'), 'Use dois números diferentes.');
+    test('devolve needDifferentNumbers quando são iguais', () {
+      expect(boundaryDraftError('5', '5'), BoundaryDraftError.needDifferentNumbers);
+      expect(boundaryDraftError('5,0', '5'), BoundaryDraftError.needDifferentNumbers);
+    });
+
+    test('dois valores inválidos e iguais pedem números, não "diferentes"', () {
+      expect(boundaryDraftError('x', 'x'), BoundaryDraftError.needTwoNumbers);
     });
   });
 
@@ -81,50 +86,57 @@ void main() {
     });
   });
 
-  group('describeBands', () {
-    test('maior é melhor: verde a partir do limite, vermelho até o outro', () {
-      expect(describeBands(2.0, 0.0), 'Verde ≥ 2 · Vermelho ≤ 0');
-    });
-
-    test('menor é melhor: verde até o limite, vermelho a partir do outro', () {
-      expect(describeBands(0.0, 7.0), 'Verde ≤ 0 · Vermelho ≥ 7');
-    });
-
-    test('usa vírgula decimal', () {
-      expect(describeBands(0.5, 4.0), 'Verde ≤ 0,5 · Vermelho ≥ 4');
-    });
-  });
+  // A frase "Verde ≥ 2 · Vermelho ≤ 0" saiu do domínio (`describeBands`): o texto é do
+  // `.arb` e é coberto em `crypto_labels_test.dart` e no teste da tela de limites.
 
   group('formatBoundary', () {
-    test('inteiro sem casas', () {
-      expect(formatBoundary(7.0), '7');
-      expect(formatBoundary(-1.0), '-1');
-      expect(formatBoundary(75.0), '75');
+    test('inteiro sem casas, em qualquer idioma', () {
+      for (final locale in ['pt', 'en']) {
+        expect(formatBoundary(7.0, locale: locale), '7', reason: locale);
+        expect(formatBoundary(-1.0, locale: locale), '-1', reason: locale);
+        expect(formatBoundary(75.0, locale: locale), '75', reason: locale);
+      }
     });
 
-    test('vírgula decimal e sem zeros à direita', () {
-      expect(formatBoundary(0.5), '0,5');
-      expect(formatBoundary(1.25), '1,25');
-      expect(formatBoundary(3.10), '3,1');
+    test('pt: vírgula decimal e sem zeros à direita', () {
+      expect(formatBoundary(0.5, locale: 'pt'), '0,5');
+      expect(formatBoundary(1.25, locale: 'pt'), '1,25');
+      expect(formatBoundary(3.10, locale: 'pt'), '3,1');
+    });
+
+    test('en: ponto decimal e sem zeros à direita', () {
+      expect(formatBoundary(0.5, locale: 'en'), '0.5');
+      expect(formatBoundary(1.25, locale: 'en'), '1.25');
+      expect(formatBoundary(3.10, locale: 'en'), '3.1');
     });
 
     test('nunca mostra -0', () {
-      expect(formatBoundary(-0.0), '0');
-      expect(formatBoundary(0.0), '0');
+      for (final locale in ['pt', 'en']) {
+        expect(formatBoundary(-0.0, locale: locale), '0', reason: locale);
+        expect(formatBoundary(0.0, locale: locale), '0', reason: locale);
+      }
     });
 
     test('valor pequeno não vira zero', () {
-      expect(formatBoundary(0.0005), '0,0005');
+      expect(formatBoundary(0.0005, locale: 'pt'), '0,0005');
+      expect(formatBoundary(0.0005, locale: 'en'), '0.0005');
     });
 
-    test('número grande sem notação científica', () {
-      expect(formatBoundary(1e15), '1000000000000000');
-      expect(formatBoundary(1e15).contains('e'), isFalse);
+    test('número grande sem notação científica e sem separador de milhar', () {
+      for (final locale in ['pt', 'en']) {
+        expect(formatBoundary(1e15, locale: locale), '1000000000000000', reason: locale);
+      }
     });
 
     test('ida e volta: o que é mostrado volta como o mesmo número', () {
-      for (final value in [0.0, 7.0, -1.0, 0.5, 1.25, 55.0, 0.0005, 12345.678]) {
-        expect(parseBoundary(formatBoundary(value)), value, reason: '$value');
+      for (final locale in ['pt', 'en']) {
+        for (final value in [0.0, 7.0, -1.0, 0.5, 1.25, 55.0, 0.0005, 12345.678]) {
+          expect(
+            parseBoundary(formatBoundary(value, locale: locale)),
+            value,
+            reason: '$value ($locale)',
+          );
+        }
       }
     });
   });

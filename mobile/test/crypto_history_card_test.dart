@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anchor_mobile/domain/crypto_score.dart';
 import 'package:anchor_mobile/screens/crypto_history_card.dart';
-import 'package:anchor_mobile/theme.dart';
+
+import 'support/localized_app.dart';
 
 // O cartão "Histórico" isolado: a série entra pronta, sem banco. A integração com
 // a tela (carregar do banco ao trocar de moeda) fica em crypto_score_screen_test.
@@ -22,11 +23,12 @@ ScoreHistoryPoint point(
 );
 
 void main() {
-  Widget app(List<ScoreHistoryPoint> history) => MaterialApp(
-    theme: buildAnchorTheme(),
-    home: Scaffold(
+  // Idioma fixado em pt: as asserções abaixo são o texto que o app já mostrava.
+  Widget app(List<ScoreHistoryPoint> history, {String locale = 'pt'}) => localizedApp(
+    Scaffold(
       body: SingleChildScrollView(child: CryptoHistoryCard(history: history)),
     ),
+    locale: locale,
   );
 
   /// Série curta (menos de 30 dias): sem botões de período.
@@ -70,6 +72,31 @@ void main() {
         findsOneWidget,
         reason: 'o último ponto',
       );
+    });
+
+    testWidgets('em inglês: título, resumo e botão "All"', (tester) async {
+      await tester.pumpWidget(app(longSeries, locale: 'en'));
+
+      expect(find.text('History'), findsOneWidget);
+      expect(keyedText('history-summary', 'dates'), findsOneWidget);
+      expect(keyedText('history-summary', 'latest:'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'All'), findsOneWidget);
+      expect(find.text('Tudo'), findsNothing);
+      expect(find.text('Histórico'), findsNothing);
+    });
+
+    testWidgets('em inglês: sem histórico mostra o aviso traduzido', (tester) async {
+      await tester.pumpWidget(app(const [], locale: 'en'));
+
+      expect(find.text('No history yet.'), findsOneWidget);
+      expect(find.text('Sem histórico ainda.'), findsNothing);
+    });
+
+    testWidgets('em inglês: um ponto só diz "1 date", sem plural', (tester) async {
+      await tester.pumpWidget(app([point('2026-10-29', green: 4)], locale: 'en'));
+
+      expect(keyedText('history-summary', '1 date ·'), findsOneWidget);
+      expect(keyedText('history-summary', '4 greens of 10 on 10/29/26'), findsOneWidget);
     });
 
     testWidgets('plota a % de verdes de cada ponto, na ordem das datas', (tester) async {

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../domain/crypto_indicator_info.dart';
 import '../domain/crypto_threshold_input.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/crypto_labels.dart';
 import '../models/indicator_threshold_view.dart';
 import '../services/crypto_score_repository.dart';
 
@@ -52,9 +53,10 @@ class _CryptoThresholdsScreenState extends State<CryptoThresholdsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final thresholds = _thresholds;
     return Scaffold(
-      appBar: AppBar(title: Text('Limites · ${widget.coin}')),
+      appBar: AppBar(title: Text(l.thresholdsTitle(widget.coin))),
       body: thresholds == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -62,11 +64,13 @@ class _CryptoThresholdsScreenState extends State<CryptoThresholdsScreen> {
                 for (final threshold in thresholds)
                   ListTile(
                     key: ValueKey('threshold-${threshold.indicator}'),
-                    title: Text(indicatorLabel(threshold.indicator)),
+                    title: Text(indicatorName(l, threshold.indicator)),
                     subtitle: Text(
-                      describeBands(threshold.greenBoundary, threshold.redBoundary),
+                      bandsText(l, threshold.greenBoundary, threshold.redBoundary),
                     ),
-                    trailing: Text(threshold.isDefault ? 'Padrão' : 'Editado'),
+                    trailing: Text(
+                      threshold.isDefault ? l.thresholdDefault : l.thresholdEdited,
+                    ),
                     onTap: () => _edit(threshold),
                   ),
               ],
@@ -91,23 +95,36 @@ class _ThresholdDialog extends StatefulWidget {
 }
 
 class _ThresholdDialogState extends State<_ThresholdDialog> {
-  late final _green = TextEditingController(
-    text: formatBoundary(widget.threshold.greenBoundary),
-  );
-  late final _red = TextEditingController(
-    text: formatBoundary(widget.threshold.redBoundary),
-  );
+  // Iniciados no primeiro `build` (precisam do idioma, que vem do contexto).
+  TextEditingController? _greenField;
+  TextEditingController? _redField;
   bool _busy = false;
   String? _error;
 
+  TextEditingController get _green => _greenField!;
+  TextEditingController get _red => _redField!;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_greenField != null) return;
+    final locale = AppLocalizations.of(context).localeName;
+    _greenField = TextEditingController(
+      text: formatBoundary(widget.threshold.greenBoundary, locale: locale),
+    );
+    _redField = TextEditingController(
+      text: formatBoundary(widget.threshold.redBoundary, locale: locale),
+    );
+  }
+
   @override
   void dispose() {
-    _green.dispose();
-    _red.dispose();
+    _greenField?.dispose();
+    _redField?.dispose();
     super.dispose();
   }
 
-  String? get _draftError => boundaryDraftError(_green.text, _red.text);
+  BoundaryDraftError? get _draftError => boundaryDraftError(_green.text, _red.text);
 
   bool get _dirty =>
       parseBoundary(_green.text) != widget.threshold.greenBoundary ||
@@ -147,6 +164,7 @@ class _ThresholdDialogState extends State<_ThresholdDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final threshold = widget.threshold;
     final draftError = _draftError;
     final higherIsBetter = draftHigherIsBetter(_green.text, _red.text);
@@ -154,7 +172,7 @@ class _ThresholdDialogState extends State<_ThresholdDialog> {
     // Só o que se digita num número: o regex do `parseBoundary` decide o resto.
     final filter = FilteringTextInputFormatter.allow(RegExp(r'[0-9.,+\-]'));
     return AlertDialog(
-      title: Text(indicatorLabel(threshold.indicator)),
+      title: Text(indicatorName(l, threshold.indicator)),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -165,7 +183,7 @@ class _ThresholdDialogState extends State<_ThresholdDialog> {
               controller: _green,
               keyboardType: keyboard,
               inputFormatters: [filter],
-              decoration: const InputDecoration(labelText: 'Verde'),
+              decoration: InputDecoration(labelText: l.thresholdGreen),
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
@@ -174,28 +192,29 @@ class _ThresholdDialogState extends State<_ThresholdDialog> {
               controller: _red,
               keyboardType: keyboard,
               inputFormatters: [filter],
-              decoration: const InputDecoration(labelText: 'Vermelho'),
+              decoration: InputDecoration(labelText: l.thresholdRed),
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 8),
             if (draftError != null)
-              Text(draftError, style: TextStyle(color: Theme.of(context).colorScheme.error))
+              Text(
+                boundaryErrorText(l, draftError),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              )
             else if (higherIsBetter != null)
-              Text(higherIsBetter ? 'Maior é melhor' : 'Menor é melhor'),
+              Text(higherIsBetter ? l.thresholdHigherIsBetter : l.thresholdLowerIsBetter),
             if (threshold.defaultGreen != null && threshold.defaultRed != null) ...[
               const SizedBox(height: 8),
               Text(
-                'Padrão: verde ${formatBoundary(threshold.defaultGreen!)}, '
-                'vermelho ${formatBoundary(threshold.defaultRed!)}',
+                l.thresholdDefaultValues(
+                  formatBoundary(threshold.defaultGreen!, locale: l.localeName),
+                  formatBoundary(threshold.defaultRed!, locale: l.localeName),
+                ),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
             const SizedBox(height: 8),
-            Text(
-              'Salvar reclassifica as leituras já gravadas e muda o histórico: o '
-              'passado passa a ser visto com estes limites.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            Text(l.thresholdSaveWarning, style: Theme.of(context).textTheme.bodySmall),
             if (_error != null) ...[
               const SizedBox(height: 8),
               Text(
@@ -211,16 +230,16 @@ class _ThresholdDialogState extends State<_ThresholdDialog> {
         OutlinedButton(
           key: const Key('threshold-reset'),
           onPressed: threshold.isDefault || _busy ? null : _reset,
-          child: const Text('Redefinir'),
+          child: Text(l.actionReset),
         ),
         TextButton(
           onPressed: _busy ? null : () => Navigator.of(context).pop(false),
-          child: const Text('Cancelar'),
+          child: Text(l.actionCancel),
         ),
         FilledButton(
           key: const Key('threshold-save'),
           onPressed: _canSave ? _save : null,
-          child: Text(_busy ? 'Salvando…' : 'Salvar'),
+          child: Text(_busy ? l.actionSaving : l.actionSave),
         ),
       ],
     );

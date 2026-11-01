@@ -11,7 +11,8 @@ import 'package:anchor_mobile/screens/crypto_score_screen.dart';
 import 'package:anchor_mobile/services/crypto_collector.dart';
 import 'package:anchor_mobile/services/crypto_score_repository.dart';
 import 'package:anchor_mobile/services/crypto_source_http.dart';
-import 'package:anchor_mobile/theme.dart';
+
+import 'support/localized_app.dart';
 
 // A tela do score montada de verdade (SQLite ffi) com a coleta trocada por uma
 // função falsa: nenhum teste aqui toca a rede.
@@ -51,14 +52,15 @@ void main() {
   Widget app({
     required bool active,
     required Future<CollectionResult> Function(String) collect,
-  }) => MaterialApp(
-    theme: buildAnchorTheme(),
-    home: CryptoScoreScreen(
+    String locale = 'pt',
+  }) => localizedApp(
+    CryptoScoreScreen(
       active: active,
       repository: repository,
       collect: collect,
       now: () => current,
     ),
+    locale: locale,
   );
 
   // O SQLite ffi responde fora do relógio falso do teste: sonda até a condição
@@ -79,6 +81,7 @@ void main() {
     WidgetTester tester, {
     bool active = true,
     Future<CollectionResult> Function(String)? collect,
+    String locale = 'pt',
   }) async {
     tester.view.physicalSize = const Size(800, 5000);
     tester.view.devicePixelRatio = 1;
@@ -96,7 +99,9 @@ void main() {
     // chamadores veem `null` e abrem); abrir antes evita que a tela e a coleta
     // disputem a abertura, que só é o caso do teste, não do uso normal.
     await tester.runAsync(AppDatabase.instance);
-    await tester.pumpWidget(app(active: active, collect: collect ?? recording()));
+    await tester.pumpWidget(
+      app(active: active, collect: collect ?? recording(), locale: locale),
+    );
     // Pronta quando o primeiro score carregou (o primeiro grupo aparece).
     await settle(tester, () => find.text('On-chain').evaluate().isNotEmpty);
   }
@@ -512,7 +517,9 @@ void main() {
         () => find.byKey(const Key('threshold-save')).evaluate().isEmpty,
       );
 
-      await tester.pageBack();
+      // `pageBack` acha o botão pelo tooltip "Back", que agora segue o idioma do teste.
+      await tester.tap(find.byType(BackButton));
+      await tester.pump();
       await settle(tester, () => find.text('1 verde de 20').evaluate().isNotEmpty);
 
       expect(find.text('1 verde de 20'), findsOneWidget);
@@ -583,6 +590,56 @@ void main() {
 
       expect(find.textContaining('Erro inesperado'), findsOneWidget);
       expect(find.text('Atualizar'), findsOneWidget);
+    });
+  });
+
+  // Idioma do aparelho em inglês (ADR 0001): a mesma tela, toda traduzida.
+  group('em inglês', () {
+    testWidgets('sem nenhuma leitura: título, aviso, veredito e "No reading"', (tester) async {
+      await pumpScreen(tester, locale: 'en');
+
+      expect(find.text('Crypto score'), findsOneWidget);
+      expect(find.text('Refresh'), findsOneWidget);
+      expect(find.text('No readings yet. Tap Refresh to collect.'), findsOneWidget);
+      expect(find.text('No reading'), findsNWidgets(20));
+      expect(find.text('0 greens of 20'), findsOneWidget);
+      expect(find.text('0 with a valid reading'), findsOneWidget);
+      expect(find.text('Reduce risk'), findsOneWidget);
+      expect(find.text('No history yet.'), findsOneWidget);
+      // Nada do português sobra na tela.
+      for (final pt in ['Atualizar', 'Sem leitura', 'Score cripto', 'Nenhuma leitura']) {
+        expect(find.textContaining(pt), findsNothing, reason: pt);
+      }
+    });
+
+    testWidgets('leituras: valor com ponto decimal, sinal em inglês, data mês/dia/ano', (
+      tester,
+    ) async {
+      await inDb(tester, () async {
+        await seed('ETH', 'mvrv_z_score', -0.5); // verde (≤ 0)
+        await seed('ETH', 'puell_multiple', 5); // vermelho (≥ 4)
+      });
+      await pumpScreen(tester, locale: 'en');
+      await settle(tester, () => find.text('Green').evaluate().isNotEmpty);
+
+      expect(find.text('Green'), findsOneWidget);
+      expect(find.text('Red'), findsOneWidget);
+      expect(find.text('-0.50'), findsOneWidget);
+      expect(find.text('5.00'), findsOneWidget);
+      expect(find.text('1 green of 20'), findsOneWidget);
+      expect(find.text('Puell Multiple'), findsOneWidget);
+      expect(find.textContaining('10/28/2026'), findsWidgets); // leitura de 2026-10-28, mês/dia/ano
+      expect(find.textContaining('28/10/2026'), findsNothing);
+    });
+
+    testWidgets('bug na coleta aparece como "Unexpected error"', (tester) async {
+      Future<CollectionResult> broken(String coin) async => throw StateError('bug');
+
+      await pumpScreen(tester, collect: broken, locale: 'en');
+      await settle(tester, () => find.text('Last collection failures').evaluate().isNotEmpty);
+
+      expect(find.textContaining('Unexpected error'), findsOneWidget);
+      expect(find.text('Refresh'), findsOneWidget);
     });
   });
 }

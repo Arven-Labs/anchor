@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'l10n/app_localizations.dart';
+import 'l10n/locale_resolution.dart';
 import 'screens/crypto_score_screen.dart';
 import 'screens/financas_screen.dart';
 import 'screens/home_screen.dart';
@@ -19,6 +21,10 @@ class AnchorApp extends StatelessWidget {
     return MaterialApp(
       title: 'Anchor',
       theme: buildAnchorTheme(),
+      // Idioma do aparelho; o que não for português cai em inglês (ADR 0001).
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: appSupportedLocales,
+      localeListResolutionCallback: resolveAppLocale,
       home: const AnchorHome(),
       debugShowCheckedModeBanner: false,
     );

@@ -9,6 +9,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/crypto_score.dart';
+import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/screens/crypto_score_screen.dart';
 import 'package:anchor_mobile/services/crypto_collector.dart';
 import 'package:anchor_mobile/services/crypto_score_repository.dart';
@@ -79,6 +80,7 @@ void main() {
     required String coin,
     CollectionResult? result,
     Future<void> Function()? beforeCapture,
+    String locale = 'pt',
   }) async {
     // 390 x 2700 lógicos: a tela do ETH tem 20 linhas e precisa caber inteira.
     tester.view.physicalSize = const Size(780, 5400);
@@ -103,6 +105,9 @@ void main() {
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: buildAnchorTheme(),
+          locale: Locale(locale),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: CryptoScoreScreen(
             active: true,
             repository: repository,
@@ -116,7 +121,7 @@ void main() {
     await settle(tester, () => find.text('On-chain').evaluate().isNotEmpty);
     if (coin != 'ETH') {
       await tester.tap(find.widgetWithText(ChoiceChip, coin));
-      await settle(tester, () => find.text('Atualizar').evaluate().isNotEmpty);
+      await settle(tester, () => find.byType(FilledButton).evaluate().isNotEmpty);
     }
     await beforeCapture?.call();
     await capture(tester, name);
@@ -191,6 +196,8 @@ void main() {
       await seedMix('ETH', skip: 7, expired: 5);
     });
     await show(tester, 'cripto_eth', coin: 'ETH');
+    // O mesmo banco em inglês (ADR 0001): o aparelho em en vê tudo traduzido.
+    await show(tester, 'cripto_eth_en', coin: 'ETH', locale: 'en');
 
     // Mesmo histórico, 90D marcado e um ponto tocado.
     await show(
