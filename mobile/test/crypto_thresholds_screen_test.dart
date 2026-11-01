@@ -9,7 +9,8 @@ import 'package:anchor_mobile/domain/crypto_score.dart';
 import 'package:anchor_mobile/models/indicator_threshold_view.dart';
 import 'package:anchor_mobile/screens/crypto_thresholds_screen.dart';
 import 'package:anchor_mobile/services/crypto_score_repository.dart';
-import 'package:anchor_mobile/theme.dart';
+
+import 'support/localized_app.dart';
 
 // A tela de limites montada de verdade (SQLite ffi). Nenhum teste toca a rede.
 class _FailingRepository extends CryptoScoreRepository {
@@ -53,6 +54,7 @@ void main() {
     WidgetTester tester, {
     String coin = coinEth,
     CryptoScoreRepository? repo,
+    String locale = 'pt',
   }) async {
     tester.view.physicalSize = const Size(800, 5000);
     tester.view.devicePixelRatio = 1;
@@ -65,9 +67,9 @@ void main() {
     });
     await tester.runAsync(AppDatabase.instance);
     await tester.pumpWidget(
-      MaterialApp(
-        theme: buildAnchorTheme(),
-        home: CryptoThresholdsScreen(coin: coin, repository: repo ?? repository),
+      localizedApp(
+        CryptoThresholdsScreen(coin: coin, repository: repo ?? repository),
+        locale: locale,
       ),
     );
     await settle(
@@ -317,6 +319,61 @@ void main() {
 
       expect(find.byKey(const Key('threshold-save')), findsNothing);
       expect(inRow('mvrv_z_score', 'Padrão'), findsOneWidget);
+    });
+  });
+
+  // Idioma do aparelho em inglês (ADR 0001).
+  group('em inglês', () {
+    testWidgets('a lista: título, nome, faixa com ponto decimal e "Default"', (tester) async {
+      await pumpScreen(tester, locale: 'en');
+
+      expect(find.text('Thresholds · ETH'), findsOneWidget);
+      expect(inRow('mvrv_z_score', 'MVRV Z-Score'), findsOneWidget);
+      expect(inRow('mvrv_z_score', 'Green ≤ 0 · Red ≥ 7'), findsOneWidget);
+      expect(inRow('staking_yield', 'Green ≥ 2 · Red ≤ 0'), findsOneWidget);
+      expect(inRow('mvrv_z_score', 'Default'), findsOneWidget);
+      expect(find.textContaining('Padrão'), findsNothing);
+      expect(find.textContaining('Verde'), findsNothing);
+    });
+
+    testWidgets('o diálogo: rótulos, direção, padrão e aviso em inglês', (tester) async {
+      await pumpScreen(tester, locale: 'en');
+      await openDialog(tester, 'mvrv_z_score');
+
+      expect(find.text('Green'), findsOneWidget);
+      expect(find.text('Red'), findsOneWidget);
+      expect(find.text('Lower is better'), findsOneWidget);
+      expect(find.textContaining('Default: green 0, red 7'), findsOneWidget);
+      expect(find.textContaining('Saving reclassifies the stored readings'), findsOneWidget);
+      expect(find.text('Reset'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
+      expect(find.text('Save'), findsOneWidget);
+    });
+
+    testWidgets('os erros do rascunho aparecem em inglês e o ponto decimal é aceito', (
+      tester,
+    ) async {
+      await pumpScreen(tester, locale: 'en');
+      await openDialog(tester, 'mvrv_z_score');
+
+      await typeLimits(tester, '', '7');
+      expect(find.text('Enter two numbers.'), findsOneWidget);
+      expect(saveButton(tester).onPressed, isNull);
+
+      await typeLimits(tester, '5', '5');
+      expect(find.text('Use two different numbers.'), findsOneWidget);
+
+      await typeLimits(tester, '2.5', '9');
+      expect(saveButton(tester).onPressed, isNotNull);
+      expect(find.text('Lower is better'), findsOneWidget);
+    });
+
+    testWidgets('os campos abrem com ponto decimal em inglês', (tester) async {
+      await pumpScreen(tester, locale: 'en');
+      await openDialog(tester, 'put_call_ratio');
+
+      final green = tester.widget<TextField>(find.byKey(const Key('threshold-green')));
+      expect(green.controller!.text, isNot(contains(',')));
     });
   });
 }

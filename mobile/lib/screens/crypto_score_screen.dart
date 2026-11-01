@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../domain/crypto_indicator_info.dart';
 import '../domain/crypto_score.dart';
-import '../domain/general_finance.dart' show formatIsoDay;
+import '../domain/general_finance.dart' show formatReadingDate;
+import '../l10n/app_localizations.dart';
+import '../l10n/crypto_labels.dart';
 import '../services/crypto_collector.dart';
 import '../services/crypto_score_repository.dart';
 import '../services/crypto_source_http.dart';
@@ -14,6 +16,10 @@ const _coins = [coinEth, coinBtc, coinAda, coinXrp, coinBnb];
 
 const _amber = Color(0xFFFBBF24);
 const _red = Color(0xFFF87171);
+
+/// Uma falha da última coleta. [unexpected] é um bug de código (não uma fonte fora do ar):
+/// a tela escreve "Erro inesperado: …" no idioma do aparelho.
+typedef _Failure = ({String text, bool unexpected});
 
 /// A aba "Cripto": o score de cada moeda (veredito, grupos e indicadores), lido do
 /// banco, com a coleta das fontes públicas.
@@ -57,7 +63,7 @@ class _CryptoScoreScreenState extends State<CryptoScoreScreen> {
   final _autoCollected = <String>{};
 
   /// Linhas de erro da última coleta de cada moeda.
-  final _errors = <String, List<String>>{};
+  final _errors = <String, List<_Failure>>{};
 
   @override
   void initState() {
@@ -120,17 +126,19 @@ class _CryptoScoreScreenState extends State<CryptoScoreScreen> {
     if (_collecting) return;
     final coin = _coin;
     setState(() => _collecting = true);
-    List<String> errors;
+    List<_Failure> errors;
     try {
       final collect =
           widget.collect ??
           (String c) => CryptoCollector(repository: _repository).collect([c]);
-      errors = (await collect(coin)).errors;
+      errors = [for (final line in (await collect(coin)).errors) (text: line, unexpected: false)];
     } on CryptoSourceException catch (e) {
-      errors = [e.toString()];
+      errors = [(text: e.toString(), unexpected: false)];
     } catch (e) {
-      // Bug de código: aparece na tela com o texto, não some em silêncio.
-      errors = ['Erro inesperado: $e'];
+      // Bug de código: aparece na tela com o texto, não some em silêncio. Guardado como
+      // código e traduzido ao desenhar: esta função roda também a partir do `initState`,
+      // onde ainda não dá para ler o idioma.
+      errors = [(text: '$e', unexpected: true)];
     }
     if (!mounted) return;
     _errors[coin] = errors;
@@ -144,16 +152,17 @@ class _CryptoScoreScreenState extends State<CryptoScoreScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final score = _score;
-    final errors = _errors[_coin] ?? const <String>[];
+    final errors = _errors[_coin] ?? const <_Failure>[];
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Score cripto'),
+        title: Text(l.cryptoScoreTitle),
         actions: [
           IconButton(
             key: const Key('open-thresholds'),
             icon: const Icon(Icons.tune),
-            tooltip: 'Limites',
+            tooltip: l.cryptoThresholdsTooltip,
             onPressed: _openThresholds,
           ),
         ],
@@ -184,7 +193,7 @@ class _CryptoScoreScreenState extends State<CryptoScoreScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.refresh),
-              label: Text(_collecting ? 'Atualizando…' : 'Atualizar'),
+              label: Text(_collecting ? l.cryptoRefreshing : l.cryptoRefresh),
             ),
           ),
           const SizedBox(height: 12),
@@ -197,11 +206,9 @@ class _CryptoScoreScreenState extends State<CryptoScoreScreen> {
             _VerdictCard(score: score),
             CryptoHistoryCard(history: _history),
             if (_hasNoReading(score))
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-                child: Text(
-                  'Nenhuma leitura ainda. Toque em Atualizar para coletar.',
-                ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+                child: Text(l.cryptoNoReadings),
               ),
             if (errors.isNotEmpty) _FailuresCard(errors: errors),
             for (final group in score.groups) _GroupCard(group: group),
@@ -229,8 +236,8 @@ class _VerdictCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final color = _verdictColor(score.verdict);
-    final greens = score.green == 1 ? 'verde' : 'verdes';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -238,14 +245,14 @@ class _VerdictCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              verdictLabel(score.verdict),
+              verdictText(l, score.verdict),
               style: Theme.of(
                 context,
               ).textTheme.titleMedium?.copyWith(color: color),
             ),
             const SizedBox(height: 8),
-            Text('${score.green} $greens de ${score.total}'),
-            Text('${score.logged} com leitura válida'),
+            Text(greensOfTotalText(l, score.green, score.total)),
+            Text(l.cryptoValidReadings(score.logged)),
           ],
         ),
       ),
@@ -254,24 +261,33 @@ class _VerdictCard extends StatelessWidget {
 }
 
 class _FailuresCard extends StatelessWidget {
-  final List<String> errors;
+  final List<_Failure> errors;
 
   const _FailuresCard({required this.errors});
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Falhas da última coleta',
-              style: TextStyle(color: _red, fontWeight: FontWeight.w600),
+            Text(
+              l.cryptoFailuresTitle,
+              style: const TextStyle(color: _red, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
-            for (final error in errors) Text(describeCollectionError(error)),
+            for (final error in errors)
+              Text(
+                error.unexpected
+                    ? l.cryptoUnexpectedError(error.text)
+                    : describeCollectionError(
+                        error.text,
+                        nameOf: (key) => indicatorNameOrNull(l, key),
+                      ),
+              ),
           ],
         ),
       ),
@@ -286,6 +302,7 @@ class _GroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Card(
       key: ValueKey('group-${group.group.name}'),
       child: Padding(
@@ -297,7 +314,7 @@ class _GroupCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    groupLabel(group.group),
+                    groupName(l, group.group),
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
@@ -321,17 +338,18 @@ class _IndicatorRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final reading = indicator.reading;
     final String status;
     final Color color;
     if (reading == null) {
-      status = 'Sem leitura';
+      status = l.cryptoStatusNoReading;
       color = Colors.grey;
     } else if (indicator.expired) {
-      status = 'Vencida';
+      status = l.cryptoStatusExpired;
       color = Colors.grey;
     } else {
-      status = signalLabel(reading.signal);
+      status = signalText(l, reading.signal);
       color = switch (reading.signal) {
         'GREEN' => anchorPrimary,
         'RED' => _red,
@@ -347,10 +365,11 @@ class _IndicatorRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(indicatorLabel(indicator.indicator)),
+                Text(indicatorName(l, indicator.indicator)),
                 if (reading != null)
                   Text(
-                    '${reading.source} · ${formatIsoDay(reading.readingDate)}',
+                    '${reading.source} · '
+                    '${formatReadingDate(reading.readingDate, locale: l.localeName)}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.white60,
                     ),
@@ -364,7 +383,11 @@ class _IndicatorRow extends StatelessWidget {
               Text(
                 reading == null
                     ? '—'
-                    : formatIndicatorValue(indicator.indicator, reading.rawValue),
+                    : formatIndicatorValue(
+                        indicator.indicator,
+                        reading.rawValue,
+                        locale: l.localeName,
+                      ),
               ),
               Text(
                 status,

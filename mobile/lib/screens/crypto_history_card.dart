@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../domain/crypto_history_view.dart';
 import '../domain/crypto_score.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/crypto_labels.dart';
 import '../theme.dart';
 
 const _amber = Color(0xFFFBBF24);
@@ -43,6 +45,7 @@ class _CryptoHistoryCardState extends State<CryptoHistoryCard> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final history = widget.history;
     final visible = filterPeriod(history, _period);
     final selected = _selected;
@@ -58,18 +61,14 @@ class _CryptoHistoryCardState extends State<CryptoHistoryCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Histórico', style: Theme.of(context).textTheme.titleMedium),
+            Text(l.historyTitle, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             if (visible.isEmpty)
-              const Text('Sem histórico ainda.')
+              Text(l.historyEmpty)
             else ...[
-              Text(_summary(visible), key: const Key('history-summary')),
+              Text(_summary(l, visible), key: const Key('history-summary')),
               const SizedBox(height: 4),
-              Text(
-                'Parte dos indicadores verdes em cada data. Uma leitura deixa de '
-                'contar quando passa do prazo.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              Text(l.historyExplainer, style: Theme.of(context).textTheme.bodySmall),
               if (spansMoreThan30Days(history)) ...[
                 const SizedBox(height: 8),
                 Wrap(
@@ -77,7 +76,7 @@ class _CryptoHistoryCardState extends State<CryptoHistoryCard> {
                   children: [
                     for (final period in HistoryPeriod.values)
                       ChoiceChip(
-                        label: Text(period.label),
+                        label: Text(periodLabel(l, period)),
                         selected: period == _period,
                         onSelected: (_) => _setPeriod(period),
                       ),
@@ -112,7 +111,10 @@ class _CryptoHistoryCardState extends State<CryptoHistoryCard> {
               if (chosen != null) ...[
                 const SizedBox(height: 8),
                 Text(
-                  '${formatHistoryDate(chosen.date)} — ${describeHistoryPoint(chosen)}',
+                  l.historyDetail(
+                    formatHistoryDate(chosen.date, locale: l.localeName),
+                    historyPointText(l, chosen),
+                  ),
                   key: const Key('history-detail'),
                 ),
               ],
@@ -123,12 +125,13 @@ class _CryptoHistoryCardState extends State<CryptoHistoryCard> {
     );
   }
 
-  String _summary(List<ScoreHistoryPoint> visible) {
+  String _summary(AppLocalizations l, List<ScoreHistoryPoint> visible) {
     final last = visible.last;
-    final count = visible.length == 1 ? '1 data' : '${visible.length} datas';
-    final greens = '${last.green} ${last.green == 1 ? 'verde' : 'verdes'}';
-    return '$count · último: $greens de ${last.total} em '
-        '${formatHistoryDate(last.date)}';
+    return l.historySummary(
+      l.historyDateCount(visible.length),
+      greensOfTotalText(l, last.green, last.total),
+      formatHistoryDate(last.date, locale: l.localeName),
+    );
   }
 }
 

@@ -11,68 +11,36 @@ Set<String> _allIndicators() => {
     for (final group in IndicatorGroup.forCoin(coin)) ...group.indicators(coin),
 };
 
+// Os textos (nome do indicador, grupo, veredito, sinal) saíram do domínio e vivem nos
+// `.arb`; são testados nos dois idiomas em `crypto_labels_test.dart`. O domínio guarda
+// só as chaves e a formatação de números por idioma.
 void main() {
-  group('rótulos', () {
-    test('todo indicador de todo conjunto tem nome legível em português', () {
+  group('chaves conhecidas', () {
+    test('o conjunto de indicadores conhecidos cobre todo indicador de toda moeda', () {
       final indicators = _allIndicators();
-      expect(indicators, hasLength(22)); // se mudar, o mapa de nomes também
-
-      for (final indicator in indicators) {
-        final label = indicatorLabel(indicator);
-        expect(label, isNotEmpty, reason: indicator);
-        // Jargão interno (a chave do banco) nunca aparece na tela.
-        expect(label, isNot(contains('_')), reason: indicator);
-        expect(label, isNot(equals(indicator)), reason: indicator);
-      }
-    });
-
-    test('nomes que o dono vai ler (amostra fixada)', () {
-      expect(indicatorLabel('mvrv_z_score'), 'MVRV Z-Score');
-      expect(indicatorLabel('staking_yield'), 'Staking yield real');
-      expect(indicatorLabel('fear_greed_index'), 'Fear & Greed (0–100)');
-      expect(indicatorLabel('exchange_netflow'), 'Netflow das exchanges');
-      expect(
-        indicatorLabel('funding_rate_7d'),
-        'Funding dos perpétuos (7d, anualizado)',
-      );
-      expect(indicatorLabel('sopr'), 'SOPR');
-    });
-
-    test('indicador desconhecido não quebra a tela: mostra a chave como veio', () {
-      expect(indicatorLabel('indicador_novo'), 'indicador_novo');
-    });
-
-    test('grupos em português, um rótulo distinto para cada', () {
-      expect({for (final g in IndicatorGroup.values) g: groupLabel(g)}, {
-        IndicatorGroup.onChain: 'On-chain',
-        IndicatorGroup.fundamentals: 'Fundamentos da rede',
-        IndicatorGroup.derivatives: 'Derivativos e opções',
-        IndicatorGroup.liquidity: 'Liquidez de mercado',
-        IndicatorGroup.sentiment: 'Sentimento de mercado',
-      });
-    });
-
-    test('veredito e sinal têm texto próprio (a cor nunca é a única pista)', () {
-      expect(verdictLabel(ScoreVerdict.intact), 'Tese intacta — manter / seguir aportando');
-      expect(verdictLabel(ScoreVerdict.neutral), 'Neutro — acompanhar de perto');
-      expect(verdictLabel(ScoreVerdict.reduceRisk), 'Reduzir risco');
-
-      expect(signalLabel(Signal.green.wire), 'Verde');
-      expect(signalLabel(Signal.neutral.wire), 'Neutro');
-      expect(signalLabel(Signal.red.wire), 'Vermelho');
-      expect(signalLabel('OUTRO'), '—');
+      expect(indicators, hasLength(22)); // se mudar, os `.arb` também
+      expect(knownIndicators, equals(indicators));
     });
   });
 
   group('describeCollectionError', () {
+    // A função não conhece idioma: recebe quem dá o nome do indicador (a tela passa
+    // o `AppLocalizations`), ou `null` quando a chave é desconhecida.
+    String? names(String key) => switch (key) {
+      'sopr' => 'SOPR',
+      'exchange_netflow' => 'Exchange netflow',
+      'mvrv_z_score' => 'MVRV Z-Score',
+      _ => null,
+    };
+
     test('troca a chave do banco pelo nome do indicador e mantém o resto', () {
       expect(
-        describeCollectionError('BTC sopr: bitcoin-data.com: unavailable (rate limit)'),
+        describeCollectionError('BTC sopr: bitcoin-data.com: unavailable (rate limit)', nameOf: names),
         'BTC SOPR: bitcoin-data.com: unavailable (rate limit)',
       );
       expect(
-        describeCollectionError('ETH exchange_netflow: CoinMetrics: HTTP 404'),
-        'ETH Netflow das exchanges: CoinMetrics: HTTP 404',
+        describeCollectionError('ETH exchange_netflow: CoinMetrics: HTTP 404', nameOf: names),
+        'ETH Exchange netflow: CoinMetrics: HTTP 404',
       );
     });
 
@@ -83,70 +51,106 @@ void main() {
         'Erro inesperado: Bad state: bug',
         '',
       ]) {
-        expect(describeCollectionError(line), line, reason: line);
+        expect(describeCollectionError(line, nameOf: names), line, reason: line);
       }
     });
 
     test('o detalhe pode ter dois-pontos e quebras de linha', () {
       expect(
-        describeCollectionError('ADA mvrv_z_score: a: b\nc'),
+        describeCollectionError('ADA mvrv_z_score: a: b\nc', nameOf: names),
         'ADA MVRV Z-Score: a: b\nc',
       );
     });
   });
 
   group('formatIndicatorValue', () {
-    test('todo indicador de todo conjunto formata um número comum', () {
+    test('todo indicador de todo conjunto formata um número comum nos dois idiomas', () {
       for (final indicator in _allIndicators()) {
-        final text = formatIndicatorValue(indicator, 1.5);
-        expect(text, isNotEmpty, reason: indicator);
-        expect(text, isNot(contains('NaN')), reason: indicator);
-        expect(text, isNot(contains('.')), reason: '$indicator usa vírgula');
+        final pt = formatIndicatorValue(indicator, 1.5, locale: 'pt');
+        final en = formatIndicatorValue(indicator, 1.5, locale: 'en');
+        for (final text in [pt, en]) {
+          expect(text, isNotEmpty, reason: indicator);
+          expect(text, isNot(contains('NaN')), reason: indicator);
+        }
+        expect(pt, isNot(contains('.')), reason: '$indicator usa vírgula em pt');
+        expect(en, isNot(contains(',')), reason: '$indicator usa ponto em en');
       }
     });
 
-    test('percentuais levam % e duas casas, com vírgula decimal', () {
-      expect(formatIndicatorValue('staking_yield', 1.360842742486958), '1,36 %');
-      expect(formatIndicatorValue('tvl_trend', -13.961346656541899), '-13,96 %');
-      expect(formatIndicatorValue('active_addresses_trend', -25.507515219130166), '-25,51 %');
-      expect(formatIndicatorValue('btc_dominance', 59.98151875544407), '59,98 %');
-      expect(formatIndicatorValue('funding_rate_7d', 6.376), '6,38 %');
+    test('pt: percentuais levam " %" e duas casas, com vírgula decimal', () {
+      String pt(String i, double v) => formatIndicatorValue(i, v, locale: 'pt');
+      expect(pt('staking_yield', 1.360842742486958), '1,36 %');
+      expect(pt('tvl_trend', -13.961346656541899), '-13,96 %');
+      expect(pt('active_addresses_trend', -25.507515219130166), '-25,51 %');
+      expect(pt('btc_dominance', 59.98151875544407), '59,98 %');
+      expect(pt('funding_rate_7d', 6.376), '6,38 %');
+    });
+
+    test('en: percentuais levam "%" colado e duas casas, com ponto decimal', () {
+      String en(String i, double v) => formatIndicatorValue(i, v, locale: 'en');
+      expect(en('staking_yield', 1.360842742486958), '1.36%');
+      expect(en('tvl_trend', -13.961346656541899), '-13.96%');
+      expect(en('btc_dominance', 59.98151875544407), '59.98%');
+      expect(en('funding_rate_7d', 6.376), '6.38%');
     });
 
     test('razões e múltiplos têm duas casas e nenhuma unidade', () {
-      expect(formatIndicatorValue('mvrv_z_score', 1.7888543819998317), '1,79');
-      expect(formatIndicatorValue('puell_multiple', 0.4), '0,40');
-      expect(formatIndicatorValue('exchange_netflow', 0.5), '0,50');
-      expect(formatIndicatorValue('long_short_ratio', 2.639), '2,64');
-      expect(formatIndicatorValue('nupl', 0.3017), '0,30');
+      String pt(String i, double v) => formatIndicatorValue(i, v, locale: 'pt');
+      String en(String i, double v) => formatIndicatorValue(i, v, locale: 'en');
+      expect(pt('mvrv_z_score', 1.7888543819998317), '1,79');
+      expect(pt('puell_multiple', 0.4), '0,40');
+      expect(pt('exchange_netflow', 0.5), '0,50');
+      expect(pt('long_short_ratio', 2.639), '2,64');
+      expect(pt('nupl', 0.3017), '0,30');
+      expect(en('mvrv_z_score', 1.7888543819998317), '1.79');
+      expect(en('puell_multiple', 0.4), '0.40');
+      expect(en('nupl', 0.3017), '0.30');
     });
 
     test('SOPR tem três casas (vive perto de 1)', () {
-      expect(formatIndicatorValue('sopr', 0.9933), '0,993');
-      expect(formatIndicatorValue('sopr', 1.0057), '1,006');
+      expect(formatIndicatorValue('sopr', 0.9933, locale: 'pt'), '0,993');
+      expect(formatIndicatorValue('sopr', 1.0057, locale: 'pt'), '1,006');
+      expect(formatIndicatorValue('sopr', 0.9933, locale: 'en'), '0.993');
     });
 
     test('Fear & Greed é inteiro', () {
-      expect(formatIndicatorValue('fear_greed_index', 34), '34');
-      expect(formatIndicatorValue('fear_greed_index', 33.6), '34');
+      for (final locale in ['pt', 'en']) {
+        expect(formatIndicatorValue('fear_greed_index', 34, locale: locale), '34');
+        expect(formatIndicatorValue('fear_greed_index', 33.6, locale: locale), '34');
+      }
     });
 
     test('nunca mostra -0,00 (zero negativo)', () {
-      expect(formatIndicatorValue('mvrv_z_score', -0.001), '0,00');
-      expect(formatIndicatorValue('mvrv_z_score', -0.0), '0,00');
-      expect(formatIndicatorValue('tvl_trend', -0.004), '0,00 %');
+      expect(formatIndicatorValue('mvrv_z_score', -0.001, locale: 'pt'), '0,00');
+      expect(formatIndicatorValue('mvrv_z_score', -0.0, locale: 'pt'), '0,00');
+      expect(formatIndicatorValue('tvl_trend', -0.004, locale: 'pt'), '0,00 %');
+      expect(formatIndicatorValue('mvrv_z_score', -0.001, locale: 'en'), '0.00');
+      expect(formatIndicatorValue('tvl_trend', -0.004, locale: 'en'), '0.00%');
       // Mas -0,01 continua negativo.
-      expect(formatIndicatorValue('mvrv_z_score', -0.01), '-0,01');
+      expect(formatIndicatorValue('mvrv_z_score', -0.01, locale: 'pt'), '-0,01');
+      expect(formatIndicatorValue('mvrv_z_score', -0.01, locale: 'en'), '-0.01');
     });
 
     test('valor não finito vira traço, não "NaN" nem "Infinity"', () {
-      for (final value in [double.nan, double.infinity, double.negativeInfinity]) {
-        expect(formatIndicatorValue('mvrv_z_score', value), '—', reason: '$value');
+      for (final locale in ['pt', 'en']) {
+        for (final value in [double.nan, double.infinity, double.negativeInfinity]) {
+          expect(
+            formatIndicatorValue('mvrv_z_score', value, locale: locale),
+            '—',
+            reason: '$value ($locale)',
+          );
+        }
       }
     });
 
     test('indicador desconhecido ainda formata com duas casas', () {
-      expect(formatIndicatorValue('indicador_novo', 3.14159), '3,14');
+      expect(formatIndicatorValue('indicador_novo', 3.14159, locale: 'pt'), '3,14');
+      expect(formatIndicatorValue('indicador_novo', 3.14159, locale: 'en'), '3.14');
+    });
+
+    test('número grande no en não ganha separador de milhar (a tela não agrupa)', () {
+      expect(formatIndicatorValue('mvrv_z_score', 12345.678, locale: 'en'), '12345.68');
+      expect(formatIndicatorValue('mvrv_z_score', 12345.678, locale: 'pt'), '12345,68');
     });
   });
 }

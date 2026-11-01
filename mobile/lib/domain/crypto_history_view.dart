@@ -1,4 +1,5 @@
 import 'crypto_score.dart';
+import 'number_locale.dart';
 
 // Regras do gráfico do histórico do score, sem tela. Espelham
 // `desktop/src/stock-lookup/CryptoScoreHistoryChart.tsx`.
@@ -8,18 +9,17 @@ import 'crypto_score.dart';
 const historyIntactLine = verdictIntactMinPct;
 const historyNeutralLine = verdictNeutralMinPct;
 
+/// O rótulo de cada período vive em `l10n/crypto_labels.dart` (só "Tudo/All" muda de idioma).
 enum HistoryPeriod {
-  days30('30D', 30),
-  days90('90D', 90),
-  months12('12M', 365),
-  all('Tudo', null);
-
-  final String label;
+  days30(30),
+  days90(90),
+  months12(365),
+  all(null);
 
   /// Quantos dias para trás, contados do último ponto; `null` é a série inteira.
   final int? days;
 
-  const HistoryPeriod(this.label, this.days);
+  const HistoryPeriod(this.days);
 }
 
 /// Fração de verdes sobre o **total** do conjunto da moeda (a mesma base do
@@ -54,26 +54,16 @@ bool spansMoreThan30Days(List<ScoreHistoryPoint> points) {
   return last.difference(first).inDays > 30;
 }
 
-/// Texto do ponto tocado: "8 verdes de 20 · 18 registrados · Neutro".
-String describeHistoryPoint(ScoreHistoryPoint point) {
-  final greens = '${point.green} ${point.green == 1 ? 'verde' : 'verdes'}';
-  final logged =
-      '${point.logged} ${point.logged == 1 ? 'registrado' : 'registrados'}';
-  return '$greens de ${point.total} · $logged · ${_verdictShort(point.verdict)}';
-}
-
-/// `2026-10-29` vira `29/10/26`.
-String formatHistoryDate(String isoDate) {
+/// `2026-10-29` vira `29/10/26` em `pt` e `10/29/26` nos outros idiomas. Data que não
+/// tem esse formato volta como veio.
+String formatHistoryDate(String isoDate, {required String locale}) {
   final parts = isoDate.split('-');
   if (parts.length != 3 || parts[0].length != 4) return isoDate;
-  return '${parts[2]}/${parts[1]}/${parts[0].substring(2)}';
+  final year = parts[0].substring(2);
+  return isPortuguese(locale)
+      ? '${parts[2]}/${parts[1]}/$year'
+      : '${parts[1]}/${parts[2]}/$year';
 }
-
-String _verdictShort(ScoreVerdict verdict) => switch (verdict) {
-  ScoreVerdict.intact => 'Tese intacta',
-  ScoreVerdict.neutral => 'Neutro',
-  ScoreVerdict.reduceRisk => 'Reduzir risco',
-};
 
 /// `YYYY-MM-DD` em UTC, ou `null` se ilegível (o ponto então não é cortado).
 DateTime? _day(String isoDate) => DateTime.tryParse('${isoDate}T00:00:00Z');
