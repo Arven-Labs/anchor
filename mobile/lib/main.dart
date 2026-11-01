@@ -60,20 +60,26 @@ class _AnchorHomeState extends State<AnchorHome> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tabIndex,
         onDestinationSelected: (index) => setState(() => _tabIndex = index),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Início'),
-          NavigationDestination(icon: Icon(Icons.search), label: 'Cotação'),
+        destinations: [
           NavigationDestination(
-            icon: Icon(Icons.pie_chart),
-            label: 'Portfolio',
+            icon: const Icon(Icons.home_outlined),
+            label: AppLocalizations.of(context).navHome,
           ),
           NavigationDestination(
-            icon: Icon(Icons.account_balance_wallet_outlined),
-            label: 'Finanças',
+            icon: const Icon(Icons.search),
+            label: AppLocalizations.of(context).navQuote,
           ),
           NavigationDestination(
-            icon: Icon(Icons.currency_bitcoin),
-            label: 'Cripto',
+            icon: const Icon(Icons.pie_chart),
+            label: AppLocalizations.of(context).navPortfolio,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+            label: AppLocalizations.of(context).navFinance,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.currency_bitcoin),
+            label: AppLocalizations.of(context).navCrypto,
           ),
         ],
       ),

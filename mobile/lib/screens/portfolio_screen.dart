@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../domain/foreign_tax.dart' show foreignAssetClasses;
+import '../domain/number_locale.dart';
+import '../l10n/app_localizations.dart';
 import '../models/asset.dart';
 import '../models/custodia.dart';
 import '../services/live_positions.dart';
@@ -17,26 +19,35 @@ import 'manual_asset_details_screen.dart';
 import 'transaction_history_screen.dart';
 
 class PortfolioScreen extends StatefulWidget {
-  const PortfolioScreen({super.key});
+  /// Posições com preço atual; o padrão lê a carteira e cota na rede. Injetável para
+  /// teste, sem rede (como na `HomeScreen`).
+  final Future<List<LivePositionRow>> Function()? loadPositions;
+
+  const PortfolioScreen({super.key, this.loadPositions});
 
   @override
   State<PortfolioScreen> createState() => _PortfolioScreenState();
 }
 
-/// Texto do "Preço atual" do card: o número, "indisponível agora" quando a
-/// fonte falhou de forma passageira, ou "—" quando não há cotação.
+/// Texto do "Preço atual" do card: o número (separador decimal do idioma), "indisponível
+/// agora" quando a fonte falhou de forma passageira, ou "—" quando não há cotação.
 @visibleForTesting
 String livePriceLabel(
+  AppLocalizations l,
   double? price, {
   bool unavailable = false,
   String? currency,
 }) {
   if (price != null) {
-    final number = price.toStringAsFixed(2);
+    final number = formatFixed(price, 2, locale: l.localeName);
     return currency == null ? number : '$currency $number';
   }
-  return unavailable ? 'indisponível agora' : '—';
+  return unavailable ? l.portfolioPriceUnavailable : '—';
 }
+
+/// Quantidade sem casas quando é inteira, com duas quando não é.
+String _quantityLabel(double quantity, String locale) =>
+    formatFixed(quantity, quantity == quantity.roundToDouble() ? 0 : 2, locale: locale);
 
 class _PortfolioScreenState extends State<PortfolioScreen> {
   final _repository = PortfolioRepository();
@@ -55,14 +66,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
 
-    final positions = await _repository.getPositions();
     final custodias = await _repository.listCustodias();
 
-    final rows = await loadLivePositions(
-      positions,
-      repository: _repository,
-      dispatcher: _dispatcher,
-    );
+    final rows = await (widget.loadPositions ?? _livePositions)();
 
     if (mounted) {
       setState(() {
@@ -72,6 +78,12 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       });
     }
   }
+
+  Future<List<LivePositionRow>> _livePositions() async => loadLivePositions(
+    await _repository.getPositions(),
+    repository: _repository,
+    dispatcher: _dispatcher,
+  );
 
   Future<void> _openAddAsset() async {
     final saved = await Navigator.of(
@@ -130,14 +142,15 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Portfolio'),
+        title: Text(l.portfolioTitle),
         actions: [
           if (_rows.any((r) => r.position.asset.assetClass == AssetClass.cripto))
             IconButton(
               icon: const Icon(Icons.calculate),
-              tooltip: 'IR de cripto',
+              tooltip: l.portfolioCryptoTax,
               onPressed: _openCryptoTax,
             ),
           if (_rows.any(
@@ -145,13 +158,13 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
           ))
             IconButton(
               icon: const Icon(Icons.public),
-              tooltip: 'IR de exterior',
+              tooltip: l.portfolioForeignTax,
               onPressed: _openForeignTax,
             ),
           if (_rows.any((r) => r.position.asset.assetClass == AssetClass.fundo))
             IconButton(
               icon: const Icon(Icons.savings),
-              tooltip: 'IR de fundos',
+              tooltip: l.portfolioFundTax,
               onPressed: _openFundTax,
             ),
           // Permuta só faz sentido com duas criptos cadastradas (como no desktop).
@@ -163,22 +176,22 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               2)
             IconButton(
               icon: const Icon(Icons.swap_horiz),
-              tooltip: 'Trocar cripto',
+              tooltip: l.portfolioSwapCrypto,
               onPressed: _openCryptoSwap,
             ),
           IconButton(
             icon: const Icon(Icons.account_balance),
-            tooltip: 'Custódias',
+            tooltip: l.portfolioCustodies,
             onPressed: _openCustodias,
           ),
           IconButton(
             icon: const Icon(Icons.receipt_long),
-            tooltip: 'Histórico',
+            tooltip: l.portfolioHistory,
             onPressed: _openHistory,
           ),
           IconButton(
             icon: const Icon(Icons.add_chart),
-            tooltip: 'Adicionar ativo',
+            tooltip: l.portfolioAddAsset,
             onPressed: _openAddAsset,
           ),
         ],
@@ -215,17 +228,18 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Nenhum ativo cadastrado ainda.'),
+            Text(l.portfolioEmpty),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: onAddAsset,
-              child: const Text('Adicionar ativo'),
+              child: Text(l.portfolioAddAsset),
             ),
           ],
         ),
@@ -242,6 +256,8 @@ class _PositionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final locale = l.localeName;
     final position = row.position;
     final quantity = position.netQuantity;
     final avgPrice = position.averageBuyPrice;
@@ -300,20 +316,34 @@ class _PositionCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  Text(
-                    '${quantity.toStringAsFixed(quantity == quantity.roundToDouble() ? 0 : 2)} un.',
-                  ),
+                  Text(l.portfolioUnits(_quantityLabel(quantity, locale))),
                 ],
               ),
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // `Wrap` em vez de `Row`: o inglês é mais longo ("Current price: unavailable
+              // right now") e estourava a linha. Aqui cada texto vai inteiro para a linha
+              // de baixo quando não cabe, em vez de quebrar no meio do valor.
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   Text(
-                    'Preço médio: ${avgPrice != null ? '$currency ${avgPrice.toStringAsFixed(2)}' : '—'}',
+                    l.portfolioAveragePrice(
+                      avgPrice != null
+                          ? '$currency ${formatFixed(avgPrice, 2, locale: locale)}'
+                          : '—',
+                    ),
                   ),
                   Text(
-                    'Preço atual: ${livePriceLabel(livePrice, unavailable: row.priceUnavailable, currency: currency)}',
+                    l.portfolioCurrentPrice(
+                      livePriceLabel(
+                        l,
+                        livePrice,
+                        unavailable: row.priceUnavailable,
+                        currency: currency,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -322,12 +352,16 @@ class _PositionCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Valor: ${currentValue != null ? '$currency ${currentValue.toStringAsFixed(2)}' : '—'}',
+                    l.portfolioValue(
+                      currentValue != null
+                          ? '$currency ${formatFixed(currentValue, 2, locale: locale)}'
+                          : '—',
+                    ),
                   ),
                   if (pnl != null && pnlPercent != null)
                     Text(
-                      '${pnl >= 0 ? '+' : ''}${pnl.toStringAsFixed(2)} '
-                      '(${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toStringAsFixed(1)}%)',
+                      '${pnl >= 0 ? '+' : ''}${formatFixed(pnl, 2, locale: locale)} '
+                      '(${pnlPercent >= 0 ? '+' : ''}${formatFixed(pnlPercent, 1, locale: locale)}%)',
                       style: TextStyle(
                         color: pnl >= 0 ? positiveColor : negativeColor,
                         fontWeight: FontWeight.bold,
@@ -342,7 +376,7 @@ class _PositionCard extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 2),
                     child: Text(
                       '${custodiasById[breakdown.custodiaId]?.label ?? '—'}: '
-                      '${breakdown.quantity.toStringAsFixed(breakdown.quantity == breakdown.quantity.roundToDouble() ? 0 : 2)} un.',
+                      '${l.portfolioUnits(_quantityLabel(breakdown.quantity, locale))}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
@@ -351,8 +385,10 @@ class _PositionCard extends StatelessWidget {
                   participationPercentual != null) ...[
                 const Divider(height: 20),
                 Text(
-                  'Participação: ${(participationPercentual * 100).toStringAsFixed(2)}% — '
-                  '${participationValue.toStringAsFixed(2)}',
+                  l.portfolioShare(
+                    formatFixed(participationPercentual * 100, 2, locale: locale),
+                    formatFixed(participationValue, 2, locale: locale),
+                  ),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],

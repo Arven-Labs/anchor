@@ -17,6 +17,8 @@ import 'package:anchor_mobile/services/general_finance_repository.dart';
 import 'package:anchor_mobile/services/home_layout_repository.dart';
 import 'package:anchor_mobile/services/live_positions.dart';
 
+import 'support/localized_app.dart';
+
 // A Home montada de verdade (SQLite ffi, sem rede, cotações injetadas).
 void main() {
   final layoutRepository = HomeLayoutRepository();
@@ -99,18 +101,21 @@ void main() {
 
   bool has(String key) => find.byKey(Key(key)).evaluate().isNotEmpty;
 
+  // Idioma fixado em pt: as asserções são o texto que o app já mostrava (ADR 0001).
   Future<void> pumpHome(
     WidgetTester tester, {
     Future<List<LivePositionRow>> Function()? loadPositions,
+    String locale = 'pt',
   }) async {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpWidget(
-      MaterialApp(
-        home: HomeScreen(
+      localizedApp(
+        HomeScreen(
           fetchFx: (currency) async =>
               FxHistory([(DateTime.now(), currency == 'USD' ? 5.0 : 1.0)]),
           loadPositions: loadPositions ?? () async => positions,
         ),
+        locale: locale,
       ),
     );
     await settleUntil(tester, () => has('home-net-worth-text'));
@@ -142,12 +147,14 @@ void main() {
     expect(text(tester, 'home-total-value-text'), formatMoney(370, 'BRL'));
     expect(
       text(tester, 'home-profit-text'),
-      homeProfitPercentLabel(70 / 300 * 100),
+      homeProfitPercentLabel(70 / 300 * 100, locale: 'pt'),
     );
     expect(
       text(tester, 'home-profit-amount'),
-      homeProfitAmountLabel(70, 'BRL'),
+      homeProfitAmountLabel(70, 'BRL', locale: 'pt'),
     );
+    // 70 / 300 = 23,333…%: a vírgula decimal é nova no Início em pt (antes saía "23.3%").
+    expect(text(tester, 'home-profit-text'), '+23,3%');
     // caixa 1000 + carteira 370
     expect(text(tester, 'home-net-worth-text'), formatMoney(1370, 'BRL'));
     expect(has('home-allocation-row-acao_br'), isTrue);
@@ -183,12 +190,12 @@ void main() {
     expect(text(tester, 'home-total-value-text'), formatMoney(250, 'BRL'));
     expect(
       text(tester, 'home-profit-text'),
-      homeProfitPercentLabel(25),
+      homeProfitPercentLabel(25, locale: 'pt'),
       reason: 'o custo da VALE3 sem cotação não entra',
     );
     expect(
       text(tester, 'home-profit-amount'),
-      homeProfitAmountLabel(50, 'BRL'),
+      homeProfitAmountLabel(50, 'BRL', locale: 'pt'),
     );
     expect(has('home-profit-excluded'), isTrue);
     expect(has('home-total-value-missing'), isTrue);
@@ -199,8 +206,8 @@ void main() {
   ) async {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpWidget(
-      MaterialApp(
-        home: HomeScreen(
+      localizedApp(
+        HomeScreen(
           fetchFx: (_) async => throw StateError('sem rede'),
           loadPositions: () async => throw StateError('sem rede'),
         ),
@@ -298,6 +305,79 @@ void main() {
       [for (final c in saved!) c.key],
       [for (final c in defaultHomeLayout()) c.key],
     );
+  });
+
+  // Idioma do aparelho em inglês (ADR 0001).
+  group('em inglês', () {
+    testWidgets('cards, valores com ponto decimal e classes de ativo traduzidos', (tester) async {
+      await tester.runAsync(seedCash);
+      await pumpHome(tester, locale: 'en');
+
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.text('Total value'), findsOneWidget);
+      expect(find.text('Unrealized profit'), findsOneWidget);
+      expect(find.text('Allocation by class'), findsOneWidget);
+      expect(find.text('Net worth'), findsOneWidget);
+      expect(text(tester, 'home-total-value-text'), formatMoney(370, 'BRL', locale: 'en'));
+      expect(text(tester, 'home-total-value-text'), 'BRL 370.00');
+      expect(text(tester, 'home-profit-text'), '+23.3%');
+      expect(text(tester, 'home-profit-amount'), '+BRL 70.00');
+      expect(text(tester, 'home-net-worth-text'), 'BRL 1,370.00');
+      expect(find.text('BR stock'), findsOneWidget);
+      expect(find.text('International stock'), findsOneWidget);
+      expect(find.text('Cash'), findsOneWidget);
+      expect(find.text('Portfolio'), findsOneWidget);
+      for (final pt in ['Início', 'Valor total', 'Caixa', 'Carteira', 'Ação BR']) {
+        expect(find.textContaining(pt), findsNothing, reason: pt);
+      }
+    });
+
+    testWidgets('erro de cotação e estados vazios em inglês', (tester) async {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(
+        localizedApp(
+          HomeScreen(
+            fetchFx: (_) async => throw StateError('no network'),
+            loadPositions: () async => throw StateError('no network'),
+          ),
+          locale: 'en',
+        ),
+      );
+      await settleUntil(tester, () => has('home-error'));
+
+      expect(find.textContaining("Couldn't load the quotes right now. Pull to refresh."), findsOneWidget);
+    });
+
+    testWidgets('modo Personalizar: título, botões e largura em inglês', (tester) async {
+      await pumpHome(tester, locale: 'en');
+      await openCustomize(tester);
+
+      expect(find.text('Customize Home'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
+      expect(find.text('Save'), findsOneWidget);
+      expect(find.text('Restore default'), findsOneWidget);
+      expect(find.text('Half'), findsWidgets);
+      expect(find.text('Full'), findsWidgets);
+      // Nome do card no editor, no idioma da tela.
+      expect(find.text('Net worth'), findsOneWidget);
+    });
+
+    testWidgets('sem posições abertas e todos os cards escondidos', (tester) async {
+      await pumpHome(tester, locale: 'en', loadPositions: () async => []);
+      expect(find.text('No open positions.'), findsOneWidget);
+
+      await openCustomize(tester);
+      for (final key in HomeWidgetKey.values) {
+        await tester.tap(find.byKey(Key('home-visible-${key.id}')));
+        await tester.pump();
+      }
+      await save(tester);
+
+      expect(
+        find.text('All cards are hidden. Tap Customize to show them.'),
+        findsOneWidget,
+      );
+    });
   });
 
   group('HomeLayoutRepository', () {

@@ -5,18 +5,18 @@
 
 import 'dart:convert';
 
+/// O nome de cada card vive nos `.arb` (`l10n/home_labels.dart`, ADR 0001).
 enum HomeWidgetKey {
-  totalValue('total_value', 'Valor total', wideByDefault: false),
-  profit('profit', 'Lucro não realizado', wideByDefault: false),
-  allocation('allocation', 'Alocação por classe', wideByDefault: true),
-  netWorth('net_worth', 'Patrimônio líquido', wideByDefault: true);
+  totalValue('total_value', wideByDefault: false),
+  profit('profit', wideByDefault: false),
+  allocation('allocation', wideByDefault: true),
+  netWorth('net_worth', wideByDefault: true);
 
   /// Identificador gravado no JSON e usado nas chaves de teste; não muda nunca.
   final String id;
-  final String label;
   final bool wideByDefault;
 
-  const HomeWidgetKey(this.id, this.label, {required this.wideByDefault});
+  const HomeWidgetKey(this.id, {required this.wideByDefault});
 
   static HomeWidgetKey? tryParse(Object? id) {
     for (final key in HomeWidgetKey.values) {
