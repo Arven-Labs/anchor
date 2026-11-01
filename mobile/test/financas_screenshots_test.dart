@@ -14,7 +14,9 @@ import 'package:anchor_mobile/domain/liability.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/liability.dart';
 import 'package:anchor_mobile/models/position.dart';
+import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/screens/home_screen.dart';
+import 'package:anchor_mobile/screens/portfolio_screen.dart';
 import 'package:anchor_mobile/services/live_positions.dart';
 import 'package:anchor_mobile/models/loan.dart';
 import 'package:anchor_mobile/screens/financas_loans_screen.dart';
@@ -85,11 +87,16 @@ void main() {
     });
   }
 
-  Widget app(Widget home) => RepaintBoundary(
+  // Com os delegates de idioma (ADR 0001): as telas migradas pedem o `AppLocalizations`.
+  // O padrão é pt, igual ao que as capturas já mostravam.
+  Widget app(Widget home, {String locale = 'pt'}) => RepaintBoundary(
     key: const Key('shot'),
     child: MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+      locale: Locale(locale),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: home,
     ),
   );
@@ -351,5 +358,33 @@ void main() {
     await tester.tap(find.byKey(const Key('home-customize')));
     await tester.pumpAndSettle();
     await capture(tester, 'inicio-personalizar');
+
+    // O mesmo Início e o Portfolio em inglês e em português (ADR 0001).
+    final rows = [
+      position('PETR4', AssetClass.acaoBr, 'BRL', 100, 30, 36.5),
+      position('AAPL', AssetClass.acaoInternacional, 'USD', 5, 150, 190),
+      position('BTC', AssetClass.cripto, 'BRL', 0.05, 200000, 350000),
+    ];
+    Future<void> shoot(Widget screen, String name, String locale, Key ready) async {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(app(screen, locale: locale));
+      await settle(tester, () => find.byKey(ready).evaluate().isNotEmpty);
+      await capture(tester, name);
+    }
+
+    Widget home() => HomeScreen(
+      fetchFx: (currency) async =>
+          FxHistory([(DateTime.now(), currency == 'USD' ? 5.0 : 1.0)]),
+      loadPositions: () async => rows,
+    );
+    await shoot(home(), 'inicio-en', 'en', const Key('home-net-worth-text'));
+    for (final locale in ['pt', 'en']) {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(
+        app(PortfolioScreen(loadPositions: () async => rows), locale: locale),
+      );
+      await settle(tester, () => find.text('PETR4').evaluate().isNotEmpty);
+      await capture(tester, 'portfolio-$locale');
+    }
   }, skip: outDir == null);
 }

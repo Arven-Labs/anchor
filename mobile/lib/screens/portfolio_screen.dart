@@ -320,32 +320,29 @@ class _PositionCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // `Wrap` em vez de `Row`: o inglês é mais longo ("Current price: unavailable
+              // right now") e estourava a linha. Aqui cada texto vai inteiro para a linha
+              // de baixo quando não cabe, em vez de quebrar no meio do valor.
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
-                  // Flexíveis: o inglês é mais longo ("Current price: unavailable right
-                  // now") e estourava a linha; assim o texto quebra em vez de estourar.
-                  Flexible(
-                    child: Text(
-                      l.portfolioAveragePrice(
-                        avgPrice != null
-                            ? '$currency ${formatFixed(avgPrice, 2, locale: locale)}'
-                            : '—',
-                      ),
+                  Text(
+                    l.portfolioAveragePrice(
+                      avgPrice != null
+                          ? '$currency ${formatFixed(avgPrice, 2, locale: locale)}'
+                          : '—',
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      l.portfolioCurrentPrice(
-                        livePriceLabel(
-                          l,
-                          livePrice,
-                          unavailable: row.priceUnavailable,
-                          currency: currency,
-                        ),
+                  Text(
+                    l.portfolioCurrentPrice(
+                      livePriceLabel(
+                        l,
+                        livePrice,
+                        unavailable: row.priceUnavailable,
+                        currency: currency,
                       ),
-                      textAlign: TextAlign.end,
                     ),
                   ),
                 ],
