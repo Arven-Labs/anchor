@@ -5,6 +5,9 @@ import '../domain/general_finance.dart';
 import '../domain/home_layout.dart';
 import '../domain/home_summary.dart';
 import '../domain/money_format.dart';
+import '../domain/number_locale.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/home_labels.dart';
 import '../services/general_finance_repository.dart';
 import '../services/home_layout_repository.dart';
 import '../services/live_positions.dart';
@@ -13,15 +16,15 @@ import '../services/portfolio_repository.dart';
 import '../services/quote_dispatcher.dart';
 import '../services/yahoo_quote_service.dart';
 
-/// "+BRL 70,00": o lucro com sinal, na moeda base.
+/// "+BRL 70,00" (pt) / "+BRL 70.00" (en): o lucro com sinal, na moeda base.
 @visibleForTesting
-String homeProfitAmountLabel(double profit, String base) =>
-    '${profit >= 0 ? '+' : '-'}${formatMoney(profit.abs(), base)}';
+String homeProfitAmountLabel(double profit, String base, {required String locale}) =>
+    '${profit >= 0 ? '+' : '-'}${formatMoney(profit.abs(), base, locale: locale)}';
 
-/// "+23,3%": o lucro sobre o custo, com sinal.
+/// "+23,3%" (pt) / "+23.3%" (en): o lucro sobre o custo, com sinal.
 @visibleForTesting
-String homeProfitPercentLabel(double percent) =>
-    '${percent >= 0 ? '+' : '-'}${percent.abs().toStringAsFixed(1)}%';
+String homeProfitPercentLabel(double percent, {required String locale}) =>
+    '${percent >= 0 ? '+' : '-'}${formatFixed(percent.abs(), 1, locale: locale)}%';
 
 const _allocationColors = [
   Color(0xFF4ADE80),
@@ -151,11 +154,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final draft = _draft;
     if (draft == null) return;
     final messenger = ScaffoldMessenger.of(context);
+    final l = AppLocalizations.of(context);
     try {
       await _layoutRepository.save(draft);
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Não consegui salvar o layout: $e')),
+        SnackBar(content: Text(l.homeSaveFailed('$e'))),
       );
       return;
     }
@@ -174,27 +178,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final editing = _draft != null;
     return Scaffold(
       appBar: AppBar(
-        title: Text(editing ? 'Personalizar Início' : 'Início'),
+        title: Text(editing ? l.homeCustomizeTitle : l.homeTitle),
         actions: editing
             ? [
                 TextButton(
                   key: const Key('home-cancel'),
                   onPressed: () => setState(() => _draft = null),
-                  child: const Text('Cancelar'),
+                  child: Text(l.actionCancel),
                 ),
                 TextButton(
                   key: const Key('home-save'),
                   onPressed: _saveDraft,
-                  child: const Text('Salvar'),
+                  child: Text(l.actionSave),
                 ),
               ]
             : [
                 IconButton(
                   key: const Key('home-customize'),
-                  tooltip: 'Personalizar',
+                  tooltip: l.homeCustomizeTooltip,
                   icon: const Icon(Icons.tune),
                   onPressed: () => setState(() => _draft = [..._layout]),
                 ),
@@ -205,6 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _editor() {
+    final l = AppLocalizations.of(context);
     final draft = _draft!;
     return Column(
       children: [
@@ -214,7 +220,7 @@ class _HomeScreenState extends State<HomeScreen> {
             key: const Key('home-reset'),
             onPressed: () => setState(() => _draft = defaultHomeLayout()),
             icon: const Icon(Icons.restore),
-            label: const Text('Restaurar padrão'),
+            label: Text(l.homeRestoreDefault),
           ),
         ),
         Expanded(
@@ -232,7 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     index: i,
                     child: const Icon(Icons.drag_handle),
                   ),
-                  title: Text(draft[i].key.label),
+                  title: Text(homeWidgetName(l, draft[i].key)),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -242,7 +248,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           i,
                           (c) => c.copyWith(wide: !c.wide),
                         ),
-                        child: Text(draft[i].wide ? 'Cheia' : 'Meia'),
+                        child: Text(
+                          draft[i].wide ? l.homeWidthFull : l.homeWidthHalf,
+                        ),
                       ),
                       Switch(
                         key: Key('home-visible-${draft[i].key.id}'),
@@ -261,6 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _dashboard() {
+    final l = AppLocalizations.of(context);
     final rows = homeRows(_layout);
     return RefreshIndicator(
       onRefresh: _loadData,
@@ -273,19 +282,13 @@ class _HomeScreenState extends State<HomeScreen> {
               color: Theme.of(context).colorScheme.errorContainer,
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Text(
-                  'Não consegui carregar as cotações agora. '
-                  'Puxe para atualizar. ($_error)',
-                ),
+                child: Text(l.homeLoadFailed('$_error')),
               ),
             ),
           if (rows.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(32),
-              child: Text(
-                'Todos os cards estão escondidos. Toque em Personalizar para mostrá-los.',
-                textAlign: TextAlign.center,
-              ),
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Text(l.homeAllHidden, textAlign: TextAlign.center),
             ),
           for (final row in rows)
             Padding(
@@ -313,6 +316,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _card(HomeWidgetConfig config) {
+    final l = AppLocalizations.of(context);
     final Widget content;
     switch (config.key) {
       case HomeWidgetKey.totalValue:
@@ -333,7 +337,7 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              config.key.label,
+              homeWidgetName(l, config.key),
               style: Theme.of(context).textTheme.labelLarge,
             ),
             const SizedBox(height: 8),
@@ -357,6 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _totalValue() {
+    final l = AppLocalizations.of(context);
     final summary = _summary;
     if (summary == null) return _placeholder();
     return Column(
@@ -364,14 +369,14 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         _bigNumber(
           Text(
-            formatMoney(summary.totalValue, summary.base),
+            formatMoney(summary.totalValue, summary.base, locale: l.localeName),
             key: const Key('home-total-value-text'),
             style: Theme.of(context).textTheme.headlineSmall,
           ),
         ),
         if (summary.itemsMissing > 0)
           Text(
-            '${summary.itemsMissing} fora da soma (sem cotação ou câmbio)',
+            l.homeTotalMissing(summary.itemsMissing),
             key: const Key('home-total-value-missing'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -380,6 +385,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _profit() {
+    final l = AppLocalizations.of(context);
     final summary = _summary;
     if (summary == null) return _placeholder();
     final profit = summary.profit;
@@ -392,13 +398,15 @@ class _HomeScreenState extends State<HomeScreen> {
     // embaixo. Sem custo para dividir (percentual nulo), o valor em reais é o grande.
     final amount = profit == null
         ? null
-        : homeProfitAmountLabel(profit, summary.base);
+        : homeProfitAmountLabel(profit, summary.base, locale: l.localeName);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _bigNumber(
           Text(
-            percent != null ? homeProfitPercentLabel(percent) : (amount ?? '—'),
+            percent != null
+                ? homeProfitPercentLabel(percent, locale: l.localeName)
+                : (amount ?? '—'),
             key: const Key('home-profit-text'),
             style: Theme.of(
               context,
@@ -417,7 +425,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         if (summary.profitExcluded > 0)
           Text(
-            '${summary.profitExcluded} fora do cálculo',
+            l.homeProfitExcluded(summary.profitExcluded),
             key: const Key('home-profit-excluded'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -426,9 +434,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _allocation() {
+    final l = AppLocalizations.of(context);
     final summary = _summary;
     if (summary == null) return _placeholder();
-    if (summary.allocation.isEmpty) return const Text('Sem posições abertas.');
+    if (summary.allocation.isEmpty) return Text(l.homeNoPositions);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -460,8 +469,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Expanded(child: Text(slice.assetClass.label)),
-                Text('${(slice.share * 100).toStringAsFixed(1)}%'),
+                Expanded(child: Text(assetClassName(l, slice.assetClass))),
+                Text('${formatFixed(slice.share * 100, 1, locale: l.localeName)}%'),
               ],
             ),
           ),
@@ -470,6 +479,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _netWorthCard() {
+    final l = AppLocalizations.of(context);
     final net = _netWorth;
     if (net == null) return _placeholder();
     Widget line(String label, double value, {String? key}) => Padding(
@@ -477,7 +487,10 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         children: [
           Expanded(child: Text(label)),
-          Text(formatMoney(value, net.base), key: key == null ? null : Key(key)),
+          Text(
+            formatMoney(value, net.base, locale: l.localeName),
+            key: key == null ? null : Key(key),
+          ),
         ],
       ),
     );
@@ -486,24 +499,24 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         _bigNumber(
           Text(
-            formatMoney(net.total, net.base),
+            formatMoney(net.total, net.base, locale: l.localeName),
             key: const Key('home-net-worth-text'),
             style: Theme.of(context).textTheme.headlineSmall,
           ),
         ),
         const SizedBox(height: 8),
-        line('Caixa', net.cash),
-        line('Carteira', net.portfolio),
-        if (net.loansReceivable != 0) line('Empréstimos', net.loansReceivable),
-        if (net.debt != 0) line('Dívidas', -net.debt),
+        line(l.homeCash, net.cash),
+        line(l.homePortfolio, net.portfolio),
+        if (net.loansReceivable != 0) line(l.homeLoansReceivable, net.loansReceivable),
+        if (net.debt != 0) line(l.homeDebts, -net.debt),
         if (net.itemsMissingFx > 0)
           Text(
-            '${net.itemsMissingFx} item(ns) fora da soma por falta de câmbio ou cotação.',
+            l.homeNetWorthMissing(net.itemsMissingFx),
             style: Theme.of(context).textTheme.bodySmall,
           ),
         if (_fxFailed.isNotEmpty)
           Text(
-            'Câmbio indisponível agora para ${(_fxFailed.toList()..sort()).join(', ')}.',
+            l.homeFxUnavailable((_fxFailed.toList()..sort()).join(', ')),
             style: Theme.of(context).textTheme.bodySmall,
           ),
       ],

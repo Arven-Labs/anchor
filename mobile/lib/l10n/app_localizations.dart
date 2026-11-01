@@ -541,6 +541,348 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Saving…'**
   String get actionSaving;
+
+  /// No description provided for @navHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get navHome;
+
+  /// No description provided for @navQuote.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote'**
+  String get navQuote;
+
+  /// No description provided for @navPortfolio.
+  ///
+  /// In en, this message translates to:
+  /// **'Portfolio'**
+  String get navPortfolio;
+
+  /// No description provided for @navFinance.
+  ///
+  /// In en, this message translates to:
+  /// **'Finances'**
+  String get navFinance;
+
+  /// No description provided for @navCrypto.
+  ///
+  /// In en, this message translates to:
+  /// **'Crypto'**
+  String get navCrypto;
+
+  /// No description provided for @homeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get homeTitle;
+
+  /// No description provided for @homeCustomizeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Customize Home'**
+  String get homeCustomizeTitle;
+
+  /// No description provided for @homeCustomizeTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Customize'**
+  String get homeCustomizeTooltip;
+
+  /// No description provided for @homeRestoreDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore default'**
+  String get homeRestoreDefault;
+
+  /// No description provided for @homeWidthFull.
+  ///
+  /// In en, this message translates to:
+  /// **'Full'**
+  String get homeWidthFull;
+
+  /// No description provided for @homeWidthHalf.
+  ///
+  /// In en, this message translates to:
+  /// **'Half'**
+  String get homeWidthHalf;
+
+  /// No description provided for @homeSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the layout: {error}'**
+  String homeSaveFailed(String error);
+
+  /// No description provided for @homeLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the quotes right now. Pull to refresh. ({error})'**
+  String homeLoadFailed(String error);
+
+  /// No description provided for @homeAllHidden.
+  ///
+  /// In en, this message translates to:
+  /// **'All cards are hidden. Tap Customize to show them.'**
+  String get homeAllHidden;
+
+  /// No description provided for @homeTotalMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} left out of the sum (no quote or exchange rate)'**
+  String homeTotalMissing(int count);
+
+  /// No description provided for @homeProfitExcluded.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} left out of the calculation'**
+  String homeProfitExcluded(int count);
+
+  /// No description provided for @homeNoPositions.
+  ///
+  /// In en, this message translates to:
+  /// **'No open positions.'**
+  String get homeNoPositions;
+
+  /// No description provided for @homeCash.
+  ///
+  /// In en, this message translates to:
+  /// **'Cash'**
+  String get homeCash;
+
+  /// No description provided for @homePortfolio.
+  ///
+  /// In en, this message translates to:
+  /// **'Portfolio'**
+  String get homePortfolio;
+
+  /// No description provided for @homeLoansReceivable.
+  ///
+  /// In en, this message translates to:
+  /// **'Loans'**
+  String get homeLoansReceivable;
+
+  /// No description provided for @homeDebts.
+  ///
+  /// In en, this message translates to:
+  /// **'Debts'**
+  String get homeDebts;
+
+  /// No description provided for @homeNetWorthMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} item(s) left out of the sum for lack of exchange rate or quote.'**
+  String homeNetWorthMissing(int count);
+
+  /// No description provided for @homeFxUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Exchange rate unavailable right now for {currencies}.'**
+  String homeFxUnavailable(String currencies);
+
+  /// No description provided for @homeWidgetTotalValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Total value'**
+  String get homeWidgetTotalValue;
+
+  /// No description provided for @homeWidgetProfit.
+  ///
+  /// In en, this message translates to:
+  /// **'Unrealized profit'**
+  String get homeWidgetProfit;
+
+  /// No description provided for @homeWidgetAllocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Allocation by class'**
+  String get homeWidgetAllocation;
+
+  /// No description provided for @homeWidgetNetWorth.
+  ///
+  /// In en, this message translates to:
+  /// **'Net worth'**
+  String get homeWidgetNetWorth;
+
+  /// No description provided for @assetClassAcaoBr.
+  ///
+  /// In en, this message translates to:
+  /// **'BR stock'**
+  String get assetClassAcaoBr;
+
+  /// No description provided for @assetClassFii.
+  ///
+  /// In en, this message translates to:
+  /// **'FII'**
+  String get assetClassFii;
+
+  /// No description provided for @assetClassEtfBr.
+  ///
+  /// In en, this message translates to:
+  /// **'BR ETF'**
+  String get assetClassEtfBr;
+
+  /// No description provided for @assetClassEtfRendaFixa.
+  ///
+  /// In en, this message translates to:
+  /// **'BR fixed-income ETF'**
+  String get assetClassEtfRendaFixa;
+
+  /// No description provided for @assetClassBdr.
+  ///
+  /// In en, this message translates to:
+  /// **'BDR'**
+  String get assetClassBdr;
+
+  /// No description provided for @assetClassAcaoInternacional.
+  ///
+  /// In en, this message translates to:
+  /// **'International stock'**
+  String get assetClassAcaoInternacional;
+
+  /// No description provided for @assetClassReit.
+  ///
+  /// In en, this message translates to:
+  /// **'REIT'**
+  String get assetClassReit;
+
+  /// No description provided for @assetClassEtfUs.
+  ///
+  /// In en, this message translates to:
+  /// **'US ETF'**
+  String get assetClassEtfUs;
+
+  /// No description provided for @assetClassCripto.
+  ///
+  /// In en, this message translates to:
+  /// **'Crypto'**
+  String get assetClassCripto;
+
+  /// No description provided for @assetClassMetal.
+  ///
+  /// In en, this message translates to:
+  /// **'Metal'**
+  String get assetClassMetal;
+
+  /// No description provided for @assetClassTesouroDireto.
+  ///
+  /// In en, this message translates to:
+  /// **'Tesouro Direto'**
+  String get assetClassTesouroDireto;
+
+  /// No description provided for @assetClassRendaFixa.
+  ///
+  /// In en, this message translates to:
+  /// **'Fixed income'**
+  String get assetClassRendaFixa;
+
+  /// No description provided for @assetClassImovel.
+  ///
+  /// In en, this message translates to:
+  /// **'Real estate'**
+  String get assetClassImovel;
+
+  /// No description provided for @assetClassEmpresaNaoListada.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlisted company'**
+  String get assetClassEmpresaNaoListada;
+
+  /// No description provided for @assetClassFundo.
+  ///
+  /// In en, this message translates to:
+  /// **'Fund'**
+  String get assetClassFundo;
+
+  /// No description provided for @portfolioTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Portfolio'**
+  String get portfolioTitle;
+
+  /// No description provided for @portfolioCryptoTax.
+  ///
+  /// In en, this message translates to:
+  /// **'Crypto tax'**
+  String get portfolioCryptoTax;
+
+  /// No description provided for @portfolioForeignTax.
+  ///
+  /// In en, this message translates to:
+  /// **'Foreign tax'**
+  String get portfolioForeignTax;
+
+  /// No description provided for @portfolioFundTax.
+  ///
+  /// In en, this message translates to:
+  /// **'Fund tax'**
+  String get portfolioFundTax;
+
+  /// No description provided for @portfolioSwapCrypto.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap crypto'**
+  String get portfolioSwapCrypto;
+
+  /// No description provided for @portfolioCustodies.
+  ///
+  /// In en, this message translates to:
+  /// **'Custodians'**
+  String get portfolioCustodies;
+
+  /// No description provided for @portfolioHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get portfolioHistory;
+
+  /// No description provided for @portfolioAddAsset.
+  ///
+  /// In en, this message translates to:
+  /// **'Add asset'**
+  String get portfolioAddAsset;
+
+  /// No description provided for @portfolioEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No assets yet.'**
+  String get portfolioEmpty;
+
+  /// No description provided for @portfolioUnits.
+  ///
+  /// In en, this message translates to:
+  /// **'{quantity} units'**
+  String portfolioUnits(String quantity);
+
+  /// No description provided for @portfolioAveragePrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Average price: {value}'**
+  String portfolioAveragePrice(String value);
+
+  /// No description provided for @portfolioCurrentPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Current price: {value}'**
+  String portfolioCurrentPrice(String value);
+
+  /// No description provided for @portfolioValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Value: {value}'**
+  String portfolioValue(String value);
+
+  /// No description provided for @portfolioPriceUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'unavailable right now'**
+  String get portfolioPriceUnavailable;
+
+  /// No description provided for @portfolioShare.
+  ///
+  /// In en, this message translates to:
+  /// **'Share: {percent}% — {value}'**
+  String portfolioShare(String percent, String value);
 }
 
 class _AppLocalizationsDelegate

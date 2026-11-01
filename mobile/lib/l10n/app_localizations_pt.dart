@@ -280,4 +280,198 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get actionSaving => 'Salvando…';
+
+  @override
+  String get navHome => 'Início';
+
+  @override
+  String get navQuote => 'Cotação';
+
+  @override
+  String get navPortfolio => 'Portfolio';
+
+  @override
+  String get navFinance => 'Finanças';
+
+  @override
+  String get navCrypto => 'Cripto';
+
+  @override
+  String get homeTitle => 'Início';
+
+  @override
+  String get homeCustomizeTitle => 'Personalizar Início';
+
+  @override
+  String get homeCustomizeTooltip => 'Personalizar';
+
+  @override
+  String get homeRestoreDefault => 'Restaurar padrão';
+
+  @override
+  String get homeWidthFull => 'Cheia';
+
+  @override
+  String get homeWidthHalf => 'Meia';
+
+  @override
+  String homeSaveFailed(String error) {
+    return 'Não consegui salvar o layout: $error';
+  }
+
+  @override
+  String homeLoadFailed(String error) {
+    return 'Não consegui carregar as cotações agora. Puxe para atualizar. ($error)';
+  }
+
+  @override
+  String get homeAllHidden =>
+      'Todos os cards estão escondidos. Toque em Personalizar para mostrá-los.';
+
+  @override
+  String homeTotalMissing(int count) {
+    return '$count fora da soma (sem cotação ou câmbio)';
+  }
+
+  @override
+  String homeProfitExcluded(int count) {
+    return '$count fora do cálculo';
+  }
+
+  @override
+  String get homeNoPositions => 'Sem posições abertas.';
+
+  @override
+  String get homeCash => 'Caixa';
+
+  @override
+  String get homePortfolio => 'Carteira';
+
+  @override
+  String get homeLoansReceivable => 'Empréstimos';
+
+  @override
+  String get homeDebts => 'Dívidas';
+
+  @override
+  String homeNetWorthMissing(int count) {
+    return '$count item(ns) fora da soma por falta de câmbio ou cotação.';
+  }
+
+  @override
+  String homeFxUnavailable(String currencies) {
+    return 'Câmbio indisponível agora para $currencies.';
+  }
+
+  @override
+  String get homeWidgetTotalValue => 'Valor total';
+
+  @override
+  String get homeWidgetProfit => 'Lucro não realizado';
+
+  @override
+  String get homeWidgetAllocation => 'Alocação por classe';
+
+  @override
+  String get homeWidgetNetWorth => 'Patrimônio líquido';
+
+  @override
+  String get assetClassAcaoBr => 'Ação BR';
+
+  @override
+  String get assetClassFii => 'FII';
+
+  @override
+  String get assetClassEtfBr => 'ETF BR';
+
+  @override
+  String get assetClassEtfRendaFixa => 'ETF Renda Fixa BR';
+
+  @override
+  String get assetClassBdr => 'BDR';
+
+  @override
+  String get assetClassAcaoInternacional => 'Ação internacional';
+
+  @override
+  String get assetClassReit => 'REIT';
+
+  @override
+  String get assetClassEtfUs => 'ETF US';
+
+  @override
+  String get assetClassCripto => 'Cripto';
+
+  @override
+  String get assetClassMetal => 'Metal';
+
+  @override
+  String get assetClassTesouroDireto => 'Tesouro Direto';
+
+  @override
+  String get assetClassRendaFixa => 'Renda Fixa';
+
+  @override
+  String get assetClassImovel => 'Imóvel';
+
+  @override
+  String get assetClassEmpresaNaoListada => 'Empresa não listada';
+
+  @override
+  String get assetClassFundo => 'Fundo';
+
+  @override
+  String get portfolioTitle => 'Portfolio';
+
+  @override
+  String get portfolioCryptoTax => 'IR de cripto';
+
+  @override
+  String get portfolioForeignTax => 'IR de exterior';
+
+  @override
+  String get portfolioFundTax => 'IR de fundos';
+
+  @override
+  String get portfolioSwapCrypto => 'Trocar cripto';
+
+  @override
+  String get portfolioCustodies => 'Custódias';
+
+  @override
+  String get portfolioHistory => 'Histórico';
+
+  @override
+  String get portfolioAddAsset => 'Adicionar ativo';
+
+  @override
+  String get portfolioEmpty => 'Nenhum ativo cadastrado ainda.';
+
+  @override
+  String portfolioUnits(String quantity) {
+    return '$quantity un.';
+  }
+
+  @override
+  String portfolioAveragePrice(String value) {
+    return 'Preço médio: $value';
+  }
+
+  @override
+  String portfolioCurrentPrice(String value) {
+    return 'Preço atual: $value';
+  }
+
+  @override
+  String portfolioValue(String value) {
+    return 'Valor: $value';
+  }
+
+  @override
+  String get portfolioPriceUnavailable => 'indisponível agora';
+
+  @override
+  String portfolioShare(String percent, String value) {
+    return 'Participação: $percent% — $value';
+  }
 }
