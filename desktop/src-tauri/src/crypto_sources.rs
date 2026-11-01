@@ -25,8 +25,9 @@ const DEFILLAMA_STABLECOINS: &str = "https://stablecoins.llama.fi";
 const DEFILLAMA_YIELDS: &str = "https://yields.llama.fi";
 const COINMETRICS_COMMUNITY: &str = "https://community-api.coinmetrics.io/v4";
 const COINGECKO_API: &str = "https://api.coingecko.com/api/v3";
-/// SOPR e NUPL do BTC. Plano grátis: 10 chamadas por hora, 15 por dia e dado com
-/// 7 dias de atraso (o `d` da resposta é a data real do dado).
+/// SOPR e NUPL do BTC. Plano grátis: 10 chamadas por hora e 15 por dia. O plano documenta
+/// dado com 7 dias de atraso, mas medido ao vivo em 2026-10-31 a defasagem era de 1 dia (o
+/// `d` da resposta é a data real do dado; o atraso varia, então confie no `d`).
 const BITCOIN_DATA_API: &str = "https://bitcoin-data.com/v1";
 /// Pool stETH (Lido, Ethereum) na DefiLlama — o id é estável.
 const STETH_POOL_ID: &str = "747c1d2a-c668-4682-b9f9-296708a3dd90";
@@ -124,25 +125,53 @@ pub fn parse_long_short(body: &str) -> Result<Vec<f64>, AppError> {
         .collect()
 }
 
-#[derive(Deserialize)]
-struct YieldChart {
-    data: Vec<YieldPoint>,
-}
+/// Quantos pontos da série entram na mediana. O Lido reportou 15,07% num único dia
+/// (2026-10-30) contra ~2,25% no normal: o último ponto sozinho gravaria o pico como se
+/// fosse o yield. A mediana de 7 aguenta até 3 pontos ruins.
+const STETH_APY_WINDOW: usize = 7;
+/// Idade máxima do último ponto. O normal é menos de 1 dia.
+const STETH_APY_MAX_AGE_DAYS: i64 = 7;
 
-#[derive(Deserialize)]
-struct YieldPoint {
-    apy: Option<f64>,
-}
+/// Mediana do `apy` (em %) dos 7 últimos pontos da série do pool stETH. Série com menos de 7
+/// pontos, `apy` ausente, nulo, texto, negativo ou não finito em qualquer um dos 7, ou último
+/// ponto velho demais é erro. Mesmo critério do celular (`defillama_yields_service.dart`).
+pub fn parse_steth_apy(body: &str, today: chrono::NaiveDate) -> Result<f64, AppError> {
+    const SOURCE: &str = "DefiLlama yields";
+    let json: serde_json::Value = serde_json::from_str(body).map_err(|e| source_err(SOURCE, e))?;
+    let data = json
+        .get("data")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| source_err(SOURCE, "unexpected response"))?;
+    if data.len() < STETH_APY_WINDOW {
+        return Err(source_err(SOURCE, "not enough history"));
+    }
+    let window = &data[data.len() - STETH_APY_WINDOW..];
 
-/// APY mais recente da série (último ponto com valor).
-pub fn parse_latest_apy(body: &str) -> Result<f64, AppError> {
-    let chart: YieldChart = serde_json::from_str(body)?;
-    chart
-        .data
-        .iter()
-        .rev()
-        .find_map(|p| p.apy)
-        .ok_or_else(|| source_err("DefiLlama yields", "no APY in the stETH pool series"))
+    let mut apys = Vec::with_capacity(STETH_APY_WINDOW);
+    for point in window {
+        let apy = point
+            .get("apy")
+            .and_then(serde_json::Value::as_f64)
+            .filter(|v| v.is_finite() && *v >= 0.0)
+            .ok_or_else(|| source_err(SOURCE, "unexpected response"))?;
+        apys.push(apy);
+    }
+
+    // `timestamp` vem como `2026-10-31T12:01:50.401Z`; só a data importa.
+    let last_day = window
+        .last()
+        .and_then(|p| p.get("timestamp"))
+        .and_then(serde_json::Value::as_str)
+        .and_then(|t| t.get(..10))
+        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+        .ok_or_else(|| source_err(SOURCE, "last point has no valid 'timestamp'"))?;
+    let age = (today - last_day).num_days();
+    if age > STETH_APY_MAX_AGE_DAYS {
+        return Err(source_err(SOURCE, format!("stale data, latest point is {last_day} ({age} days old)")));
+    }
+
+    apys.sort_by(f64::total_cmp);
+    Ok(apys[STETH_APY_WINDOW / 2])
 }
 
 #[derive(Deserialize)]
@@ -578,17 +607,17 @@ pub async fn fetch_btc_dominance() -> Result<f64, AppError> {
 }
 
 /// Último SOPR (`sopr`) ou NUPL (`nupl`) do BTC no bitcoin-data.com, com a data
-/// do dado (7 dias atrás no plano grátis). Cada chamada gasta a cota da fonte:
+/// do dado (1 a 7 dias atrás no plano grátis). Cada chamada gasta a cota da fonte:
 /// o coletor só chega aqui depois de checar que não há leitura de hoje.
 pub async fn fetch_bitcoin_data(field: &str) -> Result<DatedReading, AppError> {
     let url = format!("{BITCOIN_DATA_API}/{field}/last");
     parse_bitcoin_data(&get_text("bitcoin-data.com", &url).await?, field)
 }
 
-/// Staking yield real do ETH: APY do stETH menos a inflação bruta.
+/// Staking yield real do ETH: mediana do APY do stETH (7 últimos pontos) menos a inflação bruta.
 pub async fn fetch_staking_yield_real() -> Result<f64, AppError> {
     let apy_url = format!("{DEFILLAMA_YIELDS}/chart/{STETH_POOL_ID}");
-    let apy = parse_latest_apy(&get_text("DefiLlama yields", &apy_url).await?)?;
+    let apy = parse_steth_apy(&get_text("DefiLlama yields", &apy_url).await?, chrono::Utc::now().date_naive())?;
 
     let cm_url = format!(
         "{COINMETRICS_COMMUNITY}/timeseries/asset-metrics?assets=eth&metrics=IssTotNtv,SplyCur&frequency=1d&limit_per_asset=1&paging_from=end"
@@ -608,7 +637,9 @@ mod tests {
     const FUNDING: &str = r#"[{"symbol":"ETHUSDT","fundingTime":1792080000000,"fundingRate":"0.00005355","markPrice":"2439.89","rateType":"Regular"},{"symbol":"ETHUSDT","fundingTime":1792108800001,"fundingRate":"0.00007466","markPrice":"2441.05","rateType":"Regular"},{"symbol":"ETHUSDT","fundingTime":1792137600001,"fundingRate":"0.00004648","markPrice":"2454.27","rateType":"Regular"}]"#;
     const OPEN_INTEREST: &str = r#"[{"symbol":"ETHUSDT","sumOpenInterest":"2270359.16000000","sumOpenInterestValue":"5668837083.01","CMCCirculatingSupply":"122127761.09","timestamp":1791936000000},{"symbol":"ETHUSDT","sumOpenInterest":"2258306.77400000","sumOpenInterestValue":"5513177087.62","CMCCirculatingSupply":"122133648.45","timestamp":1792108800000}]"#;
     const LONG_SHORT: &str = r#"[{"symbol":"ETHUSDT","longAccount":"0.7267","longShortRatio":"2.6590","shortAccount":"0.2733","timestamp":1791936000000},{"symbol":"ETHUSDT","longAccount":"0.7252","longShortRatio":"2.6390","shortAccount":"0.2748","timestamp":1792108800000}]"#;
-    const YIELD_CHART: &str = r#"{"status":"success","data":[{"timestamp":"2026-10-15T23:01:26.957Z","tvlUsd":23771578172,"apy":2.255,"apyBase":2.255,"apyReward":null},{"timestamp":"2026-10-16T12:01:20.741Z","tvlUsd":23855899243,"apy":2.255,"apyBase":2.255,"apyReward":null}]}"#;
+    // Últimos 8 pontos reais do pool stETH (DefiLlama, lido em 2026-10-31): o Lido reportou
+    // 15,067% em 2026-10-30 e 2026-10-31, contra ~2,25% no normal.
+    const YIELD_CHART: &str = r#"{"status":"success","data":[{"timestamp":"2026-10-24T23:01:32.839Z","apy":2.781},{"timestamp":"2026-10-25T23:01:13.950Z","apy":2.255},{"timestamp":"2026-10-26T22:01:34.873Z","apy":2.24},{"timestamp":"2026-10-27T23:01:29.472Z","apy":2.27155},{"timestamp":"2026-10-28T23:01:11.562Z","apy":2.25205},{"timestamp":"2026-10-29T23:01:43.312Z","apy":2.24386},{"timestamp":"2026-10-30T23:01:39.843Z","apy":15.06732},{"timestamp":"2026-10-31T12:01:50.401Z","apy":15.06732}]}"#;
     const ISSUANCE: &str = r#"{"data":[{"asset":"eth","time":"2026-10-14T00:00:00.000000000Z","IssTotNtv":"2979.961923327","SplyCur":"122130969.817571701831258692"},{"asset":"eth","time":"2026-10-15T00:00:00.000000000Z","IssTotNtv":"2979.616171783","SplyCur":"122133892.772935516304718648"}]}"#;
 
     // Trecho da resposta real de `/global` de 2026-10-26 (só as chaves usadas).
@@ -616,6 +647,29 @@ mod tests {
 
     fn close(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-6
+    }
+
+    /// Série do pool no formato da DefiLlama: pares (data `YYYY-MM-DD`, `apy` em JSON cru,
+    /// ex.: `2.5`, `null`, `"x"`).
+    fn yield_chart(points: &[(&str, &str)]) -> String {
+        let rows: Vec<String> = points
+            .iter()
+            .map(|(day, apy)| format!(r#"{{"timestamp":"{day}T12:00:00.000Z","apy":{apy}}}"#))
+            .collect();
+        format!(r#"{{"status":"success","data":[{}]}}"#, rows.join(","))
+    }
+
+    /// Série de 7 dias seguidos (2026-10-25 a 2026-10-31), um `apy` cru por dia, do mais antigo
+    /// ao mais novo.
+    fn week(apys: [&str; 7]) -> String {
+        let days = ["25", "26", "27", "28", "29", "30", "31"];
+        let owned: Vec<String> = days.iter().map(|d| format!("2026-10-{d}")).collect();
+        let points: Vec<(&str, &str)> = owned.iter().map(String::as_str).zip(apys).collect();
+        yield_chart(&points)
+    }
+
+    fn day(y: i32, m: u32, d: u32) -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap()
     }
 
     #[test]
@@ -716,9 +770,104 @@ mod tests {
     }
 
     #[test]
-    fn parses_latest_apy_skipping_missing_values() {
-        assert!(close(parse_latest_apy(YIELD_CHART).unwrap(), 2.255));
-        assert!(parse_latest_apy(r#"{"data":[{"apy":null}]}"#).is_err());
+    fn steth_apy_is_the_median_of_the_last_7_so_a_lido_spike_does_not_win() {
+        // Últimos 7 da série real, ordenados: 2,24 2,24386 2,25205 2,255 2,27155 15,067 15,067
+        // → mediana 2,255. O último ponto sozinho (o critério antigo) daria 15,067.
+        let apy = parse_steth_apy(YIELD_CHART, day(2026, 11, 1)).unwrap();
+        assert!(close(apy, 2.255), "{apy}");
+    }
+
+    #[test]
+    fn steth_apy_window_is_the_last_7_points_not_the_first_7_nor_the_whole_series() {
+        // Últimos 7 = 10 → 10. Com os 7 primeiros daria 2; com os 8 (mediana 6), 6.
+        let body = yield_chart(&[
+            ("2026-10-24", "0"),
+            ("2026-10-25", "2"),
+            ("2026-10-26", "2"),
+            ("2026-10-27", "2"),
+            ("2026-10-28", "10"),
+            ("2026-10-29", "10"),
+            ("2026-10-30", "10"),
+            ("2026-10-31", "10"),
+        ]);
+        assert!(close(parse_steth_apy(&body, day(2026, 11, 1)).unwrap(), 10.0));
+    }
+
+    #[test]
+    fn steth_apy_ignores_points_before_the_window_even_if_invalid() {
+        let mut points = vec![("2022-01-01", "null"), ("2022-01-02", "-1")];
+        let owned: Vec<String> = ["25", "26", "27", "28", "29", "30", "31"]
+            .iter()
+            .map(|d| format!("2026-10-{d}"))
+            .collect();
+        points.extend(owned.iter().map(|d| (d.as_str(), "3")));
+        let body = yield_chart(&points);
+        assert!(close(parse_steth_apy(&body, day(2026, 11, 1)).unwrap(), 3.0));
+    }
+
+    #[test]
+    fn steth_apy_survives_up_to_3_bad_points_in_the_window() {
+        let body = week(["2", "2", "2", "2", "15", "15", "15"]);
+        assert!(close(parse_steth_apy(&body, day(2026, 11, 1)).unwrap(), 2.0));
+    }
+
+    #[test]
+    fn steth_apy_rejects_a_series_with_fewer_than_7_points() {
+        let body = yield_chart(&[("2026-10-30", "2"), ("2026-10-31", "2")]);
+        let err = parse_steth_apy(&body, day(2026, 11, 1)).unwrap_err();
+        assert!(err.to_string().contains("DefiLlama yields"), "{err}");
+        assert!(parse_steth_apy(r#"{"data":[]}"#, day(2026, 11, 1)).is_err());
+    }
+
+    #[test]
+    fn steth_apy_rejects_null_text_negative_or_non_finite_apy_in_any_of_the_7() {
+        for bad in ["null", r#""x""#, "-0.1", r#""NaN""#] {
+            for position in 0..7 {
+                let mut apys = ["2"; 7];
+                apys[position] = bad;
+                let body = week(apys);
+                assert!(
+                    parse_steth_apy(&body, day(2026, 11, 1)).is_err(),
+                    "{bad} na posição {position} devia dar erro"
+                );
+            }
+        }
+        // `apy` ausente (sem a chave) também.
+        let missing = r#"{"data":[{"timestamp":"2026-10-25T12:00:00Z"},{"timestamp":"2026-10-26T12:00:00Z","apy":2},{"timestamp":"2026-10-27T12:00:00Z","apy":2},{"timestamp":"2026-10-28T12:00:00Z","apy":2},{"timestamp":"2026-10-29T12:00:00Z","apy":2},{"timestamp":"2026-10-30T12:00:00Z","apy":2},{"timestamp":"2026-10-31T12:00:00Z","apy":2}]}"#;
+        assert!(parse_steth_apy(missing, day(2026, 11, 1)).is_err());
+    }
+
+    #[test]
+    fn steth_apy_accepts_zero() {
+        let body = week(["0"; 7]);
+        assert!(close(parse_steth_apy(&body, day(2026, 11, 1)).unwrap(), 0.0));
+    }
+
+    #[test]
+    fn steth_apy_rejects_a_stale_last_point() {
+        let body = week(["2"; 7]); // último ponto: 2026-10-31
+        assert!(parse_steth_apy(&body, day(2026, 11, 7)).is_ok()); // 7 dias: no limite
+        let stale = parse_steth_apy(&body, day(2026, 11, 8)).unwrap_err(); // 8 dias
+        assert!(stale.to_string().contains("stale data"), "{stale}");
+    }
+
+    #[test]
+    fn steth_apy_rejects_a_missing_or_invalid_timestamp() {
+        for last in [r#"{"apy":2}"#, r#"{"timestamp":"t","apy":2}"#, r#"{"timestamp":"2026-13-45T00:00:00Z","apy":2}"#, r#"{"timestamp":20261031,"apy":2}"#] {
+            let first = (25..31)
+                .map(|d| format!(r#"{{"timestamp":"2026-10-{d}T12:00:00Z","apy":2}}"#))
+                .collect::<Vec<_>>()
+                .join(",");
+            let body = format!(r#"{{"data":[{first},{last}]}}"#);
+            assert!(parse_steth_apy(&body, day(2026, 11, 1)).is_err(), "{last}");
+        }
+    }
+
+    #[test]
+    fn steth_apy_rejects_a_body_that_is_not_the_expected_shape() {
+        for body in ["", "not json", "[]", r#"{"data":"x"}"#, r#"{"status":"success"}"#] {
+            assert!(parse_steth_apy(body, day(2026, 11, 1)).is_err(), "{body}");
+        }
     }
 
     #[test]
