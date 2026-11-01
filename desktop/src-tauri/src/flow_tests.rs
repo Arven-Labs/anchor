@@ -1795,7 +1795,10 @@ async fn comparison_hides_the_brl_benchmarks_outside_brl() {
     let s = usd_stock_scenario(&db).await;
     // Um benchmark que existiria em BRL: sem a regra, entraria na comparação.
     seed_price(&db, "^BVSP", &s.first_day, 100_000.0).await;
-    seed_price(&db, "^BVSP", &s.today, 101_000.0).await;
+    // No dia 1 as duas datas coincidem e há uma linha por ticker e dia (UNIQUE).
+    if s.today != s.first_day {
+        seed_price(&db, "^BVSP", &s.today, 101_000.0).await;
+    }
     save_base_currency(&db, s.workspace_id, "USD").await.unwrap();
 
     let cmp = compare_with_benchmarks(&db, s.portfolio_id, "USD".to_string()).await.unwrap();
