@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../domain/general_finance.dart';
 import '../domain/money_format.dart';
+import '../l10n/app_localizations.dart';
 import '../models/bank_account.dart';
 import '../models/general_transaction_category.dart';
 import '../services/general_finance_repository.dart';
@@ -70,6 +71,7 @@ class _FinancasCategoriesScreenState extends State<FinancasCategoriesScreen> {
   }
 
   Future<void> _edit([GeneralTransactionCategory? existing]) async {
+    final l = AppLocalizations.of(context);
     final nomeController = TextEditingController(text: existing?.nome);
     final limitController = TextEditingController(
       text: existing?.limiteMensal?.toString(),
@@ -78,15 +80,15 @@ class _FinancasCategoriesScreenState extends State<FinancasCategoriesScreen> {
     final saved = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(existing == null ? 'Nova categoria' : 'Editar categoria'),
+        title: Text(existing == null ? l.catNew : l.catEdit),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nomeController,
-              decoration: const InputDecoration(
-                labelText: 'Nome',
-                hintText: 'Mercado',
+              decoration: InputDecoration(
+                labelText: l.finFieldName,
+                hintText: l.catNameHint,
               ),
             ),
             const SizedBox(height: 12),
@@ -96,8 +98,8 @@ class _FinancasCategoriesScreenState extends State<FinancasCategoriesScreen> {
                 decimal: true,
               ),
               decoration: InputDecoration(
-                labelText: 'Limite mensal (${widget.base})',
-                helperText: 'Vazio = sem limite.',
+                labelText: l.catMonthlyLimit(widget.base),
+                helperText: l.catNoLimitHelp,
               ),
             ),
           ],
@@ -105,11 +107,11 @@ class _FinancasCategoriesScreenState extends State<FinancasCategoriesScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
+            child: Text(l.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Salvar'),
+            child: Text(l.actionSave),
           ),
         ],
       ),
@@ -124,11 +126,7 @@ class _FinancasCategoriesScreenState extends State<FinancasCategoriesScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final limit = limitText.isEmpty ? null : parseAmount(limitText);
     if (nome.isEmpty || (limitText.isNotEmpty && limit == null)) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Informe o nome e, se houver, um limite maior que zero.'),
-        ),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(l.catInvalid)));
       return;
     }
     final category = GeneralTransactionCategory(
@@ -146,21 +144,20 @@ class _FinancasCategoriesScreenState extends State<FinancasCategoriesScreen> {
   }
 
   Future<void> _delete(GeneralTransactionCategory category) async {
+    final l = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Excluir ${category.nome}?'),
-        content: const Text(
-          'Os lançamentos dela ficam sem categoria; nenhum é apagado.',
-        ),
+        title: Text(l.finDeleteTitle(category.nome)),
+        content: Text(l.catDeleteBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
+            child: Text(l.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Excluir'),
+            child: Text(l.actionDelete),
           ),
         ],
       ),
@@ -172,17 +169,18 @@ class _FinancasCategoriesScreenState extends State<FinancasCategoriesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Categorias')),
+      appBar: AppBar(title: Text(l.catTitle)),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _edit(),
         icon: const Icon(Icons.add),
-        label: const Text('Categoria'),
+        label: Text(l.catFab),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _categories.isEmpty
-          ? const Center(child: Text('Nenhuma categoria cadastrada ainda.'))
+          ? Center(child: Text(l.catEmpty))
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [for (final c in _categories) _categoryCard(c)],
@@ -191,13 +189,13 @@ class _FinancasCategoriesScreenState extends State<FinancasCategoriesScreen> {
   }
 
   Widget _categoryCard(GeneralTransactionCategory category) {
+    final l = AppLocalizations.of(context);
     final textTheme = Theme.of(context).textTheme;
     final spent = _spent[category.id] ?? (spent: 0.0, missingFx: 0);
     final limit = category.limiteMensal;
     final over = limit != null && spent.spent > limit;
-    final missingNote = spent.missingFx == 0
-        ? null
-        : '${spent.missingFx} despesa(s) fora da soma por falta de câmbio.';
+    final missingNote = spent.missingFx == 0 ? null : l.catMissingFx(spent.missingFx);
+    String money(double value) => formatMoney(value, widget.base, locale: l.localeName);
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -213,9 +211,9 @@ class _FinancasCategoriesScreenState extends State<FinancasCategoriesScreen> {
                 PopupMenuButton<String>(
                   onSelected: (action) =>
                       action == 'edit' ? _edit(category) : _delete(category),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Editar')),
-                    PopupMenuItem(value: 'delete', child: Text('Excluir')),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(value: 'edit', child: Text(l.actionEdit)),
+                    PopupMenuItem(value: 'delete', child: Text(l.actionDelete)),
                   ],
                 ),
               ],
@@ -227,9 +225,8 @@ class _FinancasCategoriesScreenState extends State<FinancasCategoriesScreen> {
                 children: [
                   Text(
                     limit == null
-                        ? 'Gasto no mês: ${formatMoney(spent.spent, widget.base)}'
-                        : '${formatMoney(spent.spent, widget.base)} de '
-                              '${formatMoney(limit, widget.base)}',
+                        ? l.catSpentMonth(money(spent.spent))
+                        : l.catSpentOfLimit(money(spent.spent), money(limit)),
                     key: Key('financas-category-spent-${category.id}'),
                   ),
                   if (limit != null) ...[
@@ -243,7 +240,7 @@ class _FinancasCategoriesScreenState extends State<FinancasCategoriesScreen> {
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          'Estourou em ${formatMoney(spent.spent - limit, widget.base)}',
+                          l.catOver(money(spent.spent - limit)),
                           key: Key('financas-category-over-${category.id}'),
                           style: textTheme.bodySmall?.copyWith(
                             color: Theme.of(context).colorScheme.error,

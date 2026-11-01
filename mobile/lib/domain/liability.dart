@@ -1,5 +1,7 @@
 import 'dart:math' show pow;
 
+import 'finance_error.dart';
+
 /// Dívida com parcelas geradas — porta de `desktop/src-tauri/src/domain/liability.rs`.
 enum AmortizationSystem {
   price('price', 'Price (parcela fixa)'),
@@ -41,13 +43,13 @@ List<Installment> computeInstallments({
   required AmortizationSystem sistema,
 }) {
   if (!principal.isFinite || principal <= 0) {
-    throw ArgumentError('O principal deve ser maior que zero');
+    throw FinanceArgumentError(FinanceErrorCode.principalMustBePositive);
   }
   if (!taxaMensal.isFinite || taxaMensal < 0) {
-    throw ArgumentError('A taxa mensal não pode ser negativa');
+    throw FinanceArgumentError(FinanceErrorCode.negativeMonthlyRate);
   }
   if (prazoMeses <= 0) {
-    throw ArgumentError('O prazo (em meses) deve ser maior que zero');
+    throw FinanceArgumentError(FinanceErrorCode.termMustBePositive);
   }
 
   final n = prazoMeses;

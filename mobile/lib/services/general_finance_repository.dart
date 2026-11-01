@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 
 import '../data/db.dart';
 import '../domain/currency_catalog.dart';
+import '../domain/finance_error.dart';
 import '../models/bank_account.dart';
 import '../models/general_transaction.dart';
 import '../models/general_transaction_category.dart';
@@ -18,7 +19,7 @@ class GeneralFinanceRepository {
   Future<int> insertAccount(BankAccount account) async {
     final currency = validateCurrency(account.currency);
     if (currency == null) {
-      throw ArgumentError('Moeda fora do catálogo: ${account.currency}');
+      throw FinanceArgumentError(FinanceErrorCode.unknownCurrency, {'currency': account.currency});
     }
     final db = await AppDatabase.instance();
     final map = BankAccount(
@@ -42,7 +43,7 @@ class GeneralFinanceRepository {
   Future<void> updateAccount(BankAccount account) async {
     final currency = validateCurrency(account.currency);
     if (currency == null) {
-      throw ArgumentError('Moeda fora do catálogo: ${account.currency}');
+      throw FinanceArgumentError(FinanceErrorCode.unknownCurrency, {'currency': account.currency});
     }
     final db = await AppDatabase.instance();
     final rows = await db.query(
@@ -50,10 +51,10 @@ class GeneralFinanceRepository {
       where: 'id = ?',
       whereArgs: [account.id],
     );
-    if (rows.isEmpty) throw StateError('Conta não encontrada');
+    if (rows.isEmpty) throw FinanceStateError(FinanceErrorCode.accountNotFound);
     final current = BankAccount.fromMap(rows.first);
     if (current.currency != currency && await accountInUse(account.id!)) {
-      throw StateError('A moeda não muda numa conta que já tem lançamentos');
+      throw FinanceStateError(FinanceErrorCode.accountCurrencyLocked);
     }
     await db.update(
       'bank_accounts',
@@ -119,17 +120,13 @@ class GeneralFinanceRepository {
 
   Future<int> insertTransaction(GeneralTransaction tx) async {
     if (!tx.valor.isFinite || tx.valor <= 0) {
-      throw ArgumentError('O valor deve ser maior que zero');
+      throw FinanceArgumentError(FinanceErrorCode.amountMustBePositive);
     }
     if (DateTime.tryParse(tx.date) == null || tx.date.length != 10) {
-      throw ArgumentError('Data inválida: ${tx.date}');
+      throw FinanceArgumentError(FinanceErrorCode.invalidDate, {'date': tx.date});
     }
     if (!GeneralTransactionType.manual.contains(tx.type)) {
-      throw ArgumentError(
-        'Só receita e despesa são lançadas à mão; transferência nasce em '
-        'createTransfer, parcela de dívida em createLiability e o empréstimo '
-        'em createLoan',
-      );
+      throw FinanceArgumentError(FinanceErrorCode.manualTypeOnly);
     }
     final db = await AppDatabase.instance();
     final map = tx.toMap()..remove('id');
@@ -144,10 +141,10 @@ class GeneralFinanceRepository {
   /// devedor cai quando ela vence.
   Future<int> createLiability(Liability liability) async {
     final nome = liability.nome.trim();
-    if (nome.isEmpty) throw ArgumentError('Informe o nome da dívida');
+    if (nome.isEmpty) throw FinanceArgumentError(FinanceErrorCode.liabilityNameRequired);
     final start = DateTime.tryParse(liability.dataInicio);
     if (start == null || liability.dataInicio.length != 10) {
-      throw ArgumentError('Data inválida: ${liability.dataInicio}');
+      throw FinanceArgumentError(FinanceErrorCode.invalidDate, {'date': liability.dataInicio});
     }
     final schedule = computeInstallments(
       principal: liability.principal,
@@ -162,7 +159,7 @@ class GeneralFinanceRepository {
         where: 'id = ?',
         whereArgs: [liability.bankAccountId],
       );
-      if (accounts.isEmpty) throw StateError('Conta não encontrada');
+      if (accounts.isEmpty) throw FinanceStateError(FinanceErrorCode.accountNotFound);
       final now = liability.createdAt.toIso8601String();
       final liabilityId = await txn.insert(
         'liabilities',
@@ -249,7 +246,7 @@ class GeneralFinanceRepository {
 
   Future<int> insertBorrower(Borrower borrower) async {
     final nome = borrower.nome.trim();
-    if (nome.isEmpty) throw ArgumentError('Informe o nome do devedor');
+    if (nome.isEmpty) throw FinanceArgumentError(FinanceErrorCode.borrowerNameRequired);
     final db = await AppDatabase.instance();
     return db.insert('borrowers', {
       'nome': nome,
@@ -275,7 +272,7 @@ class GeneralFinanceRepository {
       limit: 1,
     );
     if (loans.isNotEmpty) {
-      throw StateError('Este devedor ainda tem empréstimos: apague-os antes');
+      throw FinanceStateError(FinanceErrorCode.borrowerHasLoans);
     }
     await db.delete('borrowers', where: 'id = ?', whereArgs: [id]);
   }
@@ -286,11 +283,11 @@ class GeneralFinanceRepository {
   /// zero ou ausente = sem juros.
   Future<int> createLoan(Loan loan) async {
     if (!loan.principal.isFinite || loan.principal <= 0) {
-      throw ArgumentError('O principal deve ser maior que zero');
+      throw FinanceArgumentError(FinanceErrorCode.principalMustBePositive);
     }
     final taxa = loan.taxaMensalPercentual;
     if (taxa != null && (!taxa.isFinite || taxa < 0)) {
-      throw ArgumentError('A taxa mensal não pode ser negativa');
+      throw FinanceArgumentError(FinanceErrorCode.negativeMonthlyRate);
     }
     _validateDay(loan.dataInicio);
     final db = await AppDatabase.instance();
@@ -300,7 +297,7 @@ class GeneralFinanceRepository {
         where: 'id = ?',
         whereArgs: [loan.borrowerId],
       );
-      if (borrower.isEmpty) throw StateError('Devedor não encontrado');
+      if (borrower.isEmpty) throw FinanceStateError(FinanceErrorCode.borrowerNotFound);
       var currency = validateCurrency(loan.currency);
       int? transactionId;
       final accountId = loan.bankAccountId;
@@ -310,7 +307,7 @@ class GeneralFinanceRepository {
           where: 'id = ?',
           whereArgs: [accountId],
         );
-        if (accounts.isEmpty) throw StateError('Conta não encontrada');
+        if (accounts.isEmpty) throw FinanceStateError(FinanceErrorCode.accountNotFound);
         currency = BankAccount.fromMap(accounts.first).currency;
         transactionId = await txn.insert('general_transactions', {
           'bank_account_id': accountId,
@@ -322,7 +319,7 @@ class GeneralFinanceRepository {
         });
       }
       if (currency == null) {
-        throw ArgumentError('Moeda fora do catálogo: ${loan.currency}');
+        throw FinanceArgumentError(FinanceErrorCode.unknownCurrency, {'currency': loan.currency});
       }
       return txn.insert(
         'loans',
@@ -352,7 +349,7 @@ class GeneralFinanceRepository {
   }) async {
     if (taxaMensalPercentual != null &&
         (!taxaMensalPercentual.isFinite || taxaMensalPercentual < 0)) {
-      throw ArgumentError('A taxa mensal não pode ser negativa');
+      throw FinanceArgumentError(FinanceErrorCode.negativeMonthlyRate);
     }
     final db = await AppDatabase.instance();
     final changed = await db.update(
@@ -368,7 +365,7 @@ class GeneralFinanceRepository {
       where: 'id = ?',
       whereArgs: [id],
     );
-    if (changed == 0) throw StateError('Empréstimo não encontrado');
+    if (changed == 0) throw FinanceStateError(FinanceErrorCode.loanNotFound);
   }
 
   /// Mais recentes primeiro, com devedor e baixas (da mais antiga à mais nova).
@@ -421,10 +418,10 @@ class GeneralFinanceRepository {
   /// a conta tem de ser da moeda do empréstimo.
   Future<int> registerLoanRepayment(LoanRepayment repayment) async {
     if (!repayment.valorBaixado.isFinite || repayment.valorBaixado <= 0) {
-      throw ArgumentError('O valor baixado deve ser maior que zero');
+      throw FinanceArgumentError(FinanceErrorCode.repaidAmountMustBePositive);
     }
     if (!repayment.valorRecebido.isFinite || repayment.valorRecebido < 0) {
-      throw ArgumentError('O valor recebido não pode ser negativo');
+      throw FinanceArgumentError(FinanceErrorCode.receivedAmountNegative);
     }
     _validateDay(repayment.data);
     final db = await AppDatabase.instance();
@@ -434,7 +431,7 @@ class GeneralFinanceRepository {
         where: 'id = ?',
         whereArgs: [repayment.loanId],
       );
-      if (loans.isEmpty) throw StateError('Empréstimo não encontrado');
+      if (loans.isEmpty) throw FinanceStateError(FinanceErrorCode.loanNotFound);
       final loan = Loan.fromMap(loans.first);
       int? transactionId;
       final accountId = repayment.bankAccountId;
@@ -444,12 +441,13 @@ class GeneralFinanceRepository {
           where: 'id = ?',
           whereArgs: [accountId],
         );
-        if (accounts.isEmpty) throw StateError('Conta não encontrada');
+        if (accounts.isEmpty) throw FinanceStateError(FinanceErrorCode.accountNotFound);
         final account = BankAccount.fromMap(accounts.first);
         if (account.currency != loan.currency) {
-          throw ArgumentError(
-            'O empréstimo é em ${loan.currency} e a conta em ${account.currency}',
-          );
+          throw FinanceArgumentError(FinanceErrorCode.loanCurrencyMismatch, {
+            'loanCurrency': loan.currency,
+            'accountCurrency': account.currency,
+          });
         }
         if (repayment.valorRecebido > 0) {
           final borrower = await txn.query(
@@ -508,7 +506,7 @@ class GeneralFinanceRepository {
 
   static void _validateDay(String date) {
     if (DateTime.tryParse(date) == null || date.length != 10) {
-      throw ArgumentError('Data inválida: $date');
+      throw FinanceArgumentError(FinanceErrorCode.invalidDate, {'date': date});
     }
   }
 
@@ -562,10 +560,10 @@ class GeneralFinanceRepository {
 
   Map<String, Object?> _categoryMap(GeneralTransactionCategory category) {
     final nome = category.nome.trim();
-    if (nome.isEmpty) throw ArgumentError('Informe o nome da categoria');
+    if (nome.isEmpty) throw FinanceArgumentError(FinanceErrorCode.categoryNameRequired);
     final limit = category.limiteMensal;
     if (limit != null && (!limit.isFinite || limit <= 0)) {
-      throw ArgumentError('O limite mensal deve ser maior que zero');
+      throw FinanceArgumentError(FinanceErrorCode.categoryLimitMustBePositive);
     }
     return GeneralTransactionCategory(
       nome: nome,
@@ -601,10 +599,7 @@ class GeneralFinanceRepository {
         GeneralTransactionType.fromValue(
           rows.first['transaction_type'] as String,
         ).isGenerated) {
-      throw StateError(
-        'Parcela de dívida e lançamento de empréstimo só se apagam junto com '
-        'a dívida ou o empréstimo',
-      );
+      throw FinanceStateError(FinanceErrorCode.linkedTransactionLocked);
     }
     final transferId = rows.isEmpty ? null : rows.first['transfer_id'] as int?;
     if (transferId == null) {
@@ -633,14 +628,14 @@ class GeneralFinanceRepository {
   }) async {
     for (final valor in [valorSaida, valorEntrada]) {
       if (!valor.isFinite || valor <= 0) {
-        throw ArgumentError('Os valores devem ser maiores que zero');
+        throw FinanceArgumentError(FinanceErrorCode.transferAmountsMustBePositive);
       }
     }
     if (DateTime.tryParse(date) == null || date.length != 10) {
-      throw ArgumentError('Data inválida: $date');
+      throw FinanceArgumentError(FinanceErrorCode.invalidDate, {'date': date});
     }
     if (fromAccountId == toAccountId) {
-      throw ArgumentError('Escolha duas contas diferentes');
+      throw FinanceArgumentError(FinanceErrorCode.transferSameAccount);
     }
     final db = await AppDatabase.instance();
     return db.transaction((txn) async {
@@ -650,7 +645,7 @@ class GeneralFinanceRepository {
           where: 'id = ?',
           whereArgs: [id],
         );
-        if (rows.isEmpty) throw StateError('Conta não encontrada');
+        if (rows.isEmpty) throw FinanceStateError(FinanceErrorCode.accountNotFound);
         return BankAccount.fromMap(rows.first);
       }
 
@@ -658,9 +653,7 @@ class GeneralFinanceRepository {
       final to = await load(toAccountId);
       if (from.currency == to.currency &&
           (valorEntrada - valorSaida).abs() > 1e-9) {
-        throw ArgumentError(
-          'Contas na mesma moeda recebem exatamente o que saiu',
-        );
+        throw FinanceArgumentError(FinanceErrorCode.transferSameCurrencyAmountsDiffer);
       }
       final createdAt = (now ?? DateTime.now()).toIso8601String();
       Map<String, Object?> leg(
@@ -713,7 +706,7 @@ class GeneralFinanceRepository {
   Future<void> setBaseCurrency(String code) async {
     final currency = validateCurrency(code);
     if (currency == null) {
-      throw ArgumentError('Moeda fora do catálogo: $code');
+      throw FinanceArgumentError(FinanceErrorCode.unknownCurrency, {'currency': code});
     }
     final db = await AppDatabase.instance();
     await db.insert('app_settings', {

@@ -472,4 +472,410 @@ class AppLocalizationsEn extends AppLocalizations {
   String portfolioShare(String percent, String value) {
     return 'Share: $percent% — $value';
   }
+
+  @override
+  String get actionEdit => 'Edit';
+
+  @override
+  String get actionDelete => 'Delete';
+
+  @override
+  String get finTitle => 'Finances';
+
+  @override
+  String get finTransfer => 'Transfer';
+
+  @override
+  String get finLoans => 'Loans';
+
+  @override
+  String get finDebts => 'Debts';
+
+  @override
+  String get finCategories => 'Categories';
+
+  @override
+  String get finRefresh => 'Refresh';
+
+  @override
+  String get finFabAccount => 'Account';
+
+  @override
+  String get finEmptyAccounts => 'No accounts yet.';
+
+  @override
+  String get finNetWorth => 'Net worth';
+
+  @override
+  String get finCalculating => 'Calculating…';
+
+  @override
+  String finCash(String value) {
+    return 'Cash $value';
+  }
+
+  @override
+  String finPortfolio(String value) {
+    return 'Portfolio $value';
+  }
+
+  @override
+  String finLoansReceivable(String value) {
+    return 'Loans receivable $value';
+  }
+
+  @override
+  String finDebtsLine(String value) {
+    return 'Debts −$value';
+  }
+
+  @override
+  String finMissingItems(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '$count items left out of the sum for lack of exchange rate or quote.',
+      one: '1 item left out of the sum for lack of exchange rate or quote.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String finFxBanner(String currencies) {
+    return 'Exchange rate unavailable right now for $currencies. Items in those currencies are left out of net worth.';
+  }
+
+  @override
+  String finNoRate(String pair) {
+    return 'no exchange rate $pair';
+  }
+
+  @override
+  String get finNewAccount => 'New account';
+
+  @override
+  String get finEditAccount => 'Edit account';
+
+  @override
+  String get finFieldName => 'Name';
+
+  @override
+  String get finFieldHolder => 'Holder';
+
+  @override
+  String get finFieldCurrency => 'Currency';
+
+  @override
+  String get finAccountNameHint => 'Nubank';
+
+  @override
+  String get finCurrencyLocked =>
+      'Can\'t change on an account that already has transactions.';
+
+  @override
+  String finDeleteTitle(String name) {
+    return 'Delete $name?';
+  }
+
+  @override
+  String get finDeleteWithTx =>
+      'The transactions of this account will also be deleted.';
+
+  @override
+  String get finDeleteNoTx => 'The account has no transactions.';
+
+  @override
+  String get finTransferNeedTwo => 'Add two accounts to transfer.';
+
+  @override
+  String get finFrom => 'From';
+
+  @override
+  String get finTo => 'To';
+
+  @override
+  String finAmountSent(String currency) {
+    return 'Sent ($currency)';
+  }
+
+  @override
+  String finAmount(String currency) {
+    return 'Amount ($currency)';
+  }
+
+  @override
+  String finAmountReceived(String currency) {
+    return 'Received ($currency)';
+  }
+
+  @override
+  String finEffectiveRate(String from, String rate, String to) {
+    return 'Effective rate: 1 $from = $rate $to';
+  }
+
+  @override
+  String get finSpreadIncluded =>
+      'Spread and fees already included in the amounts.';
+
+  @override
+  String get finNotes => 'Notes';
+
+  @override
+  String get finSameAccount => 'Choose two different accounts.';
+
+  @override
+  String get finAmountsRequired => 'Enter the amounts, greater than zero.';
+
+  @override
+  String get txNewTitle => 'New transaction';
+
+  @override
+  String get txCategory => 'Category';
+
+  @override
+  String get txNoCategory => 'No category';
+
+  @override
+  String get txAmountRequired => 'Enter an amount greater than zero.';
+
+  @override
+  String get txDeleteTitle => 'Delete transaction?';
+
+  @override
+  String txDeleteBody(String type, String value, String date) {
+    return '$type of $value on $date.';
+  }
+
+  @override
+  String get txDeleteTransferLeg =>
+      'The other leg of the transfer will also be deleted.';
+
+  @override
+  String get txFab => 'Transaction';
+
+  @override
+  String get txBalance => 'Balance';
+
+  @override
+  String get txEmpty => 'No transactions in this account yet.';
+
+  @override
+  String get txFuture => 'not in the balance yet';
+
+  @override
+  String get txTypeReceita => 'Income';
+
+  @override
+  String get txTypeDespesa => 'Expense';
+
+  @override
+  String get txTypeTransferenciaSaida => 'Transfer (out)';
+
+  @override
+  String get txTypeTransferenciaEntrada => 'Transfer (in)';
+
+  @override
+  String get txTypeParcelaDivida => 'Debt installment';
+
+  @override
+  String get txTypeEmprestimoConcedido => 'Loan granted';
+
+  @override
+  String get txTypeRecebimentoEmprestimo => 'Loan repayment';
+
+  @override
+  String get catTitle => 'Categories';
+
+  @override
+  String get catFab => 'Category';
+
+  @override
+  String get catEmpty => 'No categories yet.';
+
+  @override
+  String get catNew => 'New category';
+
+  @override
+  String get catEdit => 'Edit category';
+
+  @override
+  String get catNameHint => 'Groceries';
+
+  @override
+  String catMonthlyLimit(String base) {
+    return 'Monthly limit ($base)';
+  }
+
+  @override
+  String get catNoLimitHelp => 'Empty = no limit.';
+
+  @override
+  String get catInvalid =>
+      'Enter the name and, if any, a limit greater than zero.';
+
+  @override
+  String get catDeleteBody =>
+      'Its transactions become uncategorized; none is deleted.';
+
+  @override
+  String catSpentMonth(String value) {
+    return 'Spent this month: $value';
+  }
+
+  @override
+  String catSpentOfLimit(String spent, String limit) {
+    return '$spent of $limit';
+  }
+
+  @override
+  String catOver(String value) {
+    return 'Over by $value';
+  }
+
+  @override
+  String catMissingFx(int count) {
+    return '$count expense(s) left out of the sum for lack of exchange rate.';
+  }
+
+  @override
+  String get currencyUsd => 'US dollar';
+
+  @override
+  String get currencyEur => 'Euro';
+
+  @override
+  String get currencyGbp => 'Pound sterling';
+
+  @override
+  String get currencyJpy => 'Yen';
+
+  @override
+  String get currencyChf => 'Swiss franc';
+
+  @override
+  String get currencyCad => 'Canadian dollar';
+
+  @override
+  String get currencyAud => 'Australian dollar';
+
+  @override
+  String get currencyNzd => 'New Zealand dollar';
+
+  @override
+  String get currencyCny => 'Yuan';
+
+  @override
+  String get currencyBrl => 'Brazilian real';
+
+  @override
+  String get currencyArs => 'Argentine peso';
+
+  @override
+  String get currencyUyu => 'Uruguayan peso';
+
+  @override
+  String get currencyPyg => 'Guarani';
+
+  @override
+  String get currencyClp => 'Chilean peso';
+
+  @override
+  String get currencyCop => 'Colombian peso';
+
+  @override
+  String get currencyPen => 'Peruvian sol';
+
+  @override
+  String get currencyMxn => 'Mexican peso';
+
+  @override
+  String finErrUnknownCurrency(String currency) {
+    return 'Currency not in the catalog: $currency';
+  }
+
+  @override
+  String get finErrAmountMustBePositive =>
+      'The amount must be greater than zero';
+
+  @override
+  String finErrInvalidDate(String date) {
+    return 'Invalid date: $date';
+  }
+
+  @override
+  String get finErrManualTypeOnly =>
+      'Only income and expense are entered by hand; a transfer is created with Transfer, a debt installment by creating a debt, and a loan by granting a loan';
+
+  @override
+  String get finErrLiabilityNameRequired => 'Enter the debt name';
+
+  @override
+  String get finErrBorrowerNameRequired => 'Enter the borrower\'s name';
+
+  @override
+  String get finErrPrincipalMustBePositive =>
+      'The principal must be greater than zero';
+
+  @override
+  String get finErrTermMustBePositive =>
+      'The term (in months) must be greater than zero';
+
+  @override
+  String get finErrNegativeMonthlyRate => 'The monthly rate can\'t be negative';
+
+  @override
+  String get finErrRepaidAmountMustBePositive =>
+      'The amount repaid must be greater than zero';
+
+  @override
+  String get finErrReceivedAmountNegative =>
+      'The amount received can\'t be negative';
+
+  @override
+  String finErrLoanCurrencyMismatch(
+    String loanCurrency,
+    String accountCurrency,
+  ) {
+    return 'The loan is in $loanCurrency and the account in $accountCurrency';
+  }
+
+  @override
+  String get finErrCategoryNameRequired => 'Enter the category name';
+
+  @override
+  String get finErrCategoryLimitMustBePositive =>
+      'The monthly limit must be greater than zero';
+
+  @override
+  String get finErrTransferAmountsMustBePositive =>
+      'The amounts must be greater than zero';
+
+  @override
+  String get finErrTransferSameAccount => 'Choose two different accounts';
+
+  @override
+  String get finErrTransferSameCurrencyAmountsDiffer =>
+      'Accounts in the same currency receive exactly what left';
+
+  @override
+  String get finErrAccountNotFound => 'Account not found';
+
+  @override
+  String get finErrAccountCurrencyLocked =>
+      'The currency can\'t change on an account that already has transactions';
+
+  @override
+  String get finErrBorrowerHasLoans =>
+      'This borrower still has loans: delete them first';
+
+  @override
+  String get finErrBorrowerNotFound => 'Borrower not found';
+
+  @override
+  String get finErrLoanNotFound => 'Loan not found';
+
+  @override
+  String get finErrLinkedTransactionLocked =>
+      'A debt installment and a loan transaction are only deleted together with the debt or the loan';
 }

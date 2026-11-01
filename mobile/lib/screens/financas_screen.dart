@@ -4,6 +4,9 @@ import '../domain/currency_catalog.dart';
 import '../domain/fx_history.dart';
 import '../domain/general_finance.dart';
 import '../domain/money_format.dart';
+import '../domain/number_locale.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/finance_labels.dart';
 import '../models/bank_account.dart';
 import '../services/general_finance_repository.dart';
 import '../services/live_positions.dart';
@@ -18,19 +21,14 @@ import 'financas_transactions_screen.dart';
 
 /// Aviso de câmbio que não veio: os itens dessas moedas ficam fora da soma.
 @visibleForTesting
-String fxUnavailableBanner(Set<String> failed) =>
-    'Câmbio indisponível agora para ${(failed.toList()..sort()).join(', ')}. '
-    'Os itens dessas moedas ficam fora do patrimônio.';
+String fxUnavailableBanner(AppLocalizations l, Set<String> failed) =>
+    l.finFxBanner((failed.toList()..sort()).join(', '));
 
 /// Linha do resumo quando algo ficou de fora (conta sem câmbio ou posição sem
 /// cotação); `null` quando está tudo dentro.
 @visibleForTesting
-String? missingItemsNote(int count) {
-  if (count == 0) return null;
-  return count == 1
-      ? '1 item fora da soma por falta de câmbio ou cotação.'
-      : '$count itens fora da soma por falta de câmbio ou cotação.';
-}
+String? missingItemsNote(AppLocalizations l, int count) =>
+    count == 0 ? null : l.finMissingItems(count);
 
 /// Finanças Gerais: contas em qualquer moeda, o saldo de cada uma (derivado
 /// dos lançamentos) e o patrimônio na moeda base — caixa das contas mais valor
@@ -137,6 +135,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
   /// Cria (`existing == null`) ou edita. A moeda fica travada na conta que já
   /// tem lançamentos: o histórico seria relido em outra moeda.
   Future<void> _editAccount([BankAccount? existing]) async {
+    final l = AppLocalizations.of(context);
     final nomeController = TextEditingController(text: existing?.nome);
     final titularController = TextEditingController(text: existing?.titular);
     var currency = existing?.currency ?? defaultBaseCurrency;
@@ -148,34 +147,35 @@ class _FinancasScreenState extends State<FinancasScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(existing == null ? 'Nova conta' : 'Editar conta'),
+          title: Text(existing == null ? l.finNewAccount : l.finEditAccount),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: nomeController,
-                decoration: const InputDecoration(
-                  labelText: 'Nome',
-                  hintText: 'Nubank',
+                decoration: InputDecoration(
+                  labelText: l.finFieldName,
+                  hintText: l.finAccountNameHint,
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: titularController,
-                decoration: const InputDecoration(labelText: 'Titular'),
+                decoration: InputDecoration(labelText: l.finFieldHolder),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: currency,
                 decoration: InputDecoration(
-                  labelText: 'Moeda',
-                  helperText: currencyLocked
-                      ? 'Não muda numa conta que já tem lançamentos.'
-                      : null,
+                  labelText: l.finFieldCurrency,
+                  helperText: currencyLocked ? l.finCurrencyLocked : null,
                 ),
                 items: [
-                  for (final (code, name) in currencyCatalog)
-                    DropdownMenuItem(value: code, child: Text('$code — $name')),
+                  for (final (code, _) in currencyCatalog)
+                    DropdownMenuItem(
+                      value: code,
+                      child: Text('$code — ${currencyName(l, code)}'),
+                    ),
                 ],
                 onChanged: currencyLocked
                     ? null
@@ -187,11 +187,11 @@ class _FinancasScreenState extends State<FinancasScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancelar'),
+              child: Text(l.actionCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Salvar'),
+              child: Text(l.actionSave),
             ),
           ],
         ),
@@ -219,32 +219,29 @@ class _FinancasScreenState extends State<FinancasScreen> {
         await _repository.updateAccount(account);
       }
     } on StateError catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      messenger.showSnackBar(SnackBar(content: Text(financeErrorText(l, e))));
       return;
     }
     await _load();
   }
 
   Future<void> _deleteAccount(BankAccount account) async {
+    final l = AppLocalizations.of(context);
     final inUse = await _repository.accountInUse(account.id!);
     if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Excluir ${account.nome}?'),
-        content: Text(
-          inUse
-              ? 'Os lançamentos desta conta também serão apagados.'
-              : 'A conta não tem lançamentos.',
-        ),
+        title: Text(l.finDeleteTitle(account.nome)),
+        content: Text(inUse ? l.finDeleteWithTx : l.finDeleteNoTx),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
+            child: Text(l.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Excluir'),
+            child: Text(l.actionDelete),
           ),
         ],
       ),
@@ -259,9 +256,10 @@ class _FinancasScreenState extends State<FinancasScreen> {
   /// extrato, e a taxa efetiva aparece só como informação.
   Future<void> _transfer() async {
     final messenger = ScaffoldMessenger.of(context);
+    final l = AppLocalizations.of(context);
     if (_accounts.length < 2) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Cadastre duas contas para transferir.')),
+        SnackBar(content: Text(l.finTransferNeedTwo)),
       );
       return;
     }
@@ -280,7 +278,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
           final out = parseAmount(outController.text);
           final incoming = parseAmount(inController.text);
           return AlertDialog(
-            title: const Text('Transferir'),
+            title: Text(l.finTransfer),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -289,7 +287,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
                     key: const Key('financas-transfer-from'),
                     initialValue: from,
                     isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'De'),
+                    decoration: InputDecoration(labelText: l.finFrom),
                     items: [
                       for (final a in _accounts)
                         DropdownMenuItem(value: a, child: Text(a.label)),
@@ -302,7 +300,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
                     key: const Key('financas-transfer-to'),
                     initialValue: to,
                     isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Para'),
+                    decoration: InputDecoration(labelText: l.finTo),
                     items: [
                       for (final a in _accounts)
                         DropdownMenuItem(value: a, child: Text(a.label)),
@@ -320,8 +318,8 @@ class _FinancasScreenState extends State<FinancasScreen> {
                     onChanged: (_) => setDialogState(() {}),
                     decoration: InputDecoration(
                       labelText: cross
-                          ? 'Saiu (${from.currency})'
-                          : 'Valor (${from.currency})',
+                          ? l.finAmountSent(from.currency)
+                          : l.finAmount(from.currency),
                     ),
                   ),
                   if (cross) ...[
@@ -334,19 +332,23 @@ class _FinancasScreenState extends State<FinancasScreen> {
                       ),
                       onChanged: (_) => setDialogState(() {}),
                       decoration: InputDecoration(
-                        labelText: 'Chegou (${to.currency})',
+                        labelText: l.finAmountReceived(to.currency),
                         helperText: out != null && incoming != null
-                            ? 'Taxa efetiva: 1 ${from.currency} = '
-                                  '${(incoming / out).toStringAsFixed(4)} '
-                                  '${to.currency}'
-                            : 'Spread e tarifa já embutidos nos valores.',
+                            ? l.finEffectiveRate(
+                                from.currency,
+                                formatFixed(incoming / out, 4, locale: l.localeName),
+                                to.currency,
+                              )
+                            : l.finSpreadIncluded,
                       ),
                     ),
                   ],
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.calendar_today_outlined),
-                    label: Text(formatIsoDay(toIsoDay(date))),
+                    label: Text(
+                      formatReadingDate(toIsoDay(date), locale: l.localeName),
+                    ),
                     onPressed: () async {
                       final picked = await showDatePicker(
                         context: context,
@@ -360,7 +362,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: notesController,
-                    decoration: const InputDecoration(labelText: 'Observação'),
+                    decoration: InputDecoration(labelText: l.finNotes),
                   ),
                 ],
               ),
@@ -368,11 +370,11 @@ class _FinancasScreenState extends State<FinancasScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancelar'),
+                child: Text(l.actionCancel),
               ),
               FilledButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Transferir'),
+                child: Text(l.finTransfer),
               ),
             ],
           );
@@ -392,13 +394,13 @@ class _FinancasScreenState extends State<FinancasScreen> {
 
     if (from.id == to.id) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Escolha duas contas diferentes.')),
+        SnackBar(content: Text(l.finSameAccount)),
       );
       return;
     }
     if (valorSaida == null || valorEntrada == null) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Informe os valores, maiores que zero.')),
+        SnackBar(content: Text(l.finAmountsRequired)),
       );
       return;
     }
@@ -451,9 +453,10 @@ class _FinancasScreenState extends State<FinancasScreen> {
   }
 
   Widget _summaryCard() {
+    final l = AppLocalizations.of(context);
     final net = _netWorth;
     final textTheme = Theme.of(context).textTheme;
-    final missingNote = net == null ? null : missingItemsNote(net.itemsMissingFx);
+    final missingNote = net == null ? null : missingItemsNote(l, net.itemsMissingFx);
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
@@ -464,7 +467,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
             Row(
               children: [
                 Expanded(
-                  child: Text('Patrimônio', style: textTheme.titleSmall),
+                  child: Text(l.finNetWorth, style: textTheme.titleSmall),
                 ),
                 // Atualizando por baixo (troca de base, refresh): o número
                 // antigo fica na tela até o novo chegar.
@@ -492,33 +495,35 @@ class _FinancasScreenState extends State<FinancasScreen> {
               ],
             ),
             if (net == null)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('Calculando…'),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(l.finCalculating),
               )
             else ...[
               Text(
-                formatMoney(net.total, net.base),
+                formatMoney(net.total, net.base, locale: l.localeName),
                 key: const Key('financas-net-worth'),
                 style: textTheme.headlineSmall,
               ),
               const SizedBox(height: 8),
               Text(
-                'Caixa ${formatMoney(net.cash, net.base)}',
+                l.finCash(formatMoney(net.cash, net.base, locale: l.localeName)),
                 key: const Key('financas-cash'),
               ),
               Text(
-                'Carteira ${formatMoney(net.portfolio, net.base)}',
+                l.finPortfolio(formatMoney(net.portfolio, net.base, locale: l.localeName)),
                 key: const Key('financas-portfolio'),
               ),
               if (net.loansReceivable > 0)
                 Text(
-                  'Empréstimos a receber ${formatMoney(net.loansReceivable, net.base)}',
+                  l.finLoansReceivable(
+                    formatMoney(net.loansReceivable, net.base, locale: l.localeName),
+                  ),
                   key: const Key('financas-loans'),
                 ),
               if (net.debt > 0)
                 Text(
-                  'Dívidas −${formatMoney(net.debt, net.base)}',
+                  l.finDebtsLine(formatMoney(net.debt, net.base, locale: l.localeName)),
                   key: const Key('financas-debt'),
                 ),
               if (missingNote != null)
@@ -534,7 +539,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    fxUnavailableBanner(_fxFailed),
+                    fxUnavailableBanner(l, _fxFailed),
                     key: const Key('financas-fx-banner'),
                     style: textTheme.bodySmall,
                   ),
@@ -551,11 +556,12 @@ class _FinancasScreenState extends State<FinancasScreen> {
   /// conta já está na base.
   Widget? _equivalent(BankAccount account, double balance) {
     if (account.currency == _base || _netWorth == null) return null;
+    final l = AppLocalizations.of(context);
     final converted = convertToBase(balance, account.currency, _base, _rates);
     return Text(
       converted == null
-          ? 'sem câmbio ${account.currency}/$_base'
-          : '≈ ${formatMoney(converted, _base)}',
+          ? l.finNoRate('${account.currency}/$_base')
+          : '≈ ${formatMoney(converted, _base, locale: l.localeName)}',
       key: Key('financas-equivalent-${account.id}'),
       style: Theme.of(context).textTheme.bodySmall,
     );
@@ -563,32 +569,33 @@ class _FinancasScreenState extends State<FinancasScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Finanças'),
+        title: Text(l.finTitle),
         actions: [
           IconButton(
-            tooltip: 'Transferir',
+            tooltip: l.finTransfer,
             icon: const Icon(Icons.swap_horiz),
             onPressed: _transfer,
           ),
           IconButton(
-            tooltip: 'Empréstimos',
+            tooltip: l.finLoans,
             icon: const Icon(Icons.handshake_outlined),
             onPressed: _openLoans,
           ),
           IconButton(
-            tooltip: 'Dívidas',
+            tooltip: l.finDebts,
             icon: const Icon(Icons.request_quote_outlined),
             onPressed: _openLiabilities,
           ),
           IconButton(
-            tooltip: 'Categorias',
+            tooltip: l.finCategories,
             icon: const Icon(Icons.category_outlined),
             onPressed: _openCategories,
           ),
           IconButton(
-            tooltip: 'Atualizar',
+            tooltip: l.finRefresh,
             icon: const Icon(Icons.refresh),
             onPressed: _load,
           ),
@@ -597,7 +604,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _editAccount(),
         icon: const Icon(Icons.add),
-        label: const Text('Conta'),
+        label: Text(l.finFabAccount),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -605,8 +612,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
               padding: const EdgeInsets.all(16),
               children: [
                 _summaryCard(),
-                if (_accounts.isEmpty)
-                  const Center(child: Text('Nenhuma conta cadastrada ainda.')),
+                if (_accounts.isEmpty) Center(child: Text(l.finEmptyAccounts)),
                 for (final account in _accounts)
                   _accountCard(account, _balances[account.id] ?? 0),
               ],
@@ -615,6 +621,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
   }
 
   Widget _accountCard(BankAccount account, double balance) {
+    final l = AppLocalizations.of(context);
     final equivalent = _equivalent(account, balance);
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -630,7 +637,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  formatMoney(balance, account.currency),
+                  formatMoney(balance, account.currency, locale: l.localeName),
                   key: Key('financas-balance-${account.id}'),
                 ),
                 ?equivalent,
@@ -640,9 +647,9 @@ class _FinancasScreenState extends State<FinancasScreen> {
               onSelected: (action) => action == 'edit'
                   ? _editAccount(account)
                   : _deleteAccount(account),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'edit', child: Text('Editar')),
-                PopupMenuItem(value: 'delete', child: Text('Excluir')),
+              itemBuilder: (_) => [
+                PopupMenuItem(value: 'edit', child: Text(l.actionEdit)),
+                PopupMenuItem(value: 'delete', child: Text(l.actionDelete)),
               ],
             ),
           ],

@@ -282,6 +282,50 @@ void main() {
     await tester.pumpWidget(app(FinancasTransactionsScreen(account: nubank)));
     await settle(tester, () => find.text('Salário').evaluate().isNotEmpty);
     await capture(tester, 'lancamentos');
+
+    // As mesmas telas em inglês (ADR 0001). Empréstimos e Dívidas ainda não migraram.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(
+      app(
+        FinancasScreen(
+          fetchFx: (currency) async =>
+              FxHistory([(DateTime.now(), currency == 'USD' ? 5.0 : 1.0)]),
+          loadPositions: () async => const [],
+        ),
+        locale: 'en',
+      ),
+    );
+    await settle(
+      tester,
+      () => find.byKey(const Key('financas-net-worth')).evaluate().isNotEmpty,
+    );
+    await capture(tester, 'financas-en');
+
+    await tester.tap(find.byTooltip('Transfer'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('financas-transfer-out')), '520');
+    await tester.enterText(find.byKey(const Key('financas-transfer-in')), '100');
+    await tester.pump();
+    await capture(tester, 'transferir-en');
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(
+      app(
+        FinancasCategoriesScreen(
+          base: 'BRL',
+          ratesToBrl: const {'USD': 5.0},
+          accounts: [nubank, chase],
+        ),
+        locale: 'en',
+      ),
+    );
+    await settle(tester, () => find.text('Mercado').evaluate().isNotEmpty);
+    await capture(tester, 'categorias-en');
+
+    await tester.pumpWidget(app(FinancasTransactionsScreen(account: nubank), locale: 'en'));
+    await settle(tester, () => find.text('Salário').evaluate().isNotEmpty);
+    await capture(tester, 'lancamentos-en');
   }, skip: outDir == null);
 
   // A aba Início fica neste arquivo para o CI publicá-la no mesmo artefato, sem
