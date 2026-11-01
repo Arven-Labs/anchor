@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -90,6 +91,24 @@ void main() {
 
     expect(opens, 1);
     expect(results.every((e) => e is StateError), isTrue);
+  });
+
+  test('resetForTest não espera por uma abertura em andamento e a fecha ao terminar',
+      () async {
+    final gate = Completer<void>();
+    AppDatabase.openerForTest = () async {
+      await gate.future;
+      return realOpener();
+    };
+
+    final inFlight = AppDatabase.instance();
+    // Se esperasse pela abertura, ficaria parado aqui (o gate só abre depois).
+    await AppDatabase.resetForTest().timeout(const Duration(seconds: 2));
+
+    gate.complete();
+    final db = await inFlight;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(db.isOpen, isFalse);
   });
 
   test('resetForTest zera a abertura em andamento: o próximo instance() reabre',

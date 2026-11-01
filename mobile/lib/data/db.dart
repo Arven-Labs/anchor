@@ -25,6 +25,10 @@ class AppDatabase {
   // (`_instance ??= await _open()` só atribuía depois do await).
   static Future<Database>? _opening;
 
+  /// A conexão, depois que `_opening` completa com sucesso. Permite a
+  /// `resetForTest` fechar sem esperar por uma abertura em andamento.
+  static Database? _opened;
+
   /// Quem abre o arquivo. Só para teste: contar aberturas e simular falha.
   @visibleForTesting
   static Future<Database> Function() openerForTest = _open;
@@ -38,7 +42,9 @@ class AppDatabase {
     // Quem chamou continua recebendo o erro pelo `opening` devolvido.
     unawaited(
       opening.then<void>(
-        (_) {},
+        (db) {
+          if (identical(_opening, opening)) _opened = db;
+        },
         onError: (Object _) {
           if (identical(_opening, opening)) _opening = null;
         },
@@ -52,13 +58,15 @@ class AppDatabase {
   @visibleForTesting
   static Future<void> resetForTest() async {
     final opening = _opening;
+    final opened = _opened;
     _opening = null;
-    if (opening != null) {
-      try {
-        await (await opening).close();
-      } catch (_) {
-        // Abertura que falhou: não há conexão para fechar.
-      }
+    _opened = null;
+    if (opened != null) {
+      await opened.close();
+    } else if (opening != null) {
+      // Abertura ainda em andamento: não se espera por ela (um tearDown sob o
+      // relógio falso do flutter_test ficaria parado). Fecha quando terminar.
+      unawaited(opening.then<void>((db) => db.close(), onError: (Object _) {}));
     }
   }
 
