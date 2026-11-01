@@ -31,6 +31,14 @@ impl Signal {
 // boundaries are Neutral — the spec gives two cutoffs per indicator but no
 // rule for the gap between them.
 pub fn classify(raw_value: f64, threshold: &Threshold) -> Result<Signal, AppError> {
+    // NaN faz toda comparação dar false (viraria NEUTRAL em silêncio) e
+    // infinito não é leitura nem limite válido.
+    if !raw_value.is_finite() || !threshold.green_boundary.is_finite() || !threshold.red_boundary.is_finite() {
+        return Err(AppError::InvalidInput(
+            "reading and thresholds must be finite numbers".to_string(),
+        ));
+    }
+
     if threshold.green_boundary == threshold.red_boundary {
         return Err(AppError::EqualThresholds);
     }
@@ -649,6 +657,27 @@ mod tests {
         );
         assert_eq!(IndicatorGroup::Sentiment.indicators("BTC"), ["fear_greed_index", "mayer_multiple"]);
         assert_eq!(IndicatorGroup::Sentiment.label(), "Market sentiment");
+    }
+
+    // Com NaN todas as comparações dão false e o classify devolvia NEUTRAL em
+    // silêncio; infinito também não é leitura nem limite válido.
+    #[test]
+    fn classify_rejects_a_non_finite_reading() {
+        let threshold = Threshold { green_boundary: 25.0, red_boundary: 75.0 };
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(matches!(classify(value, &threshold), Err(AppError::InvalidInput(_))), "{value}");
+        }
+    }
+
+    #[test]
+    fn classify_rejects_a_non_finite_boundary() {
+        let bad = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY];
+        for value in bad {
+            let green = Threshold { green_boundary: value, red_boundary: 75.0 };
+            let red = Threshold { green_boundary: 25.0, red_boundary: value };
+            assert!(matches!(classify(50.0, &green), Err(AppError::InvalidInput(_))), "green {value}");
+            assert!(matches!(classify(50.0, &red), Err(AppError::InvalidInput(_))), "red {value}");
+        }
     }
 
     // Os 3 seeds de sentimento (lote 4): menor é melhor.

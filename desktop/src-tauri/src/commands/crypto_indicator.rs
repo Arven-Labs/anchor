@@ -423,6 +423,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_non_finite_reading_is_refused_and_not_stored() {
+        let db = memory_db().await;
+        let before = signals(&db, "ETH", "funding_rate_7d").await;
+
+        for raw_value in [f64::NAN, f64::INFINITY] {
+            let request = RecordCryptoIndicatorRequest {
+                coin: "ETH".to_string(),
+                indicator: "funding_rate_7d".to_string(),
+                reading_date: "2026-10-16".to_string(),
+                raw_value,
+                source: "t".to_string(),
+            };
+            assert!(matches!(
+                record_crypto_indicator_in(&db, request).await,
+                Err(AppError::InvalidInput(_))
+            ));
+        }
+        assert_eq!(signals(&db, "ETH", "funding_rate_7d").await, before);
+    }
+
+    #[tokio::test]
     async fn invalid_or_unknown_threshold_changes_nothing() {
         let db = memory_db().await;
 
