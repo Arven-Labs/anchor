@@ -3,7 +3,7 @@
 > Criado na Sessão 272 para os alertas do Dependabot (procedimento `padrao/dependencias.md`, ADR 0006 do workspace). As demais pendências do anchor continuam no fim do `SESSIONS.md` (decisões da Sessão 271 e anteriores).
 > Resolvida: marcar `✅ Resolvida` com a sessão. Contagem de alertas sempre relida da API.
 >
-> Última atualização: 2026-11-01 (Sessão 277: `staking_yield` do desktop resolvido no PR #52; resta o idioma, no fim do `SESSIONS.md`).
+> Última atualização: 2026-11-01 (Sessão 278: i18n do mobile, infra + aba Cripto no PR #53; restam as demais áreas do mobile, no fim do `SESSIONS.md`).
 
 ---
 
