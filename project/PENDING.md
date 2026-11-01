@@ -3,7 +3,7 @@
 > Criado na Sessão 272 para os alertas do Dependabot (procedimento `padrao/dependencias.md`, ADR 0006 do workspace). As demais pendências do anchor continuam no fim do `SESSIONS.md` (decisões da Sessão 271 e anteriores).
 > Resolvida: marcar `✅ Resolvida` com a sessão. Contagem de alertas sempre relida da API.
 >
-> Última atualização: 2026-11-01 (Sessão 275: `NaN` no `classify` resolvido, `11.2` mantida desmarcada; restam corrida do `AppDatabase.instance()`, idioma e `staking_yield` do desktop, no fim do `SESSIONS.md`).
+> Última atualização: 2026-11-01 (Sessão 276: corrida do `AppDatabase.instance()` resolvida, PR #51; restam idioma e `staking_yield` do desktop, no fim do `SESSIONS.md`).
 
 ---
 
