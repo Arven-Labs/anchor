@@ -3,7 +3,7 @@
 > Criado na Sessão 272 para os alertas do Dependabot (procedimento `padrao/dependencias.md`, ADR 0006 do workspace). As demais pendências do anchor continuam no fim do `SESSIONS.md` (decisões da Sessão 271 e anteriores).
 > Resolvida: marcar `✅ Resolvida` com a sessão. Contagem de alertas sempre relida da API.
 >
-> Última atualização: 2026-11-01 (Sessão 280: i18n do mobile, Finanças parte a e erros tipados no PR #55; restam Empréstimos, Dívidas e as demais áreas do mobile, no fim do `SESSIONS.md`).
+> Última atualização: 2026-11-03 (Sessão 281: i18n do mobile, Empréstimos e Dívidas no PR #56; restam Impostos, Custódias e as demais áreas do mobile, no fim do `SESSIONS.md`).
 
 ---
 
