@@ -77,6 +77,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
   }
 
+  /// Espera a coleta automática da tela acabar: o botão só volta ao rótulo normal depois
+  /// que a coleta e a releitura do banco terminam. Aparecer o primeiro grupo não basta:
+  /// sob carga a releitura ainda está em voo e o botão segue como "Atualizando…".
+  Future<void> settleCollection(WidgetTester tester, String refreshLabel) =>
+      settle(tester, () => find.text(refreshLabel).evaluate().isNotEmpty);
+
   Future<void> pumpScreen(
     WidgetTester tester, {
     bool active = true,
@@ -574,6 +580,7 @@ void main() {
 
       await pumpScreen(tester, collect: down);
       await settle(tester, () => find.text('Falhas da última coleta').evaluate().isNotEmpty);
+      await settleCollection(tester, 'Atualizar');
 
       expect(find.text('Falhas da última coleta'), findsOneWidget);
       expect(find.textContaining('ETH x: unavailable'), findsOneWidget);
@@ -587,6 +594,7 @@ void main() {
 
       await pumpScreen(tester, collect: broken);
       await settle(tester, () => find.text('Falhas da última coleta').evaluate().isNotEmpty);
+      await settleCollection(tester, 'Atualizar');
 
       expect(find.textContaining('Erro inesperado'), findsOneWidget);
       expect(find.text('Atualizar'), findsOneWidget);
@@ -597,6 +605,7 @@ void main() {
   group('em inglês', () {
     testWidgets('sem nenhuma leitura: título, aviso, veredito e "No reading"', (tester) async {
       await pumpScreen(tester, locale: 'en');
+      await settleCollection(tester, 'Refresh');
 
       expect(find.text('Crypto score'), findsOneWidget);
       expect(find.text('Refresh'), findsOneWidget);
@@ -637,6 +646,7 @@ void main() {
 
       await pumpScreen(tester, collect: broken, locale: 'en');
       await settle(tester, () => find.text('Last collection failures').evaluate().isNotEmpty);
+      await settleCollection(tester, 'Refresh');
 
       expect(find.textContaining('Unexpected error'), findsOneWidget);
       expect(find.text('Refresh'), findsOneWidget);
