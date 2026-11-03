@@ -65,6 +65,34 @@ void main() {
     expect(swap().sale.fee, isNull, reason: 'sem taxa informada');
   });
 
+  test('cada recusa leva o código e os argumentos que a tela traduz', () {
+    CryptoSwapException refusal(void Function() build) {
+      try {
+        build();
+      } on CryptoSwapException catch (e) {
+        return e;
+      }
+      fail('devia recusar');
+    }
+
+    expect(refusal(() => swap(to: btc)).code, CryptoSwapErrorCode.needTwoDifferentCoins);
+    final notCrypto = refusal(() => swap(to: coin(3, 'PETR4', assetClass: AssetClass.acaoBr)));
+    expect((notCrypto.code, notCrypto.args['ticker']), (CryptoSwapErrorCode.notCrypto, 'PETR4'));
+    final notBrl = refusal(() => swap(to: coin(3, 'SOL', currency: 'USD')));
+    expect(notBrl.code, CryptoSwapErrorCode.notBrl);
+    expect((notBrl.args['ticker'], notBrl.args['currency']), ('SOL', 'USD'));
+    expect(refusal(() => swap(quantityOut: 0)).code, CryptoSwapErrorCode.quantityOutMustBePositive);
+    expect(refusal(() => swap(quantityIn: 0)).code, CryptoSwapErrorCode.quantityInMustBePositive);
+    expect(refusal(() => swap(value: 0)).code, CryptoSwapErrorCode.valueMustBePositive);
+    expect(refusal(() => swap(fee: -1)).code, CryptoSwapErrorCode.negativeFee);
+    final balance = refusal(() => swap(quantityOut: 2, available: 1.5));
+    expect(balance.code, CryptoSwapErrorCode.insufficientBalance);
+    expect(
+      (balance.args['ticker'], balance.args['available'], balance.args['requested']),
+      ('BTC', '1.5', '2.0'),
+    );
+  });
+
   test('taxa negativa ou inválida é recusada', () {
     expect(() => swap(fee: -1), throwsA(isA<CryptoSwapException>()));
     expect(() => swap(fee: double.nan), throwsA(isA<CryptoSwapException>()));

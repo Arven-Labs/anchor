@@ -2,75 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../domain/crypto_tax.dart';
 import '../domain/fx_history.dart';
+import '../domain/number_locale.dart';
+import '../domain/tax_format.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/crypto_tax_labels.dart';
 import '../models/asset.dart';
 import '../models/portfolio_transaction.dart';
 import '../services/portfolio_repository.dart';
 import '../services/yahoo_quote_service.dart';
-
-@visibleForTesting
-const usdConversionNote =
-    'Operações em USD convertidas pelo dólar da data (Yahoo, USDBRL=X).';
-
-@visibleForTesting
-const fxUnavailableNote =
-    'Câmbio indisponível agora: as operações em USD ficaram de fora. '
-    'Tente de novo em instantes.';
-
-/// Reais no formato brasileiro (`R$ 1.234,56`), sem depender de `intl`.
-/// Compartilhado com a tela de IR de exterior.
-String formatBrl(double value) {
-  final cents = (value.abs() * 100).round();
-  final whole = (cents ~/ 100).toString();
-  final grouped = whole.replaceAllMapped(
-    RegExp(r'\B(?=(\d{3})+(?!\d))'),
-    (_) => '.',
-  );
-  final fraction = (cents % 100).toString().padLeft(2, '0');
-  final sign = value < 0 && cents > 0 ? '-' : '';
-  return '${sign}R\$ $grouped,$fraction';
-}
-
-String formatDay(DateTime date) =>
-    '${date.day.toString().padLeft(2, '0')}/'
-    '${date.month.toString().padLeft(2, '0')}/${date.year}';
-
-/// `YYYY-MM` → `MM/YYYY`.
-@visibleForTesting
-String formatPeriod(String period) =>
-    '${period.substring(5, 7)}/${period.substring(0, 4)}';
-
-/// Situação do mês numa frase: isento, sem imposto, abaixo do mínimo ou DARF.
-@visibleForTesting
-String cryptoMonthStatus(CryptoMonth month) {
-  if (month.exempt) {
-    return 'Isento: vendas até ${formatBrl(cryptoMonthlyExemption)} no mês';
-  }
-  if (month.due > 0) {
-    return 'DARF ${month.darfCode} de ${formatBrl(month.due)} até '
-        '${formatDay(month.dueDate)}';
-  }
-  if (month.carriedOut > 0) {
-    return 'Imposto de ${formatBrl(month.carriedOut)} abaixo do mínimo de '
-        '${formatBrl(darfMinimum)}: soma ao mês seguinte';
-  }
-  return 'Sem imposto: o mês fechou sem ganho';
-}
-
-@visibleForTesting
-String cryptoWarningText(CryptoTaxWarning warning) {
-  switch (warning.kind) {
-    case CryptoTaxWarningKind.costUnknown:
-      return 'Venda de ${warning.ticker} em ${formatDay(warning.date!)} maior '
-          'que as compras lançadas: o ganho considera só a parte com custo '
-          'conhecido. Lance as compras que faltam.';
-    case CryptoTaxWarningKind.salesNonBrl:
-      return 'Vendas de cripto fora de BRL em ${formatPeriod(warning.period!)} '
-          'não são apuradas aqui (regra de exterior).';
-    case CryptoTaxWarningKind.fxMissing:
-      return 'Venda de cripto em USD em ${formatPeriod(warning.period!)} sem '
-          'câmbio para converter: ficou de fora da apuração.';
-  }
-}
 
 /// IR de cripto mês a mês (ver `assessCryptoTax`). Somente leitura: o mobile
 /// não guarda pagamento de DARF.
@@ -138,29 +77,27 @@ class _CryptoTaxScreenState extends State<CryptoTaxScreen> {
   @override
   Widget build(BuildContext context) {
     final assessment = _assessment;
+    final l = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('IR de cripto')),
+      appBar: AppBar(title: Text(l.cryptoTaxTitle)),
       body: _loading || assessment == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 Text(
-                  'Calculado só com as transações lançadas neste app, a custo '
-                  'médio e com a taxa informada em cada operação. As regras '
-                  'vêm de fontes secundárias: confira na Receita (GCAP) antes '
-                  'de pagar.',
+                  l.cryptoTaxDisclaimer,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 if (assessment.usdConverted) ...[
                   const SizedBox(height: 8),
-                  Text(usdConversionNote,
+                  Text(l.cryptoTaxUsdNote,
                       style: Theme.of(context).textTheme.bodySmall),
                 ],
                 if (_fxUnavailable) ...[
                   const SizedBox(height: 8),
                   Text(
-                    fxUnavailableNote,
+                    l.cryptoTaxFxUnavailable,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.error,
                     ),
@@ -171,18 +108,16 @@ class _CryptoTaxScreenState extends State<CryptoTaxScreen> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
-                      cryptoWarningText(warning),
+                      cryptoWarningText(l, warning),
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.error,
                       ),
                     ),
                   ),
                 if (assessment.months.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 24),
-                    child: Center(
-                      child: Text('Nenhuma venda de cripto em reais ainda.'),
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 24),
+                    child: Center(child: Text(l.cryptoTaxEmpty)),
                   )
                 else
                   for (final month in assessment.months.reversed)
@@ -201,6 +136,9 @@ class _MonthCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context);
+    final locale = l.localeName;
+    String brl(double value) => formatBrl(value, locale: locale);
     final owes = !month.exempt && month.due > 0;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -212,28 +150,28 @@ class _MonthCard extends StatelessWidget {
             Text(formatPeriod(month.period), style: textTheme.titleMedium),
             const SizedBox(height: 4),
             Text(
-              cryptoMonthStatus(month),
+              cryptoMonthStatus(l, month),
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: owes ? Theme.of(context).colorScheme.error : null,
               ),
             ),
             const SizedBox(height: 12),
-            Text('Vendas do mês: ${formatBrl(month.salesTotal)}'),
-            Text('Ganho do mês: ${formatBrl(month.gain)}'),
+            Text(l.cryptoTaxMonthSales(brl(month.salesTotal))),
+            Text(l.cryptoTaxMonthGain(brl(month.gain))),
             if (!month.exempt && month.tax > 0)
               Text(
-                'Imposto: ${formatBrl(month.tax)} '
-                '(alíquota ${(month.rate * 100).toStringAsFixed(2)}%)',
+                l.cryptoTaxTax(
+                  brl(month.tax),
+                  formatFixed(month.rate * 100, 2, locale: locale),
+                ),
               ),
             if (month.carriedIn > 0)
-              Text(
-                'Acumulado de meses anteriores: ${formatBrl(month.carriedIn)}',
-              ),
+              Text(l.cryptoTaxCarriedIn(brl(month.carriedIn))),
             ExpansionTile(
               tilePadding: EdgeInsets.zero,
               title: Text(
-                'Vendas (${month.sales.length})',
+                l.cryptoTaxSalesCount(month.sales.length),
                 style: textTheme.bodyMedium,
               ),
               children: [
@@ -242,12 +180,20 @@ class _MonthCard extends StatelessWidget {
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     title: Text(
-                      '${sale.ticker} — ${formatDay(sale.date)}',
+                      l.cryptoTaxSaleTitle(
+                        sale.ticker,
+                        formatDay(sale.date, locale: locale),
+                      ),
                     ),
                     subtitle: Text(
-                      'Venda ${formatBrl(sale.saleValue)}'
-                      '${sale.saleValue - sale.proceeds > 0.005 ? ' (taxa ${formatBrl(sale.saleValue - sale.proceeds)})' : ''}'
-                      ' · custo ${formatBrl(sale.cost)} · ganho ${formatBrl(sale.gain)}',
+                      l.cryptoTaxSaleDetail(
+                        brl(sale.saleValue),
+                        sale.saleValue - sale.proceeds > 0.005
+                            ? l.cryptoTaxSaleFee(brl(sale.saleValue - sale.proceeds))
+                            : '',
+                        brl(sale.cost),
+                        brl(sale.gain),
+                      ),
                     ),
                   ),
               ],

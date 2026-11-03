@@ -13,7 +13,7 @@ import '../models/portfolio_transaction.dart';
 import '../services/bcb_ptax_service.dart';
 import '../services/portfolio_repository.dart';
 import '../services/yahoo_quote_service.dart';
-import 'crypto_tax_screen.dart' show formatBrl, formatDay;
+import '../domain/tax_format.dart' show formatBrl, formatDay;
 
 @visibleForTesting
 const foreignIntroNote =

@@ -1989,6 +1989,298 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'A debt installment and a loan transaction are only deleted together with the debt or the loan'**
   String get finErrLinkedTransactionLocked;
+
+  /// No description provided for @cryptoTaxTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Crypto tax'**
+  String get cryptoTaxTitle;
+
+  /// No description provided for @cryptoTaxDisclaimer.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculated only from the transactions entered in this app, at average cost and with the fee entered on each operation. The rules come from secondary sources: check with the tax authority (GCAP) before paying.'**
+  String get cryptoTaxDisclaimer;
+
+  /// No description provided for @cryptoTaxUsdNote.
+  ///
+  /// In en, this message translates to:
+  /// **'USD operations converted at the dollar rate of the day (Yahoo, USDBRL=X).'**
+  String get cryptoTaxUsdNote;
+
+  /// No description provided for @cryptoTaxFxUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Exchange rate unavailable right now: the USD operations were left out. Try again in a moment.'**
+  String get cryptoTaxFxUnavailable;
+
+  /// No description provided for @cryptoTaxEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No crypto sales in reais yet.'**
+  String get cryptoTaxEmpty;
+
+  /// No description provided for @cryptoTaxMonthSales.
+  ///
+  /// In en, this message translates to:
+  /// **'Month sales: {value}'**
+  String cryptoTaxMonthSales(String value);
+
+  /// No description provided for @cryptoTaxMonthGain.
+  ///
+  /// In en, this message translates to:
+  /// **'Month gain: {value}'**
+  String cryptoTaxMonthGain(String value);
+
+  /// No description provided for @cryptoTaxTax.
+  ///
+  /// In en, this message translates to:
+  /// **'Tax: {value} (rate {rate}%)'**
+  String cryptoTaxTax(String value, String rate);
+
+  /// No description provided for @cryptoTaxCarriedIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Carried from earlier months: {value}'**
+  String cryptoTaxCarriedIn(String value);
+
+  /// No description provided for @cryptoTaxSalesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Sales ({count})'**
+  String cryptoTaxSalesCount(int count);
+
+  /// No description provided for @cryptoTaxSaleTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{ticker} — {date}'**
+  String cryptoTaxSaleTitle(String ticker, String date);
+
+  /// No description provided for @cryptoTaxSaleDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Sale {sale}{fee} · cost {cost} · gain {gain}'**
+  String cryptoTaxSaleDetail(String sale, String fee, String cost, String gain);
+
+  /// No description provided for @cryptoTaxSaleFee.
+  ///
+  /// In en, this message translates to:
+  /// **' (fee {value})'**
+  String cryptoTaxSaleFee(String value);
+
+  /// No description provided for @cryptoTaxStatusExempt.
+  ///
+  /// In en, this message translates to:
+  /// **'Exempt: sales up to {limit} in the month'**
+  String cryptoTaxStatusExempt(String limit);
+
+  /// No description provided for @cryptoTaxStatusDarf.
+  ///
+  /// In en, this message translates to:
+  /// **'DARF {code} of {value} due {date}'**
+  String cryptoTaxStatusDarf(int code, String value, String date);
+
+  /// No description provided for @cryptoTaxStatusBelowMinimum.
+  ///
+  /// In en, this message translates to:
+  /// **'Tax of {value} is below the {minimum} minimum: added to next month'**
+  String cryptoTaxStatusBelowMinimum(String value, String minimum);
+
+  /// No description provided for @cryptoTaxStatusNoTax.
+  ///
+  /// In en, this message translates to:
+  /// **'No tax: the month closed with no gain'**
+  String get cryptoTaxStatusNoTax;
+
+  /// No description provided for @cryptoTaxWarnCostUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Sale of {ticker} on {date} exceeds the purchases entered: the gain counts only the part with known cost. Enter the missing purchases.'**
+  String cryptoTaxWarnCostUnknown(String ticker, String date);
+
+  /// No description provided for @cryptoTaxWarnSalesNonBrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Crypto sales not in BRL in {period} are not assessed here (foreign rules).'**
+  String cryptoTaxWarnSalesNonBrl(String period);
+
+  /// No description provided for @cryptoTaxWarnFxMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'USD crypto sale in {period} has no exchange rate to convert: left out of the assessment.'**
+  String cryptoTaxWarnFxMissing(String period);
+
+  /// No description provided for @swapIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Swapping one coin for another counts as a sale of the coin given up for tax purposes: it enters the month\'s sales (R\$ 35 thousand limit) and realizes a gain over the average cost. It records one sale and one purchase for the same value.'**
+  String get swapIntro;
+
+  /// No description provided for @swapNeedTwoCoins.
+  ///
+  /// In en, this message translates to:
+  /// **'You need a balance in one crypto and another one registered.'**
+  String get swapNeedTwoCoins;
+
+  /// No description provided for @swapCoinOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Coin out'**
+  String get swapCoinOut;
+
+  /// No description provided for @swapCoinOutItem.
+  ///
+  /// In en, this message translates to:
+  /// **'{ticker} (balance {balance})'**
+  String swapCoinOutItem(String ticker, String balance);
+
+  /// No description provided for @swapQuantityOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Quantity out'**
+  String get swapQuantityOut;
+
+  /// No description provided for @swapCoinIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Coin in'**
+  String get swapCoinIn;
+
+  /// No description provided for @swapQuantityIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Quantity in'**
+  String get swapQuantityIn;
+
+  /// No description provided for @swapMarketValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Market value of the swap (BRL)'**
+  String get swapMarketValue;
+
+  /// No description provided for @swapUseMarketPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Use market price'**
+  String get swapUseMarketPrice;
+
+  /// No description provided for @swapSearching.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching…'**
+  String get swapSearching;
+
+  /// No description provided for @swapFee.
+  ///
+  /// In en, this message translates to:
+  /// **'Fee (optional, BRL)'**
+  String get swapFee;
+
+  /// No description provided for @swapCustody.
+  ///
+  /// In en, this message translates to:
+  /// **'Custody (optional)'**
+  String get swapCustody;
+
+  /// No description provided for @swapNoCustody.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get swapNoCustody;
+
+  /// No description provided for @swapDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Date: {date}'**
+  String swapDate(String date);
+
+  /// No description provided for @swapRegister.
+  ///
+  /// In en, this message translates to:
+  /// **'Record swap'**
+  String get swapRegister;
+
+  /// No description provided for @swapHintNoBrlQuote.
+  ///
+  /// In en, this message translates to:
+  /// **'No quote in reais for {ticker}.'**
+  String swapHintNoBrlQuote(String ticker);
+
+  /// No description provided for @swapHintTodayPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Today\'s price ({date}); if the swap was on another date, adjust the value.'**
+  String swapHintTodayPrice(String date);
+
+  /// No description provided for @swapHintQuoteUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote unavailable right now; enter the value.'**
+  String get swapHintQuoteUnavailable;
+
+  /// No description provided for @swapHintNoQuote.
+  ///
+  /// In en, this message translates to:
+  /// **'No quote for {ticker}; enter the value.'**
+  String swapHintNoQuote(String ticker);
+
+  /// No description provided for @swapFeeNotNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'The fee must be a number.'**
+  String get swapFeeNotNumber;
+
+  /// No description provided for @swapErrNeedTwoDifferentCoins.
+  ///
+  /// In en, this message translates to:
+  /// **'A swap needs two different coins.'**
+  String get swapErrNeedTwoDifferentCoins;
+
+  /// No description provided for @swapErrNotCrypto.
+  ///
+  /// In en, this message translates to:
+  /// **'{ticker} is not crypto; a swap only works between cryptocurrencies.'**
+  String swapErrNotCrypto(String ticker);
+
+  /// No description provided for @swapErrNotBrl.
+  ///
+  /// In en, this message translates to:
+  /// **'{ticker} is in {currency}; swaps are assessed in reais.'**
+  String swapErrNotBrl(String ticker, String currency);
+
+  /// No description provided for @swapErrQuantityOutMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The quantity out must be greater than zero.'**
+  String get swapErrQuantityOutMustBePositive;
+
+  /// No description provided for @swapErrQuantityInMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The quantity in must be greater than zero.'**
+  String get swapErrQuantityInMustBePositive;
+
+  /// No description provided for @swapErrValueMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The value must be greater than zero.'**
+  String get swapErrValueMustBePositive;
+
+  /// No description provided for @swapErrNegativeFee.
+  ///
+  /// In en, this message translates to:
+  /// **'The fee can\'t be negative.'**
+  String get swapErrNegativeFee;
+
+  /// No description provided for @swapErrInsufficientBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Insufficient {ticker} balance: you have {available} and the swap gives {requested}.'**
+  String swapErrInsufficientBalance(
+    String ticker,
+    String available,
+    String requested,
+  );
 }
 
 class _AppLocalizationsDelegate

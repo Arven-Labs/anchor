@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../domain/tax_format.dart' show formatDay;
+import '../l10n/app_localizations.dart';
+import '../l10n/crypto_tax_labels.dart';
 import '../models/asset.dart';
 import '../models/crypto_swap.dart';
 import '../models/custodia.dart';
@@ -60,10 +63,6 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
   double _number(TextEditingController controller) =>
       double.tryParse(controller.text.replaceAll(',', '.')) ?? 0;
 
-  String _formatDate(DateTime date) =>
-      '${date.day.toString().padLeft(2, '0')}/'
-      '${date.month.toString().padLeft(2, '0')}/${date.year}';
-
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -80,6 +79,7 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
     final from = _from;
     final quantity = _number(_quantityOutController);
     if (from == null || quantity <= 0) return;
+    final l = AppLocalizations.of(context);
 
     setState(() {
       _suggesting = true;
@@ -88,18 +88,19 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
     try {
       final quote = await _dispatcher.fetchQuoteForAsset(from.asset);
       if (quote.currency != 'BRL') {
-        setState(() => _hint = 'Sem cotação em reais para ${from.asset.ticker}.');
+        setState(() => _hint = l.swapHintNoBrlQuote(from.asset.ticker));
       } else {
         _valueController.text = (quantity * quote.price).toStringAsFixed(2);
         setState(
-          () => _hint =
-              'Preço de hoje (${_formatDate(DateTime.now())}); se a troca foi em outra data, ajuste o valor.',
+          () => _hint = l.swapHintTodayPrice(
+            formatDay(DateTime.now(), locale: l.localeName),
+          ),
         );
       }
     } on QuoteUnavailableException {
-      setState(() => _hint = 'Cotação indisponível agora; digite o valor.');
+      setState(() => _hint = l.swapHintQuoteUnavailable);
     } catch (_) {
-      setState(() => _hint = 'Sem cotação para ${from.asset.ticker}; digite o valor.');
+      setState(() => _hint = l.swapHintNoQuote(from.asset.ticker));
     } finally {
       if (mounted) setState(() => _suggesting = false);
     }
@@ -109,11 +110,12 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
     final from = _from;
     final to = _to;
     if (from == null || to == null) return;
+    final l = AppLocalizations.of(context);
 
     final feeText = _feeController.text.trim().replaceAll(',', '.');
     final fee = feeText.isEmpty ? null : double.tryParse(feeText);
     if (feeText.isNotEmpty && fee == null) {
-      setState(() => _error = 'A taxa precisa ser um número.');
+      setState(() => _error = l.swapFeeNotNumber);
       return;
     }
 
@@ -131,7 +133,7 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
         custodiaId: _custodia?.id,
       );
     } on CryptoSwapException catch (e) {
-      setState(() => _error = e.message);
+      setState(() => _error = cryptoSwapErrorText(l, e));
       return;
     }
 
@@ -158,32 +160,27 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final l = AppLocalizations.of(context);
     final sellable = _cryptoPositions.where((p) => p.netQuantity > 0).toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Trocar cripto')),
+      appBar: AppBar(title: Text(l.portfolioSwapCrypto)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(
-            'Trocar uma moeda por outra conta como venda da moeda entregue '
-            'para o IR: entra nas vendas do mês (limite de R\$ 35 mil) e '
-            'realiza ganho sobre o custo médio. Grava uma venda e uma compra '
-            'pelo mesmo valor.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          Text(l.swapIntro, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 16),
           if (sellable.isEmpty || _cryptoPositions.length < 2)
-            const Text('É preciso ter saldo em uma cripto e outra cadastrada.')
+            Text(l.swapNeedTwoCoins)
           else ...[
             DropdownButtonFormField<Position>(
               initialValue: _from,
-              decoration: const InputDecoration(labelText: 'Moeda que sai'),
+              decoration: InputDecoration(labelText: l.swapCoinOut),
               items: sellable
                   .map(
                     (p) => DropdownMenuItem(
                       value: p,
-                      child: Text('${p.asset.ticker} (saldo ${p.netQuantity})'),
+                      child: Text(l.swapCoinOutItem(p.asset.ticker, '${p.netQuantity}')),
                     ),
                   )
                   .toList(),
@@ -197,7 +194,7 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
             TextField(
               controller: _quantityOutController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Quantidade que sai'),
+              decoration: InputDecoration(labelText: l.swapQuantityOut),
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<Position>(
@@ -205,7 +202,7 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
               // inicial dependem dela).
               key: ValueKey('to-${_from?.asset.id}'),
               initialValue: _to,
-              decoration: const InputDecoration(labelText: 'Moeda que entra'),
+              decoration: InputDecoration(labelText: l.swapCoinIn),
               items: _cryptoPositions
                   .where((p) => p.asset.id != _from?.asset.id)
                   .map(
@@ -221,22 +218,20 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
             TextField(
               controller: _quantityInController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Quantidade que entra'),
+              decoration: InputDecoration(labelText: l.swapQuantityIn),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _valueController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Valor de mercado da troca (BRL)',
-              ),
+              decoration: InputDecoration(labelText: l.swapMarketValue),
             ),
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton(
                 onPressed: _suggesting ? null : _suggestValue,
                 child: Text(
-                  _suggesting ? 'Buscando...' : 'Usar preço de mercado',
+                  _suggesting ? l.swapSearching : l.swapUseMarketPrice,
                 ),
               ),
             ),
@@ -246,18 +241,16 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
             TextField(
               controller: _feeController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Taxa (opcional, BRL)',
-              ),
+              decoration: InputDecoration(labelText: l.swapFee),
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<Custodia?>(
               initialValue: _custodia,
-              decoration: const InputDecoration(labelText: 'Custódia (opcional)'),
+              decoration: InputDecoration(labelText: l.swapCustody),
               items: [
-                const DropdownMenuItem<Custodia?>(
+                DropdownMenuItem<Custodia?>(
                   value: null,
-                  child: Text('Nenhuma'),
+                  child: Text(l.swapNoCustody),
                 ),
                 ..._custodias.map(
                   (c) => DropdownMenuItem(value: c, child: Text(c.label)),
@@ -268,7 +261,7 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
             const SizedBox(height: 16),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text('Data: ${_formatDate(_date)}'),
+              title: Text(l.swapDate(formatDay(_date, locale: l.localeName))),
               trailing: const Icon(Icons.calendar_today),
               onTap: _pickDate,
             ),
@@ -282,7 +275,7 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
             const SizedBox(height: 24),
             FilledButton(
               onPressed: _saving || _from == null || _to == null ? null : _save,
-              child: const Text('Registrar troca'),
+              child: Text(l.swapRegister),
             ),
           ],
         ],
