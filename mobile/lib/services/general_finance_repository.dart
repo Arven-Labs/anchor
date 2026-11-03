@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 import '../data/db.dart';
 import '../domain/currency_catalog.dart';
 import '../domain/finance_error.dart';
+import '../domain/generated_tx_info.dart';
 import '../models/bank_account.dart';
 import '../models/general_transaction.dart';
 import '../models/general_transaction_category.dart';
@@ -182,8 +183,7 @@ class GeneralFinanceRepository {
           'transaction_type': GeneralTransactionType.parcelaDivida.value,
           'valor': installment.valorParcela,
           'transaction_date': due,
-          'notes':
-              '$nome — parcela ${installment.numeroParcela}/${liability.prazoMeses}',
+          // Sem `notes`: a tela deriva a frase do vínculo (`generatedTransactionInfo`).
           'created_at': now,
         });
         await txn.insert('liability_installments', {
@@ -314,7 +314,6 @@ class GeneralFinanceRepository {
           'transaction_type': GeneralTransactionType.emprestimoConcedido.value,
           'valor': loan.principal,
           'transaction_date': loan.dataInicio,
-          'notes': 'Empréstimo para ${Borrower.fromMap(borrower.first).nome}',
           'created_at': loan.createdAt.toIso8601String(),
         });
       }
@@ -450,19 +449,12 @@ class GeneralFinanceRepository {
           });
         }
         if (repayment.valorRecebido > 0) {
-          final borrower = await txn.query(
-            'borrowers',
-            where: 'id = ?',
-            whereArgs: [loan.borrowerId],
-          );
           transactionId = await txn.insert('general_transactions', {
             'bank_account_id': accountId,
             'transaction_type':
                 GeneralTransactionType.recebimentoEmprestimo.value,
             'valor': repayment.valorRecebido,
             'transaction_date': repayment.data,
-            'notes':
-                'Recebimento de ${borrower.isEmpty ? '' : Borrower.fromMap(borrower.first).nome}',
             'created_at': repayment.createdAt.toIso8601String(),
           });
         }
@@ -582,6 +574,53 @@ class GeneralFinanceRepository {
       orderBy: 'transaction_date DESC, id DESC',
     );
     return rows.map(GeneralTransaction.fromMap).toList();
+  }
+
+  /// Quem gerou cada lançamento de dívida e de empréstimo, por id do lançamento. O vínculo
+  /// está nas tabelas filhas (`general_transaction_id`); lançamento sem vínculo não entra.
+  Future<Map<int, GeneratedTxInfo>> generatedTransactionInfo() async {
+    final db = await AppDatabase.instance();
+    final info = <int, GeneratedTxInfo>{};
+    final installments = await db.rawQuery('''
+      SELECT i.general_transaction_id AS tx_id, l.nome AS nome,
+             i.numero_parcela AS numero, l.prazo_meses AS total
+      FROM liability_installments i
+      JOIN liabilities l ON l.id = i.liability_id
+    ''');
+    for (final row in installments) {
+      info[row['tx_id'] as int] = GeneratedTxInfo(
+        kind: GeneratedTxKind.installment,
+        name: row['nome'] as String,
+        installmentNumber: row['numero'] as int,
+        installmentTotal: row['total'] as int,
+      );
+    }
+    final granted = await db.rawQuery('''
+      SELECT l.general_transaction_id AS tx_id, b.nome AS nome
+      FROM loans l
+      JOIN borrowers b ON b.id = l.borrower_id
+      WHERE l.general_transaction_id IS NOT NULL
+    ''');
+    for (final row in granted) {
+      info[row['tx_id'] as int] = GeneratedTxInfo(
+        kind: GeneratedTxKind.loanGranted,
+        name: row['nome'] as String,
+      );
+    }
+    final repaid = await db.rawQuery('''
+      SELECT r.general_transaction_id AS tx_id, b.nome AS nome
+      FROM loan_repayments r
+      JOIN loans l ON l.id = r.loan_id
+      JOIN borrowers b ON b.id = l.borrower_id
+      WHERE r.general_transaction_id IS NOT NULL
+    ''');
+    for (final row in repaid) {
+      info[row['tx_id'] as int] = GeneratedTxInfo(
+        kind: GeneratedTxKind.loanRepayment,
+        name: row['nome'] as String,
+      );
+    }
+    return info;
   }
 
   /// Apagar uma perna de transferência apaga a outra junto (como no desktop).

@@ -684,6 +684,278 @@ class AppLocalizationsPt extends AppLocalizations {
   String get txTypeRecebimentoEmprestimo => 'Recebimento de empréstimo';
 
   @override
+  String genTxInstallment(String name, int number, int total) {
+    return '$name — parcela $number/$total';
+  }
+
+  @override
+  String genTxLoanGranted(String name) {
+    return 'Empréstimo para $name';
+  }
+
+  @override
+  String genTxLoanRepayment(String name) {
+    return 'Recebimento de $name';
+  }
+
+  @override
+  String get amortizationPrice => 'Price (parcela fixa)';
+
+  @override
+  String get amortizationSac => 'SAC (amortização fixa)';
+
+  @override
+  String get actionRegister => 'Cadastrar';
+
+  @override
+  String get liabTitle => 'Dívidas';
+
+  @override
+  String get liabFab => 'Dívida';
+
+  @override
+  String get liabEmpty => 'Nenhuma dívida cadastrada ainda.';
+
+  @override
+  String get liabNeedAccount => 'Cadastre uma conta antes da dívida.';
+
+  @override
+  String get liabNew => 'Nova dívida';
+
+  @override
+  String get liabNameHint => 'Financiamento do carro';
+
+  @override
+  String get liabFieldAccount => 'Conta';
+
+  @override
+  String liabFieldPrincipal(String currency) {
+    return 'Principal ($currency)';
+  }
+
+  @override
+  String get liabFieldRate => 'Taxa (% a.m.)';
+
+  @override
+  String get liabRateHelp => '0 para dívida sem juros.';
+
+  @override
+  String get liabFieldTerm => 'Prazo (meses)';
+
+  @override
+  String get liabFieldSystem => 'Sistema';
+
+  @override
+  String liabStart(String date) {
+    return 'Início $date';
+  }
+
+  @override
+  String get liabFirstDue => 'A parcela 1 vence um mês depois do início.';
+
+  @override
+  String get liabInvalid =>
+      'Informe nome, principal e prazo maiores que zero e a taxa.';
+
+  @override
+  String liabDeleteTitle(String name) {
+    return 'Excluir $name?';
+  }
+
+  @override
+  String get liabDeleteBody =>
+      'As parcelas desta dívida também saem dos lançamentos da conta.';
+
+  @override
+  String get liabDeleteAction => 'Excluir dívida';
+
+  @override
+  String liabBalance(String value) {
+    return 'Saldo devedor $value';
+  }
+
+  @override
+  String liabPaid(int paid, int total) {
+    return '$paid de $total parcelas pagas';
+  }
+
+  @override
+  String liabNext(String value, String date) {
+    return 'Próxima: $value em $date';
+  }
+
+  @override
+  String get liabSettled => 'Quitada';
+
+  @override
+  String liabSummary(String system, String rate, String value) {
+    return '$system · $rate% a.m. · principal $value';
+  }
+
+  @override
+  String liabInstallmentLine(
+    String number,
+    String date,
+    String value,
+    String interest,
+  ) {
+    return '$number · $date · $value (juros $interest)';
+  }
+
+  @override
+  String get loanTitle => 'Empréstimos';
+
+  @override
+  String get loanFab => 'Empréstimo';
+
+  @override
+  String get loanEmpty => 'Nenhum empréstimo cadastrado ainda.';
+
+  @override
+  String get loanNew => 'Novo empréstimo';
+
+  @override
+  String get loanEdit => 'Editar empréstimo';
+
+  @override
+  String get loanBorrower => 'Devedor';
+
+  @override
+  String get loanNewBorrowerOption => 'Novo devedor…';
+
+  @override
+  String get loanNewBorrowerName => 'Nome do devedor';
+
+  @override
+  String get loanFromAccount => 'Conta de onde saiu';
+
+  @override
+  String get loanNoAccountHelp =>
+      'Sem conta é só registro: nada muda em saldo.';
+
+  @override
+  String get loanNoAccount => 'Sem conta';
+
+  @override
+  String get loanCurrency => 'Moeda';
+
+  @override
+  String loanPrincipal(String currency) {
+    return 'Principal ($currency)';
+  }
+
+  @override
+  String get loanRateOptional => 'Taxa (% a.m., opcional)';
+
+  @override
+  String get loanRateHelp =>
+      'Juros simples, só informativos. Vazio = sem juros.';
+
+  @override
+  String loanDateOn(String date) {
+    return 'Em $date';
+  }
+
+  @override
+  String get loanInclude => 'Somar ao patrimônio';
+
+  @override
+  String get loanNotes => 'Observação';
+
+  @override
+  String get loanInvalid =>
+      'Informe o devedor e um principal maior que zero; a taxa, se houver, não pode ser negativa.';
+
+  @override
+  String get loanRateNegative => 'A taxa não pode ser negativa.';
+
+  @override
+  String get loanRepayTitle => 'Registrar baixa';
+
+  @override
+  String get loanRepayConfirm => 'Registrar';
+
+  @override
+  String loanReceived(String currency) {
+    return 'Recebido ($currency)';
+  }
+
+  @override
+  String get loanReceivedHelp =>
+      '0 ou vazio para perdão, sem dinheiro entrando.';
+
+  @override
+  String get loanWrittenOff => 'Baixado do saldo';
+
+  @override
+  String get loanWrittenOffHelp => 'Vazio = o mesmo valor recebido.';
+
+  @override
+  String get loanReceivingAccount => 'Conta que recebeu';
+
+  @override
+  String get loanRepayInvalid =>
+      'Informe o valor baixado (maior que zero); o recebido não pode ser negativo.';
+
+  @override
+  String loanDeleteTitle(String name) {
+    return 'Excluir o empréstimo de $name?';
+  }
+
+  @override
+  String get loanDeleteBody =>
+      'As baixas e os lançamentos que ele gerou na conta também saem.';
+
+  @override
+  String get loanDeleteRepayTitle => 'Excluir a baixa?';
+
+  @override
+  String loanDeleteRepayBody(String value, String date) {
+    return 'Baixa de $value em $date. O recebimento lançado na conta também sai.';
+  }
+
+  @override
+  String loanToReceive(String value) {
+    return 'A receber $value';
+  }
+
+  @override
+  String get loanOutsideNetWorth => ' (fora do patrimônio)';
+
+  @override
+  String loanPrincipalOn(String value, String date) {
+    return 'Principal $value em $date';
+  }
+
+  @override
+  String loanInterest(String value) {
+    return 'Juros acumulados $value';
+  }
+
+  @override
+  String loanExtraMore(String value) {
+    return 'Recebido a mais: $value';
+  }
+
+  @override
+  String loanExtraLess(String value) {
+    return 'Recebido a menos: $value';
+  }
+
+  @override
+  String loanRate(String rate) {
+    return 'Taxa $rate% a.m. (juros simples)';
+  }
+
+  @override
+  String get loanNoRepayments => 'Nenhuma baixa ainda.';
+
+  @override
+  String loanRepaymentLine(String date, String received, String writtenOff) {
+    return '$date · recebido $received · baixou $writtenOff';
+  }
+
+  @override
   String get catTitle => 'Categorias';
 
   @override

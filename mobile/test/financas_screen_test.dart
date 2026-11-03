@@ -19,6 +19,7 @@ import 'package:anchor_mobile/screens/financas_categories_screen.dart';
 import 'package:anchor_mobile/screens/financas_liabilities_screen.dart';
 import 'package:anchor_mobile/models/position.dart';
 import 'package:anchor_mobile/screens/financas_screen.dart';
+import 'package:anchor_mobile/screens/financas_transactions_screen.dart';
 import 'package:anchor_mobile/services/general_finance_repository.dart';
 import 'package:anchor_mobile/services/live_positions.dart';
 import 'package:anchor_mobile/services/quote_exceptions.dart';
@@ -404,11 +405,8 @@ void main() {
       );
     });
     await tester.pumpWidget(
-      MaterialApp(
-        home: FinancasLiabilitiesScreen(
-          accounts: [nubank],
-          now: DateTime(2026, 3, 15),
-        ),
+      localizedApp(
+        FinancasLiabilitiesScreen(accounts: [nubank], now: DateTime(2026, 3, 15)),
       ),
     );
     Future<void> settle(bool Function() ready) async {
@@ -479,9 +477,7 @@ void main() {
 
   testWidgets('tela de empréstimos: cadastra, baixa, mostra o saldo e exclui', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: FinancasLoansScreen(accounts: const [], now: DateTime(2026, 3, 15)),
-      ),
+      localizedApp(FinancasLoansScreen(accounts: const [], now: DateTime(2026, 3, 15))),
     );
     Future<void> settle(bool Function() ready) async {
       for (var i = 0; i < 200; i++) {
@@ -883,5 +879,222 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Enter the name and, if any, a limit greater than zero.'), findsOneWidget);
     });
+
+    // O limite preenchido na edição segue o separador do idioma (antes: `toString()`, ponto).
+    for (final (locale, expected) in [('pt', '1500,5'), ('en', '1500.5')]) {
+      testWidgets('edição preenche o limite com o separador do idioma ($locale)', (tester) async {
+        await tester.runAsync(() async {
+          await repository.insertCategory(
+            GeneralTransactionCategory(nome: 'Mercado', limiteMensal: 1500.5, createdAt: DateTime(2026, 1, 1)),
+          );
+        });
+        await tester.pumpWidget(
+          localizedApp(
+            const FinancasCategoriesScreen(base: 'BRL', ratesToBrl: {}, accounts: []),
+            locale: locale,
+          ),
+        );
+        await waitFor(tester, find.text('Mercado'));
+
+        await tester.tap(find.byType(PopupMenuButton<String>));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(locale == 'pt' ? 'Editar' : 'Edit'));
+        await tester.pumpAndSettle();
+
+        expect(find.widgetWithText(TextField, expected), findsOneWidget);
+      });
+    }
+  });
+
+  // Dívidas e Empréstimos nos dois idiomas (ADR 0001, PR 3b).
+  group('dívidas e empréstimos em inglês', () {
+    testWidgets('dívida: cadastra, resumo, cronograma e sistema de amortização em inglês', (tester) async {
+      late BankAccount nubank;
+      await tester.runAsync(() async {
+        final id = await account('Nubank', 'BRL');
+        nubank = BankAccount(id: id, nome: 'Nubank', titular: 'Eu', currency: 'BRL', createdAt: DateTime(2026, 1, 1));
+      });
+      await tester.pumpWidget(
+        localizedApp(
+          FinancasLiabilitiesScreen(accounts: [nubank], now: DateTime(2026, 3, 15)),
+          locale: 'en',
+        ),
+      );
+      await waitFor(tester, find.text('No debts yet.'));
+      expect(find.text('Debts'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FloatingActionButton, 'Debt'));
+      await tester.pumpAndSettle();
+      expect(find.text('New debt'), findsOneWidget);
+      expect(find.text('Price (fixed installment)'), findsOneWidget);
+      expect(find.text('Installment 1 is due one month after the start.'), findsOneWidget);
+      expect(find.text('Start 03/15/2026'), findsOneWidget);
+      await tester.enterText(find.byKey(const Key('financas-liability-name')), 'Car');
+      await tester.enterText(find.byKey(const Key('financas-liability-principal')), '1200');
+      await tester.enterText(find.byKey(const Key('financas-liability-rate')), '0');
+      await tester.enterText(find.byKey(const Key('financas-liability-term')), '12');
+      await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+      await waitFor(tester, find.textContaining('Outstanding balance'));
+
+      final summary = tester.widget<Text>(find.byWidgetPredicate(
+        (w) => w is Text && (w.key as ValueKey?)?.value.toString().contains('financas-liability-summary-') == true,
+      ));
+      expect(summary.data, contains('Outstanding balance BRL 1,200.00'));
+      expect(summary.data, contains('0 of 12 installments paid'));
+      expect(summary.data, contains('Next: BRL 100.00 on 04/15/2026'));
+
+      await tester.tap(find.text('Car'));
+      await tester.pumpAndSettle();
+      expect(find.text('Price (fixed installment) · 0.0% per month · principal BRL 1,200.00'), findsOneWidget);
+      expect(find.textContaining('01 · 04/15/2026 · BRL 100.00 (interest BRL 0.00)'), findsOneWidget);
+
+      await tester.tap(find.text('Delete debt'));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete Car?'), findsOneWidget);
+      expect(find.text("This debt's installments are also removed from the account's transactions."), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+      await waitFor(tester, find.text('No debts yet.'));
+      expect(find.text('No debts yet.'), findsOneWidget);
+    });
+
+    testWidgets('dívida sem conta: avisa em inglês', (tester) async {
+      await tester.pumpWidget(
+        localizedApp(FinancasLiabilitiesScreen(accounts: const [], now: DateTime(2026, 3, 15)), locale: 'en'),
+      );
+      await waitFor(tester, find.text('No debts yet.'));
+
+      await tester.tap(find.widgetWithText(FloatingActionButton, 'Debt'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Add an account before the debt.'), findsOneWidget);
+    });
+
+    testWidgets('empréstimo: cadastra, baixa, taxa negativa recusada e exclui, tudo em inglês', (tester) async {
+      await tester.pumpWidget(
+        localizedApp(FinancasLoansScreen(accounts: const [], now: DateTime(2026, 3, 15)), locale: 'en'),
+      );
+      await waitFor(tester, find.text('No loans yet.'));
+      expect(find.text('Loans'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FloatingActionButton, 'Loan'));
+      await tester.pumpAndSettle();
+      expect(find.text('New loan'), findsOneWidget);
+      expect(find.text('Without an account it is just a record: no balance changes.'), findsOneWidget);
+      await tester.enterText(find.byKey(const Key('financas-loan-new-borrower')), 'Brother');
+      await tester.enterText(find.byKey(const Key('financas-loan-principal')), '1000');
+      await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+      // Não esperar por 'Brother': o texto digitado no diálogo também casa com `find.text`.
+      await waitFor(tester, find.textContaining('To receive'));
+
+      String summary() => tester
+          .widget<Text>(find.byWidgetPredicate(
+            (w) => w is Text && (w.key as ValueKey?)?.value.toString().contains('financas-loan-summary-') == true,
+          ))
+          .data!;
+      expect(summary(), contains('To receive BRL 1,000.00'));
+      expect(summary(), contains('Principal BRL 1,000.00 on 03/15/2026'));
+
+      await tester.tap(find.text('Brother'));
+      await tester.pumpAndSettle();
+      expect(find.text('No repayments yet.'), findsOneWidget);
+
+      await tester.tap(find.text('Register repayment'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('financas-repay-received')), '300');
+      await tester.tap(find.widgetWithText(FilledButton, 'Register'));
+      await waitFor(tester, find.textContaining('written off BRL 300.00'));
+      expect(summary(), contains('To receive BRL 700.00'));
+      expect(find.text('03/15/2026 · received BRL 300.00 · written off BRL 300.00'), findsOneWidget);
+
+      await tester.tap(find.text('Edit'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit loan'), findsOneWidget);
+      await tester.enterText(find.byKey(const Key('financas-loan-edit-rate')), '-1');
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('The rate cannot be negative.'), findsOneWidget);
+
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete the loan to Brother?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+      await waitFor(tester, find.text('No loans yet.'));
+      expect(find.text('No loans yet.'), findsOneWidget);
+    });
+
+    testWidgets('empréstimo inválido: aviso em inglês e nada é gravado', (tester) async {
+      await tester.pumpWidget(
+        localizedApp(FinancasLoansScreen(accounts: const [], now: DateTime(2026, 3, 15)), locale: 'en'),
+      );
+      await waitFor(tester, find.text('No loans yet.'));
+
+      await tester.tap(find.widgetWithText(FloatingActionButton, 'Loan'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Enter the borrower and a principal greater than zero; the rate, if any, cannot be negative.'),
+        findsOneWidget,
+      );
+      expect(find.text('No loans yet.'), findsOneWidget);
+    });
+  });
+
+  // A frase do lançamento gerado vem do vínculo, no idioma da tela (o banco guarda `notes` nulo).
+  group('lançamentos gerados na lista da conta', () {
+    for (final (locale, installment, granted) in [
+      ('pt', 'Carro — parcela 2/2', 'Empréstimo para Irmão'),
+      ('en', 'Carro — installment 2/2', 'Loan to Irmão'),
+    ]) {
+      testWidgets('frase derivada em $locale; observação própria continua valendo', (tester) async {
+        late BankAccount nubank;
+        await tester.runAsync(() async {
+          final id = await account('Nubank', 'BRL');
+          nubank = BankAccount(id: id, nome: 'Nubank', titular: 'Eu', currency: 'BRL', createdAt: DateTime(2026, 1, 1));
+          await repository.createLiability(
+            Liability(
+              bankAccountId: id,
+              nome: 'Carro',
+              titular: 'Eu',
+              principal: 200,
+              taxaPercentual: 0,
+              prazoMeses: 2,
+              sistema: AmortizationSystem.price,
+              dataInicio: '2026-01-15',
+              createdAt: DateTime(2026, 1, 1),
+            ),
+          );
+          final who = await repository.insertBorrower(Borrower(nome: 'Irmão', createdAt: DateTime(2026, 1, 1)));
+          await repository.createLoan(
+            Loan(
+              borrowerId: who,
+              bankAccountId: id,
+              principal: 50,
+              dataInicio: '2026-01-10',
+              includeInNetWorth: true,
+              currency: 'BRL',
+              createdAt: DateTime(2026, 1, 10),
+            ),
+          );
+          await repository.insertTransaction(
+            GeneralTransaction(
+              bankAccountId: id,
+              type: GeneralTransactionType.despesa,
+              valor: 10,
+              date: '2026-01-11',
+              notes: 'Reserva',
+              createdAt: DateTime(2026, 1, 11),
+            ),
+          );
+        });
+        await tester.pumpWidget(localizedApp(FinancasTransactionsScreen(account: nubank), locale: locale));
+        await waitFor(tester, find.textContaining(installment));
+
+        expect(find.textContaining(installment), findsOneWidget);
+        expect(find.textContaining(granted), findsOneWidget);
+        expect(find.textContaining('Reserva'), findsOneWidget);
+      });
+    }
   });
 }

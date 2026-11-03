@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/general_finance.dart';
+import '../domain/generated_tx_info.dart';
 import '../domain/money_format.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/finance_labels.dart';
@@ -29,8 +30,17 @@ class _FinancasTransactionsScreenState
   bool _loading = true;
   List<GeneralTransaction> _transactions = [];
   List<GeneralTransactionCategory> _categories = [];
+  Map<int, GeneratedTxInfo> _generated = {};
 
   BankAccount get _account => widget.account;
+
+  /// A observação do lançamento: a que o usuário digitou (ou a gravada antes do ADR 0001) tem
+  /// prioridade; sem ela, a frase derivada da dívida ou do empréstimo que o gerou.
+  String? _noteText(AppLocalizations l, GeneralTransaction tx) {
+    if (tx.notes != null) return tx.notes;
+    final info = _generated[tx.id];
+    return info == null ? null : generatedTxText(l, info);
+  }
 
   String? _categoryName(int? id) {
     for (final c in _categories) {
@@ -50,10 +60,12 @@ class _FinancasTransactionsScreenState
       accountId: _account.id,
     );
     final categories = await _repository.listCategories();
+    final generated = await _repository.generatedTransactionInfo();
     if (!mounted) return;
     setState(() {
       _transactions = transactions;
       _categories = categories;
+      _generated = generated;
       _loading = false;
     });
   }
@@ -251,6 +263,7 @@ class _FinancasTransactionsScreenState
                             final tx = _transactions[index];
                             final future = tx.date.compareTo(today) > 0;
                             final signed = signedValor(tx.type, tx.valor);
+                            final note = _noteText(l, tx);
                             return Card(
                               margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                               child: ListTile(
@@ -265,10 +278,10 @@ class _FinancasTransactionsScreenState
                                       formatReadingDate(tx.date, locale: l.localeName),
                                     ].join(' · '),
                                     if (future) l.txFuture,
-                                    if (tx.notes != null) tx.notes!,
+                                    ?note,
                                   ].join('\n'),
                                 ),
-                                isThreeLine: future || tx.notes != null,
+                                isThreeLine: future || note != null,
                                 // Parcela de dívida e lançamento de empréstimo
                                 // saem junto com o cadastro que os gerou.
                                 trailing: tx.type.isGenerated

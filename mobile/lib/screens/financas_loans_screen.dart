@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../domain/currency_catalog.dart';
 import '../domain/general_finance.dart';
 import '../domain/money_format.dart';
+import '../domain/number_locale.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/finance_labels.dart';
 import '../models/bank_account.dart';
 import '../models/loan.dart';
 import '../services/general_finance_repository.dart';
@@ -56,26 +59,49 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
     return (allowZero ? value >= 0 : value > 0) ? value : null;
   }
 
+  /// Roda a gravação e mostra o erro do repositório no idioma da tela. Devolve `false` se
+  /// falhou (nada foi gravado pela chamada que lançou).
+  Future<bool> _guard(
+    AppLocalizations l,
+    ScaffoldMessengerState messenger,
+    Future<void> Function() action,
+  ) async {
+    try {
+      await action();
+      return true;
+    } on ArgumentError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(financeErrorText(l, e))));
+    } on StateError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(financeErrorText(l, e))));
+    }
+    return false;
+  }
+
   Widget _dateButton(
     BuildContext context,
+    AppLocalizations l,
     DateTime date,
     void Function(DateTime) onPicked, {
-    String prefix = '',
-  }) => OutlinedButton.icon(
-    icon: const Icon(Icons.calendar_today_outlined),
-    label: Text('$prefix${formatIsoDay(toIsoDay(date))}'),
-    onPressed: () async {
-      final picked = await showDatePicker(
-        context: context,
-        initialDate: date,
-        firstDate: DateTime(2000),
-        lastDate: DateTime(2100),
-      );
-      if (picked != null) onPicked(picked);
-    },
-  );
+    String Function(String)? decorate,
+  }) {
+    final shown = formatReadingDate(toIsoDay(date), locale: l.localeName);
+    return OutlinedButton.icon(
+      icon: const Icon(Icons.calendar_today_outlined),
+      label: Text(decorate == null ? shown : decorate(shown)),
+      onPressed: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: date,
+          firstDate: DateTime(2000),
+          lastDate: DateTime(2100),
+        );
+        if (picked != null) onPicked(picked);
+      },
+    );
+  }
 
   Future<void> _create() async {
+    final l = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
     final nameController = TextEditingController();
     final principalController = TextEditingController();
@@ -92,7 +118,7 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Novo empréstimo'),
+          title: Text(l.loanNew),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -101,13 +127,13 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
                   key: const Key('financas-loan-borrower'),
                   initialValue: borrowerId,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Devedor'),
+                  decoration: InputDecoration(labelText: l.loanBorrower),
                   items: [
                     for (final b in _borrowers)
                       DropdownMenuItem(value: b.id, child: Text(b.nome)),
-                    const DropdownMenuItem(
+                    DropdownMenuItem(
                       value: null,
-                      child: Text('Novo devedor…'),
+                      child: Text(l.loanNewBorrowerOption),
                     ),
                   ],
                   onChanged: (value) =>
@@ -118,7 +144,7 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
                   TextField(
                     key: const Key('financas-loan-new-borrower'),
                     controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Nome do devedor'),
+                    decoration: InputDecoration(labelText: l.loanNewBorrowerName),
                   ),
                 ],
                 const SizedBox(height: 12),
@@ -126,14 +152,15 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
                   key: const Key('financas-loan-account'),
                   initialValue: account,
                   isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Conta de onde saiu',
-                    helperText: 'Sem conta é só registro: nada muda em saldo.',
+                  decoration: InputDecoration(
+                    labelText: l.loanFromAccount,
+                    helperText: l.loanNoAccountHelp,
+                    helperMaxLines: 3,
                   ),
                   items: [
-                    const DropdownMenuItem(
+                    DropdownMenuItem(
                       value: null,
-                      child: Text('Sem conta'),
+                      child: Text(l.loanNoAccount),
                     ),
                     for (final a in widget.accounts)
                       DropdownMenuItem(value: a, child: Text(a.label)),
@@ -145,12 +172,12 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
                   DropdownButtonFormField<String>(
                     initialValue: currency,
                     isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Moeda'),
+                    decoration: InputDecoration(labelText: l.loanCurrency),
                     items: [
-                      for (final (code, name) in currencyCatalog)
+                      for (final (code, _) in currencyCatalog)
                         DropdownMenuItem(
                           value: code,
-                          child: Text('$code — $name'),
+                          child: Text('$code — ${currencyName(l, code)}'),
                         ),
                     ],
                     onChanged: (value) =>
@@ -165,7 +192,7 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
                     decimal: true,
                   ),
                   decoration: InputDecoration(
-                    labelText: 'Principal (${account?.currency ?? currency})',
+                    labelText: l.loanPrincipal(account?.currency ?? currency),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -175,28 +202,30 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
-                    labelText: 'Taxa (% a.m., opcional)',
-                    helperText: 'Juros simples, só informativos. Vazio = sem juros.',
+                  decoration: InputDecoration(
+                    labelText: l.loanRateOptional,
+                    helperText: l.loanRateHelp,
+                    helperMaxLines: 3,
                   ),
                 ),
                 const SizedBox(height: 12),
                 _dateButton(
                   context,
+                  l,
                   start,
                   (picked) => setDialogState(() => start = picked),
-                  prefix: 'Em ',
+                  decorate: l.loanDateOn,
                 ),
                 SwitchListTile(
                   key: const Key('financas-loan-include'),
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Somar ao patrimônio'),
+                  title: Text(l.loanInclude),
                   value: include,
                   onChanged: (value) => setDialogState(() => include = value),
                 ),
                 TextField(
                   controller: notesController,
-                  decoration: const InputDecoration(labelText: 'Observação'),
+                  decoration: InputDecoration(labelText: l.loanNotes),
                 ),
               ],
             ),
@@ -204,11 +233,11 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancelar'),
+              child: Text(l.actionCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Cadastrar'),
+              child: Text(l.actionRegister),
             ),
           ],
         ),
@@ -227,39 +256,42 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
     if (principal == null ||
         (rateText.isNotEmpty && rate == null) ||
         (borrowerId == null && newName.isEmpty)) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Informe o devedor e um principal maior que zero; a taxa, se houver, não pode ser negativa.',
-          ),
-        ),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(l.loanInvalid)));
       return;
     }
-    final owner =
-        borrowerId ??
-        await _repository.insertBorrower(
-          Borrower(nome: newName, createdAt: DateTime.now()),
-        );
-    await _repository.createLoan(
-      Loan(
-        borrowerId: owner,
-        bankAccountId: account?.id,
-        principal: principal,
-        taxaMensalPercentual: rate,
-        dataInicio: toIsoDay(start),
-        includeInNetWorth: include,
-        currency: account?.currency ?? currency,
-        notes: notes,
-        createdAt: DateTime.now(),
-      ),
-    );
-    await _load();
+    final ok = await _guard(l, messenger, () async {
+      final owner =
+          borrowerId ??
+          await _repository.insertBorrower(
+            Borrower(nome: newName, createdAt: DateTime.now()),
+          );
+      await _repository.createLoan(
+        Loan(
+          borrowerId: owner,
+          bankAccountId: account?.id,
+          principal: principal,
+          taxaMensalPercentual: rate,
+          dataInicio: toIsoDay(start),
+          includeInNetWorth: include,
+          currency: account?.currency ?? currency,
+          notes: notes,
+          createdAt: DateTime.now(),
+        ),
+      );
+    });
+    if (ok) await _load();
   }
 
   Future<void> _edit(LoanWithRepayments item) async {
+    final l = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
     final rateController = TextEditingController(
-      text: item.loan.taxaMensalPercentual?.toString(),
+      text: item.loan.taxaMensalPercentual == null
+          ? null
+          : withDecimalSeparator(
+              item.loan.taxaMensalPercentual.toString(),
+              l.localeName,
+            ),
     );
     final notesController = TextEditingController(text: item.loan.notes);
     var include = item.loan.includeInNetWorth;
@@ -268,7 +300,7 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Editar empréstimo'),
+          title: Text(l.loanEdit),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -279,19 +311,17 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
-                    labelText: 'Taxa (% a.m., opcional)',
-                  ),
+                  decoration: InputDecoration(labelText: l.loanRateOptional),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Somar ao patrimônio'),
+                  title: Text(l.loanInclude),
                   value: include,
                   onChanged: (value) => setDialogState(() => include = value),
                 ),
                 TextField(
                   controller: notesController,
-                  decoration: const InputDecoration(labelText: 'Observação'),
+                  decoration: InputDecoration(labelText: l.loanNotes),
                 ),
               ],
             ),
@@ -299,11 +329,11 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancelar'),
+              child: Text(l.actionCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Salvar'),
+              child: Text(l.actionSave),
             ),
           ],
         ),
@@ -315,21 +345,24 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
     final notes = notesController.text;
     if (saved != true || !mounted) return;
     if (rateText.isNotEmpty && rate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('A taxa não pode ser negativa.')),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(l.loanRateNegative)));
       return;
     }
-    await _repository.updateLoan(
-      item.loan.id!,
-      taxaMensalPercentual: rate,
-      includeInNetWorth: include,
-      notes: notes,
+    final ok = await _guard(
+      l,
+      messenger,
+      () => _repository.updateLoan(
+        item.loan.id!,
+        taxaMensalPercentual: rate,
+        includeInNetWorth: include,
+        notes: notes,
+      ),
     );
-    await _load();
+    if (ok) await _load();
   }
 
   Future<void> _repay(LoanWithRepayments item) async {
+    final l = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
     final receivedController = TextEditingController();
     final writtenOffController = TextEditingController();
@@ -346,13 +379,14 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Registrar baixa'),
+          title: Text(l.loanRepayTitle),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 _dateButton(
                   context,
+                  l,
                   date,
                   (picked) => setDialogState(() => date = picked),
                 ),
@@ -364,8 +398,9 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
                     decimal: true,
                   ),
                   decoration: InputDecoration(
-                    labelText: 'Recebido (${item.loan.currency})',
-                    helperText: '0 ou vazio para perdão, sem dinheiro entrando.',
+                    labelText: l.loanReceived(item.loan.currency),
+                    helperText: l.loanReceivedHelp,
+                    helperMaxLines: 3,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -375,9 +410,10 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
-                    labelText: 'Baixado do saldo',
-                    helperText: 'Vazio = o mesmo valor recebido.',
+                  decoration: InputDecoration(
+                    labelText: l.loanWrittenOff,
+                    helperText: l.loanWrittenOffHelp,
+                    helperMaxLines: 3,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -385,13 +421,11 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
                   key: const Key('financas-repay-account'),
                   initialValue: account,
                   isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Conta que recebeu',
-                  ),
+                  decoration: InputDecoration(labelText: l.loanReceivingAccount),
                   items: [
-                    const DropdownMenuItem(
+                    DropdownMenuItem(
                       value: null,
-                      child: Text('Sem conta'),
+                      child: Text(l.loanNoAccount),
                     ),
                     for (final a in candidates)
                       DropdownMenuItem(value: a, child: Text(a.label)),
@@ -401,7 +435,7 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: notesController,
-                  decoration: const InputDecoration(labelText: 'Observação'),
+                  decoration: InputDecoration(labelText: l.loanNotes),
                 ),
               ],
             ),
@@ -409,11 +443,11 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancelar'),
+              child: Text(l.actionCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Registrar'),
+              child: Text(l.loanRepayConfirm),
             ),
           ],
         ),
@@ -432,30 +466,28 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
     if (saved != true || !mounted) return;
 
     if (received == null || writtenOff == null) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Informe o valor baixado (maior que zero); o recebido não pode ser negativo.',
-          ),
-        ),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(l.loanRepayInvalid)));
       return;
     }
-    await _repository.registerLoanRepayment(
-      LoanRepayment(
-        loanId: item.loan.id!,
-        bankAccountId: account?.id,
-        data: toIsoDay(date),
-        valorRecebido: received,
-        valorBaixado: writtenOff,
-        notes: notes,
-        createdAt: DateTime.now(),
+    final ok = await _guard(
+      l,
+      messenger,
+      () => _repository.registerLoanRepayment(
+        LoanRepayment(
+          loanId: item.loan.id!,
+          bankAccountId: account?.id,
+          data: toIsoDay(date),
+          valorRecebido: received,
+          valorBaixado: writtenOff,
+          notes: notes,
+          createdAt: DateTime.now(),
+        ),
       ),
     );
-    await _load();
+    if (ok) await _load();
   }
 
-  Future<bool> _confirm(String title, String message) async {
+  Future<bool> _confirm(AppLocalizations l, String title, String message) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -464,11 +496,11 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
+            child: Text(l.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Excluir'),
+            child: Text(l.actionDelete),
           ),
         ],
       ),
@@ -477,57 +509,71 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
   }
 
   Future<void> _deleteLoan(LoanWithRepayments item) async {
+    final l = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
     if (!await _confirm(
-      'Excluir o empréstimo de ${item.borrower.nome}?',
-      'As baixas e os lançamentos que ele gerou na conta também saem.',
+      l,
+      l.loanDeleteTitle(item.borrower.nome),
+      l.loanDeleteBody,
     )) {
       return;
     }
-    await _repository.deleteLoan(item.loan.id!);
-    await _load();
+    final ok = await _guard(l, messenger, () => _repository.deleteLoan(item.loan.id!));
+    if (ok) await _load();
   }
 
   Future<void> _deleteRepayment(LoanRepayment repayment, String currency) async {
+    final l = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
     if (!await _confirm(
-      'Excluir a baixa?',
-      'Baixa de ${formatMoney(repayment.valorBaixado, currency)} em '
-          '${formatIsoDay(repayment.data)}. O recebimento lançado na conta '
-          'também sai.',
+      l,
+      l.loanDeleteRepayTitle,
+      l.loanDeleteRepayBody(
+        formatMoney(repayment.valorBaixado, currency, locale: l.localeName),
+        formatReadingDate(repayment.data, locale: l.localeName),
+      ),
     )) {
       return;
     }
-    await _repository.deleteLoanRepayment(repayment.id!);
-    await _load();
+    final ok = await _guard(
+      l,
+      messenger,
+      () => _repository.deleteLoanRepayment(repayment.id!),
+    );
+    if (ok) await _load();
   }
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Empréstimos')),
+      appBar: AppBar(title: Text(l.loanTitle)),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,
         icon: const Icon(Icons.add),
-        label: const Text('Empréstimo'),
+        label: Text(l.loanFab),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _loans.isEmpty
-          ? const Center(child: Text('Nenhum empréstimo cadastrado ainda.'))
+          ? Center(child: Text(l.loanEmpty))
           : ListView(
               padding: const EdgeInsets.all(16),
-              children: [for (final l in _loans) _card(l)],
+              children: [for (final item in _loans) _card(l, item)],
             ),
     );
   }
 
-  Widget _card(LoanWithRepayments item) {
+  Widget _card(AppLocalizations l, LoanWithRepayments item) {
     final textTheme = Theme.of(context).textTheme;
+    final locale = l.localeName;
     final loan = item.loan;
     final currency = loan.currency;
     final now = _now;
     final interest = item.interestOn(now);
     final balance = item.balanceOn(now);
     final extra = item.extra;
+    String money(double value) => formatMoney(value, currency, locale: locale);
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ExpansionTile(
@@ -535,14 +581,17 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
         title: Text(item.borrower.nome),
         subtitle: Text(
           [
-            'A receber ${formatMoney(balance, currency)}'
-                '${loan.includeInNetWorth ? '' : ' (fora do patrimônio)'}',
-            'Principal ${formatMoney(loan.principal, currency)} em '
-                '${formatIsoDay(loan.dataInicio)}',
-            if (interest > 0) 'Juros acumulados ${formatMoney(interest, currency)}',
+            '${l.loanToReceive(money(balance))}'
+                '${loan.includeInNetWorth ? '' : l.loanOutsideNetWorth}',
+            l.loanPrincipalOn(
+              money(loan.principal),
+              formatReadingDate(loan.dataInicio, locale: locale),
+            ),
+            if (interest > 0) l.loanInterest(money(interest)),
             if (extra != 0)
-              'Recebido a ${extra > 0 ? 'mais' : 'menos'}: '
-                  '${formatMoney(extra.abs(), currency)}',
+              extra > 0
+                  ? l.loanExtraMore(money(extra.abs()))
+                  : l.loanExtraLess(money(extra.abs())),
           ].join('\n'),
           key: Key('financas-loan-summary-${loan.id}'),
         ),
@@ -551,22 +600,26 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
         children: [
           if (loan.taxaMensalPercentual != null)
             Text(
-              'Taxa ${loan.taxaMensalPercentual.toString().replaceAll('.', ',')}% a.m. (juros simples)',
+              l.loanRate(
+                withDecimalSeparator(loan.taxaMensalPercentual.toString(), locale),
+              ),
               style: textTheme.bodySmall,
             ),
           if (loan.notes != null) Text(loan.notes!, style: textTheme.bodySmall),
           const SizedBox(height: 8),
           if (item.repayments.isEmpty)
-            Text('Nenhuma baixa ainda.', style: textTheme.bodySmall)
+            Text(l.loanNoRepayments, style: textTheme.bodySmall)
           else
             for (final r in item.repayments)
               Row(
                 children: [
                   Expanded(
                     child: Text(
-                      '${formatIsoDay(r.data)} · recebido '
-                      '${formatMoney(r.valorRecebido, currency)} · baixou '
-                      '${formatMoney(r.valorBaixado, currency)}',
+                      l.loanRepaymentLine(
+                        formatReadingDate(r.data, locale: locale),
+                        money(r.valorRecebido),
+                        money(r.valorBaixado),
+                      ),
                       style: textTheme.bodySmall,
                     ),
                   ),
@@ -584,17 +637,17 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
             children: [
               TextButton.icon(
                 icon: const Icon(Icons.add),
-                label: const Text('Registrar baixa'),
+                label: Text(l.loanRepayTitle),
                 onPressed: () => _repay(item),
               ),
               TextButton.icon(
                 icon: const Icon(Icons.edit_outlined),
-                label: const Text('Editar'),
+                label: Text(l.actionEdit),
                 onPressed: () => _edit(item),
               ),
               TextButton.icon(
                 icon: const Icon(Icons.delete_outline),
-                label: const Text('Excluir'),
+                label: Text(l.actionDelete),
                 onPressed: () => _deleteLoan(item),
               ),
             ],

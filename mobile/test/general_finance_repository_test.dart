@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/general_finance.dart';
+import 'package:anchor_mobile/domain/generated_tx_info.dart';
 import 'package:anchor_mobile/domain/liability.dart';
 import 'package:anchor_mobile/models/bank_account.dart';
 import 'package:anchor_mobile/models/liability.dart';
@@ -486,7 +487,8 @@ void main() {
       expect(dates[1], '2026-03-31');
       expect(dates.last, '2027-01-31');
       expect(txs.firstWhere((t) => t.date == '2026-02-28').valor, closeTo(112, 1e-9));
-      expect(txs.firstWhere((t) => t.date == '2026-02-28').notes, 'Carro — parcela 1/12');
+      // Texto de UI não vai para o banco (ADR 0001): a tela monta a frase no idioma do aparelho.
+      expect(txs.every((t) => t.notes == null), isTrue);
 
       final listed = (await repository.listLiabilities()).single;
       expect(listed.installments, hasLength(12));
@@ -625,7 +627,7 @@ void main() {
       expect(txs.single.type, GeneralTransactionType.emprestimoConcedido);
       expect(txs.single.valor, 1000);
       expect(txs.single.date, '2026-01-10');
-      expect(txs.single.notes, 'Empréstimo para Irmão');
+      expect(txs.single.notes, isNull);
       expect(computeBalances(txs, '2026-12-31'), {usd: -1000.0});
       final listed = (await repository.listLoans()).single;
       expect(listed.loan.currency, 'USD');
@@ -672,7 +674,7 @@ void main() {
         (t) => t.type == GeneralTransactionType.recebimentoEmprestimo,
       );
       expect(received.valor, 110);
-      expect(received.notes, 'Recebimento de Irmão');
+      expect(received.notes, isNull);
       expect(computeBalances(txs, '2026-12-31'), {nubank: -890.0}); // -1000 + 110
       final item = (await repository.listLoans()).single;
       expect(item.repayments, hasLength(2));
@@ -997,5 +999,99 @@ void main() {
     );
     expect(await repository.listCategories(), hasLength(1));
     expect(category, isPositive);
+  });
+
+  // ADR 0001: o repositório não grava frase de UI; quem gerou o lançamento é lido das tabelas
+  // filhas (`general_transaction_id`) e a tela monta o texto no idioma do aparelho.
+  group('descrição dos lançamentos gerados', () {
+    Future<int> openAccount() => repository.insertAccount(account('Nubank', 'BRL'));
+
+    Future<int> borrower(String nome) =>
+        repository.insertBorrower(Borrower(nome: nome, createdAt: DateTime(2026, 1, 1)));
+
+    Loan loan(int borrowerId, int accountId) => Loan(
+      borrowerId: borrowerId,
+      bankAccountId: accountId,
+      principal: 1000,
+      dataInicio: '2026-01-10',
+      includeInNetWorth: true,
+      currency: 'BRL',
+      createdAt: DateTime(2026, 1, 10),
+    );
+
+    test('parcela de dívida: nome da dívida, número e total de parcelas', () async {
+      final accountId = await openAccount();
+      await repository.createLiability(
+        Liability(
+          bankAccountId: accountId,
+          nome: 'Carro',
+          titular: 'Eu',
+          principal: 1200,
+          taxaPercentual: 1,
+          prazoMeses: 12,
+          sistema: AmortizationSystem.sac,
+          dataInicio: '2026-01-31',
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+
+      final txs = await repository.listTransactions();
+      final info = await repository.generatedTransactionInfo();
+
+      final first = info[txs.firstWhere((t) => t.date == '2026-02-28').id]!;
+      expect(first.kind, GeneratedTxKind.installment);
+      expect(first.name, 'Carro');
+      expect(first.installmentNumber, 1);
+      expect(first.installmentTotal, 12);
+      final last = info[txs.firstWhere((t) => t.date == '2027-01-31').id]!;
+      expect(last.installmentNumber, 12);
+      expect(info, hasLength(12));
+    });
+
+    test('empréstimo concedido e recebimento: nome do devedor', () async {
+      final accountId = await openAccount();
+      final who = await borrower('Irmão');
+      final loanId = await repository.createLoan(loan(who, accountId));
+      await repository.registerLoanRepayment(
+        LoanRepayment(
+          loanId: loanId,
+          bankAccountId: accountId,
+          data: '2026-03-10',
+          valorRecebido: 110,
+          valorBaixado: 100,
+          createdAt: DateTime(2026, 3, 10),
+        ),
+      );
+
+      final txs = await repository.listTransactions();
+      final info = await repository.generatedTransactionInfo();
+
+      final granted = txs.singleWhere((t) => t.type == GeneralTransactionType.emprestimoConcedido);
+      expect(info[granted.id]!.kind, GeneratedTxKind.loanGranted);
+      expect(info[granted.id]!.name, 'Irmão');
+      final received = txs.singleWhere((t) => t.type == GeneralTransactionType.recebimentoEmprestimo);
+      expect(info[received.id]!.kind, GeneratedTxKind.loanRepayment);
+      expect(info[received.id]!.name, 'Irmão');
+    });
+
+    test('lançamento manual não tem descrição derivada', () async {
+      final accountId = await openAccount();
+      await repository.insertTransaction(
+        tx(accountId, GeneralTransactionType.despesa, 10, '2026-08-05'),
+      );
+
+      expect(await repository.generatedTransactionInfo(), isEmpty);
+    });
+
+    test('ligação que sumiu (empréstimo apagado à mão): sem entrada, sem erro', () async {
+      final accountId = await openAccount();
+      final who = await borrower('Irmão');
+      await repository.createLoan(loan(who, accountId));
+      final db = await AppDatabase.instance();
+      await db.delete('loans');
+
+      expect(await repository.generatedTransactionInfo(), isEmpty);
+      expect(await repository.listTransactions(), hasLength(1));
+    });
   });
 }
