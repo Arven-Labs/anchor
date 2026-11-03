@@ -2823,6 +2823,378 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The CNPJ must have 14 digits'**
   String get fundErrCnpjMustHave14Digits;
+
+  /// No description provided for @foreignTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Foreign tax'**
+  String get foreignTitle;
+
+  /// No description provided for @foreignIntroNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculated only from the transactions entered in this app, at average cost, with each operation\'s fee and in reais using the Central Bank PTAX (closing, selling rate; buying rate for tax withheld abroad), and on a day with no quote using the previous one. Where the PTAX is missing, the market rate (Yahoo) applies and the year warns that it is approximate. It goes in the annual return, with no monthly DARF. The rules come from secondary sources: check with the tax authority before paying.'**
+  String get foreignIntroNote;
+
+  /// No description provided for @foreignFxUnavailableNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Exchange rate unavailable right now for some currency (neither PTAX nor market): its operations were left out. Try again in a moment.'**
+  String get foreignFxUnavailableNote;
+
+  /// No description provided for @foreignEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No sales or dividends from foreign assets from 2024 on yet.'**
+  String get foreignEmpty;
+
+  /// No description provided for @foreignStatusTaxDue.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated tax of {value} on the return'**
+  String foreignStatusTaxDue(String value);
+
+  /// No description provided for @foreignStatusCovered.
+  ///
+  /// In en, this message translates to:
+  /// **'No tax due: the tax withheld abroad covers the {value} owed'**
+  String foreignStatusCovered(String value);
+
+  /// No description provided for @foreignStatusLoss.
+  ///
+  /// In en, this message translates to:
+  /// **'No tax: the year closed with a loss of {value}, which offsets the following years'**
+  String foreignStatusLoss(String value);
+
+  /// No description provided for @foreignStatusFitInLoss.
+  ///
+  /// In en, this message translates to:
+  /// **'No tax: the year\'s result fit within the loss from earlier years'**
+  String get foreignStatusFitInLoss;
+
+  /// No description provided for @foreignRatePtax.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate {rate} (PTAX)'**
+  String foreignRatePtax(String rate);
+
+  /// No description provided for @foreignRateMarket.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate {rate} (market)'**
+  String foreignRateMarket(String rate);
+
+  /// No description provided for @foreignWarnCostUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Sale of {ticker} on {date} exceeds the purchases entered: the gain counts only the part with known cost. Enter the missing purchases.'**
+  String foreignWarnCostUnknown(String ticker, String date);
+
+  /// No description provided for @foreignWarnFxMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Operations or dividends of {year} have no exchange rate (neither PTAX nor market) for the date: they were left out of the assessment.'**
+  String foreignWarnFxMissing(int year);
+
+  /// No description provided for @foreignWarnFxApproximate.
+  ///
+  /// In en, this message translates to:
+  /// **'Operations or dividends of {year} were converted at the market rate because the Central Bank PTAX was not available for them (no network, a currency the PTAX does not quote, or a long gap): the values for the year are approximate.'**
+  String foreignWarnFxApproximate(int year);
+
+  /// No description provided for @foreignCapitalGain.
+  ///
+  /// In en, this message translates to:
+  /// **'Capital gain: {value}'**
+  String foreignCapitalGain(String value);
+
+  /// No description provided for @foreignDividends.
+  ///
+  /// In en, this message translates to:
+  /// **'Dividends: {value}'**
+  String foreignDividends(String value);
+
+  /// No description provided for @foreignLossUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Loss from earlier years used: {value}'**
+  String foreignLossUsed(String value);
+
+  /// No description provided for @foreignTaxableBase.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculation base: {value}'**
+  String foreignTaxableBase(String value);
+
+  /// No description provided for @foreignTax.
+  ///
+  /// In en, this message translates to:
+  /// **'Tax: {value} (rate {rate}%)'**
+  String foreignTax(String value, String rate);
+
+  /// No description provided for @foreignWithheld.
+  ///
+  /// In en, this message translates to:
+  /// **'Withheld abroad: {value} (credit of {credit})'**
+  String foreignWithheld(String value, String credit);
+
+  /// No description provided for @foreignLossCarriedOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Loss that offsets the following years: {value}'**
+  String foreignLossCarriedOut(String value);
+
+  /// No description provided for @foreignSalesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Sales ({count})'**
+  String foreignSalesCount(int count);
+
+  /// No description provided for @foreignDividendsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Dividends ({count})'**
+  String foreignDividendsCount(int count);
+
+  /// No description provided for @foreignItemTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{ticker} — {date}'**
+  String foreignItemTitle(String ticker, String date);
+
+  /// No description provided for @foreignSaleDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'{rate} · sale {sale} · cost {cost} · gain {gain}'**
+  String foreignSaleDetail(String rate, String sale, String cost, String gain);
+
+  /// No description provided for @foreignDividendDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'{rate} · {gross}{withheld}'**
+  String foreignDividendDetail(String rate, String gross, String withheld);
+
+  /// No description provided for @foreignDividendWithheld.
+  ///
+  /// In en, this message translates to:
+  /// **' · withheld {value}'**
+  String foreignDividendWithheld(String value);
+
+  /// No description provided for @foreignHoldingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Assets and Rights (Bens e Direitos)'**
+  String get foreignHoldingsTitle;
+
+  /// No description provided for @foreignHoldingsNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Acquisition cost in reais, not market value, only of what is entered in this app. One line per custody: the cost of each is its quantity times the asset\'s average cost, so the custodies add up to the position. Group, code and country of the record are yours: fill them in from the Receita program (sources disagree and the app does not check; it only pads zeros, so 3 becomes 03). They go into the copied description and the CSV. Estimate from secondary sources: check in the Receita program.'**
+  String get foreignHoldingsNote;
+
+  /// No description provided for @foreignHoldingsLegend.
+  ///
+  /// In en, this message translates to:
+  /// **'\"approximate\": a purchase with no PTAX used the market rate. \"incomplete\": an operation was left with no exchange rate, or a sale was larger than the purchases entered, and the cost is understated.'**
+  String get foreignHoldingsLegend;
+
+  /// No description provided for @foreignReturnOf.
+  ///
+  /// In en, this message translates to:
+  /// **'Return of {year}'**
+  String foreignReturnOf(int year);
+
+  /// No description provided for @foreignExportCsv.
+  ///
+  /// In en, this message translates to:
+  /// **'Export CSV'**
+  String get foreignExportCsv;
+
+  /// No description provided for @foreignNoPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'No foreign position on {previous} or {current}.'**
+  String foreignNoPosition(String previous, String current);
+
+  /// No description provided for @foreignNoCustody.
+  ///
+  /// In en, this message translates to:
+  /// **'No custody'**
+  String get foreignNoCustody;
+
+  /// No description provided for @foreignHoldingNone.
+  ///
+  /// In en, this message translates to:
+  /// **'{date}: —'**
+  String foreignHoldingNone(String date);
+
+  /// No description provided for @foreignHoldingValue.
+  ///
+  /// In en, this message translates to:
+  /// **'{date}: {cost} ({quantity} units){approximate}{incomplete}'**
+  String foreignHoldingValue(
+    String date,
+    String cost,
+    String quantity,
+    String approximate,
+    String incomplete,
+  );
+
+  /// No description provided for @foreignApproximate.
+  ///
+  /// In en, this message translates to:
+  /// **' · approximate'**
+  String get foreignApproximate;
+
+  /// No description provided for @foreignIncomplete.
+  ///
+  /// In en, this message translates to:
+  /// **' · incomplete'**
+  String get foreignIncomplete;
+
+  /// No description provided for @foreignFichaLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Record: {ficha}'**
+  String foreignFichaLine(String ficha);
+
+  /// No description provided for @foreignFichaNotFilled.
+  ///
+  /// In en, this message translates to:
+  /// **'not filled in'**
+  String get foreignFichaNotFilled;
+
+  /// No description provided for @foreignFichaGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Group {value}'**
+  String foreignFichaGroup(String value);
+
+  /// No description provided for @foreignFichaCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Code {value}'**
+  String foreignFichaCode(String value);
+
+  /// No description provided for @foreignFichaCountry.
+  ///
+  /// In en, this message translates to:
+  /// **'Country {value}'**
+  String foreignFichaCountry(String value);
+
+  /// No description provided for @foreignEditFichaTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit the record\'s group, code and country'**
+  String get foreignEditFichaTooltip;
+
+  /// No description provided for @foreignCopyTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy description'**
+  String get foreignCopyTooltip;
+
+  /// No description provided for @foreignDescriptionCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Description copied.'**
+  String get foreignDescriptionCopied;
+
+  /// No description provided for @foreignFichaDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Record of {ticker}'**
+  String foreignFichaDialogTitle(String ticker);
+
+  /// No description provided for @foreignFieldGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Group'**
+  String get foreignFieldGroup;
+
+  /// No description provided for @foreignFieldCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Code'**
+  String get foreignFieldCode;
+
+  /// No description provided for @foreignFieldCountry.
+  ///
+  /// In en, this message translates to:
+  /// **'Country'**
+  String get foreignFieldCountry;
+
+  /// No description provided for @foreignFichaHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy from the Receita program; the app does not check it. Empty clears.'**
+  String get foreignFichaHelp;
+
+  /// No description provided for @foreignFichaInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid record. Use digits only: group and code up to 2, country up to 3.'**
+  String get foreignFichaInvalid;
+
+  /// No description provided for @foreignCsvDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Save Assets and Rights report'**
+  String get foreignCsvDialogTitle;
+
+  /// No description provided for @foreignCsvSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} rows saved.'**
+  String foreignCsvSaved(int count);
+
+  /// No description provided for @foreignCsvFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the CSV: {error}'**
+  String foreignCsvFailed(String error);
+
+  /// No description provided for @foreignDescHead.
+  ///
+  /// In en, this message translates to:
+  /// **'{ticker} — {name}.{custody}'**
+  String foreignDescHead(String ticker, String name, String custody);
+
+  /// No description provided for @foreignDescCustody.
+  ///
+  /// In en, this message translates to:
+  /// **' Custody: {label}.'**
+  String foreignDescCustody(String label);
+
+  /// No description provided for @foreignDescFicha.
+  ///
+  /// In en, this message translates to:
+  /// **'Record: {ficha}.'**
+  String foreignDescFicha(String ficha);
+
+  /// No description provided for @foreignDescPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'Position on {date}: {units}, acquisition cost {cost}.'**
+  String foreignDescPosition(String date, String units, String cost);
+
+  /// No description provided for @foreignDescNoPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'no position'**
+  String get foreignDescNoPosition;
+
+  /// No description provided for @foreignDescUnits.
+  ///
+  /// In en, this message translates to:
+  /// **'{quantity} units'**
+  String foreignDescUnits(String quantity);
+
+  /// No description provided for @foreignDescBasis.
+  ///
+  /// In en, this message translates to:
+  /// **'Acquisition cost converted into reais at the Central Bank\'s closing (selling) rate on the date of each purchase.'**
+  String get foreignDescBasis;
 }
 
 class _AppLocalizationsDelegate

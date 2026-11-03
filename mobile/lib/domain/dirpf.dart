@@ -19,11 +19,3 @@ String? normalizeDirpfField(String label, String? raw, int maxLen) {
 const dirpfGroupLength = 2;
 const dirpfCodeLength = 2;
 const dirpfCountryLength = 3;
-
-/// "Grupo 03 · Código 01 · País 249" com o que o usuário informou; vazio quando nenhum dos
-/// três foi informado.
-String dirpfFichaText({String? group, String? code, String? country}) => [
-  if (group != null && group.isNotEmpty) 'Grupo $group',
-  if (code != null && code.isNotEmpty) 'Código $code',
-  if (country != null && country.isNotEmpty) 'País $country',
-].join(' · ');

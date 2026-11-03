@@ -30,9 +30,6 @@ void main() {
     }
   });
 
-  test('o texto da ficha junta só o que foi informado', () {
-    expect(dirpfFichaText(group: '03', code: '01', country: '249'), 'Grupo 03 · Código 01 · País 249');
-    expect(dirpfFichaText(country: '249'), 'País 249');
-    expect(dirpfFichaText(group: '', code: null), '');
-  });
+  // O texto da ficha (`dirpfFichaText`) mora em `l10n/foreign_tax_labels.dart`, porque
+  // depende do idioma; o teste dele está em `foreign_tax_screen_test.dart`.
 }

@@ -24,5 +24,12 @@ String formatDay(DateTime date, {String locale = 'pt'}) {
   return isPortuguese(locale) ? '$day/$month/${date.year}' : '$month/$day/${date.year}';
 }
 
+/// Quantidade sem zeros à direita, com o separador decimal do idioma (até 8 casas).
+String formatHoldingQuantity(double quantity, {required String locale}) {
+  var text = quantity.toStringAsFixed(8);
+  text = text.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+  return withDecimalSeparator(text, locale);
+}
+
 /// `YYYY-MM` → `MM/YYYY`.
 String formatPeriod(String period) => '${period.substring(5, 7)}/${period.substring(0, 4)}';
