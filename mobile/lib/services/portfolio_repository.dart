@@ -281,7 +281,7 @@ class PortfolioRepository {
   Future<void> setFundStructure(int assetId, FundStructure structure) async {
     await _updateFundDetail(assetId, {
       'structure': structure.value,
-    }, 'da estrutura');
+    }, FundSettingErrorCode.needTermBeforeStructure);
   }
 
   /// Grava como o estoque de rendimento até 31/12/2023 foi tributado (`null` = não
@@ -289,13 +289,13 @@ class PortfolioRepository {
   Future<void> setFundEstoque(int assetId, EstoqueOption? option) async {
     await _updateFundDetail(assetId, {
       'estoque_option': option?.value,
-    }, 'do estoque');
+    }, FundSettingErrorCode.needTermBeforeEstoque);
   }
 
   Future<void> _updateFundDetail(
     int assetId,
     Map<String, Object?> values,
-    String what,
+    FundSettingErrorCode missingTerm,
   ) async {
     final db = await AppDatabase.instance();
     final updated = await db.update(
@@ -304,9 +304,7 @@ class PortfolioRepository {
       where: 'asset_id = ?',
       whereArgs: [assetId],
     );
-    if (updated == 0) {
-      throw FormatException('Escolha o tipo do fundo antes $what');
-    }
+    if (updated == 0) throw FundSettingException(missingTerm);
   }
 
   /// Grava a administradora (ou o intermediário) do fundo, em texto livre: fundos do
@@ -322,9 +320,7 @@ class PortfolioRepository {
       whereArgs: [assetId],
     );
     if (rows.isEmpty) {
-      throw const FormatException(
-        'Escolha o tipo do fundo antes da administradora',
-      );
+      throw FundSettingException(FundSettingErrorCode.needTermBeforeAdministrator);
     }
     await db.update(
       'fund_details',
@@ -371,7 +367,7 @@ class PortfolioRepository {
     final db = await AppDatabase.instance();
     final digits = normalizeCnpj(cnpj ?? '');
     if (digits.isNotEmpty && digits.length != 14) {
-      throw const FormatException('O CNPJ precisa ter 14 dígitos');
+      throw FundSettingException(FundSettingErrorCode.cnpjMustHave14Digits);
     }
     final newCnpj = digits.isEmpty ? null : formatCnpj(digits);
     final newSubclass = (subclass?.trim().isEmpty ?? true)
@@ -390,9 +386,7 @@ class PortfolioRepository {
       whereArgs: [assetId],
     );
     if (newSubclass != null && details.isEmpty) {
-      throw const FormatException(
-        'Escolha o tipo do fundo antes da subclasse da CVM',
-      );
+      throw FundSettingException(FundSettingErrorCode.needTermBeforeSubclass);
     }
     final oldCnpj = assets.isEmpty ? null : assets.first['cnpj'] as String?;
     final oldSubclass = details.isEmpty

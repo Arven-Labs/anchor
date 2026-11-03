@@ -1,17 +1,41 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anchor_mobile/domain/come_cotas.dart';
 import 'package:anchor_mobile/domain/cost_basis.dart';
+import 'package:anchor_mobile/domain/fund_compensation.dart' show LossCredit, RecordNote;
+import 'package:anchor_mobile/domain/fund_redemption.dart';
 import 'package:anchor_mobile/domain/fund_tax.dart';
+import 'package:anchor_mobile/l10n/app_localizations.dart';
+import 'package:anchor_mobile/l10n/fund_tax_labels.dart' as labels;
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/fund.dart';
 import 'package:anchor_mobile/models/portfolio_transaction.dart';
-import 'package:anchor_mobile/screens/fund_tax_screen.dart';
 import 'package:anchor_mobile/services/fund_quota_sync.dart';
 import 'package:anchor_mobile/services/portfolio_repository.dart';
 
 void main() {
   DateTime d(String s) => DateTime.parse('${s}T00:00:00Z');
+
+  // Os textos da tela moram em `l10n/fund_tax_labels.dart` (ADR 0001) e recebem o idioma.
+  // Os testes em pt chamam por estes embrulhos; o inglês tem o grupo próprio no fim.
+  late AppLocalizations pt;
+  late AppLocalizations en;
+  setUpAll(() async {
+    pt = await AppLocalizations.delegate.load(const Locale('pt'));
+    en = await AppLocalizations.delegate.load(const Locale('en'));
+  });
+  String comeCotasStatusText(ComeCotasEstimate e) => labels.comeCotasStatusText(pt, e);
+  String comeCotasBasisText(ComeCotasEstimate e) => labels.comeCotasBasisText(pt, e);
+  String comeCotasCreditText(ComeCotasEstimate e) => labels.comeCotasCreditText(pt, e);
+  String estoqueText(FundReport r) => labels.estoqueText(pt, r);
+  String refundableText(FundReport r) => labels.refundableText(pt, r);
+  List<String> fundWarnings(FundReport r) => labels.fundWarnings(pt, r);
+  List<String> redemptionCompensationLines(RedemptionEstimate r) =>
+      labels.redemptionCompensationLines(pt, r);
+  String lossCreditText(LossCredit c) => labels.lossCreditText(pt, c);
+  String recordNoteText(RecordNote n) => labels.recordNoteText(pt, n);
+  String cvmStatusText(CvmStatus? s, DateTime? last) => labels.cvmStatusText(pt, s, last);
 
   final fund = Asset(
     id: 1,
@@ -145,6 +169,14 @@ void main() {
       expect(result.lossCredits.single.amount, closeTo(200, 1e-6));
       expect(result.lossCredits.single.tickers, ['AAA11']);
       expect(lossCreditText(result.lossCredits.single), contains('sem administradora'));
+      expect(
+        labels.lossCreditText(en, result.lossCredits.single),
+        'R\$ 200.00 — AAA11 (no administrator, Long term)',
+      );
+      expect(
+        lossCreditText(result.lossCredits.single),
+        'R\$ 200,00 — AAA11 (sem administradora, Longo prazo)',
+      );
     });
 
     test('sair de uma administradora com saldo de perda avisa até quando vai a guarda', () {
@@ -161,6 +193,13 @@ void main() {
       expect(text, contains('XP'));
       expect(text, contains('31/12/2026'));
       expect(text, contains('A lei não limita'));
+      expect(
+        labels.recordNoteText(en, note),
+        'All the funds you entered from administrator XP were redeemed by 06/01/2025. '
+        "The administrator is only required to keep the loss record (R\$ 200.00) until 12/31/2026 "
+        '(IN RFB 1.585, art. 15 §2). The law does not limit your right to offset, but check '
+        'with the administrator.',
+      );
 
       // depois de 31/12/2026 a garantia terminou
       final late = buildFundReports(
@@ -173,6 +212,10 @@ void main() {
       );
       expect(late.recordNotes.single.expired, isTrue);
       expect(recordNoteText(late.recordNotes.single), contains('terminou em 31/12/2026'));
+      expect(
+        labels.recordNoteText(en, late.recordNotes.single),
+        contains("obligation to keep the loss record (R\$ 200.00) ended on 12/31/2026"),
+      );
     });
 
     test('sem saldo de perda, ou sem administradora, não há aviso de guarda', () {
@@ -218,6 +261,12 @@ void main() {
       expect(warnings, hasLength(1));
       expect(warnings.single, contains('30/11/2025'));
       expect(warnings.single, contains('pode ter usado parte dele'));
+      expect(
+        labels
+            .fundWarnings(en, grouped.reports[1])
+            .singleWhere((w) => w.contains('loss credit in the group')),
+        startsWith('The semiannual quota tax of 11/30/2025 was recorded with R\$ '),
+      );
     });
 
     test('o crédito informado no come-cotas abate o saldo e muda o aviso', () {
@@ -266,6 +315,13 @@ void main() {
           .singleWhere((w) => w.contains('crédito de prejuízo'));
       expect(warning, contains('30/11/2025'));
       expect(warning, contains('só esse saldo foi abatido'));
+      expect(
+        labels
+            .fundWarnings(en, over.reports[1])
+            .singleWhere((w) => w.contains('loss credit')),
+        'The semiannual quota tax of 11/30/2025 says R\$ 300.00 of loss credit was used, '
+        'but the group only had R\$ 200.00: only that balance was deducted. Check the amount.',
+      );
     });
 
     test('o saldo do grupo abate o come-cotas estimado do outro fundo', () {
@@ -291,6 +347,11 @@ void main() {
       expect(estimate.taxBeforeCompensation, closeTo(30, 1e-6));
       expect(result.lossCredits.single.amount, closeTo(200, 1e-6));
       expect(comeCotasCreditText(estimate), contains('R\$ 30,00'));
+      expect(
+        labels.comeCotasCreditText(en, estimate),
+        'Loss credit of R\$ 200.00 has already reduced the gain: the tax would be R\$ 30.00 '
+        'without it.',
+      );
     });
 
     test('os textos do resgate dizem o prejuízo e o crédito usado', () {
@@ -301,6 +362,17 @@ void main() {
       final used = redemptionCompensationLines(result.reports[1].redemptions.single);
       expect(used.single, allOf(contains('R\$ 200,00'), contains('R\$ 0,00 em vez de R\$ 40,00')));
       expect(comeCotasCreditText(result.reports[0].estimate), isEmpty);
+
+      expect(
+        labels.redemptionCompensationLines(en, result.reports[0].redemptions.single).single,
+        'This redemption lost R\$ 200.00: it offsets the gain of later redemptions and '
+        'semiannual quota tax in the same group (same administrator and same type).',
+      );
+      expect(
+        labels.redemptionCompensationLines(en, result.reports[1].redemptions.single).single,
+        'Losses from earlier redemptions in the group offset R\$ 200.00 of the gain: tax '
+        'R\$ 0.00 instead of R\$ 40.00.',
+      );
     });
   });
 
@@ -790,11 +862,11 @@ void main() {
       ).single;
       expect(
         comeCotasStatusText(report.estimate),
-        'Próximo come-cotas em 29/05/2026: R\$ 30,00 (2.5000 cotas)',
+        'Próximo come-cotas em 29/05/2026: R\$ 30,00 (2,5000 cotas)',
       );
       expect(
         comeCotasBasisText(report.estimate),
-        'Base por cota R\$ 10,00 (custo médio) · ganho R\$ 200,00 × 15.0%',
+        'Base por cota R\$ 10,00 (custo médio) · ganho R\$ 200,00 × 15,0%',
       );
     });
 
@@ -898,7 +970,7 @@ void main() {
         ),
         allOf(contains('HTTP 503'), contains('02/10/2026')),
       );
-      expect(cvmDownloadWarning, contains('MB'));
+      expect(pt.fundCvmDownloadWarning, contains('MB'));
     });
 
     test('avisa resgate maior que as aplicações lançadas', () {
@@ -965,6 +1037,234 @@ void main() {
           isEmpty,
         );
       });
+
+      test('en: a frase do excesso e o aviso de cada resgate', () {
+        final report = reports(
+          history([
+            tx(3, TransactionType.venda, '2026-03-01', 50, 9),
+            tx(4, TransactionType.venda, '2026-03-02', 47.5, 9),
+          ]),
+        ).single;
+
+        expect(
+          labels.refundableText(en, report),
+          'Semiannual quota tax paid above the tax due: R\$ 30.00. The law does not provide a '
+          'refund of this excess (IN RFB 1.585/2015, art. 15; Law 14.754/2023, art. 17, §6). It '
+          'is tax paid on income that later disappeared, and it comes back as a loss to offset '
+          'against later gains. The app already adds this loss to the loss credit; the excess '
+          'itself is not included in the net amounts.',
+        );
+        final warnings = labels
+            .fundWarnings(en, report)
+            .where((w) => w.contains('exceeded the tax due'))
+            .toList();
+        expect(warnings, hasLength(2));
+        expect(
+          warnings.first,
+          'In the redemption of 03/01/2026 the semiannual quota tax paid exceeded the tax due by '
+          'R\$ 15.38: it stays out of the net amount (see the note about the excess).',
+        );
+      });
+    });
+  });
+
+  group('textos da tela em inglês', () {
+    String statusOf({FundTerm? term, List<FundQuota> quotas = const []}) =>
+        labels.comeCotasStatusText(
+          en,
+          reports(
+            [tx(1, TransactionType.compra, '2025-01-02', 100, 10)],
+            term: term,
+            quotas: quotas,
+          ).single.estimate,
+        );
+
+    test('a situação do come-cotas, a base e os motivos de não estimar', () {
+      final report = reports(
+        [tx(1, TransactionType.compra, '2025-01-02', 100, 10)],
+        quotas: [quota('2026-01-05', 12)],
+      ).single;
+      expect(
+        labels.comeCotasStatusText(en, report.estimate),
+        'Next semiannual quota tax on 05/29/2026: R\$ 30.00 (2.5000 quotas)',
+      );
+      expect(
+        labels.comeCotasBasisText(en, report.estimate),
+        'Basis per quota R\$ 10.00 (average cost) · gain R\$ 200.00 × 15.0%',
+      );
+      expect(
+        statusOf(),
+        'Choose the fund type to estimate the semiannual quota tax and the redemption tax.',
+      );
+      expect(
+        statusOf(term: FundTerm.longTerm),
+        'Enter the quota value to estimate the semiannual quota tax.',
+      );
+      expect(
+        statusOf(term: FundTerm.equity, quotas: [quota('2026-01-05', 12)]),
+        'Equity fund or investment entity: no semiannual quota tax.',
+      );
+      final empty = reports([
+        tx(1, TransactionType.compra, '2025-01-02', 100, 10),
+        tx(2, TransactionType.venda, '2025-06-01', 100, 11),
+      ]).single;
+      expect(labels.comeCotasStatusText(en, empty.estimate), 'No quotas in the portfolio.');
+    });
+
+    test('o estoque de 2023 e a origem da base', () {
+      FundReport closed({EstoqueOption? option, List<FundQuota> quotas = const []}) =>
+          buildFundReports(
+            assets: [fund],
+            transactions: [tx(1, TransactionType.compra, '2022-06-01', 100, 10)],
+            terms: {1: FundTerm.longTerm},
+            quotas: quotas,
+            today: d('2026-10-22'),
+            structures: {1: FundStructure.closed},
+            estoqueOptions: {1: ?option},
+          ).reports.single;
+
+      expect(
+        labels.estoqueText(en, closed()),
+        'Say how the 2023 stock was taxed to estimate the tax and the cost of the semiannual '
+        'quota tax.',
+      );
+      expect(
+        labels.estoqueText(en, closed(option: EstoqueOption.general)),
+        'Enter the quota of 12/31/2023 (or up to 10 days before) to estimate the stock.',
+      );
+      final estimated = closed(
+        option: EstoqueOption.option8,
+        quotas: [quota('2023-12-29', 14), quota('2026-10-20', 16)],
+      );
+      final text = labels.estoqueText(en, estimated);
+      expect(text, startsWith('2023 stock: gain of R\$ '));
+      expect(text, allOf(contains('up to 12/31/2023'), contains('at 8% = R\$ ')));
+      expect(
+        labels.comeCotasBasisText(en, estimated.estimate),
+        contains('(average cost plus the 2023 stock already taxed)'),
+      );
+      expect(
+        labels.estoqueText(
+          en,
+          reports([tx(1, TransactionType.compra, '2022-06-01', 100, 10)]).single,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('avisos de cota velha, come-cotas sem registro e resgate maior que as aplicações', () {
+      final stale = reports(
+        [tx(1, TransactionType.compra, '2025-01-02', 100, 10)],
+        quotas: [quota('2026-08-01', 12)],
+        today: '2026-10-22',
+      ).single;
+      final warnings = labels.fundWarnings(en, stale);
+      expect(
+        warnings[0],
+        'The latest quota value is more than 35 days old: the estimate may be out of date.',
+      );
+      expect(
+        warnings[1],
+        'The semiannual quota tax of 05/29/2026 has already passed with no deduction recorded: '
+        'enter the Semiannual quota tax transaction so the basis is right.',
+      );
+
+      final uncovered = reports([
+        tx(1, TransactionType.compra, '2025-01-01', 10, 10),
+        tx(2, TransactionType.venda, '2026-06-01', 15, 12),
+      ]).single;
+      expect(
+        labels.fundWarnings(en, uncovered).single,
+        'Redemption of 06/01/2026 is larger than the investments entered: the cost counts only '
+        'the known part.',
+      );
+    });
+
+    test('o estado da CVM em cada caso', () {
+      String t(CvmStatus? s, [DateTime? last]) => labels.cvmStatusText(en, s, last);
+      expect(t(null), isEmpty);
+      expect(t(null, d('2026-10-02')), 'Quotas read from the CVM. Last CVM quota: 10/02/2026.');
+      expect(
+        t(const CvmStatus(CvmStatusKind.noCnpj)),
+        "Enter the fund's CNPJ to read the quota from the CVM.",
+      );
+      expect(t(const CvmStatus(CvmStatusKind.pending)), 'Not read yet.');
+      expect(
+        t(const CvmStatus(CvmStatusKind.notFound)),
+        'The CVM returned no quota for this CNPJ (or subclass) in the months read. Check the '
+        'CNPJ.',
+      );
+      expect(
+        t(const CvmStatus(CvmStatusKind.needsSubclass, options: ['A'])),
+        'This CNPJ only has subclasses in the report: choose one.',
+      );
+      expect(
+        t(const CvmStatus(CvmStatusKind.error, message: 'HTTP 503'), d('2026-10-02')),
+        'Could not read the CVM right now (HTTP 503). Try again in a moment. Last CVM quota: '
+        '10/02/2026.',
+      );
+      expect(
+        t(const CvmStatus(CvmStatusKind.error)),
+        'Could not read the CVM right now (error). Try again in a moment.',
+      );
+    });
+
+    test('tipo, estrutura e estoque têm nome nos dois idiomas', () {
+      for (final l in [en, pt]) {
+        for (final term in FundTerm.values) {
+          expect(labels.fundTermName(l, term), isNotEmpty);
+        }
+        for (final s in FundStructure.values) {
+          expect(labels.fundStructureName(l, s), isNotEmpty);
+        }
+        for (final o in EstoqueOption.values) {
+          expect(labels.estoqueOptionName(l, o), isNotEmpty);
+        }
+      }
+      expect(labels.fundTermName(en, FundTerm.investmentEntity), 'Investment entity');
+      expect(labels.fundTermName(pt, FundTerm.investmentEntity), FundTerm.investmentEntity.label);
+      expect(labels.fundStructureName(en, FundStructure.exclusive), 'Exclusive');
+      expect(labels.estoqueOptionName(en, EstoqueOption.option8), 'Option (8%)');
+      for (final term in FundTerm.values) {
+        expect(labels.fundTermName(pt, term), term.label, reason: 'pt é o texto de antes');
+      }
+      for (final s in FundStructure.values) {
+        expect(labels.fundStructureName(pt, s), s.label);
+      }
+      for (final o in EstoqueOption.values) {
+        expect(labels.estoqueOptionName(pt, o), o.label);
+      }
+    });
+
+    test('erros de gravação do fundo por código, com texto nos dois idiomas', () {
+      for (final code in FundSettingErrorCode.values) {
+        final error = FundSettingException(code);
+        for (final l in [en, pt]) {
+          expect(labels.fundSettingErrorText(l, error), isNotEmpty, reason: '$code');
+        }
+        expect(error, isA<FormatException>(), reason: 'on FormatException continua valendo');
+      }
+      expect(
+        labels.fundSettingErrorText(
+          en,
+          FundSettingException(FundSettingErrorCode.cnpjMustHave14Digits),
+        ),
+        'The CNPJ must have 14 digits',
+      );
+      expect(
+        labels.fundSettingErrorText(
+          pt,
+          FundSettingException(FundSettingErrorCode.needTermBeforeStructure),
+        ),
+        'Escolha o tipo do fundo antes da estrutura',
+      );
+      expect(
+        labels.fundSettingErrorText(
+          en,
+          FundSettingException(FundSettingErrorCode.needTermBeforeStructure),
+        ),
+        'Choose the fund type before the structure',
+      );
     });
   });
 }

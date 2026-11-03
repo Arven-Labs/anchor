@@ -1,171 +1,14 @@
 import 'package:flutter/material.dart';
 
-import '../domain/come_cotas.dart';
 import '../domain/fund_compensation.dart' show LossCredit, RecordNote;
 import '../domain/fund_redemption.dart';
 import '../domain/fund_tax.dart';
+import '../domain/tax_format.dart' show formatBrl, formatDay;
+import '../l10n/app_localizations.dart';
+import '../l10n/fund_tax_labels.dart';
 import '../models/fund.dart';
 import '../services/fund_quota_sync.dart';
 import '../services/portfolio_repository.dart';
-import '../domain/tax_format.dart' show formatBrl, formatDay;
-
-/// Situação do come-cotas de um fundo numa frase.
-@visibleForTesting
-String comeCotasStatusText(ComeCotasEstimate estimate) {
-  switch (estimate.status) {
-    case EstimateStatus.noPosition:
-      return 'Sem cotas na carteira.';
-    case EstimateStatus.noTerm:
-      return 'Escolha o tipo do fundo para estimar o come-cotas e o IR do resgate.';
-    case EstimateStatus.noQuota:
-      return 'Lance o valor da cota para estimar o come-cotas.';
-    case EstimateStatus.exempt:
-      return 'Fundo de ações ou entidade de investimento: sem come-cotas.';
-    case EstimateStatus.estimated:
-      return 'Próximo come-cotas em ${formatDay(estimate.referenceDate)}: '
-          '${formatBrl(estimate.tax)} '
-          '(${estimate.quotasDeducted.toStringAsFixed(4)} cotas)';
-  }
-}
-
-/// Como a base do ganho foi escolhida; vazio fora da estimativa.
-@visibleForTesting
-String comeCotasBasisText(ComeCotasEstimate estimate) {
-  final basis = estimate.basisPerQuota;
-  if (estimate.status != EstimateStatus.estimated || basis == null) return '';
-  final origin = switch (estimate.basisSource) {
-    BasisSource.lastComeCotas => 'valor da cota no último come-cotas',
-    BasisSource.estoque => 'custo médio mais o estoque de 2023 já tributado',
-    _ => 'custo médio',
-  };
-  return 'Base por cota ${formatBrl(basis)} ($origin) · ganho '
-      '${formatBrl(estimate.gain)} × ${(estimate.rate * 100).toStringAsFixed(1)}%';
-}
-
-/// O estoque de 2023 (Lei 14.754, arts. 27 e 28) numa frase; vazio quando o fundo não
-/// tem estoque.
-@visibleForTesting
-String estoqueText(FundReport report) {
-  final estoque = report.estoque;
-  switch (report.estoqueStatus) {
-    case EstoqueStatus.notApplicable:
-      return '';
-    case EstoqueStatus.notTaxed:
-      return 'Diga como o estoque de 2023 foi tributado para estimar o imposto '
-          'e o custo do come-cotas.';
-    case EstoqueStatus.needsQuota:
-      return 'Lance a cota de 31/12/2023 (ou de até 10 dias antes) para estimar '
-          'o estoque.';
-    case EstoqueStatus.estimated:
-      if (estoque == null) return '';
-      return 'Estoque de 2023: ganho de ${formatBrl(estoque.base)} até '
-          '${formatDay(estoque.date)} (cota ${formatBrl(estoque.quotaValue)}) a '
-          '${(estoque.rate * 100).toStringAsFixed(0)}% = '
-          '${formatBrl(estoque.tax)}';
-  }
-}
-
-/// O come-cotas pago acima do IR devido, somado; vazio sem excesso. A lei não prevê
-/// restituição (IN RFB 1.585/2015, art. 15; Lei 14.754/2023, art. 17, §6): é imposto
-/// pago sobre rendimento que depois sumiu e volta como perda a compensar.
-@visibleForTesting
-String refundableText(FundReport report) {
-  final total = report.refundableComeCotas;
-  if (total <= 0.005) return '';
-  return 'Come-cotas pago acima do IR devido: ${formatBrl(total)}. A lei não '
-      'prevê restituição desse excesso (IN RFB 1.585/2015, art. 15; Lei '
-      '14.754/2023, art. 17, §6). É imposto pago sobre rendimento que depois '
-      'sumiu, e ele volta como perda a compensar em ganhos posteriores. O app já '
-      'soma essa perda ao crédito de prejuízo; o valor do excesso em si não '
-      'está incluído nos líquidos.';
-}
-
-/// Avisos do cartão do fundo, em frases.
-@visibleForTesting
-List<String> fundWarnings(FundReport report) {
-  final estimate = report.estimate;
-  return [
-    if (estimate.staleQuota)
-      'O último valor de cota tem mais de $staleQuotaDays dias: a estimativa '
-          'pode estar velha.',
-    if (estimate.lastReferenceUnrecorded != null)
-      'O come-cotas de ${formatDay(estimate.lastReferenceUnrecorded!)} já '
-          'passou sem desconto registrado: lance a transação Come-cotas para a '
-          'base ficar certa.',
-    for (final note in report.creditNotes)
-      if (note.informed == null)
-        'O come-cotas de ${formatDay(note.date)} foi registrado com '
-            '${formatBrl(note.balance)} de crédito de prejuízo no grupo: a '
-            'administradora pode ter usado parte dele, então o saldo de crédito '
-            'mostrado pode estar acima do real. Preencha o crédito de prejuízo '
-            'usado nessa transação para resolver.'
-      else
-        'O come-cotas de ${formatDay(note.date)} diz que ${formatBrl(note.informed!)} '
-            'de crédito de prejuízo foram usados, mas o grupo só tinha '
-            '${formatBrl(note.balance)}: só esse saldo foi abatido. Confira o valor.',
-    for (final redemption in report.redemptions) ...[
-      if (redemption.uncoveredQuotas > 1e-9)
-        'Resgate de ${formatDay(redemption.date)} maior que as aplicações '
-            'lançadas: o custo considera só a parte conhecida.',
-      if (redemption.excessComeCotas > 0.005)
-        'No resgate de ${formatDay(redemption.date)} o come-cotas pago passou '
-            'do IR devido em ${formatBrl(redemption.excessComeCotas)}: fica '
-            'fora do líquido (veja a nota sobre o excesso).',
-    ],
-  ];
-}
-
-/// Quanto do ganho da estimativa o crédito de prejuízo já abateu; vazio sem crédito.
-@visibleForTesting
-String comeCotasCreditText(ComeCotasEstimate estimate) {
-  if (estimate.lossCreditUsed <= 0.005) return '';
-  return 'Crédito de prejuízo de ${formatBrl(estimate.lossCreditUsed)} já '
-      'reduziu o ganho: o imposto seria '
-      '${formatBrl(estimate.taxBeforeCompensation)} sem ele.';
-}
-
-/// O que o resgate tem de compensação, uma frase por linha; vazio sem prejuízo nem
-/// crédito.
-@visibleForTesting
-List<String> redemptionCompensationLines(RedemptionEstimate redemption) {
-  return [
-    if (redemption.lossCreditUsed > 0.005)
-      'Prejuízo de resgates anteriores do grupo abateu '
-          '${formatBrl(redemption.lossCreditUsed)} do ganho: IR '
-          '${formatBrl(redemption.ir)} em vez de '
-          '${formatBrl(redemption.irBeforeCompensation)}.',
-    if (redemption.lossCreated > 0.005)
-      'Este resgate perdeu ${formatBrl(redemption.lossCreated)}: compensa o '
-          'ganho de resgates e come-cotas posteriores do mesmo grupo '
-          '(mesma administradora e mesmo tipo).',
-  ];
-}
-
-/// Uma linha por grupo com prejuízo ainda a compensar.
-@visibleForTesting
-String lossCreditText(LossCredit credit) =>
-    '${formatBrl(credit.amount)} — ${credit.tickers.join(', ')} '
-    '(${credit.administrator ?? 'sem administradora'}, ${credit.term.label})';
-
-/// O aviso de guarda do registro das perdas de uma administradora que o usuário
-/// zerou: a lei só obriga a administradora a guardar o registro até o fim do ano
-/// seguinte (IN RFB 1.585, art. 15 §2) e não limita o direito de compensar.
-@visibleForTesting
-String recordNoteText(RecordNote note) {
-  final head =
-      'Todos os fundos que você lançou da administradora ${note.administrator} '
-      'foram resgatados até ${formatDay(note.redeemedOn)}. ';
-  final until = formatDay(note.guaranteedUntil);
-  final balance = formatBrl(note.balance);
-  if (note.expired) {
-    return '$head A obrigação da administradora de guardar o registro das '
-        'perdas ($balance) terminou em $until (IN RFB 1.585, art. 15 §2): '
-        'confira se ela ainda tem o registro antes de contar com o saldo.';
-  }
-  return '$head A administradora só é obrigada a guardar o registro das perdas '
-      '($balance) até $until (IN RFB 1.585, art. 15 §2). A lei não limita o seu '
-      'direito de compensar, mas confira com a administradora.';
-}
 
 /// IR e IOF de fundos (ver `buildFundReports`): cota por data, estimativa do
 /// próximo come-cotas e resgates. Estimativa informativa: o imposto sai na fonte
@@ -178,40 +21,6 @@ class FundTaxScreen extends StatefulWidget {
 
   @override
   State<FundTaxScreen> createState() => _FundTaxScreenState();
-}
-
-/// Aviso antes de baixar: o informe da CVM é um zip de ~12 MB por mês fechado (medido
-/// em setembro/2026; o mês corrente, parcial, é menor).
-@visibleForTesting
-const cvmDownloadWarning =
-    'Baixa da CVM um arquivo de até ~12 MB por mês lido (em geral 4 meses, '
-    'uns 40 MB). Continuar?';
-
-/// Estado da leitura da CVM de um fundo numa frase; vazio se não há o que dizer.
-@visibleForTesting
-String cvmStatusText(CvmStatus? status, DateTime? lastCvmDate) {
-  final latest = lastCvmDate == null
-      ? ''
-      : ' Última cota da CVM: ${formatDay(lastCvmDate)}.';
-  if (status == null) {
-    return lastCvmDate == null ? '' : 'Cotas lidas da CVM.$latest';
-  }
-  switch (status.kind) {
-    case CvmStatusKind.noCnpj:
-      return 'Informe o CNPJ do fundo para ler a cota da CVM.';
-    case CvmStatusKind.pending:
-      return 'Ainda não lida.$latest';
-    case CvmStatusKind.ok:
-      return 'Cotas lidas da CVM.$latest';
-    case CvmStatusKind.notFound:
-      return 'A CVM não trouxe cota para este CNPJ (ou subclasse) nos meses '
-          'lidos. Confira o CNPJ.';
-    case CvmStatusKind.needsSubclass:
-      return 'Este CNPJ só tem subclasses no informe: escolha uma.';
-    case CvmStatusKind.error:
-      return 'Não foi possível ler a CVM agora (${status.message ?? 'erro'}). '
-          'Tente de novo em instantes.$latest';
-  }
 }
 
 class _FundTaxScreenState extends State<FundTaxScreen> {
@@ -266,6 +75,10 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// A frase da recusa de uma configuração, no idioma da tela.
+  String _settingError(FormatException e) =>
+      e is FundSettingException ? fundSettingErrorText(AppLocalizations.of(context), e) : e.message;
+
   /// Grava o CNPJ e a subclasse; trocar um deles apaga as cotas já lidas da CVM.
   Future<void> _setCvm(FundReport report, {String? cnpj, String? subclass}) async {
     try {
@@ -276,7 +89,7 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
         subclass: cnpj != null ? null : subclass ?? _subclasses[report.asset.id],
       );
     } on FormatException catch (e) {
-      _say(e.message);
+      _say(_settingError(e));
       return;
     }
     _statuses.remove(report.asset.id);
@@ -287,7 +100,7 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
     try {
       await _repository.setFundAdministrator(report.asset.id!, administrator);
     } on FormatException catch (e) {
-      _say(e.message);
+      _say(_settingError(e));
       return;
     }
     await _load();
@@ -297,7 +110,7 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
     try {
       await _repository.setFundStructure(report.asset.id!, structure);
     } on FormatException catch (e) {
-      _say(e.message);
+      _say(_settingError(e));
       return;
     }
     await _load();
@@ -307,7 +120,7 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
     try {
       await _repository.setFundEstoque(report.asset.id!, option);
     } on FormatException catch (e) {
-      _say(e.message);
+      _say(_settingError(e));
       return;
     }
     await _load();
@@ -320,19 +133,20 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
   }
 
   Future<void> _refreshCvm() async {
+    final l = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Atualizar da CVM'),
-        content: const Text(cvmDownloadWarning),
+        title: Text(l.fundRefreshCvm),
+        content: Text(l.fundCvmDownloadWarning),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
+            child: Text(l.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Baixar'),
+            child: Text(l.fundDownload),
           ),
         ],
       ),
@@ -340,17 +154,17 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
     if (confirmed != true || !mounted) return;
     setState(() {
       _refreshing = true;
-      _progress = 'Preparando…';
+      _progress = l.fundProgressPreparing;
     });
     try {
       final statuses = await _sync.refresh(
         onProgress: (done, total) {
-          if (mounted) setState(() => _progress = 'Lendo mês $done de $total…');
+          if (mounted) setState(() => _progress = l.fundProgressReading(done, total));
         },
       );
       _statuses = statuses;
     } catch (e) {
-      _say('Não foi possível ler a CVM: $e');
+      _say(l.fundCvmReadFailed('$e'));
     }
     if (!mounted) return;
     setState(() {
@@ -386,18 +200,16 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('IR de fundos')),
+      appBar: AppBar(title: Text(l.fundTaxTitle)),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 Text(
-                  'Estimativa com as transações e as cotas lançadas neste app. '
-                  'O come-cotas e o IR do resgate saem do fundo na fonte: não há '
-                  'DARF. As regras vêm de fontes secundárias; confira na '
-                  'Receita e no extrato do fundo.',
+                  l.fundTaxDisclaimer,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
@@ -405,7 +217,7 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
                   FilledButton.tonalIcon(
                     onPressed: _refreshing ? null : _refreshCvm,
                     icon: const Icon(Icons.cloud_download),
-                    label: const Text('Atualizar da CVM'),
+                    label: Text(l.fundRefreshCvm),
                   ),
                   if (_progress != null) ...[
                     const SizedBox(height: 8),
@@ -420,16 +232,15 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
                 ],
                 if (_lossCredits.isNotEmpty) ...[
                   Text(
-                    'Prejuízo a compensar em ganhos e come-cotas posteriores '
-                    '(mesma administradora e mesmo tipo)',
+                    l.fundLossCreditsHeader,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  for (final credit in _lossCredits) Text(lossCreditText(credit)),
+                  for (final credit in _lossCredits) Text(lossCreditText(l, credit)),
                   const SizedBox(height: 12),
                 ],
                 for (final note in _recordNotes) ...[
                   Text(
-                    recordNoteText(note),
+                    recordNoteText(l, note),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.orange,
                     ),
@@ -437,9 +248,9 @@ class _FundTaxScreenState extends State<FundTaxScreen> {
                   const SizedBox(height: 12),
                 ],
                 if (_reports.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 24),
-                    child: Center(child: Text('Nenhum fundo cadastrado ainda.')),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 24),
+                    child: Center(child: Text(l.fundNone)),
                   )
                 else
                   for (final report in _reports)
@@ -496,8 +307,14 @@ class _FundCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final error = Theme.of(context).colorScheme.error;
+    final l = AppLocalizations.of(context);
+    final locale = l.localeName;
+    String brl(double value) => formatBrl(value, locale: locale);
     final estimate = report.estimate;
-    final basis = comeCotasBasisText(estimate);
+    final basis = comeCotasBasisText(l, estimate);
+    final estoque = estoqueText(l, report);
+    final refundable = refundableText(l, report);
+    final creditText = comeCotasCreditText(l, estimate);
     final cvmDates = [
       for (final q in report.quotas)
         if (q.source == 'cvm') q.date,
@@ -505,7 +322,7 @@ class _FundCard extends StatelessWidget {
     final lastCvm = cvmDates.isEmpty
         ? null
         : cvmDates.reduce((a, b) => a.isAfter(b) ? a : b);
-    final cvmText = cvmStatusText(cvmStatus, lastCvm);
+    final cvmText = cvmStatusText(l, cvmStatus, lastCvm);
     final options = cvmStatus?.kind == CvmStatusKind.needsSubclass
         ? cvmStatus!.options
         : [?subclass];
@@ -522,9 +339,11 @@ class _FundCard extends StatelessWidget {
             const SizedBox(height: 12),
             DropdownButtonFormField<FundTerm>(
               initialValue: report.term,
-              decoration: const InputDecoration(labelText: 'Tipo do fundo'),
+              decoration: InputDecoration(labelText: l.fundTermLabel),
               items: FundTerm.values
-                  .map((t) => DropdownMenuItem(value: t, child: Text(t.label)))
+                  .map(
+                    (t) => DropdownMenuItem(value: t, child: Text(fundTermName(l, t))),
+                  )
                   .toList(),
               onChanged: (value) {
                 if (value != null) onTerm(value);
@@ -535,12 +354,13 @@ class _FundCard extends StatelessWidget {
               DropdownButtonFormField<FundStructure>(
                 key: ValueKey('structure-${report.structure}'),
                 initialValue: report.structure,
-                decoration: const InputDecoration(
-                  labelText: 'Estrutura do fundo (Lei 14.754)',
-                ),
+                decoration: InputDecoration(labelText: l.fundStructureLabel),
                 items: FundStructure.values
                     .map(
-                      (s) => DropdownMenuItem(value: s, child: Text(s.label)),
+                      (s) => DropdownMenuItem(
+                        value: s,
+                        child: Text(fundStructureName(l, s)),
+                      ),
                     )
                     .toList(),
                 onChanged: (value) {
@@ -553,18 +373,16 @@ class _FundCard extends StatelessWidget {
                 DropdownButtonFormField<EstoqueOption?>(
                   key: ValueKey('estoque-${report.estoqueOption}'),
                   initialValue: report.estoqueOption,
-                  decoration: const InputDecoration(
-                    labelText: 'Estoque de 2023 (arts. 27 e 28)',
-                  ),
+                  decoration: InputDecoration(labelText: l.fundEstoqueLabel),
                   items: [
-                    const DropdownMenuItem<EstoqueOption?>(
+                    DropdownMenuItem<EstoqueOption?>(
                       value: null,
-                      child: Text('Não tributado / não informado'),
+                      child: Text(l.fundEstoqueNotInformed),
                     ),
                     for (final option in EstoqueOption.values)
                       DropdownMenuItem<EstoqueOption?>(
                         value: option,
-                        child: Text(option.label),
+                        child: Text(estoqueOptionName(l, option)),
                       ),
                   ],
                   onChanged: onEstoque,
@@ -586,13 +404,11 @@ class _FundCard extends StatelessWidget {
               DropdownButtonFormField<String?>(
                 key: ValueKey('subclass-$subclass-${options.length}'),
                 initialValue: subclass,
-                decoration: const InputDecoration(
-                  labelText: 'Subclasse da CVM',
-                ),
+                decoration: InputDecoration(labelText: l.fundSubclassLabel),
                 items: [
-                  const DropdownMenuItem<String?>(
+                  DropdownMenuItem<String?>(
                     value: null,
-                    child: Text('Classe (sem subclasse)'),
+                    child: Text(l.fundSubclassNone),
                   ),
                   for (final option in options)
                     DropdownMenuItem<String?>(value: option, child: Text(option)),
@@ -613,17 +429,14 @@ class _FundCard extends StatelessWidget {
               ),
             const SizedBox(height: 12),
             Text(
-              comeCotasStatusText(estimate),
+              comeCotasStatusText(l, estimate),
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             if (basis.isNotEmpty) Text(basis, style: textTheme.bodySmall),
-            if (estoqueText(report).isNotEmpty)
-              Text(estoqueText(report), style: textTheme.bodySmall),
-            if (refundableText(report).isNotEmpty)
-              Text(refundableText(report), style: textTheme.bodySmall),
-            if (comeCotasCreditText(estimate).isNotEmpty)
-              Text(comeCotasCreditText(estimate), style: textTheme.bodySmall),
-            for (final warning in fundWarnings(report))
+            if (estoque.isNotEmpty) Text(estoque, style: textTheme.bodySmall),
+            if (refundable.isNotEmpty) Text(refundable, style: textTheme.bodySmall),
+            if (creditText.isNotEmpty) Text(creditText, style: textTheme.bodySmall),
+            for (final warning in fundWarnings(l, report))
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(warning, style: TextStyle(color: error)),
@@ -631,7 +444,7 @@ class _FundCard extends StatelessWidget {
             ExpansionTile(
               tilePadding: EdgeInsets.zero,
               title: Text(
-                'Valor da cota (${report.quotas.length})',
+                l.fundQuotasTitle(report.quotas.length),
                 style: textTheme.bodyMedium,
               ),
               children: [
@@ -640,12 +453,12 @@ class _FundCard extends StatelessWidget {
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     title: Text(
-                      '${formatDay(quota.date)} — ${formatBrl(quota.value)}'
+                      '${formatDay(quota.date, locale: locale)} — ${brl(quota.value)}'
                       '${quota.source == 'cvm' ? ' · CVM' : ''}',
                     ),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete_outline),
-                      tooltip: 'Apagar cota',
+                      tooltip: l.fundDeleteQuota,
                       onPressed: () => onDeleteQuota(quota),
                     ),
                   ),
@@ -654,7 +467,7 @@ class _FundCard extends StatelessWidget {
                   child: TextButton.icon(
                     onPressed: onAddQuota,
                     icon: const Icon(Icons.add),
-                    label: const Text('Lançar cota'),
+                    label: Text(l.fundAddQuota),
                   ),
                 ),
               ],
@@ -663,7 +476,7 @@ class _FundCard extends StatelessWidget {
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 title: Text(
-                  'Come-cotas registrados (${report.deductions.length})',
+                  l.fundDeductionsTitle(report.deductions.length),
                   style: textTheme.bodyMedium,
                 ),
                 children: [
@@ -671,11 +484,16 @@ class _FundCard extends StatelessWidget {
                     ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      title: Text(formatDay(tx.date)),
+                      title: Text(formatDay(tx.date, locale: locale)),
                       subtitle: Text(
-                        '${tx.quantity} cotas a ${formatBrl(tx.unitPrice ?? 0)}'
-                        ' · imposto ${formatBrl(tx.totalValue)}'
-                        '${tx.lossCreditUsed != null ? ' · crédito usado ${formatBrl(tx.lossCreditUsed!)}' : ''}',
+                        l.fundDeductionLine(
+                          '${tx.quantity}',
+                          brl(tx.unitPrice ?? 0),
+                          brl(tx.totalValue),
+                          tx.lossCreditUsed != null
+                              ? l.fundDeductionCredit(brl(tx.lossCreditUsed!))
+                              : '',
+                        ),
                       ),
                     ),
                 ],
@@ -684,7 +502,7 @@ class _FundCard extends StatelessWidget {
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 title: Text(
-                  'Resgates e amortizações estimados (${report.redemptions.length})',
+                  l.fundRedemptionsTitle(report.redemptions.length),
                   style: textTheme.bodyMedium,
                 ),
                 children: [
@@ -706,22 +524,34 @@ class _RedemptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final locale = l.localeName;
+    String brl(double value) => formatBrl(value, locale: locale);
+    final date = formatDay(redemption.date, locale: locale);
     return ListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
       title: Text(
         redemption.isAmortization
-            ? '${formatDay(redemption.date)} — amortização (cota a '
-                  '${formatBrl(redemption.quotaValue)}; as cotas ficam)'
-            : '${formatDay(redemption.date)} — ${redemption.quotas} cotas a '
-                  '${formatBrl(redemption.quotaValue)}',
+            ? l.fundRedemptionAmortization(date, brl(redemption.quotaValue))
+            : l.fundRedemptionTitle(
+                date,
+                '${redemption.quotas}',
+                brl(redemption.quotaValue),
+              ),
       ),
       subtitle: Text(
-        'Bruto ${formatBrl(redemption.gross)} · IOF ${formatBrl(redemption.iof)}'
-        ' · IR ${formatBrl(redemption.ir)} · líquido '
-        '${formatBrl(redemption.net)}'
-        '${redemption.comeCotasCredit > 0.005 ? '\nCome-cotas já pago abateu ${formatBrl(redemption.comeCotasCredit)} do IR' : ''}'
-        '${[for (final line in redemptionCompensationLines(redemption)) '\n$line'].join()}',
+        [
+          l.fundRedemptionDetail(
+            brl(redemption.gross),
+            brl(redemption.iof),
+            brl(redemption.ir),
+            brl(redemption.net),
+          ),
+          if (redemption.comeCotasCredit > 0.005)
+            l.fundRedemptionComeCotasCredit(brl(redemption.comeCotasCredit)),
+          ...redemptionCompensationLines(l, redemption),
+        ].join('\n'),
       ),
     );
   }
@@ -759,21 +589,22 @@ class _AdministratorFieldState extends State<_AdministratorField> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return TextField(
       controller: _controller,
       enabled: widget.enabled,
       decoration: InputDecoration(
-        labelText: 'Administradora / intermediário (compensa prejuízo)',
-        hintText: 'ex.: XP, BTG',
+        labelText: l.fundAdministratorLabel,
+        hintText: l.fundAdministratorHint,
         helperText: !widget.enabled
-            ? 'Escolha o tipo do fundo primeiro.'
+            ? l.fundAdministratorHelpNoTerm
             : widget.administrator == null
-            ? 'Sem isso, o fundo só compensa prejuízo com ele mesmo.'
-            : 'Fundos do mesmo tipo e da mesma administradora compensam entre si.',
+            ? l.fundAdministratorHelpNone
+            : l.fundAdministratorHelpSet,
         helperMaxLines: 2,
         suffixIcon: IconButton(
           icon: const Icon(Icons.check),
-          tooltip: 'Salvar administradora',
+          tooltip: l.fundSaveAdministrator,
           onPressed: widget.enabled
               ? () => widget.onSave(_controller.text)
               : null,
@@ -808,16 +639,17 @@ class _CvmCnpjFieldState extends State<_CvmCnpjField> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return TextField(
       key: ValueKey('cnpj-${widget.cnpj}'),
       controller: _controller,
       keyboardType: TextInputType.number,
       decoration: InputDecoration(
-        labelText: 'CNPJ do fundo (cota pela CVM)',
+        labelText: l.fundCnpjLabel,
         hintText: '00.000.000/0000-00',
         suffixIcon: IconButton(
           icon: const Icon(Icons.check),
-          tooltip: 'Salvar CNPJ',
+          tooltip: l.fundSaveCnpj,
           onPressed: () => widget.onSave(_controller.text),
         ),
       ),
@@ -864,8 +696,9 @@ class _QuotaDialogState extends State<_QuotaDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return AlertDialog(
-      title: Text('Cota de ${widget.ticker}'),
+      title: Text(l.fundQuotaDialogTitle(widget.ticker)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -873,11 +706,11 @@ class _QuotaDialogState extends State<_QuotaDialog> {
             controller: _valueController,
             autofocus: true,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Valor da cota (R\$)'),
+            decoration: InputDecoration(labelText: l.fundQuotaValueLabel),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text('Data: ${formatDay(_date)}'),
+            title: Text(l.fundDate(formatDay(_date, locale: l.localeName))),
             trailing: const Icon(Icons.calendar_today),
             onTap: _pickDate,
           ),
@@ -886,9 +719,9 @@ class _QuotaDialogState extends State<_QuotaDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
+          child: Text(l.actionCancel),
         ),
-        FilledButton(onPressed: _confirm, child: const Text('Salvar')),
+        FilledButton(onPressed: _confirm, child: Text(l.actionSave)),
       ],
     );
   }

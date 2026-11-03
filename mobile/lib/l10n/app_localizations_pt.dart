@@ -1355,4 +1355,371 @@ class AppLocalizationsPt extends AppLocalizations {
   ) {
     return 'Saldo insuficiente de $ticker: tem $available e a troca entrega $requested.';
   }
+
+  @override
+  String get fundTaxTitle => 'IR de fundos';
+
+  @override
+  String get fundTaxDisclaimer =>
+      'Estimativa com as transações e as cotas lançadas neste app. O come-cotas e o IR do resgate saem do fundo na fonte: não há DARF. As regras vêm de fontes secundárias; confira na Receita e no extrato do fundo.';
+
+  @override
+  String get fundRefreshCvm => 'Atualizar da CVM';
+
+  @override
+  String get fundCvmDownloadWarning =>
+      'Baixa da CVM um arquivo de até ~12 MB por mês lido (em geral 4 meses, uns 40 MB). Continuar?';
+
+  @override
+  String get fundDownload => 'Baixar';
+
+  @override
+  String get fundProgressPreparing => 'Preparando…';
+
+  @override
+  String fundProgressReading(int done, int total) {
+    return 'Lendo mês $done de $total…';
+  }
+
+  @override
+  String fundCvmReadFailed(String error) {
+    return 'Não foi possível ler a CVM: $error';
+  }
+
+  @override
+  String get fundLossCreditsHeader =>
+      'Prejuízo a compensar em ganhos e come-cotas posteriores (mesma administradora e mesmo tipo)';
+
+  @override
+  String fundLossCreditLine(
+    String amount,
+    String tickers,
+    String administrator,
+    String term,
+  ) {
+    return '$amount — $tickers ($administrator, $term)';
+  }
+
+  @override
+  String get fundNoAdministrator => 'sem administradora';
+
+  @override
+  String get fundNone => 'Nenhum fundo cadastrado ainda.';
+
+  @override
+  String get fundStatusNoPosition => 'Sem cotas na carteira.';
+
+  @override
+  String get fundStatusNoTerm =>
+      'Escolha o tipo do fundo para estimar o come-cotas e o IR do resgate.';
+
+  @override
+  String get fundStatusNoQuota =>
+      'Lance o valor da cota para estimar o come-cotas.';
+
+  @override
+  String get fundStatusExempt =>
+      'Fundo de ações ou entidade de investimento: sem come-cotas.';
+
+  @override
+  String fundStatusEstimated(String date, String tax, String quotas) {
+    return 'Próximo come-cotas em $date: $tax ($quotas cotas)';
+  }
+
+  @override
+  String fundBasis(String basis, String origin, String gain, String rate) {
+    return 'Base por cota $basis ($origin) · ganho $gain × $rate%';
+  }
+
+  @override
+  String get fundBasisLastComeCotas => 'valor da cota no último come-cotas';
+
+  @override
+  String get fundBasisEstoque =>
+      'custo médio mais o estoque de 2023 já tributado';
+
+  @override
+  String get fundBasisAverageCost => 'custo médio';
+
+  @override
+  String get fundEstoqueNotTaxed =>
+      'Diga como o estoque de 2023 foi tributado para estimar o imposto e o custo do come-cotas.';
+
+  @override
+  String get fundEstoqueNeedsQuota =>
+      'Lance a cota de 31/12/2023 (ou de até 10 dias antes) para estimar o estoque.';
+
+  @override
+  String fundEstoqueEstimated(
+    String base,
+    String date,
+    String quota,
+    String rate,
+    String tax,
+  ) {
+    return 'Estoque de 2023: ganho de $base até $date (cota $quota) a $rate% = $tax';
+  }
+
+  @override
+  String fundRefundable(String total) {
+    return 'Come-cotas pago acima do IR devido: $total. A lei não prevê restituição desse excesso (IN RFB 1.585/2015, art. 15; Lei 14.754/2023, art. 17, §6). É imposto pago sobre rendimento que depois sumiu, e ele volta como perda a compensar em ganhos posteriores. O app já soma essa perda ao crédito de prejuízo; o valor do excesso em si não está incluído nos líquidos.';
+  }
+
+  @override
+  String fundWarnStaleQuota(int days) {
+    return 'O último valor de cota tem mais de $days dias: a estimativa pode estar velha.';
+  }
+
+  @override
+  String fundWarnUnrecordedDeduction(String date) {
+    return 'O come-cotas de $date já passou sem desconto registrado: lance a transação Come-cotas para a base ficar certa.';
+  }
+
+  @override
+  String fundWarnCreditNotInformed(String date, String balance) {
+    return 'O come-cotas de $date foi registrado com $balance de crédito de prejuízo no grupo: a administradora pode ter usado parte dele, então o saldo de crédito mostrado pode estar acima do real. Preencha o crédito de prejuízo usado nessa transação para resolver.';
+  }
+
+  @override
+  String fundWarnCreditExceedsBalance(
+    String date,
+    String informed,
+    String balance,
+  ) {
+    return 'O come-cotas de $date diz que $informed de crédito de prejuízo foram usados, mas o grupo só tinha $balance: só esse saldo foi abatido. Confira o valor.';
+  }
+
+  @override
+  String fundWarnRedemptionUncovered(String date) {
+    return 'Resgate de $date maior que as aplicações lançadas: o custo considera só a parte conhecida.';
+  }
+
+  @override
+  String fundWarnRedemptionExcess(String date, String amount) {
+    return 'No resgate de $date o come-cotas pago passou do IR devido em $amount: fica fora do líquido (veja a nota sobre o excesso).';
+  }
+
+  @override
+  String fundCreditReduced(String used, String before) {
+    return 'Crédito de prejuízo de $used já reduziu o ganho: o imposto seria $before sem ele.';
+  }
+
+  @override
+  String fundRedemptionCreditLine(String used, String ir, String before) {
+    return 'Prejuízo de resgates anteriores do grupo abateu $used do ganho: IR $ir em vez de $before.';
+  }
+
+  @override
+  String fundRedemptionLossLine(String loss) {
+    return 'Este resgate perdeu $loss: compensa o ganho de resgates e come-cotas posteriores do mesmo grupo (mesma administradora e mesmo tipo).';
+  }
+
+  @override
+  String fundRecordHead(String administrator, String date) {
+    return 'Todos os fundos que você lançou da administradora $administrator foram resgatados até $date.';
+  }
+
+  @override
+  String fundRecordExpired(String head, String balance, String until) {
+    return '$head A obrigação da administradora de guardar o registro das perdas ($balance) terminou em $until (IN RFB 1.585, art. 15 §2): confira se ela ainda tem o registro antes de contar com o saldo.';
+  }
+
+  @override
+  String fundRecordActive(String head, String balance, String until) {
+    return '$head A administradora só é obrigada a guardar o registro das perdas ($balance) até $until (IN RFB 1.585, art. 15 §2). A lei não limita o seu direito de compensar, mas confira com a administradora.';
+  }
+
+  @override
+  String fundCvmLatest(String date) {
+    return ' Última cota da CVM: $date.';
+  }
+
+  @override
+  String fundCvmRead(String latest) {
+    return 'Cotas lidas da CVM.$latest';
+  }
+
+  @override
+  String get fundCvmNoCnpj => 'Informe o CNPJ do fundo para ler a cota da CVM.';
+
+  @override
+  String fundCvmPending(String latest) {
+    return 'Ainda não lida.$latest';
+  }
+
+  @override
+  String get fundCvmNotFound =>
+      'A CVM não trouxe cota para este CNPJ (ou subclasse) nos meses lidos. Confira o CNPJ.';
+
+  @override
+  String get fundCvmNeedsSubclass =>
+      'Este CNPJ só tem subclasses no informe: escolha uma.';
+
+  @override
+  String fundCvmError(String message, String latest) {
+    return 'Não foi possível ler a CVM agora ($message). Tente de novo em instantes.$latest';
+  }
+
+  @override
+  String get fundCvmErrorDefault => 'erro';
+
+  @override
+  String get fundTermLabel => 'Tipo do fundo';
+
+  @override
+  String get fundStructureLabel => 'Estrutura do fundo (Lei 14.754)';
+
+  @override
+  String get fundEstoqueLabel => 'Estoque de 2023 (arts. 27 e 28)';
+
+  @override
+  String get fundEstoqueNotInformed => 'Não tributado / não informado';
+
+  @override
+  String get fundAdministratorLabel =>
+      'Administradora / intermediário (compensa prejuízo)';
+
+  @override
+  String get fundAdministratorHint => 'ex.: XP, BTG';
+
+  @override
+  String get fundAdministratorHelpNoTerm => 'Escolha o tipo do fundo primeiro.';
+
+  @override
+  String get fundAdministratorHelpNone =>
+      'Sem isso, o fundo só compensa prejuízo com ele mesmo.';
+
+  @override
+  String get fundAdministratorHelpSet =>
+      'Fundos do mesmo tipo e da mesma administradora compensam entre si.';
+
+  @override
+  String get fundSaveAdministrator => 'Salvar administradora';
+
+  @override
+  String get fundCnpjLabel => 'CNPJ do fundo (cota pela CVM)';
+
+  @override
+  String get fundSaveCnpj => 'Salvar CNPJ';
+
+  @override
+  String get fundSubclassLabel => 'Subclasse da CVM';
+
+  @override
+  String get fundSubclassNone => 'Classe (sem subclasse)';
+
+  @override
+  String fundQuotasTitle(int count) {
+    return 'Valor da cota ($count)';
+  }
+
+  @override
+  String get fundDeleteQuota => 'Apagar cota';
+
+  @override
+  String get fundAddQuota => 'Lançar cota';
+
+  @override
+  String fundDeductionsTitle(int count) {
+    return 'Come-cotas registrados ($count)';
+  }
+
+  @override
+  String fundDeductionLine(
+    String quantity,
+    String price,
+    String tax,
+    String credit,
+  ) {
+    return '$quantity cotas a $price · imposto $tax$credit';
+  }
+
+  @override
+  String fundDeductionCredit(String value) {
+    return ' · crédito usado $value';
+  }
+
+  @override
+  String fundRedemptionsTitle(int count) {
+    return 'Resgates e amortizações estimados ($count)';
+  }
+
+  @override
+  String fundRedemptionAmortization(String date, String quota) {
+    return '$date — amortização (cota a $quota; as cotas ficam)';
+  }
+
+  @override
+  String fundRedemptionTitle(String date, String quotas, String quota) {
+    return '$date — $quotas cotas a $quota';
+  }
+
+  @override
+  String fundRedemptionDetail(String gross, String iof, String ir, String net) {
+    return 'Bruto $gross · IOF $iof · IR $ir · líquido $net';
+  }
+
+  @override
+  String fundRedemptionComeCotasCredit(String value) {
+    return 'Come-cotas já pago abateu $value do IR';
+  }
+
+  @override
+  String fundQuotaDialogTitle(String ticker) {
+    return 'Cota de $ticker';
+  }
+
+  @override
+  String get fundQuotaValueLabel => 'Valor da cota (R\$)';
+
+  @override
+  String fundDate(String date) {
+    return 'Data: $date';
+  }
+
+  @override
+  String get fundTermLongTerm => 'Longo prazo';
+
+  @override
+  String get fundTermShortTerm => 'Curto prazo';
+
+  @override
+  String get fundTermEquity => 'Ações';
+
+  @override
+  String get fundTermInvestmentEntity => 'Entidade de investimento';
+
+  @override
+  String get fundStructureOpen => 'Aberto';
+
+  @override
+  String get fundStructureClosed => 'Fechado';
+
+  @override
+  String get fundStructureExclusive => 'Exclusivo';
+
+  @override
+  String get fundEstoqueGeneral => 'Regra geral (15%)';
+
+  @override
+  String get fundEstoqueOption8 => 'Opção (8%)';
+
+  @override
+  String get fundErrNeedTermBeforeStructure =>
+      'Escolha o tipo do fundo antes da estrutura';
+
+  @override
+  String get fundErrNeedTermBeforeEstoque =>
+      'Escolha o tipo do fundo antes do estoque';
+
+  @override
+  String get fundErrNeedTermBeforeAdministrator =>
+      'Escolha o tipo do fundo antes da administradora';
+
+  @override
+  String get fundErrNeedTermBeforeSubclass =>
+      'Escolha o tipo do fundo antes da subclasse da CVM';
+
+  @override
+  String get fundErrCnpjMustHave14Digits => 'O CNPJ precisa ter 14 dígitos';
 }
