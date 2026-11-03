@@ -1150,4 +1150,211 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get finErrLinkedTransactionLocked =>
       'A debt installment and a loan transaction are only deleted together with the debt or the loan';
+
+  @override
+  String get cryptoTaxTitle => 'Crypto tax';
+
+  @override
+  String get cryptoTaxDisclaimer =>
+      'Calculated only from the transactions entered in this app, at average cost and with the fee entered on each operation. The rules come from secondary sources: check with the tax authority (GCAP) before paying.';
+
+  @override
+  String get cryptoTaxUsdNote =>
+      'USD operations converted at the dollar rate of the day (Yahoo, USDBRL=X).';
+
+  @override
+  String get cryptoTaxFxUnavailable =>
+      'Exchange rate unavailable right now: the USD operations were left out. Try again in a moment.';
+
+  @override
+  String get cryptoTaxEmpty => 'No crypto sales in reais yet.';
+
+  @override
+  String cryptoTaxMonthSales(String value) {
+    return 'Month sales: $value';
+  }
+
+  @override
+  String cryptoTaxMonthGain(String value) {
+    return 'Month gain: $value';
+  }
+
+  @override
+  String cryptoTaxTax(String value, String rate) {
+    return 'Tax: $value (rate $rate%)';
+  }
+
+  @override
+  String cryptoTaxCarriedIn(String value) {
+    return 'Carried from earlier months: $value';
+  }
+
+  @override
+  String cryptoTaxSalesCount(int count) {
+    return 'Sales ($count)';
+  }
+
+  @override
+  String cryptoTaxSaleTitle(String ticker, String date) {
+    return '$ticker — $date';
+  }
+
+  @override
+  String cryptoTaxSaleDetail(
+    String sale,
+    String fee,
+    String cost,
+    String gain,
+  ) {
+    return 'Sale $sale$fee · cost $cost · gain $gain';
+  }
+
+  @override
+  String cryptoTaxSaleFee(String value) {
+    return ' (fee $value)';
+  }
+
+  @override
+  String cryptoTaxStatusExempt(String limit) {
+    return 'Exempt: sales up to $limit in the month';
+  }
+
+  @override
+  String cryptoTaxStatusDarf(int code, String value, String date) {
+    return 'DARF $code of $value due $date';
+  }
+
+  @override
+  String cryptoTaxStatusBelowMinimum(String value, String minimum) {
+    return 'Tax of $value is below the $minimum minimum: added to next month';
+  }
+
+  @override
+  String get cryptoTaxStatusNoTax => 'No tax: the month closed with no gain';
+
+  @override
+  String cryptoTaxWarnCostUnknown(String ticker, String date) {
+    return 'Sale of $ticker on $date exceeds the purchases entered: the gain counts only the part with known cost. Enter the missing purchases.';
+  }
+
+  @override
+  String cryptoTaxWarnSalesNonBrl(String period) {
+    return 'Crypto sales not in BRL in $period are not assessed here (foreign rules).';
+  }
+
+  @override
+  String cryptoTaxWarnFxMissing(String period) {
+    return 'USD crypto sale in $period has no exchange rate to convert: left out of the assessment.';
+  }
+
+  @override
+  String get swapIntro =>
+      'Swapping one coin for another counts as a sale of the coin given up for tax purposes: it enters the month\'s sales (R\$ 35 thousand limit) and realizes a gain over the average cost. It records one sale and one purchase for the same value.';
+
+  @override
+  String get swapNeedTwoCoins =>
+      'You need a balance in one crypto and another one registered.';
+
+  @override
+  String get swapCoinOut => 'Coin out';
+
+  @override
+  String swapCoinOutItem(String ticker, String balance) {
+    return '$ticker (balance $balance)';
+  }
+
+  @override
+  String get swapQuantityOut => 'Quantity out';
+
+  @override
+  String get swapCoinIn => 'Coin in';
+
+  @override
+  String get swapQuantityIn => 'Quantity in';
+
+  @override
+  String get swapMarketValue => 'Market value of the swap (BRL)';
+
+  @override
+  String get swapUseMarketPrice => 'Use market price';
+
+  @override
+  String get swapSearching => 'Searching…';
+
+  @override
+  String get swapFee => 'Fee (optional, BRL)';
+
+  @override
+  String get swapCustody => 'Custody (optional)';
+
+  @override
+  String get swapNoCustody => 'None';
+
+  @override
+  String swapDate(String date) {
+    return 'Date: $date';
+  }
+
+  @override
+  String get swapRegister => 'Record swap';
+
+  @override
+  String swapHintNoBrlQuote(String ticker) {
+    return 'No quote in reais for $ticker.';
+  }
+
+  @override
+  String swapHintTodayPrice(String date) {
+    return 'Today\'s price ($date); if the swap was on another date, adjust the value.';
+  }
+
+  @override
+  String get swapHintQuoteUnavailable =>
+      'Quote unavailable right now; enter the value.';
+
+  @override
+  String swapHintNoQuote(String ticker) {
+    return 'No quote for $ticker; enter the value.';
+  }
+
+  @override
+  String get swapFeeNotNumber => 'The fee must be a number.';
+
+  @override
+  String get swapErrNeedTwoDifferentCoins =>
+      'A swap needs two different coins.';
+
+  @override
+  String swapErrNotCrypto(String ticker) {
+    return '$ticker is not crypto; a swap only works between cryptocurrencies.';
+  }
+
+  @override
+  String swapErrNotBrl(String ticker, String currency) {
+    return '$ticker is in $currency; swaps are assessed in reais.';
+  }
+
+  @override
+  String get swapErrQuantityOutMustBePositive =>
+      'The quantity out must be greater than zero.';
+
+  @override
+  String get swapErrQuantityInMustBePositive =>
+      'The quantity in must be greater than zero.';
+
+  @override
+  String get swapErrValueMustBePositive =>
+      'The value must be greater than zero.';
+
+  @override
+  String get swapErrNegativeFee => 'The fee can\'t be negative.';
+
+  @override
+  String swapErrInsufficientBalance(
+    String ticker,
+    String available,
+    String requested,
+  ) {
+    return 'Insufficient $ticker balance: you have $available and the swap gives $requested.';
+  }
 }

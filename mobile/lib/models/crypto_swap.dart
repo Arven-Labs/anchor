@@ -1,10 +1,38 @@
 import 'asset.dart';
 import 'portfolio_transaction.dart';
 
-/// Recusa de uma permuta, com a mensagem pronta pra mostrar na tela.
+enum CryptoSwapErrorCode {
+  needTwoDifferentCoins,
+  notCrypto,
+  notBrl,
+  quantityOutMustBePositive,
+  quantityInMustBePositive,
+  valueMustBePositive,
+  negativeFee,
+  insufficientBalance,
+}
+
+/// Mensagem de desenvolvedor (inglês) de cada código; o texto da tela vem dos `.arb`
+/// (`l10n/crypto_tax_labels.dart`), ADR 0001.
+String _developerMessage(CryptoSwapErrorCode code, Map<String, String> args) => switch (code) {
+  CryptoSwapErrorCode.needTwoDifferentCoins => 'A swap needs two different coins',
+  CryptoSwapErrorCode.notCrypto => '${args['ticker']} is not crypto',
+  CryptoSwapErrorCode.notBrl => '${args['ticker']} is in ${args['currency']}, not BRL',
+  CryptoSwapErrorCode.quantityOutMustBePositive => 'The quantity out must be greater than zero',
+  CryptoSwapErrorCode.quantityInMustBePositive => 'The quantity in must be greater than zero',
+  CryptoSwapErrorCode.valueMustBePositive => 'The value must be greater than zero',
+  CryptoSwapErrorCode.negativeFee => "The fee can't be negative",
+  CryptoSwapErrorCode.insufficientBalance =>
+    'Insufficient ${args['ticker']} balance: ${args['available']} available, ${args['requested']} requested',
+};
+
+/// Recusa de uma permuta: [code] e [args] dizem o motivo; [message] é para quem depura.
 class CryptoSwapException implements Exception {
+  final CryptoSwapErrorCode code;
+  final Map<String, String> args;
   final String message;
-  const CryptoSwapException(this.message);
+
+  CryptoSwapException(this.code, [this.args = const {}]) : message = _developerMessage(code, args);
 
   @override
   String toString() => message;
@@ -32,38 +60,35 @@ class CryptoSwapException implements Exception {
   DateTime? now,
 }) {
   if (from.id == null || to.id == null || from.id == to.id) {
-    throw const CryptoSwapException(
-      'A permuta precisa de duas moedas diferentes.',
-    );
+    throw CryptoSwapException(CryptoSwapErrorCode.needTwoDifferentCoins);
   }
   for (final asset in [from, to]) {
     if (asset.assetClass != AssetClass.cripto) {
-      throw CryptoSwapException(
-        '${asset.ticker} não é cripto; a permuta só vale entre criptomoedas.',
-      );
+      throw CryptoSwapException(CryptoSwapErrorCode.notCrypto, {'ticker': asset.ticker});
     }
     if (asset.currency != 'BRL') {
-      throw CryptoSwapException(
-        '${asset.ticker} está em ${asset.currency}; a permuta é apurada em reais.',
-      );
+      throw CryptoSwapException(CryptoSwapErrorCode.notBrl, {
+        'ticker': asset.ticker,
+        'currency': asset.currency,
+      });
     }
   }
-  for (final (name, number) in [
-    ('quantidade que sai', quantityOut),
-    ('quantidade que entra', quantityIn),
-    ('valor', valueBrl),
+  for (final (code, number) in [
+    (CryptoSwapErrorCode.quantityOutMustBePositive, quantityOut),
+    (CryptoSwapErrorCode.quantityInMustBePositive, quantityIn),
+    (CryptoSwapErrorCode.valueMustBePositive, valueBrl),
   ]) {
-    if (!number.isFinite || number <= 0) {
-      throw CryptoSwapException('O campo $name deve ser maior que zero.');
-    }
+    if (!number.isFinite || number <= 0) throw CryptoSwapException(code);
   }
   if (fee != null && (!fee.isFinite || fee < 0)) {
-    throw const CryptoSwapException('A taxa não pode ser negativa.');
+    throw CryptoSwapException(CryptoSwapErrorCode.negativeFee);
   }
   if (quantityOut > available + 1e-9) {
-    throw CryptoSwapException(
-      'Saldo insuficiente de ${from.ticker}: tem $available e a troca entrega $quantityOut.',
-    );
+    throw CryptoSwapException(CryptoSwapErrorCode.insufficientBalance, {
+      'ticker': from.ticker,
+      'available': '$available',
+      'requested': '$quantityOut',
+    });
   }
 
   final createdAt = now ?? DateTime.now();

@@ -7,7 +7,7 @@ import '../domain/fund_tax.dart';
 import '../models/fund.dart';
 import '../services/fund_quota_sync.dart';
 import '../services/portfolio_repository.dart';
-import 'crypto_tax_screen.dart' show formatBrl, formatDay;
+import '../domain/tax_format.dart' show formatBrl, formatDay;
 
 /// Situação do come-cotas de um fundo numa frase.
 @visibleForTesting
