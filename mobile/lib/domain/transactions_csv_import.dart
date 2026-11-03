@@ -42,12 +42,50 @@ class ImportRow {
   });
 }
 
+/// Por que uma linha (ou o arquivo) não entra no import (ADR 0001): a tela traduz pelo
+/// código (`l10n/transaction_labels.dart`).
+enum ImportIssueCode {
+  emptyFile,
+  missingColumn,
+  invalidDate,
+  unknownType,
+  invalidNumber,
+  totalEmpty,
+  unknownClass,
+  tickerRequired,
+  newAssetNeedsClass,
+  fundOnly,
+  quantityRequired,
+  unitPriceRequired,
+}
+
 class ImportIssue {
   /// 1 = primeira linha de dados; 0 = o cabeçalho ou o arquivo todo.
   final int line;
-  final String message;
+  final ImportIssueCode code;
 
-  const ImportIssue(this.line, this.message);
+  /// O dado que a frase cita: `name` (coluna), `raw` (texto digitado), `type` (valor do
+  /// tipo no vocabulário do CSV) ou `ticker`.
+  final Map<String, String> args;
+
+  const ImportIssue(this.line, this.code, [this.args = const {}]);
+
+  /// Mensagem em inglês, para quem depura; o usuário vê `importIssueText`.
+  String get message => switch (code) {
+    ImportIssueCode.emptyFile => 'empty file',
+    ImportIssueCode.missingColumn => "column '${args['name']}' missing from the header",
+    ImportIssueCode.invalidDate =>
+      "invalid date: '${args['raw']}' (expected YYYY-MM-DD or DD/MM/YYYY)",
+    ImportIssueCode.unknownType => "unknown type: '${args['raw']}'",
+    ImportIssueCode.invalidNumber => "invalid number in '${args['name']}': '${args['raw']}'",
+    ImportIssueCode.totalEmpty => 'total_value is empty',
+    ImportIssueCode.unknownClass => "unknown class: '${args['raw']}'",
+    ImportIssueCode.tickerRequired => 'ticker required for ${args['type']}',
+    ImportIssueCode.newAssetNeedsClass => "new asset '${args['ticker']}': provide asset_class",
+    ImportIssueCode.fundOnly => '${args['type']} only applies to fund-class assets',
+    ImportIssueCode.quantityRequired => 'quantity required for ${args['type']}',
+    ImportIssueCode.unitPriceRequired => 'unit_price required for ${args['type']}',
+  };
 }
 
 class ParsedTransactionsCsv {
@@ -81,7 +119,7 @@ class ImportPlan {
   final List<ImportIssue> issues;
   final List<NewAssetPlan> newAssets;
 
-  /// Nomes de instituição a criar (com titular "Importado").
+  /// Nomes de instituição a criar (com titular "Imported").
   final List<String> newCustodias;
 
   const ImportPlan({
@@ -99,7 +137,7 @@ const _required = ['date', 'type', 'total_value'];
 ParsedTransactionsCsv parseTransactionsCsv(String text) {
   final records = _readRecords(text);
   if (records.isEmpty) {
-    return const ParsedTransactionsCsv([], [ImportIssue(0, 'arquivo vazio')]);
+    return const ParsedTransactionsCsv([], [ImportIssue(0, ImportIssueCode.emptyFile)]);
   }
   final columns = <String, int>{};
   for (var i = 0; i < records.first.length; i++) {
@@ -108,7 +146,7 @@ ParsedTransactionsCsv parseTransactionsCsv(String text) {
   for (final name in _required) {
     if (!columns.containsKey(name)) {
       return ParsedTransactionsCsv([], [
-        ImportIssue(0, "coluna '$name' ausente no cabeçalho"),
+        ImportIssue(0, ImportIssueCode.missingColumn, {'name': name}),
       ]);
     }
   }
@@ -127,19 +165,17 @@ ParsedTransactionsCsv parseTransactionsCsv(String text) {
 
     final date = _parseDate(cell('date'));
     if (date == null) {
-      issues.add(
-        ImportIssue(line, "data inválida: '${cell('date')}' (esperado AAAA-MM-DD ou DD/MM/AAAA)"),
-      );
+      issues.add(ImportIssue(line, ImportIssueCode.invalidDate, {'raw': cell('date')}));
       continue;
     }
     final type = TransactionType.tryParse(cell('type').toLowerCase());
     if (type == null) {
-      issues.add(ImportIssue(line, "tipo desconhecido: '${cell('type')}'"));
+      issues.add(ImportIssue(line, ImportIssueCode.unknownType, {'raw': cell('type')}));
       continue;
     }
 
     final numbers = <String, double?>{};
-    String? numberError;
+    ImportIssue? numberError;
     for (final name in [
       'quantity',
       'unit_price',
@@ -149,18 +185,21 @@ ParsedTransactionsCsv parseTransactionsCsv(String text) {
     ]) {
       final parsed = _parseNumber(cell(name));
       if (parsed.error) {
-        numberError = "número inválido em '$name': '${cell(name)}'";
+        numberError = ImportIssue(line, ImportIssueCode.invalidNumber, {
+          'name': name,
+          'raw': cell(name),
+        });
         break;
       }
       numbers[name] = parsed.value;
     }
     if (numberError != null) {
-      issues.add(ImportIssue(line, numberError));
+      issues.add(numberError);
       continue;
     }
     final total = numbers['total_value'];
     if (total == null) {
-      issues.add(ImportIssue(line, 'total_value vazio'));
+      issues.add(ImportIssue(line, ImportIssueCode.totalEmpty));
       continue;
     }
 
@@ -169,7 +208,7 @@ ParsedTransactionsCsv parseTransactionsCsv(String text) {
     if (classText.isNotEmpty) {
       assetClass = _assetClass(classText);
       if (assetClass == null) {
-        issues.add(ImportIssue(line, "classe desconhecida: '$classText'"));
+        issues.add(ImportIssue(line, ImportIssueCode.unknownClass, {'raw': classText}));
         continue;
       }
     }
@@ -244,7 +283,7 @@ ImportPlan planTransactionsImport(
 
     final problem = _validate(row, assetsByTicker, newAssets);
     if (problem != null) {
-      issues.add(ImportIssue(row.line, problem));
+      issues.add(problem);
       continue;
     }
 
@@ -292,29 +331,32 @@ ImportPlan planTransactionsImport(
   );
 }
 
-String? _validate(
+ImportIssue? _validate(
   ImportRow row,
   Map<String, Asset> assetsByTicker,
   Map<String, NewAssetPlan> newAssets,
 ) {
+  final typeArgs = {'type': row.type.value};
   if (row.type.needsAsset) {
-    if (row.ticker.isEmpty) return 'ticker obrigatório para ${row.type.value}';
+    if (row.ticker.isEmpty) {
+      return ImportIssue(row.line, ImportIssueCode.tickerRequired, typeArgs);
+    }
     final existing = assetsByTicker[row.ticker];
     final planned = newAssets[row.ticker];
     if (existing == null && planned == null && row.assetClass == null) {
-      return "ativo novo '${row.ticker}': informe a asset_class";
+      return ImportIssue(row.line, ImportIssueCode.newAssetNeedsClass, {'ticker': row.ticker});
     }
     final assetClass =
         existing?.assetClass ?? planned?.assetClass ?? row.assetClass;
     if (row.type.isFundOnly && assetClass != AssetClass.fundo) {
-      return '${row.type.value} só vale para ativo da classe fundo';
+      return ImportIssue(row.line, ImportIssueCode.fundOnly, typeArgs);
     }
   }
   if (row.type.needsQuantity && row.quantity == null) {
-    return 'quantity obrigatória para ${row.type.value}';
+    return ImportIssue(row.line, ImportIssueCode.quantityRequired, typeArgs);
   }
   if (row.type.needsUnitPrice && row.unitPrice == null) {
-    return 'unit_price obrigatório para ${row.type.value}';
+    return ImportIssue(row.line, ImportIssueCode.unitPriceRequired, typeArgs);
   }
   return null;
 }

@@ -3735,6 +3735,222 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add attachment'**
   String get madAddAttachment;
+
+  /// No description provided for @txhEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No transactions logged yet.'**
+  String get txhEmpty;
+
+  /// No description provided for @txhImportTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Import CSV from desktop'**
+  String get txhImportTooltip;
+
+  /// No description provided for @txhExportTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Export CSV to desktop'**
+  String get txhExportTooltip;
+
+  /// No description provided for @txhExportDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Save transactions for the desktop'**
+  String get txhExportDialogTitle;
+
+  /// No description provided for @txhExported.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{0 rows saved.} =1{1 row saved.} other{{count} rows saved.}}'**
+  String txhExported(int count);
+
+  /// No description provided for @txhExportedSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} left out (transfer, amortization or removed asset).'**
+  String txhExportedSkipped(int count);
+
+  /// No description provided for @txhExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the CSV: {error}'**
+  String txhExportFailed(String error);
+
+  /// No description provided for @txhImported.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{0 transactions imported.} =1{1 transaction imported.} other{{count} transactions imported.}}'**
+  String txhImported(int count);
+
+  /// No description provided for @txhImportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t import the CSV: {error}'**
+  String txhImportFailed(String error);
+
+  /// No description provided for @txhFee.
+  ///
+  /// In en, this message translates to:
+  /// **'fee {value}'**
+  String txhFee(String value);
+
+  /// No description provided for @txhWithheld.
+  ///
+  /// In en, this message translates to:
+  /// **'withheld {value}'**
+  String txhWithheld(String value);
+
+  /// No description provided for @txhPaidOn.
+  ///
+  /// In en, this message translates to:
+  /// **'paid on {date}'**
+  String txhPaidOn(String date);
+
+  /// No description provided for @txhLossCreditUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'loss credit used {value}'**
+  String txhLossCreditUsed(String value);
+
+  /// No description provided for @txhPreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Import from desktop'**
+  String get txhPreviewTitle;
+
+  /// No description provided for @txhPreviewNewTransactions.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{0 new transactions} =1{1 new transaction} other{{count} new transactions}}'**
+  String txhPreviewNewTransactions(int count);
+
+  /// No description provided for @txhPreviewNewAssets.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{0 new assets} =1{1 new asset} other{{count} new assets}}'**
+  String txhPreviewNewAssets(int count);
+
+  /// No description provided for @txhPreviewNewCustodians.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{0 new custodians} =1{1 new custodian} other{{count} new custodians}}'**
+  String txhPreviewNewCustodians(int count);
+
+  /// No description provided for @txhPreviewDuplicates.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} already exist (ignored)'**
+  String txhPreviewDuplicates(int count);
+
+  /// No description provided for @txhPreviewSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{0 transfers skipped (the CSV has no destination)} =1{1 transfer skipped (the CSV has no destination)} other{{count} transfers skipped (the CSV has no destination)}}'**
+  String txhPreviewSkipped(int count);
+
+  /// No description provided for @txhPreviewIssues.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{0 rows with problems (not imported):} =1{1 row with a problem (not imported):} other{{count} rows with problems (not imported):}}'**
+  String txhPreviewIssues(int count);
+
+  /// No description provided for @txhPreviewIssueLine.
+  ///
+  /// In en, this message translates to:
+  /// **'line {line}: {message}'**
+  String txhPreviewIssueLine(int line, String message);
+
+  /// No description provided for @txhPreviewMore.
+  ///
+  /// In en, this message translates to:
+  /// **'… and {count} more'**
+  String txhPreviewMore(int count);
+
+  /// No description provided for @txhCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get txhCancel;
+
+  /// No description provided for @txhImport.
+  ///
+  /// In en, this message translates to:
+  /// **'Import'**
+  String get txhImport;
+
+  /// No description provided for @importIssueEmptyFile.
+  ///
+  /// In en, this message translates to:
+  /// **'empty file'**
+  String get importIssueEmptyFile;
+
+  /// No description provided for @importIssueMissingColumn.
+  ///
+  /// In en, this message translates to:
+  /// **'column \'{name}\' missing from the header'**
+  String importIssueMissingColumn(String name);
+
+  /// No description provided for @importIssueInvalidDate.
+  ///
+  /// In en, this message translates to:
+  /// **'invalid date: \'{raw}\' (expected YYYY-MM-DD or DD/MM/YYYY)'**
+  String importIssueInvalidDate(String raw);
+
+  /// No description provided for @importIssueUnknownType.
+  ///
+  /// In en, this message translates to:
+  /// **'unknown type: \'{raw}\''**
+  String importIssueUnknownType(String raw);
+
+  /// No description provided for @importIssueInvalidNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'invalid number in \'{name}\': \'{raw}\''**
+  String importIssueInvalidNumber(String name, String raw);
+
+  /// No description provided for @importIssueTotalEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'total_value is empty'**
+  String get importIssueTotalEmpty;
+
+  /// No description provided for @importIssueUnknownClass.
+  ///
+  /// In en, this message translates to:
+  /// **'unknown class: \'{raw}\''**
+  String importIssueUnknownClass(String raw);
+
+  /// No description provided for @importIssueTickerRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'ticker required for {type}'**
+  String importIssueTickerRequired(String type);
+
+  /// No description provided for @importIssueNewAssetNeedsClass.
+  ///
+  /// In en, this message translates to:
+  /// **'new asset \'{ticker}\': provide asset_class'**
+  String importIssueNewAssetNeedsClass(String ticker);
+
+  /// No description provided for @importIssueFundOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'{type} only applies to fund-class assets'**
+  String importIssueFundOnly(String type);
+
+  /// No description provided for @importIssueQuantityRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'quantity required for {type}'**
+  String importIssueQuantityRequired(String type);
+
+  /// No description provided for @importIssueUnitPriceRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'unit_price required for {type}'**
+  String importIssueUnitPriceRequired(String type);
 }
 
 class _AppLocalizationsDelegate

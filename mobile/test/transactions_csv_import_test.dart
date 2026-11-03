@@ -370,7 +370,7 @@ void main() {
       final custodias = await repository.listCustodias();
       expect(assets.single.ticker, 'PETR4');
       expect(custodias.single.instituicao, 'XP');
-      expect(custodias.single.titular, 'Importado');
+      expect(custodias.single.titular, 'Imported');
 
       final transactions = await repository.listAllTransactions();
       expect(transactions, hasLength(3));

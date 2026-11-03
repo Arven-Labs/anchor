@@ -2313,4 +2313,215 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get madAddAttachment => 'Add attachment';
+
+  @override
+  String get txhEmpty => 'No transactions logged yet.';
+
+  @override
+  String get txhImportTooltip => 'Import CSV from desktop';
+
+  @override
+  String get txhExportTooltip => 'Export CSV to desktop';
+
+  @override
+  String get txhExportDialogTitle => 'Save transactions for the desktop';
+
+  @override
+  String txhExported(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count rows saved.',
+      one: '1 row saved.',
+      zero: '0 rows saved.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String txhExportedSkipped(int count) {
+    return '$count left out (transfer, amortization or removed asset).';
+  }
+
+  @override
+  String txhExportFailed(String error) {
+    return 'Couldn\'t save the CSV: $error';
+  }
+
+  @override
+  String txhImported(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count transactions imported.',
+      one: '1 transaction imported.',
+      zero: '0 transactions imported.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String txhImportFailed(String error) {
+    return 'Couldn\'t import the CSV: $error';
+  }
+
+  @override
+  String txhFee(String value) {
+    return 'fee $value';
+  }
+
+  @override
+  String txhWithheld(String value) {
+    return 'withheld $value';
+  }
+
+  @override
+  String txhPaidOn(String date) {
+    return 'paid on $date';
+  }
+
+  @override
+  String txhLossCreditUsed(String value) {
+    return 'loss credit used $value';
+  }
+
+  @override
+  String get txhPreviewTitle => 'Import from desktop';
+
+  @override
+  String txhPreviewNewTransactions(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count new transactions',
+      one: '1 new transaction',
+      zero: '0 new transactions',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String txhPreviewNewAssets(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count new assets',
+      one: '1 new asset',
+      zero: '0 new assets',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String txhPreviewNewCustodians(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count new custodians',
+      one: '1 new custodian',
+      zero: '0 new custodians',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String txhPreviewDuplicates(int count) {
+    return '$count already exist (ignored)';
+  }
+
+  @override
+  String txhPreviewSkipped(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count transfers skipped (the CSV has no destination)',
+      one: '1 transfer skipped (the CSV has no destination)',
+      zero: '0 transfers skipped (the CSV has no destination)',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String txhPreviewIssues(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count rows with problems (not imported):',
+      one: '1 row with a problem (not imported):',
+      zero: '0 rows with problems (not imported):',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String txhPreviewIssueLine(int line, String message) {
+    return 'line $line: $message';
+  }
+
+  @override
+  String txhPreviewMore(int count) {
+    return '… and $count more';
+  }
+
+  @override
+  String get txhCancel => 'Cancel';
+
+  @override
+  String get txhImport => 'Import';
+
+  @override
+  String get importIssueEmptyFile => 'empty file';
+
+  @override
+  String importIssueMissingColumn(String name) {
+    return 'column \'$name\' missing from the header';
+  }
+
+  @override
+  String importIssueInvalidDate(String raw) {
+    return 'invalid date: \'$raw\' (expected YYYY-MM-DD or DD/MM/YYYY)';
+  }
+
+  @override
+  String importIssueUnknownType(String raw) {
+    return 'unknown type: \'$raw\'';
+  }
+
+  @override
+  String importIssueInvalidNumber(String name, String raw) {
+    return 'invalid number in \'$name\': \'$raw\'';
+  }
+
+  @override
+  String get importIssueTotalEmpty => 'total_value is empty';
+
+  @override
+  String importIssueUnknownClass(String raw) {
+    return 'unknown class: \'$raw\'';
+  }
+
+  @override
+  String importIssueTickerRequired(String type) {
+    return 'ticker required for $type';
+  }
+
+  @override
+  String importIssueNewAssetNeedsClass(String ticker) {
+    return 'new asset \'$ticker\': provide asset_class';
+  }
+
+  @override
+  String importIssueFundOnly(String type) {
+    return '$type only applies to fund-class assets';
+  }
+
+  @override
+  String importIssueQuantityRequired(String type) {
+    return 'quantity required for $type';
+  }
+
+  @override
+  String importIssueUnitPriceRequired(String type) {
+    return 'unit_price required for $type';
+  }
 }
