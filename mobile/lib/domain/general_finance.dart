@@ -1,15 +1,8 @@
 import '../models/general_transaction.dart';
 import 'number_locale.dart';
 
-/// `YYYY-MM-DD` → `dd/MM/yyyy`; texto que não tem esse formato volta como veio.
-String formatIsoDay(String iso) {
-  if (iso.length != 10) return iso;
-  return '${iso.substring(8, 10)}/${iso.substring(5, 7)}/${iso.substring(0, 4)}';
-}
-
 /// `YYYY-MM-DD` → `dd/MM/yyyy` em `pt` e `MM/dd/yyyy` nos outros idiomas (ADR 0001);
-/// texto que não tem esse formato volta como veio. `formatIsoDay` segue em pt para as
-/// áreas ainda não migradas.
+/// texto que não tem esse formato volta como veio.
 String formatReadingDate(String iso, {required String locale}) {
   if (iso.length != 10) return iso;
   final year = iso.substring(0, 4);

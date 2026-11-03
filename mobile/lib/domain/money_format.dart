@@ -4,10 +4,9 @@ import 'number_locale.dart';
 /// outros idiomas), como o `formatMoney` do desktop. Zero negativo (`-0` ou `-0,004`, que
 /// arredonda para `-0,00`) sai como `0,00`.
 ///
-/// [locale] tem padrão `pt` **só durante a migração para i18n** (ADR 0001): as telas ainda
-/// não migradas chamam sem ele e continuam mostrando o que mostravam. O padrão sai quando
-/// a última área migrar, e `locale` passa a ser obrigatório.
-String formatMoney(double value, String currency, {String locale = 'pt'}) {
+/// [locale] é obrigatório (ADR 0001): esquecer é erro de compilação, não texto em
+/// português por padrão.
+String formatMoney(double value, String currency, {required String locale}) {
   final portuguese = isPortuguese(locale);
   final shown = value.abs() < 0.005 ? 0.0 : value;
   final negative = shown < 0;

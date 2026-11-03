@@ -1222,18 +1222,24 @@ void main() {
         }
       }
       expect(labels.fundTermName(en, FundTerm.investmentEntity), 'Investment entity');
-      expect(labels.fundTermName(pt, FundTerm.investmentEntity), FundTerm.investmentEntity.label);
       expect(labels.fundStructureName(en, FundStructure.exclusive), 'Exclusive');
       expect(labels.estoqueOptionName(en, EstoqueOption.option8), 'Option (8%)');
-      for (final term in FundTerm.values) {
-        expect(labels.fundTermName(pt, term), term.label, reason: 'pt é o texto de antes');
-      }
-      for (final s in FundStructure.values) {
-        expect(labels.fundStructureName(pt, s), s.label);
-      }
-      for (final o in EstoqueOption.values) {
-        expect(labels.estoqueOptionName(pt, o), o.label);
-      }
+      // pt: o texto que os `label` dos enums guardavam, por extenso (os `label` saíram).
+      expect({for (final t in FundTerm.values) t: labels.fundTermName(pt, t)}, {
+        FundTerm.longTerm: 'Longo prazo',
+        FundTerm.shortTerm: 'Curto prazo',
+        FundTerm.equity: 'Ações',
+        FundTerm.investmentEntity: 'Entidade de investimento',
+      });
+      expect({for (final s in FundStructure.values) s: labels.fundStructureName(pt, s)}, {
+        FundStructure.open: 'Aberto',
+        FundStructure.closed: 'Fechado',
+        FundStructure.exclusive: 'Exclusivo',
+      });
+      expect({for (final o in EstoqueOption.values) o: labels.estoqueOptionName(pt, o)}, {
+        EstoqueOption.general: 'Regra geral (15%)',
+        EstoqueOption.option8: 'Opção (8%)',
+      });
     });
 
     test('erros de gravação do fundo por código, com texto nos dois idiomas', () {

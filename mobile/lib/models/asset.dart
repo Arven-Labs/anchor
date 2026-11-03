@@ -13,26 +13,25 @@
 /// `asset_valuations` — ver `ManualAssetDetailsScreen`). Valores string
 /// iguais ao desktop (`desktop/src/portfolio/types.ts`).
 enum AssetClass {
-  acaoBr('acao_br', 'Ação BR'),
-  fii('fii', 'FII'),
-  etfBr('etf_br', 'ETF BR'),
-  etfRendaFixa('etf_renda_fixa', 'ETF Renda Fixa BR'),
-  bdr('bdr', 'BDR'),
-  acaoInternacional('acao_internacional', 'Ação internacional'),
-  reit('reit', 'REIT'),
-  etfUs('etf_us', 'ETF US'),
-  cripto('cripto', 'Cripto'),
-  metal('metal', 'Metal'),
-  tesouroDireto('tesouro_direto', 'Tesouro Direto'),
-  rendaFixa('renda_fixa', 'Renda Fixa'),
-  imovel('imovel', 'Imóvel'),
-  empresaNaoListada('empresa_nao_listada', 'Empresa não listada'),
-  fundo('fundo', 'Fundo');
+  acaoBr('acao_br'),
+  fii('fii'),
+  etfBr('etf_br'),
+  etfRendaFixa('etf_renda_fixa'),
+  bdr('bdr'),
+  acaoInternacional('acao_internacional'),
+  reit('reit'),
+  etfUs('etf_us'),
+  cripto('cripto'),
+  metal('metal'),
+  tesouroDireto('tesouro_direto'),
+  rendaFixa('renda_fixa'),
+  imovel('imovel'),
+  empresaNaoListada('empresa_nao_listada'),
+  fundo('fundo');
 
   final String value;
-  final String label;
 
-  const AssetClass(this.value, this.label);
+  const AssetClass(this.value);
 
   static AssetClass fromValue(String value) {
     return AssetClass.values.firstWhere((c) => c.value == value);

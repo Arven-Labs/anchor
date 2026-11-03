@@ -171,7 +171,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
                   helperText: currencyLocked ? l.finCurrencyLocked : null,
                 ),
                 items: [
-                  for (final (code, _) in currencyCatalog)
+                  for (final code in currencyCatalog)
                     DropdownMenuItem(
                       value: code,
                       child: Text('$code — ${currencyName(l, code)}'),
@@ -485,7 +485,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
                   value: _base,
                   underline: const SizedBox.shrink(),
                   items: [
-                    for (final (code, _) in currencyCatalog)
+                    for (final code in currencyCatalog)
                       DropdownMenuItem(value: code, child: Text(code)),
                   ],
                   onChanged: (code) {

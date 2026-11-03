@@ -3,9 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:anchor_mobile/domain/general_finance.dart';
 import 'package:anchor_mobile/domain/money_format.dart';
 
-// `formatMoney` passa a seguir o idioma (ADR 0001). Sem `locale`, continua sendo pt-BR
-// (padrão temporário até a última área migrar), e o que as telas ainda não migradas
-// mostram não muda. O teste antigo em `general_finance_test.dart` segue valendo.
+// `formatMoney` segue o idioma (ADR 0001) e o `locale` é obrigatório: esquecer é erro de
+// compilação, não texto em português por padrão.
 void main() {
   group('formatMoney com locale', () {
     test('pt: milhar com ponto e decimal com vírgula', () {
@@ -16,11 +15,6 @@ void main() {
     test('en: milhar com vírgula e decimal com ponto', () {
       expect(formatMoney(1234.56, 'USD', locale: 'en'), 'USD 1,234.56');
       expect(formatMoney(-1234567.891, 'BRL', locale: 'en'), 'BRL -1,234,567.89');
-    });
-
-    test('sem locale continua pt-BR (compatibilidade das áreas não migradas)', () {
-      expect(formatMoney(1234.56, 'USD'), 'USD 1.234,56');
-      expect(formatMoney(1234.56, 'USD'), formatMoney(1234.56, 'USD', locale: 'pt'));
     });
 
     test('zero negativo sai como zero nos dois idiomas', () {
@@ -51,12 +45,12 @@ void main() {
       expect(formatReadingDate('2026-10-29', locale: 'en'), '10/29/2026');
     });
 
-    test('texto fora do formato volta como veio, e formatIsoDay segue em pt', () {
+    test('texto fora do formato volta como veio', () {
       for (final locale in ['pt', 'en']) {
         expect(formatReadingDate('hoje', locale: locale), 'hoje');
+        expect(formatReadingDate('9/3/2026', locale: locale), '9/3/2026');
         expect(formatReadingDate('', locale: locale), '');
       }
-      expect(formatIsoDay('2026-10-29'), '29/10/2026');
     });
   });
 }

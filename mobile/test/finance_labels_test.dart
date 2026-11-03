@@ -108,10 +108,16 @@ void main() {
   });
 
   group('tipos de lançamento', () {
-    test('pt: igual ao GeneralTransactionType.label de hoje, para todo tipo', () {
-      for (final t in GeneralTransactionType.values) {
-        expect(transactionTypeName(pt, t), t.label, reason: t.value);
-      }
+    test('pt: o texto de antes, fixado por extenso', () {
+      expect({for (final t in GeneralTransactionType.values) t.value: transactionTypeName(pt, t)}, {
+        'receita': 'Receita',
+        'despesa': 'Despesa',
+        'transferencia_saida': 'Transferência (saída)',
+        'transferencia_entrada': 'Transferência (entrada)',
+        'parcela_divida': 'Parcela de dívida',
+        'emprestimo_concedido': 'Empréstimo concedido',
+        'recebimento_emprestimo': 'Recebimento de empréstimo',
+      });
     });
 
     test('en: tradução fixada', () {
@@ -130,21 +136,37 @@ void main() {
   group('nomes de moeda', () {
     test('as 17 moedas do catálogo têm nome nos dois idiomas', () {
       expect(currencyCatalog, hasLength(17));
-      for (final (code, _) in currencyCatalog) {
+      for (final code in currencyCatalog) {
         expect(currencyName(en, code), isNotEmpty, reason: code);
         expect(currencyName(pt, code), isNotEmpty, reason: code);
         expect(currencyName(en, code), isNot(equals(code)), reason: code);
       }
     });
 
-    test('pt: o nome que o catálogo já tinha', () {
-      for (final (code, name) in currencyCatalog) {
-        expect(currencyName(pt, code), name, reason: code);
-      }
+    test('pt: o nome que o catálogo já tinha, fixado por extenso', () {
+      expect({for (final code in currencyCatalog) code: currencyName(pt, code)}, {
+        'USD': 'Dólar americano',
+        'EUR': 'Euro',
+        'GBP': 'Libra esterlina',
+        'JPY': 'Iene',
+        'CHF': 'Franco suíço',
+        'CAD': 'Dólar canadense',
+        'AUD': 'Dólar australiano',
+        'NZD': 'Dólar neozelandês',
+        'CNY': 'Yuan',
+        'BRL': 'Real',
+        'ARS': 'Peso argentino',
+        'UYU': 'Peso uruguaio',
+        'PYG': 'Guarani',
+        'CLP': 'Peso chileno',
+        'COP': 'Peso colombiano',
+        'PEN': 'Sol peruano',
+        'MXN': 'Peso mexicano',
+      });
     });
 
     test('en: nomes fixados', () {
-      expect({for (final (code, _) in currencyCatalog) code: currencyName(en, code)}, {
+      expect({for (final code in currencyCatalog) code: currencyName(en, code)}, {
         'USD': 'US dollar',
         'EUR': 'Euro',
         'GBP': 'Pound sterling',
