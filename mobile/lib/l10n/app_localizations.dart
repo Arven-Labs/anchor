@@ -3195,6 +3195,144 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Acquisition cost converted into reais at the Central Bank\'s closing (selling) rate on the date of each purchase.'**
   String get foreignDescBasis;
+
+  /// No description provided for @tickerLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Ticker ({assetClass})'**
+  String tickerLabel(String assetClass);
+
+  /// No description provided for @classLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Class'**
+  String get classLabel;
+
+  /// No description provided for @searchButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get searchButton;
+
+  /// No description provided for @quoteSourceUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote source unavailable right now (limit or network) — try again in a moment.'**
+  String get quoteSourceUnavailable;
+
+  /// No description provided for @quoteSearchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not fetch the quote for {ticker} ({assetClass})'**
+  String quoteSearchFailed(String ticker, String assetClass);
+
+  /// No description provided for @hintRealEstate.
+  ///
+  /// In en, this message translates to:
+  /// **'Downtown apartment'**
+  String get hintRealEstate;
+
+  /// No description provided for @hintUnlistedCompany.
+  ///
+  /// In en, this message translates to:
+  /// **'Company XYZ'**
+  String get hintUnlistedCompany;
+
+  /// No description provided for @hintFund.
+  ///
+  /// In en, this message translates to:
+  /// **'XYZ FIC FIM fund'**
+  String get hintFund;
+
+  /// No description provided for @hintFixedIncome.
+  ///
+  /// In en, this message translates to:
+  /// **'CDB Bank X'**
+  String get hintFixedIncome;
+
+  /// No description provided for @addAssetNameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get addAssetNameLabel;
+
+  /// No description provided for @addAssetLookupFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not look up {ticker} ({assetClass}) — check the ticker.'**
+  String addAssetLookupFailed(String ticker, String assetClass);
+
+  /// No description provided for @addAssetFundTerm.
+  ///
+  /// In en, this message translates to:
+  /// **'Fund type (for the semiannual quota tax)'**
+  String get addAssetFundTerm;
+
+  /// No description provided for @addAssetEquity.
+  ///
+  /// In en, this message translates to:
+  /// **'Equity stake'**
+  String get addAssetEquity;
+
+  /// No description provided for @addAssetEquityPercent.
+  ///
+  /// In en, this message translates to:
+  /// **'{title} ({percent}%)'**
+  String addAssetEquityPercent(String title, String percent);
+
+  /// No description provided for @addAssetEquityPercentValue.
+  ///
+  /// In en, this message translates to:
+  /// **'{title} ({percent}% — {value})'**
+  String addAssetEquityPercentValue(String title, String percent, String value);
+
+  /// No description provided for @addAssetSharesOwned.
+  ///
+  /// In en, this message translates to:
+  /// **'Shares owned'**
+  String get addAssetSharesOwned;
+
+  /// No description provided for @addAssetTotalShares.
+  ///
+  /// In en, this message translates to:
+  /// **'Company\'s total shares'**
+  String get addAssetTotalShares;
+
+  /// No description provided for @addAssetValuation.
+  ///
+  /// In en, this message translates to:
+  /// **'Company valuation ({currency})'**
+  String addAssetValuation(String currency);
+
+  /// No description provided for @custodianInstitution.
+  ///
+  /// In en, this message translates to:
+  /// **'Institution'**
+  String get custodianInstitution;
+
+  /// No description provided for @custodianHolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Holder'**
+  String get custodianHolder;
+
+  /// No description provided for @custodianAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get custodianAdd;
+
+  /// No description provided for @custodianNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No custodians yet.'**
+  String get custodianNone;
+
+  /// No description provided for @custodianEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit custodian'**
+  String get custodianEditTitle;
 }
 
 class _AppLocalizationsDelegate

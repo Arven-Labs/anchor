@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../domain/number_locale.dart' show formatFixed;
+import '../l10n/app_localizations.dart';
+import '../l10n/fund_tax_labels.dart' show fundTermName;
+import '../l10n/home_labels.dart';
+import '../l10n/registration_labels.dart';
 import '../models/asset.dart';
 import '../models/fund.dart';
 import '../services/portfolio_repository.dart';
@@ -53,6 +58,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   Future<void> _search() async {
     final ticker = _tickerController.text.trim().toUpperCase();
     if (ticker.isEmpty) return;
+    final l = AppLocalizations.of(context);
 
     setState(() {
       _searching = true;
@@ -68,14 +74,10 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
         _externalId = quote.externalId;
       });
     } on QuoteUnavailableException {
-      setState(
-        () => _error =
-            'Fonte de cotação indisponível agora (limite ou rede) — tente de novo em instantes.',
-      );
+      setState(() => _error = l.quoteSourceUnavailable);
     } catch (_) {
       setState(
-        () => _error =
-            'Não foi possível buscar $ticker (${_assetClass.label}) — confira o ticker.',
+        () => _error = l.addAssetLookupFailed(ticker, assetClassName(l, _assetClass)),
       );
     } finally {
       setState(() => _searching = false);
@@ -99,6 +101,21 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     final percentual = _equityPercentual, valuation = _companyValuation;
     if (percentual == null || valuation == null) return null;
     return percentual * valuation;
+  }
+
+  /// `Participação societária (12,50% — 1250,00)`: o título e, quando os campos permitem
+  /// calcular, a porcentagem e o valor da participação.
+  String _equityTitle(AppLocalizations l) {
+    final percent = _equityPercentual, value = _equityParticipationValue;
+    final title = l.addAssetEquity;
+    if (percent == null) return title;
+    final shownPercent = formatFixed(percent * 100, 2, locale: l.localeName);
+    if (value == null) return l.addAssetEquityPercent(title, shownPercent);
+    return l.addAssetEquityPercentValue(
+      title,
+      shownPercent,
+      formatFixed(value, 2, locale: l.localeName),
+    );
   }
 
   Future<void> _save() async {
@@ -148,9 +165,10 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   @override
   Widget build(BuildContext context) {
     final hasAutoQuote = _assetClass.hasAutoQuote;
+    final l = AppLocalizations.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Adicionar ativo')),
+      appBar: AppBar(title: Text(l.portfolioAddAsset)),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -163,8 +181,8 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
                     controller: _tickerController,
                     textCapitalization: TextCapitalization.characters,
                     decoration: InputDecoration(
-                      labelText: 'Ticker (${_assetClass.label})',
-                      hintText: _assetClass.tickerHint,
+                      labelText: l.tickerLabel(assetClassName(l, _assetClass)),
+                      hintText: assetTickerHint(l, _assetClass),
                     ),
                   ),
                 ),
@@ -172,7 +190,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
                   const SizedBox(width: 12),
                   OutlinedButton(
                     onPressed: _searching ? null : _search,
-                    child: const Text('Buscar'),
+                    child: Text(l.searchButton),
                   ),
                 ],
               ],
@@ -187,14 +205,19 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Nome'),
+              decoration: InputDecoration(labelText: l.addAssetNameLabel),
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<AssetClass>(
               initialValue: _assetClass,
-              decoration: const InputDecoration(labelText: 'Classe'),
+              decoration: InputDecoration(labelText: l.classLabel),
               items: AssetClass.values
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c.label)))
+                  .map(
+                    (c) => DropdownMenuItem(
+                      value: c,
+                      child: Text(assetClassName(l, c)),
+                    ),
+                  )
                   .toList(),
               onChanged: (value) {
                 if (value != null) _onAssetClassChanged(value);
@@ -204,11 +227,14 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
               const SizedBox(height: 16),
               DropdownButtonFormField<FundTerm>(
                 initialValue: _fundTerm,
-                decoration: const InputDecoration(
-                  labelText: 'Tipo do fundo (para o come-cotas)',
-                ),
+                decoration: InputDecoration(labelText: l.addAssetFundTerm),
                 items: FundTerm.values
-                    .map((t) => DropdownMenuItem(value: t, child: Text(t.label)))
+                    .map(
+                      (t) => DropdownMenuItem(
+                        value: t,
+                        child: Text(fundTermName(l, t)),
+                      ),
+                    )
                     .toList(),
                 onChanged: (value) => setState(() => _fundTerm = value),
               ),
@@ -216,9 +242,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             if (_assetClass == AssetClass.empresaNaoListada) ...[
               const SizedBox(height: 16),
               Text(
-                'Participação societária'
-                '${_equityPercentual != null ? ' (${(_equityPercentual! * 100).toStringAsFixed(2)}%'
-                          '${_equityParticipationValue != null ? ' — ${_equityParticipationValue!.toStringAsFixed(2)}' : ''})' : ''}',
+                _equityTitle(l),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 8),
@@ -227,9 +251,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration: const InputDecoration(
-                  labelText: 'Cotas/ações possuídas',
-                ),
+                decoration: InputDecoration(labelText: l.addAssetSharesOwned),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -237,9 +259,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration: const InputDecoration(
-                  labelText: 'Total de cotas/ações da empresa',
-                ),
+                decoration: InputDecoration(labelText: l.addAssetTotalShares),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -248,14 +268,14 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
                   decimal: true,
                 ),
                 decoration: InputDecoration(
-                  labelText: 'Valuation da empresa ($_currency)',
+                  labelText: l.addAssetValuation(_currency),
                 ),
               ),
             ],
             const SizedBox(height: 24),
             FilledButton(
               onPressed: _saving ? null : _save,
-              child: const Text('Salvar'),
+              child: Text(l.actionSave),
             ),
           ],
         ),

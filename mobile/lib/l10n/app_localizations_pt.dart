@@ -1994,4 +1994,90 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get foreignDescBasis =>
       'Custo de aquisição convertido em reais pela cotação de fechamento (venda) do Banco Central na data de cada compra.';
+
+  @override
+  String tickerLabel(String assetClass) {
+    return 'Ticker ($assetClass)';
+  }
+
+  @override
+  String get classLabel => 'Classe';
+
+  @override
+  String get searchButton => 'Buscar';
+
+  @override
+  String get quoteSourceUnavailable =>
+      'Fonte de cotação indisponível agora (limite ou rede) — tente de novo em instantes.';
+
+  @override
+  String quoteSearchFailed(String ticker, String assetClass) {
+    return 'Não foi possível buscar a cotação de $ticker ($assetClass)';
+  }
+
+  @override
+  String get hintRealEstate => 'Apto Centro';
+
+  @override
+  String get hintUnlistedCompany => 'Empresa XYZ';
+
+  @override
+  String get hintFund => 'Fundo XYZ FIC FIM';
+
+  @override
+  String get hintFixedIncome => 'CDB Banco X';
+
+  @override
+  String get addAssetNameLabel => 'Nome';
+
+  @override
+  String addAssetLookupFailed(String ticker, String assetClass) {
+    return 'Não foi possível buscar $ticker ($assetClass) — confira o ticker.';
+  }
+
+  @override
+  String get addAssetFundTerm => 'Tipo do fundo (para o come-cotas)';
+
+  @override
+  String get addAssetEquity => 'Participação societária';
+
+  @override
+  String addAssetEquityPercent(String title, String percent) {
+    return '$title ($percent%)';
+  }
+
+  @override
+  String addAssetEquityPercentValue(
+    String title,
+    String percent,
+    String value,
+  ) {
+    return '$title ($percent% — $value)';
+  }
+
+  @override
+  String get addAssetSharesOwned => 'Cotas/ações possuídas';
+
+  @override
+  String get addAssetTotalShares => 'Total de cotas/ações da empresa';
+
+  @override
+  String addAssetValuation(String currency) {
+    return 'Valuation da empresa ($currency)';
+  }
+
+  @override
+  String get custodianInstitution => 'Instituição';
+
+  @override
+  String get custodianHolder => 'Titular';
+
+  @override
+  String get custodianAdd => 'Adicionar';
+
+  @override
+  String get custodianNone => 'Nenhuma custódia cadastrada ainda.';
+
+  @override
+  String get custodianEditTitle => 'Editar custódia';
 }
