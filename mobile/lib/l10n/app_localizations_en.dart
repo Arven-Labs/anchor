@@ -1999,4 +1999,90 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get foreignDescBasis =>
       'Acquisition cost converted into reais at the Central Bank\'s closing (selling) rate on the date of each purchase.';
+
+  @override
+  String tickerLabel(String assetClass) {
+    return 'Ticker ($assetClass)';
+  }
+
+  @override
+  String get classLabel => 'Class';
+
+  @override
+  String get searchButton => 'Search';
+
+  @override
+  String get quoteSourceUnavailable =>
+      'Quote source unavailable right now (limit or network) — try again in a moment.';
+
+  @override
+  String quoteSearchFailed(String ticker, String assetClass) {
+    return 'Could not fetch the quote for $ticker ($assetClass)';
+  }
+
+  @override
+  String get hintRealEstate => 'Downtown apartment';
+
+  @override
+  String get hintUnlistedCompany => 'Company XYZ';
+
+  @override
+  String get hintFund => 'XYZ FIC FIM fund';
+
+  @override
+  String get hintFixedIncome => 'CDB Bank X';
+
+  @override
+  String get addAssetNameLabel => 'Name';
+
+  @override
+  String addAssetLookupFailed(String ticker, String assetClass) {
+    return 'Could not look up $ticker ($assetClass) — check the ticker.';
+  }
+
+  @override
+  String get addAssetFundTerm => 'Fund type (for the semiannual quota tax)';
+
+  @override
+  String get addAssetEquity => 'Equity stake';
+
+  @override
+  String addAssetEquityPercent(String title, String percent) {
+    return '$title ($percent%)';
+  }
+
+  @override
+  String addAssetEquityPercentValue(
+    String title,
+    String percent,
+    String value,
+  ) {
+    return '$title ($percent% — $value)';
+  }
+
+  @override
+  String get addAssetSharesOwned => 'Shares owned';
+
+  @override
+  String get addAssetTotalShares => 'Company\'s total shares';
+
+  @override
+  String addAssetValuation(String currency) {
+    return 'Company valuation ($currency)';
+  }
+
+  @override
+  String get custodianInstitution => 'Institution';
+
+  @override
+  String get custodianHolder => 'Holder';
+
+  @override
+  String get custodianAdd => 'Add';
+
+  @override
+  String get custodianNone => 'No custodians yet.';
+
+  @override
+  String get custodianEditTitle => 'Edit custodian';
 }

@@ -545,5 +545,31 @@
   "foreignDescPosition": "Situação em {date}: {units}, custo de aquisição {cost}.",
   "foreignDescNoPosition": "sem posição",
   "foreignDescUnits": "{quantity} un.",
-  "foreignDescBasis": "Custo de aquisição convertido em reais pela cotação de fechamento (venda) do Banco Central na data de cada compra."
+  "foreignDescBasis": "Custo de aquisição convertido em reais pela cotação de fechamento (venda) do Banco Central na data de cada compra.",
+
+  "tickerLabel": "Ticker ({assetClass})",
+  "classLabel": "Classe",
+  "searchButton": "Buscar",
+  "quoteSourceUnavailable": "Fonte de cotação indisponível agora (limite ou rede) — tente de novo em instantes.",
+  "quoteSearchFailed": "Não foi possível buscar a cotação de {ticker} ({assetClass})",
+  "hintRealEstate": "Apto Centro",
+  "hintUnlistedCompany": "Empresa XYZ",
+  "hintFund": "Fundo XYZ FIC FIM",
+  "hintFixedIncome": "CDB Banco X",
+
+  "addAssetNameLabel": "Nome",
+  "addAssetLookupFailed": "Não foi possível buscar {ticker} ({assetClass}) — confira o ticker.",
+  "addAssetFundTerm": "Tipo do fundo (para o come-cotas)",
+  "addAssetEquity": "Participação societária",
+  "addAssetEquityPercent": "{title} ({percent}%)",
+  "addAssetEquityPercentValue": "{title} ({percent}% — {value})",
+  "addAssetSharesOwned": "Cotas/ações possuídas",
+  "addAssetTotalShares": "Total de cotas/ações da empresa",
+  "addAssetValuation": "Valuation da empresa ({currency})",
+
+  "custodianInstitution": "Instituição",
+  "custodianHolder": "Titular",
+  "custodianAdd": "Adicionar",
+  "custodianNone": "Nenhuma custódia cadastrada ainda.",
+  "custodianEditTitle": "Editar custódia"
 }

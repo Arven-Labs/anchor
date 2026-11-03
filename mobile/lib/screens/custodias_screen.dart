@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/custodia.dart';
 import '../services/portfolio_repository.dart';
 
@@ -62,33 +63,34 @@ class _CustodiasScreenState extends State<CustodiasScreen> {
       text: custodia.instituicao,
     );
     final titularController = TextEditingController(text: custodia.titular);
+    final l = AppLocalizations.of(context);
 
     final saved = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Editar custódia'),
+        title: Text(l.custodianEditTitle),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: instituicaoController,
-              decoration: const InputDecoration(labelText: 'Instituição'),
+              decoration: InputDecoration(labelText: l.custodianInstitution),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: titularController,
-              decoration: const InputDecoration(labelText: 'Titular'),
+              decoration: InputDecoration(labelText: l.custodianHolder),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
+            child: Text(l.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Salvar'),
+            child: Text(l.actionSave),
           ),
         ],
       ),
@@ -126,8 +128,9 @@ class _CustodiasScreenState extends State<CustodiasScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Custódias')),
+      appBar: AppBar(title: Text(l.portfolioCustodies)),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -138,8 +141,8 @@ class _CustodiasScreenState extends State<CustodiasScreen> {
                 Expanded(
                   child: TextField(
                     controller: _instituicaoController,
-                    decoration: const InputDecoration(
-                      labelText: 'Instituição',
+                    decoration: InputDecoration(
+                      labelText: l.custodianInstitution,
                       hintText: 'XP',
                     ),
                   ),
@@ -148,7 +151,7 @@ class _CustodiasScreenState extends State<CustodiasScreen> {
                 Expanded(
                   child: TextField(
                     controller: _titularController,
-                    decoration: const InputDecoration(labelText: 'Titular'),
+                    decoration: InputDecoration(labelText: l.custodianHolder),
                   ),
                 ),
               ],
@@ -156,16 +159,14 @@ class _CustodiasScreenState extends State<CustodiasScreen> {
             const SizedBox(height: 12),
             FilledButton(
               onPressed: _saving ? null : _add,
-              child: const Text('Adicionar'),
+              child: Text(l.custodianAdd),
             ),
             const SizedBox(height: 24),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _custodias.isEmpty
-                  ? const Center(
-                      child: Text('Nenhuma custódia cadastrada ainda.'),
-                    )
+                  ? Center(child: Text(l.custodianNone))
                   : ListView.builder(
                       itemCount: _custodias.length,
                       itemBuilder: (context, index) {

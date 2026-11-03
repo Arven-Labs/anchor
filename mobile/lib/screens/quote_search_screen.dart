@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
+import '../l10n/home_labels.dart';
+import '../l10n/registration_labels.dart';
 import '../models/asset.dart';
 import '../models/quote.dart';
 import '../services/quote_dispatcher.dart';
@@ -24,6 +27,7 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
   Future<void> _search() async {
     final ticker = _tickerController.text.trim().toUpperCase();
     if (ticker.isEmpty) return;
+    final l = AppLocalizations.of(context);
 
     setState(() {
       _loading = true;
@@ -35,14 +39,10 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
       final quote = await _dispatcher.fetchQuoteForTicker(ticker, _assetClass);
       setState(() => _quote = quote);
     } on QuoteUnavailableException {
-      setState(
-        () => _error =
-            'Fonte de cotação indisponível agora (limite ou rede) — tente de novo em instantes.',
-      );
+      setState(() => _error = l.quoteSourceUnavailable);
     } catch (_) {
       setState(
-        () => _error =
-            'Não foi possível buscar a cotação de $ticker (${_assetClass.label})',
+        () => _error = l.quoteSearchFailed(ticker, assetClassName(l, _assetClass)),
       );
     } finally {
       setState(() => _loading = false);
@@ -57,6 +57,7 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Anchor')),
       body: Padding(
@@ -66,12 +67,17 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
           children: [
             DropdownButtonFormField<AssetClass>(
               initialValue: _assetClass,
-              decoration: const InputDecoration(labelText: 'Classe'),
+              decoration: InputDecoration(labelText: l.classLabel),
               // Renda fixa e os cadastros manuais não têm cotação nenhuma
               // (nem no desktop) — não fazem sentido numa tela de busca.
               items: AssetClass.values
                   .where((c) => c.hasAutoQuote)
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c.label)))
+                  .map(
+                    (c) => DropdownMenuItem(
+                      value: c,
+                      child: Text(assetClassName(l, c)),
+                    ),
+                  )
                   .toList(),
               onChanged: (value) {
                 if (value != null) setState(() => _assetClass = value);
@@ -85,8 +91,8 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
                     controller: _tickerController,
                     textCapitalization: TextCapitalization.characters,
                     decoration: InputDecoration(
-                      labelText: 'Ticker (${_assetClass.label})',
-                      hintText: _assetClass.tickerHint,
+                      labelText: l.tickerLabel(assetClassName(l, _assetClass)),
+                      hintText: assetTickerHint(l, _assetClass),
                     ),
                     onSubmitted: (_) => _search(),
                   ),
@@ -94,7 +100,7 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
                 const SizedBox(width: 12),
                 FilledButton(
                   onPressed: _loading ? null : _search,
-                  child: const Text('Buscar'),
+                  child: Text(l.searchButton),
                 ),
               ],
             ),

@@ -39,44 +39,9 @@ enum AssetClass {
   }
 }
 
-/// Ticker de exemplo e moeda default por classe — evita repetir o mesmo
-/// switch em cada tela que precisa de um placeholder/moeda inicial.
+/// Moeda default por classe — evita repetir o mesmo switch em cada tela que precisa da moeda
+/// inicial. O exemplo de ticker mora em `l10n/registration_labels.dart` (depende do idioma).
 extension AssetClassMeta on AssetClass {
-  String get tickerHint {
-    switch (this) {
-      case AssetClass.acaoBr:
-        return 'PETR4';
-      case AssetClass.fii:
-        return 'HGLG11';
-      case AssetClass.etfBr:
-        return 'BOVA11';
-      case AssetClass.etfRendaFixa:
-        return 'AUPO11';
-      case AssetClass.bdr:
-        return 'AAPL34';
-      case AssetClass.acaoInternacional:
-        return 'AAPL';
-      case AssetClass.reit:
-        return 'O';
-      case AssetClass.etfUs:
-        return 'SPY';
-      case AssetClass.cripto:
-        return 'ETH';
-      case AssetClass.metal:
-        return 'XAU';
-      case AssetClass.tesouroDireto:
-        return 'Tesouro Selic 2029';
-      case AssetClass.rendaFixa:
-        return 'CDB Banco X';
-      case AssetClass.imovel:
-        return 'Apto Centro';
-      case AssetClass.empresaNaoListada:
-        return 'Empresa XYZ';
-      case AssetClass.fundo:
-        return 'Fundo XYZ FIC FIM';
-    }
-  }
-
   String get defaultCurrency {
     switch (this) {
       case AssetClass.acaoBr:
