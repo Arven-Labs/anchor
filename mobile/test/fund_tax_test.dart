@@ -774,14 +774,14 @@ void main() {
             date: d('2024-12-31'),
             quotaValue: 10,
             amount: 100,
-          ),
-          contains('cotas em carteira'),
+          )?.code,
+          AmortizationProblemCode.noSharesOnDate,
         );
       });
 
       test('o valor não passa da posição, com a folga do desktop', () {
         // em 01/09/2025 há 60 cotas; a 15,00 a posição vale 900 (compra de 2026 fora)
-        String? at(double amount) => amortizationProblem(
+        AmortizationProblem? at(double amount) => amortizationProblem(
           history,
           date: d('2025-09-01'),
           quotaValue: 15,
@@ -789,7 +789,7 @@ void main() {
         );
         expect(at(900), isNull);
         expect(at(900.5), isNull, reason: 'folga de 0,1% (0,90) sobre 900');
-        expect(at(901), contains('passa do valor da posição'));
+        expect(at(901)?.code, AmortizationProblemCode.exceedsPosition);
       });
 
       test(

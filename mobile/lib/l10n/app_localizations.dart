@@ -3333,6 +3333,408 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit custodian'**
   String get custodianEditTitle;
+
+  /// No description provided for @ptxTitleNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New transaction'**
+  String get ptxTitleNew;
+
+  /// No description provided for @ptxTitleEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit transaction'**
+  String get ptxTitleEdit;
+
+  /// No description provided for @ptxType.
+  ///
+  /// In en, this message translates to:
+  /// **'Type'**
+  String get ptxType;
+
+  /// No description provided for @ptxNeedFund.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a fund asset first.'**
+  String get ptxNeedFund;
+
+  /// No description provided for @ptxNeedAsset.
+  ///
+  /// In en, this message translates to:
+  /// **'Add an asset first, in the Portfolio tab.'**
+  String get ptxNeedAsset;
+
+  /// No description provided for @ptxAsset.
+  ///
+  /// In en, this message translates to:
+  /// **'Asset'**
+  String get ptxAsset;
+
+  /// No description provided for @ptxIssuer.
+  ///
+  /// In en, this message translates to:
+  /// **'Issuer (optional)'**
+  String get ptxIssuer;
+
+  /// No description provided for @ptxIndex.
+  ///
+  /// In en, this message translates to:
+  /// **'Index'**
+  String get ptxIndex;
+
+  /// No description provided for @ptxRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Contracted rate (%)'**
+  String get ptxRate;
+
+  /// No description provided for @ptxMaturity.
+  ///
+  /// In en, this message translates to:
+  /// **'Maturity: {date}'**
+  String ptxMaturity(String date);
+
+  /// No description provided for @ptxMaturityOptional.
+  ///
+  /// In en, this message translates to:
+  /// **'Maturity (optional)'**
+  String get ptxMaturityOptional;
+
+  /// No description provided for @ptxLiquidity.
+  ///
+  /// In en, this message translates to:
+  /// **'Liquidity'**
+  String get ptxLiquidity;
+
+  /// No description provided for @ptxQuantity.
+  ///
+  /// In en, this message translates to:
+  /// **'Quantity'**
+  String get ptxQuantity;
+
+  /// No description provided for @ptxQuotaValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Quota value'**
+  String get ptxQuotaValue;
+
+  /// No description provided for @ptxUnitPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Unit price'**
+  String get ptxUnitPrice;
+
+  /// No description provided for @ptxFee.
+  ///
+  /// In en, this message translates to:
+  /// **'Fee (optional)'**
+  String get ptxFee;
+
+  /// No description provided for @ptxTotal.
+  ///
+  /// In en, this message translates to:
+  /// **'Total: {value}'**
+  String ptxTotal(String value);
+
+  /// No description provided for @ptxAmount.
+  ///
+  /// In en, this message translates to:
+  /// **'Amount'**
+  String get ptxAmount;
+
+  /// No description provided for @ptxForeignTax.
+  ///
+  /// In en, this message translates to:
+  /// **'Foreign tax withheld ({currency}, optional)'**
+  String ptxForeignTax(String currency);
+
+  /// No description provided for @ptxTaxPaidOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Tax paid on: {date}'**
+  String ptxTaxPaidOn(String date);
+
+  /// No description provided for @ptxTaxPaidOnHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Tax payment date (optional; default: the income date)'**
+  String get ptxTaxPaidOnHint;
+
+  /// No description provided for @ptxLossCredit.
+  ///
+  /// In en, this message translates to:
+  /// **'Loss credit used (income, R\$, optional)'**
+  String get ptxLossCredit;
+
+  /// No description provided for @ptxLossCreditHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty = unknown; 0 = no credit was used.'**
+  String get ptxLossCreditHelp;
+
+  /// No description provided for @ptxCustodianFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custodian (from)'**
+  String get ptxCustodianFrom;
+
+  /// No description provided for @ptxCustodianOptional.
+  ///
+  /// In en, this message translates to:
+  /// **'Custodian (optional)'**
+  String get ptxCustodianOptional;
+
+  /// No description provided for @ptxCustodianNone.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get ptxCustodianNone;
+
+  /// No description provided for @ptxCustodianTo.
+  ///
+  /// In en, this message translates to:
+  /// **'Custodian (to)'**
+  String get ptxCustodianTo;
+
+  /// No description provided for @ptxDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Date: {date}'**
+  String ptxDate(String date);
+
+  /// No description provided for @ptxSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get ptxSave;
+
+  /// No description provided for @ptxTypeCompra.
+  ///
+  /// In en, this message translates to:
+  /// **'Buy'**
+  String get ptxTypeCompra;
+
+  /// No description provided for @ptxTypeVenda.
+  ///
+  /// In en, this message translates to:
+  /// **'Sell'**
+  String get ptxTypeVenda;
+
+  /// No description provided for @ptxTypeAporte.
+  ///
+  /// In en, this message translates to:
+  /// **'Deposit'**
+  String get ptxTypeAporte;
+
+  /// No description provided for @ptxTypeRetirada.
+  ///
+  /// In en, this message translates to:
+  /// **'Withdrawal'**
+  String get ptxTypeRetirada;
+
+  /// No description provided for @ptxTypeProvento.
+  ///
+  /// In en, this message translates to:
+  /// **'Income'**
+  String get ptxTypeProvento;
+
+  /// No description provided for @ptxTypeTransferencia.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer'**
+  String get ptxTypeTransferencia;
+
+  /// No description provided for @ptxTypeComeCotas.
+  ///
+  /// In en, this message translates to:
+  /// **'Fund tax withholding'**
+  String get ptxTypeComeCotas;
+
+  /// No description provided for @ptxTypeAmortizacao.
+  ///
+  /// In en, this message translates to:
+  /// **'Amortization'**
+  String get ptxTypeAmortizacao;
+
+  /// No description provided for @ptxLiqDaily.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily'**
+  String get ptxLiqDaily;
+
+  /// No description provided for @ptxLiqAtMaturity.
+  ///
+  /// In en, this message translates to:
+  /// **'At maturity'**
+  String get ptxLiqAtMaturity;
+
+  /// No description provided for @ptxLiqOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get ptxLiqOther;
+
+  /// No description provided for @ptxIdxFixed.
+  ///
+  /// In en, this message translates to:
+  /// **'Fixed rate'**
+  String get ptxIdxFixed;
+
+  /// No description provided for @ptxIdxOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get ptxIdxOther;
+
+  /// No description provided for @ptxAmortNoShares.
+  ///
+  /// In en, this message translates to:
+  /// **'An amortization needs fund quotas in the portfolio on that date.'**
+  String get ptxAmortNoShares;
+
+  /// No description provided for @ptxAmortExceeds.
+  ///
+  /// In en, this message translates to:
+  /// **'The amortized amount ({amount}) exceeds the position value on that date ({position}).'**
+  String ptxAmortExceeds(String amount, String position);
+
+  /// No description provided for @madTitleCompany.
+  ///
+  /// In en, this message translates to:
+  /// **'Company details'**
+  String get madTitleCompany;
+
+  /// No description provided for @madTitleProperty.
+  ///
+  /// In en, this message translates to:
+  /// **'Property details'**
+  String get madTitleProperty;
+
+  /// No description provided for @madEquityTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Equity stake'**
+  String get madEquityTitle;
+
+  /// No description provided for @madEquityPct.
+  ///
+  /// In en, this message translates to:
+  /// **'Equity stake ({percent}%)'**
+  String madEquityPct(String percent);
+
+  /// No description provided for @madEquityPctValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Equity stake ({percent}% — {value} {currency})'**
+  String madEquityPctValue(String percent, String value, String currency);
+
+  /// No description provided for @madEquityNote.
+  ///
+  /// In en, this message translates to:
+  /// **'The percentage is always calculated from shares owned / total company shares — never typed directly.'**
+  String get madEquityNote;
+
+  /// No description provided for @madSharesOwned.
+  ///
+  /// In en, this message translates to:
+  /// **'Shares owned'**
+  String get madSharesOwned;
+
+  /// No description provided for @madTotalShares.
+  ///
+  /// In en, this message translates to:
+  /// **'Total shares'**
+  String get madTotalShares;
+
+  /// No description provided for @madCompanyValuation.
+  ///
+  /// In en, this message translates to:
+  /// **'Company valuation ({currency})'**
+  String madCompanyValuation(String currency);
+
+  /// No description provided for @madSaveEquity.
+  ///
+  /// In en, this message translates to:
+  /// **'Save stake'**
+  String get madSaveEquity;
+
+  /// No description provided for @madHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Valuation history'**
+  String get madHistory;
+
+  /// No description provided for @madHistoryLatest.
+  ///
+  /// In en, this message translates to:
+  /// **'Valuation history (latest: {value} {currency})'**
+  String madHistoryLatest(String value, String currency);
+
+  /// No description provided for @madNoValuations.
+  ///
+  /// In en, this message translates to:
+  /// **'No valuations recorded yet.'**
+  String get madNoValuations;
+
+  /// No description provided for @madPickDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a date'**
+  String get madPickDate;
+
+  /// No description provided for @madDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Date: {date}'**
+  String madDate(String date);
+
+  /// No description provided for @madValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Value ({currency})'**
+  String madValue(String currency);
+
+  /// No description provided for @madNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes (optional)'**
+  String get madNotes;
+
+  /// No description provided for @madAddValuation.
+  ///
+  /// In en, this message translates to:
+  /// **'Add valuation'**
+  String get madAddValuation;
+
+  /// No description provided for @madAttachments.
+  ///
+  /// In en, this message translates to:
+  /// **'Attachments'**
+  String get madAttachments;
+
+  /// No description provided for @madNoAttachments.
+  ///
+  /// In en, this message translates to:
+  /// **'No attachments yet.'**
+  String get madNoAttachments;
+
+  /// No description provided for @madDocType.
+  ///
+  /// In en, this message translates to:
+  /// **'Document type (optional)'**
+  String get madDocType;
+
+  /// No description provided for @madDocTypeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Deed, transfer tax, cap table...'**
+  String get madDocTypeHint;
+
+  /// No description provided for @madAddAttachment.
+  ///
+  /// In en, this message translates to:
+  /// **'Add attachment'**
+  String get madAddAttachment;
 }
 
 class _AppLocalizationsDelegate
