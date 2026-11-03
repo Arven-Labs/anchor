@@ -685,6 +685,278 @@ class AppLocalizationsEn extends AppLocalizations {
   String get txTypeRecebimentoEmprestimo => 'Loan repayment';
 
   @override
+  String genTxInstallment(String name, int number, int total) {
+    return '$name — installment $number/$total';
+  }
+
+  @override
+  String genTxLoanGranted(String name) {
+    return 'Loan to $name';
+  }
+
+  @override
+  String genTxLoanRepayment(String name) {
+    return 'Repayment from $name';
+  }
+
+  @override
+  String get amortizationPrice => 'Price (fixed installment)';
+
+  @override
+  String get amortizationSac => 'SAC (fixed amortization)';
+
+  @override
+  String get actionRegister => 'Add';
+
+  @override
+  String get liabTitle => 'Debts';
+
+  @override
+  String get liabFab => 'Debt';
+
+  @override
+  String get liabEmpty => 'No debts yet.';
+
+  @override
+  String get liabNeedAccount => 'Add an account before the debt.';
+
+  @override
+  String get liabNew => 'New debt';
+
+  @override
+  String get liabNameHint => 'Car financing';
+
+  @override
+  String get liabFieldAccount => 'Account';
+
+  @override
+  String liabFieldPrincipal(String currency) {
+    return 'Principal ($currency)';
+  }
+
+  @override
+  String get liabFieldRate => 'Rate (% per month)';
+
+  @override
+  String get liabRateHelp => '0 for a debt without interest.';
+
+  @override
+  String get liabFieldTerm => 'Term (months)';
+
+  @override
+  String get liabFieldSystem => 'System';
+
+  @override
+  String liabStart(String date) {
+    return 'Start $date';
+  }
+
+  @override
+  String get liabFirstDue => 'Installment 1 is due one month after the start.';
+
+  @override
+  String get liabInvalid =>
+      'Enter a name, a principal and a term greater than zero, and the rate.';
+
+  @override
+  String liabDeleteTitle(String name) {
+    return 'Delete $name?';
+  }
+
+  @override
+  String get liabDeleteBody =>
+      'This debt\'s installments are also removed from the account\'s transactions.';
+
+  @override
+  String get liabDeleteAction => 'Delete debt';
+
+  @override
+  String liabBalance(String value) {
+    return 'Outstanding balance $value';
+  }
+
+  @override
+  String liabPaid(int paid, int total) {
+    return '$paid of $total installments paid';
+  }
+
+  @override
+  String liabNext(String value, String date) {
+    return 'Next: $value on $date';
+  }
+
+  @override
+  String get liabSettled => 'Paid off';
+
+  @override
+  String liabSummary(String system, String rate, String value) {
+    return '$system · $rate% per month · principal $value';
+  }
+
+  @override
+  String liabInstallmentLine(
+    String number,
+    String date,
+    String value,
+    String interest,
+  ) {
+    return '$number · $date · $value (interest $interest)';
+  }
+
+  @override
+  String get loanTitle => 'Loans';
+
+  @override
+  String get loanFab => 'Loan';
+
+  @override
+  String get loanEmpty => 'No loans yet.';
+
+  @override
+  String get loanNew => 'New loan';
+
+  @override
+  String get loanEdit => 'Edit loan';
+
+  @override
+  String get loanBorrower => 'Borrower';
+
+  @override
+  String get loanNewBorrowerOption => 'New borrower…';
+
+  @override
+  String get loanNewBorrowerName => 'Borrower\'s name';
+
+  @override
+  String get loanFromAccount => 'Account it came from';
+
+  @override
+  String get loanNoAccountHelp =>
+      'Without an account it is just a record: no balance changes.';
+
+  @override
+  String get loanNoAccount => 'No account';
+
+  @override
+  String get loanCurrency => 'Currency';
+
+  @override
+  String loanPrincipal(String currency) {
+    return 'Principal ($currency)';
+  }
+
+  @override
+  String get loanRateOptional => 'Rate (% per month, optional)';
+
+  @override
+  String get loanRateHelp =>
+      'Simple interest, informational only. Empty = no interest.';
+
+  @override
+  String loanDateOn(String date) {
+    return 'On $date';
+  }
+
+  @override
+  String get loanInclude => 'Add to net worth';
+
+  @override
+  String get loanNotes => 'Note';
+
+  @override
+  String get loanInvalid =>
+      'Enter the borrower and a principal greater than zero; the rate, if any, cannot be negative.';
+
+  @override
+  String get loanRateNegative => 'The rate cannot be negative.';
+
+  @override
+  String get loanRepayTitle => 'Register repayment';
+
+  @override
+  String get loanRepayConfirm => 'Register';
+
+  @override
+  String loanReceived(String currency) {
+    return 'Received ($currency)';
+  }
+
+  @override
+  String get loanReceivedHelp =>
+      '0 or empty for a write-off, with no money coming in.';
+
+  @override
+  String get loanWrittenOff => 'Written off the balance';
+
+  @override
+  String get loanWrittenOffHelp => 'Empty = the same as the amount received.';
+
+  @override
+  String get loanReceivingAccount => 'Account that received it';
+
+  @override
+  String get loanRepayInvalid =>
+      'Enter the amount written off (greater than zero); the amount received cannot be negative.';
+
+  @override
+  String loanDeleteTitle(String name) {
+    return 'Delete the loan to $name?';
+  }
+
+  @override
+  String get loanDeleteBody =>
+      'Its repayments and the account transactions it generated are also removed.';
+
+  @override
+  String get loanDeleteRepayTitle => 'Delete the repayment?';
+
+  @override
+  String loanDeleteRepayBody(String value, String date) {
+    return 'Repayment of $value on $date. The receipt posted to the account is also removed.';
+  }
+
+  @override
+  String loanToReceive(String value) {
+    return 'To receive $value';
+  }
+
+  @override
+  String get loanOutsideNetWorth => ' (outside net worth)';
+
+  @override
+  String loanPrincipalOn(String value, String date) {
+    return 'Principal $value on $date';
+  }
+
+  @override
+  String loanInterest(String value) {
+    return 'Accrued interest $value';
+  }
+
+  @override
+  String loanExtraMore(String value) {
+    return 'Received more: $value';
+  }
+
+  @override
+  String loanExtraLess(String value) {
+    return 'Received less: $value';
+  }
+
+  @override
+  String loanRate(String rate) {
+    return 'Rate $rate% per month (simple interest)';
+  }
+
+  @override
+  String get loanNoRepayments => 'No repayments yet.';
+
+  @override
+  String loanRepaymentLine(String date, String received, String writtenOff) {
+    return '$date · received $received · written off $writtenOff';
+  }
+
+  @override
   String get catTitle => 'Categories';
 
   @override

@@ -267,6 +267,26 @@ void main() {
     await tester.pumpAndSettle();
     await capture(tester, 'dividas');
 
+    // Os mesmos dados em inglês (ADR 0001): sistema de amortização, datas e valores.
+    await tester.pumpWidget(
+      app(FinancasLiabilitiesScreen(accounts: [nubank, chase]), locale: 'en'),
+    );
+    await settle(
+      tester,
+      () => find.text('Financiamento do carro').evaluate().isNotEmpty,
+    );
+    await tester.tap(find.text('Financiamento do carro'));
+    await tester.pumpAndSettle();
+    await capture(tester, 'dividas-en');
+
+    await tester.pumpWidget(
+      app(FinancasLoansScreen(accounts: [nubank, chase]), locale: 'en'),
+    );
+    await settle(tester, () => find.text('Irmão').evaluate().isNotEmpty);
+    await tester.tap(find.text('Irmão'));
+    await tester.pumpAndSettle();
+    await capture(tester, 'emprestimos-en');
+
     await tester.pumpWidget(
       app(
         FinancasCategoriesScreen(

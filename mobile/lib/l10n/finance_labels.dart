@@ -1,4 +1,6 @@
 import '../domain/finance_error.dart';
+import '../domain/generated_tx_info.dart';
+import '../domain/liability.dart';
 import '../models/general_transaction.dart';
 import 'app_localizations.dart';
 
@@ -52,6 +54,22 @@ String transactionTypeName(AppLocalizations l, GeneralTransactionType type) => s
   GeneralTransactionType.parcelaDivida => l.txTypeParcelaDivida,
   GeneralTransactionType.emprestimoConcedido => l.txTypeEmprestimoConcedido,
   GeneralTransactionType.recebimentoEmprestimo => l.txTypeRecebimentoEmprestimo,
+};
+
+/// A frase de um lançamento gerado por dívida ou empréstimo, no idioma da tela. Parcela sem
+/// número ou total (vínculo incompleto) mostra só o nome, em vez de imprimir "null".
+String generatedTxText(AppLocalizations l, GeneratedTxInfo info) => switch (info.kind) {
+  GeneratedTxKind.installment =>
+    info.installmentNumber == null || info.installmentTotal == null
+        ? info.name
+        : l.genTxInstallment(info.name, info.installmentNumber!, info.installmentTotal!),
+  GeneratedTxKind.loanGranted => l.genTxLoanGranted(info.name),
+  GeneratedTxKind.loanRepayment => l.genTxLoanRepayment(info.name),
+};
+
+String amortizationName(AppLocalizations l, AmortizationSystem system) => switch (system) {
+  AmortizationSystem.price => l.amortizationPrice,
+  AmortizationSystem.sac => l.amortizationSac,
 };
 
 /// Nome da moeda no idioma da tela, ou o próprio código se não for do catálogo.

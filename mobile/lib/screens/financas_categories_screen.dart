@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../domain/general_finance.dart';
 import '../domain/money_format.dart';
+import '../domain/number_locale.dart';
 import '../l10n/app_localizations.dart';
 import '../models/bank_account.dart';
 import '../models/general_transaction_category.dart';
@@ -74,7 +75,9 @@ class _FinancasCategoriesScreenState extends State<FinancasCategoriesScreen> {
     final l = AppLocalizations.of(context);
     final nomeController = TextEditingController(text: existing?.nome);
     final limitController = TextEditingController(
-      text: existing?.limiteMensal?.toString(),
+      text: existing?.limiteMensal == null
+          ? null
+          : withDecimalSeparator(existing!.limiteMensal.toString(), l.localeName),
     );
 
     final saved = await showDialog<bool>(

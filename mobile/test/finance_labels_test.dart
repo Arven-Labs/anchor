@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anchor_mobile/domain/currency_catalog.dart';
 import 'package:anchor_mobile/domain/finance_error.dart';
+import 'package:anchor_mobile/domain/generated_tx_info.dart';
+import 'package:anchor_mobile/domain/liability.dart';
 import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/l10n/finance_labels.dart';
 import 'package:anchor_mobile/models/general_transaction.dart';
@@ -166,6 +168,49 @@ void main() {
     test('moeda fora do catálogo mostra o código, em vez de quebrar', () {
       expect(currencyName(en, 'XYZ'), 'XYZ');
       expect(currencyName(pt, 'XYZ'), 'XYZ');
+    });
+  });
+
+  group('descrição de lançamento gerado', () {
+    const installment = GeneratedTxInfo(
+      kind: GeneratedTxKind.installment,
+      name: 'Carro',
+      installmentNumber: 1,
+      installmentTotal: 12,
+    );
+    const granted = GeneratedTxInfo(kind: GeneratedTxKind.loanGranted, name: 'Irmão');
+    const repaid = GeneratedTxInfo(kind: GeneratedTxKind.loanRepayment, name: 'Irmão');
+
+    test('pt: o mesmo texto que o repositório gravava antes', () {
+      expect(generatedTxText(pt, installment), 'Carro — parcela 1/12');
+      expect(generatedTxText(pt, granted), 'Empréstimo para Irmão');
+      expect(generatedTxText(pt, repaid), 'Recebimento de Irmão');
+    });
+
+    test('en: o nome vem do usuário e não é traduzido', () {
+      expect(generatedTxText(en, installment), 'Carro — installment 1/12');
+      expect(generatedTxText(en, granted), 'Loan to Irmão');
+      expect(generatedTxText(en, repaid), 'Repayment from Irmão');
+    });
+
+    test('parcela sem número ou total não imprime "null"', () {
+      const broken = GeneratedTxInfo(kind: GeneratedTxKind.installment, name: 'Carro');
+      for (final l in [en, pt]) {
+        expect(generatedTxText(l, broken), isNot(contains('null')), reason: l.localeName);
+        expect(generatedTxText(l, broken), contains('Carro'), reason: l.localeName);
+      }
+    });
+  });
+
+  group('sistema de amortização', () {
+    test('pt: o rótulo de antes', () {
+      expect(amortizationName(pt, AmortizationSystem.price), 'Price (parcela fixa)');
+      expect(amortizationName(pt, AmortizationSystem.sac), 'SAC (amortização fixa)');
+    });
+
+    test('en', () {
+      expect(amortizationName(en, AmortizationSystem.price), 'Price (fixed installment)');
+      expect(amortizationName(en, AmortizationSystem.sac), 'SAC (fixed amortization)');
     });
   });
 }

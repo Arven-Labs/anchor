@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../domain/general_finance.dart';
 import '../domain/liability.dart';
 import '../domain/money_format.dart';
+import '../domain/number_locale.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/finance_labels.dart';
 import '../models/bank_account.dart';
 import '../models/liability.dart';
 import '../services/general_finance_repository.dart';
@@ -60,11 +63,10 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
   }
 
   Future<void> _create() async {
+    final l = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
     if (widget.accounts.isEmpty) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Cadastre uma conta antes da dívida.')),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(l.liabNeedAccount)));
       return;
     }
     final nomeController = TextEditingController();
@@ -79,7 +81,7 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Nova dívida'),
+          title: Text(l.liabNew),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -87,16 +89,16 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
                 TextField(
                   key: const Key('financas-liability-name'),
                   controller: nomeController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nome',
-                    hintText: 'Financiamento do carro',
+                  decoration: InputDecoration(
+                    labelText: l.finFieldName,
+                    hintText: l.liabNameHint,
                   ),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<BankAccount>(
                   initialValue: account,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Conta'),
+                  decoration: InputDecoration(labelText: l.liabFieldAccount),
                   items: [
                     for (final a in widget.accounts)
                       DropdownMenuItem(value: a, child: Text(a.label)),
@@ -112,7 +114,7 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
                     decimal: true,
                   ),
                   decoration: InputDecoration(
-                    labelText: 'Principal (${account.currency})',
+                    labelText: l.liabFieldPrincipal(account.currency),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -122,9 +124,9 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
-                    labelText: 'Taxa (% a.m.)',
-                    helperText: '0 para dívida sem juros.',
+                  decoration: InputDecoration(
+                    labelText: l.liabFieldRate,
+                    helperText: l.liabRateHelp,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -132,16 +134,16 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
                   key: const Key('financas-liability-term'),
                   controller: termController,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Prazo (meses)'),
+                  decoration: InputDecoration(labelText: l.liabFieldTerm),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<AmortizationSystem>(
                   initialValue: system,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Sistema'),
+                  decoration: InputDecoration(labelText: l.liabFieldSystem),
                   items: [
                     for (final s in AmortizationSystem.values)
-                      DropdownMenuItem(value: s, child: Text(s.label)),
+                      DropdownMenuItem(value: s, child: Text(amortizationName(l, s))),
                   ],
                   onChanged: (value) =>
                       setDialogState(() => system = value ?? system),
@@ -149,7 +151,11 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.calendar_today_outlined),
-                  label: Text('Início ${formatIsoDay(toIsoDay(start))}'),
+                  label: Text(
+                    l.liabStart(
+                      formatReadingDate(toIsoDay(start), locale: l.localeName),
+                    ),
+                  ),
                   onPressed: () async {
                     final picked = await showDatePicker(
                       context: context,
@@ -163,7 +169,7 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    'A parcela 1 vence um mês depois do início.',
+                    l.liabFirstDue,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -173,11 +179,11 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancelar'),
+              child: Text(l.actionCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Cadastrar'),
+              child: Text(l.actionRegister),
             ),
           ],
         ),
@@ -197,78 +203,87 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
         rate == null ||
         term == null ||
         term <= 0) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Informe nome, principal e prazo maiores que zero e a taxa.',
-          ),
-        ),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(l.liabInvalid)));
       return;
     }
-    await _repository.createLiability(
-      Liability(
-        bankAccountId: account.id!,
-        nome: nome,
-        titular: account.titular,
-        principal: principal,
-        taxaPercentual: rate,
-        prazoMeses: term,
-        sistema: system,
-        dataInicio: toIsoDay(start),
-        createdAt: DateTime.now(),
-      ),
-    );
+    try {
+      await _repository.createLiability(
+        Liability(
+          bankAccountId: account.id!,
+          nome: nome,
+          titular: account.titular,
+          principal: principal,
+          taxaPercentual: rate,
+          prazoMeses: term,
+          sistema: system,
+          dataInicio: toIsoDay(start),
+          createdAt: DateTime.now(),
+        ),
+      );
+    } on ArgumentError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(financeErrorText(l, e))));
+      return;
+    } on StateError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(financeErrorText(l, e))));
+      return;
+    }
     await _load();
   }
 
   Future<void> _delete(LiabilityWithInstallments item) async {
+    final l = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Excluir ${item.liability.nome}?'),
-        content: const Text(
-          'As parcelas desta dívida também saem dos lançamentos da conta.',
-        ),
+        title: Text(l.liabDeleteTitle(item.liability.nome)),
+        content: Text(l.liabDeleteBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
+            child: Text(l.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Excluir'),
+            child: Text(l.actionDelete),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
-    await _repository.deleteLiability(item.liability.id!);
+    try {
+      await _repository.deleteLiability(item.liability.id!);
+    } on StateError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(financeErrorText(l, e))));
+      return;
+    }
     await _load();
   }
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Dívidas')),
+      appBar: AppBar(title: Text(l.liabTitle)),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,
         icon: const Icon(Icons.add),
-        label: const Text('Dívida'),
+        label: Text(l.liabFab),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _liabilities.isEmpty
-          ? const Center(child: Text('Nenhuma dívida cadastrada ainda.'))
+          ? Center(child: Text(l.liabEmpty))
           : ListView(
               padding: const EdgeInsets.all(16),
-              children: [for (final l in _liabilities) _card(l)],
+              children: [for (final item in _liabilities) _card(l, item)],
             ),
     );
   }
 
-  Widget _card(LiabilityWithInstallments item) {
+  Widget _card(AppLocalizations l, LiabilityWithInstallments item) {
     final textTheme = Theme.of(context).textTheme;
+    final locale = l.localeName;
     final liability = item.liability;
     final currency = _account(liability.bankAccountId)?.currency ?? 'BRL';
     final balance = item.balanceOn(_today);
@@ -281,13 +296,15 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
         title: Text(liability.nome),
         subtitle: Text(
           [
-            'Saldo devedor ${formatMoney(balance, currency)}',
-            '$paid de ${liability.prazoMeses} parcelas pagas',
+            l.liabBalance(formatMoney(balance, currency, locale: locale)),
+            l.liabPaid(paid, liability.prazoMeses),
             if (next != null)
-              'Próxima: ${formatMoney(next.valorParcela, currency)} em '
-                  '${formatIsoDay(next.dataVencimento)}'
+              l.liabNext(
+                formatMoney(next.valorParcela, currency, locale: locale),
+                formatReadingDate(next.dataVencimento, locale: locale),
+              )
             else
-              'Quitada',
+              l.liabSettled,
           ].join('\n'),
           key: Key('financas-liability-summary-${liability.id}'),
         ),
@@ -295,18 +312,22 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
         expandedCrossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '${liability.sistema.label} · '
-            '${liability.taxaPercentual.toString().replaceAll('.', ',')}% a.m. · '
-            'principal ${formatMoney(liability.principal, currency)}',
+            l.liabSummary(
+              amortizationName(l, liability.sistema),
+              withDecimalSeparator(liability.taxaPercentual.toString(), locale),
+              formatMoney(liability.principal, currency, locale: locale),
+            ),
             style: textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
           for (final i in item.installments)
             Text(
-              '${i.numeroParcela.toString().padLeft(2, '0')} · '
-              '${formatIsoDay(i.dataVencimento)} · '
-              '${formatMoney(i.valorParcela, currency)} '
-              '(juros ${formatMoney(i.valorJuros, currency)})',
+              l.liabInstallmentLine(
+                i.numeroParcela.toString().padLeft(2, '0'),
+                formatReadingDate(i.dataVencimento, locale: locale),
+                formatMoney(i.valorParcela, currency, locale: locale),
+                formatMoney(i.valorJuros, currency, locale: locale),
+              ),
               style: textTheme.bodySmall?.copyWith(
                 decoration: i.dataVencimento.compareTo(_today) <= 0
                     ? TextDecoration.lineThrough
@@ -317,7 +338,7 @@ class _FinancasLiabilitiesScreenState extends State<FinancasLiabilitiesScreen> {
             alignment: Alignment.centerRight,
             child: TextButton.icon(
               icon: const Icon(Icons.delete_outline),
-              label: const Text('Excluir dívida'),
+              label: Text(l.liabDeleteAction),
               onPressed: () => _delete(item),
             ),
           ),

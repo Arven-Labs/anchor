@@ -1232,6 +1232,437 @@ abstract class AppLocalizations {
   /// **'Loan repayment'**
   String get txTypeRecebimentoEmprestimo;
 
+  /// No description provided for @genTxInstallment.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} — installment {number}/{total}'**
+  String genTxInstallment(String name, int number, int total);
+
+  /// No description provided for @genTxLoanGranted.
+  ///
+  /// In en, this message translates to:
+  /// **'Loan to {name}'**
+  String genTxLoanGranted(String name);
+
+  /// No description provided for @genTxLoanRepayment.
+  ///
+  /// In en, this message translates to:
+  /// **'Repayment from {name}'**
+  String genTxLoanRepayment(String name);
+
+  /// No description provided for @amortizationPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Price (fixed installment)'**
+  String get amortizationPrice;
+
+  /// No description provided for @amortizationSac.
+  ///
+  /// In en, this message translates to:
+  /// **'SAC (fixed amortization)'**
+  String get amortizationSac;
+
+  /// No description provided for @actionRegister.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get actionRegister;
+
+  /// No description provided for @liabTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Debts'**
+  String get liabTitle;
+
+  /// No description provided for @liabFab.
+  ///
+  /// In en, this message translates to:
+  /// **'Debt'**
+  String get liabFab;
+
+  /// No description provided for @liabEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No debts yet.'**
+  String get liabEmpty;
+
+  /// No description provided for @liabNeedAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Add an account before the debt.'**
+  String get liabNeedAccount;
+
+  /// No description provided for @liabNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New debt'**
+  String get liabNew;
+
+  /// No description provided for @liabNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Car financing'**
+  String get liabNameHint;
+
+  /// No description provided for @liabFieldAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get liabFieldAccount;
+
+  /// No description provided for @liabFieldPrincipal.
+  ///
+  /// In en, this message translates to:
+  /// **'Principal ({currency})'**
+  String liabFieldPrincipal(String currency);
+
+  /// No description provided for @liabFieldRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate (% per month)'**
+  String get liabFieldRate;
+
+  /// No description provided for @liabRateHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'0 for a debt without interest.'**
+  String get liabRateHelp;
+
+  /// No description provided for @liabFieldTerm.
+  ///
+  /// In en, this message translates to:
+  /// **'Term (months)'**
+  String get liabFieldTerm;
+
+  /// No description provided for @liabFieldSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get liabFieldSystem;
+
+  /// No description provided for @liabStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start {date}'**
+  String liabStart(String date);
+
+  /// No description provided for @liabFirstDue.
+  ///
+  /// In en, this message translates to:
+  /// **'Installment 1 is due one month after the start.'**
+  String get liabFirstDue;
+
+  /// No description provided for @liabInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a name, a principal and a term greater than zero, and the rate.'**
+  String get liabInvalid;
+
+  /// No description provided for @liabDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {name}?'**
+  String liabDeleteTitle(String name);
+
+  /// No description provided for @liabDeleteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This debt\'s installments are also removed from the account\'s transactions.'**
+  String get liabDeleteBody;
+
+  /// No description provided for @liabDeleteAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete debt'**
+  String get liabDeleteAction;
+
+  /// No description provided for @liabBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Outstanding balance {value}'**
+  String liabBalance(String value);
+
+  /// No description provided for @liabPaid.
+  ///
+  /// In en, this message translates to:
+  /// **'{paid} of {total} installments paid'**
+  String liabPaid(int paid, int total);
+
+  /// No description provided for @liabNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next: {value} on {date}'**
+  String liabNext(String value, String date);
+
+  /// No description provided for @liabSettled.
+  ///
+  /// In en, this message translates to:
+  /// **'Paid off'**
+  String get liabSettled;
+
+  /// No description provided for @liabSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{system} · {rate}% per month · principal {value}'**
+  String liabSummary(String system, String rate, String value);
+
+  /// No description provided for @liabInstallmentLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{number} · {date} · {value} (interest {interest})'**
+  String liabInstallmentLine(
+    String number,
+    String date,
+    String value,
+    String interest,
+  );
+
+  /// No description provided for @loanTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Loans'**
+  String get loanTitle;
+
+  /// No description provided for @loanFab.
+  ///
+  /// In en, this message translates to:
+  /// **'Loan'**
+  String get loanFab;
+
+  /// No description provided for @loanEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No loans yet.'**
+  String get loanEmpty;
+
+  /// No description provided for @loanNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New loan'**
+  String get loanNew;
+
+  /// No description provided for @loanEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit loan'**
+  String get loanEdit;
+
+  /// No description provided for @loanBorrower.
+  ///
+  /// In en, this message translates to:
+  /// **'Borrower'**
+  String get loanBorrower;
+
+  /// No description provided for @loanNewBorrowerOption.
+  ///
+  /// In en, this message translates to:
+  /// **'New borrower…'**
+  String get loanNewBorrowerOption;
+
+  /// No description provided for @loanNewBorrowerName.
+  ///
+  /// In en, this message translates to:
+  /// **'Borrower\'s name'**
+  String get loanNewBorrowerName;
+
+  /// No description provided for @loanFromAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Account it came from'**
+  String get loanFromAccount;
+
+  /// No description provided for @loanNoAccountHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Without an account it is just a record: no balance changes.'**
+  String get loanNoAccountHelp;
+
+  /// No description provided for @loanNoAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'No account'**
+  String get loanNoAccount;
+
+  /// No description provided for @loanCurrency.
+  ///
+  /// In en, this message translates to:
+  /// **'Currency'**
+  String get loanCurrency;
+
+  /// No description provided for @loanPrincipal.
+  ///
+  /// In en, this message translates to:
+  /// **'Principal ({currency})'**
+  String loanPrincipal(String currency);
+
+  /// No description provided for @loanRateOptional.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate (% per month, optional)'**
+  String get loanRateOptional;
+
+  /// No description provided for @loanRateHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Simple interest, informational only. Empty = no interest.'**
+  String get loanRateHelp;
+
+  /// No description provided for @loanDateOn.
+  ///
+  /// In en, this message translates to:
+  /// **'On {date}'**
+  String loanDateOn(String date);
+
+  /// No description provided for @loanInclude.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to net worth'**
+  String get loanInclude;
+
+  /// No description provided for @loanNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Note'**
+  String get loanNotes;
+
+  /// No description provided for @loanInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the borrower and a principal greater than zero; the rate, if any, cannot be negative.'**
+  String get loanInvalid;
+
+  /// No description provided for @loanRateNegative.
+  ///
+  /// In en, this message translates to:
+  /// **'The rate cannot be negative.'**
+  String get loanRateNegative;
+
+  /// No description provided for @loanRepayTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Register repayment'**
+  String get loanRepayTitle;
+
+  /// No description provided for @loanRepayConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Register'**
+  String get loanRepayConfirm;
+
+  /// No description provided for @loanReceived.
+  ///
+  /// In en, this message translates to:
+  /// **'Received ({currency})'**
+  String loanReceived(String currency);
+
+  /// No description provided for @loanReceivedHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'0 or empty for a write-off, with no money coming in.'**
+  String get loanReceivedHelp;
+
+  /// No description provided for @loanWrittenOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Written off the balance'**
+  String get loanWrittenOff;
+
+  /// No description provided for @loanWrittenOffHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty = the same as the amount received.'**
+  String get loanWrittenOffHelp;
+
+  /// No description provided for @loanReceivingAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Account that received it'**
+  String get loanReceivingAccount;
+
+  /// No description provided for @loanRepayInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the amount written off (greater than zero); the amount received cannot be negative.'**
+  String get loanRepayInvalid;
+
+  /// No description provided for @loanDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete the loan to {name}?'**
+  String loanDeleteTitle(String name);
+
+  /// No description provided for @loanDeleteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Its repayments and the account transactions it generated are also removed.'**
+  String get loanDeleteBody;
+
+  /// No description provided for @loanDeleteRepayTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete the repayment?'**
+  String get loanDeleteRepayTitle;
+
+  /// No description provided for @loanDeleteRepayBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Repayment of {value} on {date}. The receipt posted to the account is also removed.'**
+  String loanDeleteRepayBody(String value, String date);
+
+  /// No description provided for @loanToReceive.
+  ///
+  /// In en, this message translates to:
+  /// **'To receive {value}'**
+  String loanToReceive(String value);
+
+  /// No description provided for @loanOutsideNetWorth.
+  ///
+  /// In en, this message translates to:
+  /// **' (outside net worth)'**
+  String get loanOutsideNetWorth;
+
+  /// No description provided for @loanPrincipalOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Principal {value} on {date}'**
+  String loanPrincipalOn(String value, String date);
+
+  /// No description provided for @loanInterest.
+  ///
+  /// In en, this message translates to:
+  /// **'Accrued interest {value}'**
+  String loanInterest(String value);
+
+  /// No description provided for @loanExtraMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Received more: {value}'**
+  String loanExtraMore(String value);
+
+  /// No description provided for @loanExtraLess.
+  ///
+  /// In en, this message translates to:
+  /// **'Received less: {value}'**
+  String loanExtraLess(String value);
+
+  /// No description provided for @loanRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate {rate}% per month (simple interest)'**
+  String loanRate(String rate);
+
+  /// No description provided for @loanNoRepayments.
+  ///
+  /// In en, this message translates to:
+  /// **'No repayments yet.'**
+  String get loanNoRepayments;
+
+  /// No description provided for @loanRepaymentLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{date} · received {received} · written off {writtenOff}'**
+  String loanRepaymentLine(String date, String received, String writtenOff);
+
   /// No description provided for @catTitle.
   ///
   /// In en, this message translates to:

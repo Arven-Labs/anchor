@@ -4,14 +4,14 @@ import 'finance_error.dart';
 
 /// Dívida com parcelas geradas — porta de `desktop/src-tauri/src/domain/liability.rs`.
 enum AmortizationSystem {
-  price('price', 'Price (parcela fixa)'),
-  sac('sac', 'SAC (amortização fixa)');
+  price('price'),
+  sac('sac');
 
-  /// Texto gravado em `sistema_amortizacao`, o mesmo do desktop.
+  /// Texto gravado em `sistema_amortizacao`, o mesmo do desktop. O nome na tela vem de
+  /// `amortizationName` (ADR 0001).
   final String value;
-  final String label;
 
-  const AmortizationSystem(this.value, this.label);
+  const AmortizationSystem(this.value);
 
   static AmortizationSystem fromValue(String value) =>
       values.firstWhere((s) => s.value == value);
