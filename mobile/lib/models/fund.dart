@@ -68,6 +68,34 @@ enum EstoqueOption {
   }
 }
 
+/// Por que uma configuração de fundo foi recusada (ADR 0001): a tela traduz pelo código
+/// (`l10n/fund_tax_labels.dart`).
+enum FundSettingErrorCode {
+  needTermBeforeStructure,
+  needTermBeforeEstoque,
+  needTermBeforeAdministrator,
+  needTermBeforeSubclass,
+  cnpjMustHave14Digits,
+}
+
+/// Recusa de uma configuração de fundo. Segue sendo [FormatException], então
+/// `on FormatException` continua valendo; a mensagem é em inglês, para quem depura.
+class FundSettingException extends FormatException {
+  final FundSettingErrorCode code;
+
+  FundSettingException(this.code) : super(_developerMessage(code));
+
+  static String _developerMessage(FundSettingErrorCode code) => switch (code) {
+    FundSettingErrorCode.needTermBeforeStructure => 'Choose the fund type before the structure',
+    FundSettingErrorCode.needTermBeforeEstoque => 'Choose the fund type before the 2023 stock',
+    FundSettingErrorCode.needTermBeforeAdministrator =>
+      'Choose the fund type before the administrator',
+    FundSettingErrorCode.needTermBeforeSubclass =>
+      'Choose the fund type before the CVM subclass',
+    FundSettingErrorCode.cnpjMustHave14Digits => 'The CNPJ must have 14 digits',
+  };
+}
+
 /// Valor de uma cota numa data, em BRL, lançado pelo usuário. `source` já existe
 /// para a leitura da CVM entrar depois; hoje só há `manual`.
 class FundQuota {

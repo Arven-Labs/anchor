@@ -1357,4 +1357,373 @@ class AppLocalizationsEn extends AppLocalizations {
   ) {
     return 'Insufficient $ticker balance: you have $available and the swap gives $requested.';
   }
+
+  @override
+  String get fundTaxTitle => 'Fund tax';
+
+  @override
+  String get fundTaxDisclaimer =>
+      'Estimate based on the transactions and quotas entered in this app. The semiannual quota tax and the redemption tax are withheld at the source by the fund: there is no DARF. The rules come from secondary sources; check with the tax authority and the fund statement.';
+
+  @override
+  String get fundRefreshCvm => 'Update from CVM';
+
+  @override
+  String get fundCvmDownloadWarning =>
+      'Downloads a file of up to ~12 MB for each month read (usually 4 months, about 40 MB). Continue?';
+
+  @override
+  String get fundDownload => 'Download';
+
+  @override
+  String get fundProgressPreparing => 'Preparing…';
+
+  @override
+  String fundProgressReading(int done, int total) {
+    return 'Reading month $done of $total…';
+  }
+
+  @override
+  String fundCvmReadFailed(String error) {
+    return 'Could not read the CVM: $error';
+  }
+
+  @override
+  String get fundLossCreditsHeader =>
+      'Loss to offset against later gains and semiannual quota tax (same administrator and same type)';
+
+  @override
+  String fundLossCreditLine(
+    String amount,
+    String tickers,
+    String administrator,
+    String term,
+  ) {
+    return '$amount — $tickers ($administrator, $term)';
+  }
+
+  @override
+  String get fundNoAdministrator => 'no administrator';
+
+  @override
+  String get fundNone => 'No funds registered yet.';
+
+  @override
+  String get fundStatusNoPosition => 'No quotas in the portfolio.';
+
+  @override
+  String get fundStatusNoTerm =>
+      'Choose the fund type to estimate the semiannual quota tax and the redemption tax.';
+
+  @override
+  String get fundStatusNoQuota =>
+      'Enter the quota value to estimate the semiannual quota tax.';
+
+  @override
+  String get fundStatusExempt =>
+      'Equity fund or investment entity: no semiannual quota tax.';
+
+  @override
+  String fundStatusEstimated(String date, String tax, String quotas) {
+    return 'Next semiannual quota tax on $date: $tax ($quotas quotas)';
+  }
+
+  @override
+  String fundBasis(String basis, String origin, String gain, String rate) {
+    return 'Basis per quota $basis ($origin) · gain $gain × $rate%';
+  }
+
+  @override
+  String get fundBasisLastComeCotas =>
+      'quota value at the last semiannual quota tax';
+
+  @override
+  String get fundBasisEstoque =>
+      'average cost plus the 2023 stock already taxed';
+
+  @override
+  String get fundBasisAverageCost => 'average cost';
+
+  @override
+  String get fundEstoqueNotTaxed =>
+      'Say how the 2023 stock was taxed to estimate the tax and the cost of the semiannual quota tax.';
+
+  @override
+  String get fundEstoqueNeedsQuota =>
+      'Enter the quota of 12/31/2023 (or up to 10 days before) to estimate the stock.';
+
+  @override
+  String fundEstoqueEstimated(
+    String base,
+    String date,
+    String quota,
+    String rate,
+    String tax,
+  ) {
+    return '2023 stock: gain of $base up to $date (quota $quota) at $rate% = $tax';
+  }
+
+  @override
+  String fundRefundable(String total) {
+    return 'Semiannual quota tax paid above the tax due: $total. The law does not provide a refund of this excess (IN RFB 1.585/2015, art. 15; Law 14.754/2023, art. 17, §6). It is tax paid on income that later disappeared, and it comes back as a loss to offset against later gains. The app already adds this loss to the loss credit; the excess itself is not included in the net amounts.';
+  }
+
+  @override
+  String fundWarnStaleQuota(int days) {
+    return 'The latest quota value is more than $days days old: the estimate may be out of date.';
+  }
+
+  @override
+  String fundWarnUnrecordedDeduction(String date) {
+    return 'The semiannual quota tax of $date has already passed with no deduction recorded: enter the Semiannual quota tax transaction so the basis is right.';
+  }
+
+  @override
+  String fundWarnCreditNotInformed(String date, String balance) {
+    return 'The semiannual quota tax of $date was recorded with $balance of loss credit in the group: the administrator may have used part of it, so the credit balance shown may be above the real one. Fill in the loss credit used in that transaction to resolve this.';
+  }
+
+  @override
+  String fundWarnCreditExceedsBalance(
+    String date,
+    String informed,
+    String balance,
+  ) {
+    return 'The semiannual quota tax of $date says $informed of loss credit was used, but the group only had $balance: only that balance was deducted. Check the amount.';
+  }
+
+  @override
+  String fundWarnRedemptionUncovered(String date) {
+    return 'Redemption of $date is larger than the investments entered: the cost counts only the known part.';
+  }
+
+  @override
+  String fundWarnRedemptionExcess(String date, String amount) {
+    return 'In the redemption of $date the semiannual quota tax paid exceeded the tax due by $amount: it stays out of the net amount (see the note about the excess).';
+  }
+
+  @override
+  String fundCreditReduced(String used, String before) {
+    return 'Loss credit of $used has already reduced the gain: the tax would be $before without it.';
+  }
+
+  @override
+  String fundRedemptionCreditLine(String used, String ir, String before) {
+    return 'Losses from earlier redemptions in the group offset $used of the gain: tax $ir instead of $before.';
+  }
+
+  @override
+  String fundRedemptionLossLine(String loss) {
+    return 'This redemption lost $loss: it offsets the gain of later redemptions and semiannual quota tax in the same group (same administrator and same type).';
+  }
+
+  @override
+  String fundRecordHead(String administrator, String date) {
+    return 'All the funds you entered from administrator $administrator were redeemed by $date.';
+  }
+
+  @override
+  String fundRecordExpired(String head, String balance, String until) {
+    return '$head The administrator\'s obligation to keep the loss record ($balance) ended on $until (IN RFB 1.585, art. 15 §2): check that it still has the record before counting on the balance.';
+  }
+
+  @override
+  String fundRecordActive(String head, String balance, String until) {
+    return '$head The administrator is only required to keep the loss record ($balance) until $until (IN RFB 1.585, art. 15 §2). The law does not limit your right to offset, but check with the administrator.';
+  }
+
+  @override
+  String fundCvmLatest(String date) {
+    return ' Last CVM quota: $date.';
+  }
+
+  @override
+  String fundCvmRead(String latest) {
+    return 'Quotas read from the CVM.$latest';
+  }
+
+  @override
+  String get fundCvmNoCnpj =>
+      'Enter the fund\'s CNPJ to read the quota from the CVM.';
+
+  @override
+  String fundCvmPending(String latest) {
+    return 'Not read yet.$latest';
+  }
+
+  @override
+  String get fundCvmNotFound =>
+      'The CVM returned no quota for this CNPJ (or subclass) in the months read. Check the CNPJ.';
+
+  @override
+  String get fundCvmNeedsSubclass =>
+      'This CNPJ only has subclasses in the report: choose one.';
+
+  @override
+  String fundCvmError(String message, String latest) {
+    return 'Could not read the CVM right now ($message). Try again in a moment.$latest';
+  }
+
+  @override
+  String get fundCvmErrorDefault => 'error';
+
+  @override
+  String get fundTermLabel => 'Fund type';
+
+  @override
+  String get fundStructureLabel => 'Fund structure (Law 14.754)';
+
+  @override
+  String get fundEstoqueLabel => '2023 stock (arts. 27 and 28)';
+
+  @override
+  String get fundEstoqueNotInformed => 'Not taxed / not informed';
+
+  @override
+  String get fundAdministratorLabel =>
+      'Administrator / intermediary (offsets loss)';
+
+  @override
+  String get fundAdministratorHint => 'e.g. XP, BTG';
+
+  @override
+  String get fundAdministratorHelpNoTerm => 'Choose the fund type first.';
+
+  @override
+  String get fundAdministratorHelpNone =>
+      'Without this, the fund only offsets losses against itself.';
+
+  @override
+  String get fundAdministratorHelpSet =>
+      'Funds of the same type and the same administrator offset each other.';
+
+  @override
+  String get fundSaveAdministrator => 'Save administrator';
+
+  @override
+  String get fundCnpjLabel => 'Fund CNPJ (quota from the CVM)';
+
+  @override
+  String get fundSaveCnpj => 'Save CNPJ';
+
+  @override
+  String get fundSubclassLabel => 'CVM subclass';
+
+  @override
+  String get fundSubclassNone => 'Class (no subclass)';
+
+  @override
+  String fundQuotasTitle(int count) {
+    return 'Quota value ($count)';
+  }
+
+  @override
+  String get fundDeleteQuota => 'Delete quota';
+
+  @override
+  String get fundAddQuota => 'Enter quota';
+
+  @override
+  String fundDeductionsTitle(int count) {
+    return 'Semiannual quota tax recorded ($count)';
+  }
+
+  @override
+  String fundDeductionLine(
+    String quantity,
+    String price,
+    String tax,
+    String credit,
+  ) {
+    return '$quantity quotas at $price · tax $tax$credit';
+  }
+
+  @override
+  String fundDeductionCredit(String value) {
+    return ' · credit used $value';
+  }
+
+  @override
+  String fundRedemptionsTitle(int count) {
+    return 'Estimated redemptions and amortizations ($count)';
+  }
+
+  @override
+  String fundRedemptionAmortization(String date, String quota) {
+    return '$date — amortization (quota at $quota; the quotas stay)';
+  }
+
+  @override
+  String fundRedemptionTitle(String date, String quotas, String quota) {
+    return '$date — $quotas quotas at $quota';
+  }
+
+  @override
+  String fundRedemptionDetail(String gross, String iof, String ir, String net) {
+    return 'Gross $gross · IOF $iof · tax $ir · net $net';
+  }
+
+  @override
+  String fundRedemptionComeCotasCredit(String value) {
+    return 'Semiannual quota tax already paid offset $value of the tax';
+  }
+
+  @override
+  String fundQuotaDialogTitle(String ticker) {
+    return 'Quota of $ticker';
+  }
+
+  @override
+  String get fundQuotaValueLabel => 'Quota value (R\$)';
+
+  @override
+  String fundDate(String date) {
+    return 'Date: $date';
+  }
+
+  @override
+  String get fundTermLongTerm => 'Long term';
+
+  @override
+  String get fundTermShortTerm => 'Short term';
+
+  @override
+  String get fundTermEquity => 'Equity';
+
+  @override
+  String get fundTermInvestmentEntity => 'Investment entity';
+
+  @override
+  String get fundStructureOpen => 'Open';
+
+  @override
+  String get fundStructureClosed => 'Closed';
+
+  @override
+  String get fundStructureExclusive => 'Exclusive';
+
+  @override
+  String get fundEstoqueGeneral => 'General rule (15%)';
+
+  @override
+  String get fundEstoqueOption8 => 'Option (8%)';
+
+  @override
+  String get fundErrNeedTermBeforeStructure =>
+      'Choose the fund type before the structure';
+
+  @override
+  String get fundErrNeedTermBeforeEstoque =>
+      'Choose the fund type before the 2023 stock';
+
+  @override
+  String get fundErrNeedTermBeforeAdministrator =>
+      'Choose the fund type before the administrator';
+
+  @override
+  String get fundErrNeedTermBeforeSubclass =>
+      'Choose the fund type before the CVM subclass';
+
+  @override
+  String get fundErrCnpjMustHave14Digits => 'The CNPJ must have 14 digits';
 }

@@ -2281,6 +2281,548 @@ abstract class AppLocalizations {
     String available,
     String requested,
   );
+
+  /// No description provided for @fundTaxTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Fund tax'**
+  String get fundTaxTitle;
+
+  /// No description provided for @fundTaxDisclaimer.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimate based on the transactions and quotas entered in this app. The semiannual quota tax and the redemption tax are withheld at the source by the fund: there is no DARF. The rules come from secondary sources; check with the tax authority and the fund statement.'**
+  String get fundTaxDisclaimer;
+
+  /// No description provided for @fundRefreshCvm.
+  ///
+  /// In en, this message translates to:
+  /// **'Update from CVM'**
+  String get fundRefreshCvm;
+
+  /// No description provided for @fundCvmDownloadWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloads a file of up to ~12 MB for each month read (usually 4 months, about 40 MB). Continue?'**
+  String get fundCvmDownloadWarning;
+
+  /// No description provided for @fundDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get fundDownload;
+
+  /// No description provided for @fundProgressPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing…'**
+  String get fundProgressPreparing;
+
+  /// No description provided for @fundProgressReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading month {done} of {total}…'**
+  String fundProgressReading(int done, int total);
+
+  /// No description provided for @fundCvmReadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not read the CVM: {error}'**
+  String fundCvmReadFailed(String error);
+
+  /// No description provided for @fundLossCreditsHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'Loss to offset against later gains and semiannual quota tax (same administrator and same type)'**
+  String get fundLossCreditsHeader;
+
+  /// No description provided for @fundLossCreditLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{amount} — {tickers} ({administrator}, {term})'**
+  String fundLossCreditLine(
+    String amount,
+    String tickers,
+    String administrator,
+    String term,
+  );
+
+  /// No description provided for @fundNoAdministrator.
+  ///
+  /// In en, this message translates to:
+  /// **'no administrator'**
+  String get fundNoAdministrator;
+
+  /// No description provided for @fundNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No funds registered yet.'**
+  String get fundNone;
+
+  /// No description provided for @fundStatusNoPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'No quotas in the portfolio.'**
+  String get fundStatusNoPosition;
+
+  /// No description provided for @fundStatusNoTerm.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the fund type to estimate the semiannual quota tax and the redemption tax.'**
+  String get fundStatusNoTerm;
+
+  /// No description provided for @fundStatusNoQuota.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the quota value to estimate the semiannual quota tax.'**
+  String get fundStatusNoQuota;
+
+  /// No description provided for @fundStatusExempt.
+  ///
+  /// In en, this message translates to:
+  /// **'Equity fund or investment entity: no semiannual quota tax.'**
+  String get fundStatusExempt;
+
+  /// No description provided for @fundStatusEstimated.
+  ///
+  /// In en, this message translates to:
+  /// **'Next semiannual quota tax on {date}: {tax} ({quotas} quotas)'**
+  String fundStatusEstimated(String date, String tax, String quotas);
+
+  /// No description provided for @fundBasis.
+  ///
+  /// In en, this message translates to:
+  /// **'Basis per quota {basis} ({origin}) · gain {gain} × {rate}%'**
+  String fundBasis(String basis, String origin, String gain, String rate);
+
+  /// No description provided for @fundBasisLastComeCotas.
+  ///
+  /// In en, this message translates to:
+  /// **'quota value at the last semiannual quota tax'**
+  String get fundBasisLastComeCotas;
+
+  /// No description provided for @fundBasisEstoque.
+  ///
+  /// In en, this message translates to:
+  /// **'average cost plus the 2023 stock already taxed'**
+  String get fundBasisEstoque;
+
+  /// No description provided for @fundBasisAverageCost.
+  ///
+  /// In en, this message translates to:
+  /// **'average cost'**
+  String get fundBasisAverageCost;
+
+  /// No description provided for @fundEstoqueNotTaxed.
+  ///
+  /// In en, this message translates to:
+  /// **'Say how the 2023 stock was taxed to estimate the tax and the cost of the semiannual quota tax.'**
+  String get fundEstoqueNotTaxed;
+
+  /// No description provided for @fundEstoqueNeedsQuota.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the quota of 12/31/2023 (or up to 10 days before) to estimate the stock.'**
+  String get fundEstoqueNeedsQuota;
+
+  /// No description provided for @fundEstoqueEstimated.
+  ///
+  /// In en, this message translates to:
+  /// **'2023 stock: gain of {base} up to {date} (quota {quota}) at {rate}% = {tax}'**
+  String fundEstoqueEstimated(
+    String base,
+    String date,
+    String quota,
+    String rate,
+    String tax,
+  );
+
+  /// No description provided for @fundRefundable.
+  ///
+  /// In en, this message translates to:
+  /// **'Semiannual quota tax paid above the tax due: {total}. The law does not provide a refund of this excess (IN RFB 1.585/2015, art. 15; Law 14.754/2023, art. 17, §6). It is tax paid on income that later disappeared, and it comes back as a loss to offset against later gains. The app already adds this loss to the loss credit; the excess itself is not included in the net amounts.'**
+  String fundRefundable(String total);
+
+  /// No description provided for @fundWarnStaleQuota.
+  ///
+  /// In en, this message translates to:
+  /// **'The latest quota value is more than {days} days old: the estimate may be out of date.'**
+  String fundWarnStaleQuota(int days);
+
+  /// No description provided for @fundWarnUnrecordedDeduction.
+  ///
+  /// In en, this message translates to:
+  /// **'The semiannual quota tax of {date} has already passed with no deduction recorded: enter the Semiannual quota tax transaction so the basis is right.'**
+  String fundWarnUnrecordedDeduction(String date);
+
+  /// No description provided for @fundWarnCreditNotInformed.
+  ///
+  /// In en, this message translates to:
+  /// **'The semiannual quota tax of {date} was recorded with {balance} of loss credit in the group: the administrator may have used part of it, so the credit balance shown may be above the real one. Fill in the loss credit used in that transaction to resolve this.'**
+  String fundWarnCreditNotInformed(String date, String balance);
+
+  /// No description provided for @fundWarnCreditExceedsBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'The semiannual quota tax of {date} says {informed} of loss credit was used, but the group only had {balance}: only that balance was deducted. Check the amount.'**
+  String fundWarnCreditExceedsBalance(
+    String date,
+    String informed,
+    String balance,
+  );
+
+  /// No description provided for @fundWarnRedemptionUncovered.
+  ///
+  /// In en, this message translates to:
+  /// **'Redemption of {date} is larger than the investments entered: the cost counts only the known part.'**
+  String fundWarnRedemptionUncovered(String date);
+
+  /// No description provided for @fundWarnRedemptionExcess.
+  ///
+  /// In en, this message translates to:
+  /// **'In the redemption of {date} the semiannual quota tax paid exceeded the tax due by {amount}: it stays out of the net amount (see the note about the excess).'**
+  String fundWarnRedemptionExcess(String date, String amount);
+
+  /// No description provided for @fundCreditReduced.
+  ///
+  /// In en, this message translates to:
+  /// **'Loss credit of {used} has already reduced the gain: the tax would be {before} without it.'**
+  String fundCreditReduced(String used, String before);
+
+  /// No description provided for @fundRedemptionCreditLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Losses from earlier redemptions in the group offset {used} of the gain: tax {ir} instead of {before}.'**
+  String fundRedemptionCreditLine(String used, String ir, String before);
+
+  /// No description provided for @fundRedemptionLossLine.
+  ///
+  /// In en, this message translates to:
+  /// **'This redemption lost {loss}: it offsets the gain of later redemptions and semiannual quota tax in the same group (same administrator and same type).'**
+  String fundRedemptionLossLine(String loss);
+
+  /// No description provided for @fundRecordHead.
+  ///
+  /// In en, this message translates to:
+  /// **'All the funds you entered from administrator {administrator} were redeemed by {date}.'**
+  String fundRecordHead(String administrator, String date);
+
+  /// No description provided for @fundRecordExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'{head} The administrator\'s obligation to keep the loss record ({balance}) ended on {until} (IN RFB 1.585, art. 15 §2): check that it still has the record before counting on the balance.'**
+  String fundRecordExpired(String head, String balance, String until);
+
+  /// No description provided for @fundRecordActive.
+  ///
+  /// In en, this message translates to:
+  /// **'{head} The administrator is only required to keep the loss record ({balance}) until {until} (IN RFB 1.585, art. 15 §2). The law does not limit your right to offset, but check with the administrator.'**
+  String fundRecordActive(String head, String balance, String until);
+
+  /// No description provided for @fundCvmLatest.
+  ///
+  /// In en, this message translates to:
+  /// **' Last CVM quota: {date}.'**
+  String fundCvmLatest(String date);
+
+  /// No description provided for @fundCvmRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Quotas read from the CVM.{latest}'**
+  String fundCvmRead(String latest);
+
+  /// No description provided for @fundCvmNoCnpj.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the fund\'s CNPJ to read the quota from the CVM.'**
+  String get fundCvmNoCnpj;
+
+  /// No description provided for @fundCvmPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Not read yet.{latest}'**
+  String fundCvmPending(String latest);
+
+  /// No description provided for @fundCvmNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'The CVM returned no quota for this CNPJ (or subclass) in the months read. Check the CNPJ.'**
+  String get fundCvmNotFound;
+
+  /// No description provided for @fundCvmNeedsSubclass.
+  ///
+  /// In en, this message translates to:
+  /// **'This CNPJ only has subclasses in the report: choose one.'**
+  String get fundCvmNeedsSubclass;
+
+  /// No description provided for @fundCvmError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not read the CVM right now ({message}). Try again in a moment.{latest}'**
+  String fundCvmError(String message, String latest);
+
+  /// No description provided for @fundCvmErrorDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'error'**
+  String get fundCvmErrorDefault;
+
+  /// No description provided for @fundTermLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Fund type'**
+  String get fundTermLabel;
+
+  /// No description provided for @fundStructureLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Fund structure (Law 14.754)'**
+  String get fundStructureLabel;
+
+  /// No description provided for @fundEstoqueLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'2023 stock (arts. 27 and 28)'**
+  String get fundEstoqueLabel;
+
+  /// No description provided for @fundEstoqueNotInformed.
+  ///
+  /// In en, this message translates to:
+  /// **'Not taxed / not informed'**
+  String get fundEstoqueNotInformed;
+
+  /// No description provided for @fundAdministratorLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Administrator / intermediary (offsets loss)'**
+  String get fundAdministratorLabel;
+
+  /// No description provided for @fundAdministratorHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. XP, BTG'**
+  String get fundAdministratorHint;
+
+  /// No description provided for @fundAdministratorHelpNoTerm.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the fund type first.'**
+  String get fundAdministratorHelpNoTerm;
+
+  /// No description provided for @fundAdministratorHelpNone.
+  ///
+  /// In en, this message translates to:
+  /// **'Without this, the fund only offsets losses against itself.'**
+  String get fundAdministratorHelpNone;
+
+  /// No description provided for @fundAdministratorHelpSet.
+  ///
+  /// In en, this message translates to:
+  /// **'Funds of the same type and the same administrator offset each other.'**
+  String get fundAdministratorHelpSet;
+
+  /// No description provided for @fundSaveAdministrator.
+  ///
+  /// In en, this message translates to:
+  /// **'Save administrator'**
+  String get fundSaveAdministrator;
+
+  /// No description provided for @fundCnpjLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Fund CNPJ (quota from the CVM)'**
+  String get fundCnpjLabel;
+
+  /// No description provided for @fundSaveCnpj.
+  ///
+  /// In en, this message translates to:
+  /// **'Save CNPJ'**
+  String get fundSaveCnpj;
+
+  /// No description provided for @fundSubclassLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'CVM subclass'**
+  String get fundSubclassLabel;
+
+  /// No description provided for @fundSubclassNone.
+  ///
+  /// In en, this message translates to:
+  /// **'Class (no subclass)'**
+  String get fundSubclassNone;
+
+  /// No description provided for @fundQuotasTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Quota value ({count})'**
+  String fundQuotasTitle(int count);
+
+  /// No description provided for @fundDeleteQuota.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete quota'**
+  String get fundDeleteQuota;
+
+  /// No description provided for @fundAddQuota.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter quota'**
+  String get fundAddQuota;
+
+  /// No description provided for @fundDeductionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Semiannual quota tax recorded ({count})'**
+  String fundDeductionsTitle(int count);
+
+  /// No description provided for @fundDeductionLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{quantity} quotas at {price} · tax {tax}{credit}'**
+  String fundDeductionLine(
+    String quantity,
+    String price,
+    String tax,
+    String credit,
+  );
+
+  /// No description provided for @fundDeductionCredit.
+  ///
+  /// In en, this message translates to:
+  /// **' · credit used {value}'**
+  String fundDeductionCredit(String value);
+
+  /// No description provided for @fundRedemptionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimated redemptions and amortizations ({count})'**
+  String fundRedemptionsTitle(int count);
+
+  /// No description provided for @fundRedemptionAmortization.
+  ///
+  /// In en, this message translates to:
+  /// **'{date} — amortization (quota at {quota}; the quotas stay)'**
+  String fundRedemptionAmortization(String date, String quota);
+
+  /// No description provided for @fundRedemptionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{date} — {quotas} quotas at {quota}'**
+  String fundRedemptionTitle(String date, String quotas, String quota);
+
+  /// No description provided for @fundRedemptionDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Gross {gross} · IOF {iof} · tax {ir} · net {net}'**
+  String fundRedemptionDetail(String gross, String iof, String ir, String net);
+
+  /// No description provided for @fundRedemptionComeCotasCredit.
+  ///
+  /// In en, this message translates to:
+  /// **'Semiannual quota tax already paid offset {value} of the tax'**
+  String fundRedemptionComeCotasCredit(String value);
+
+  /// No description provided for @fundQuotaDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Quota of {ticker}'**
+  String fundQuotaDialogTitle(String ticker);
+
+  /// No description provided for @fundQuotaValueLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Quota value (R\$)'**
+  String get fundQuotaValueLabel;
+
+  /// No description provided for @fundDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Date: {date}'**
+  String fundDate(String date);
+
+  /// No description provided for @fundTermLongTerm.
+  ///
+  /// In en, this message translates to:
+  /// **'Long term'**
+  String get fundTermLongTerm;
+
+  /// No description provided for @fundTermShortTerm.
+  ///
+  /// In en, this message translates to:
+  /// **'Short term'**
+  String get fundTermShortTerm;
+
+  /// No description provided for @fundTermEquity.
+  ///
+  /// In en, this message translates to:
+  /// **'Equity'**
+  String get fundTermEquity;
+
+  /// No description provided for @fundTermInvestmentEntity.
+  ///
+  /// In en, this message translates to:
+  /// **'Investment entity'**
+  String get fundTermInvestmentEntity;
+
+  /// No description provided for @fundStructureOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get fundStructureOpen;
+
+  /// No description provided for @fundStructureClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed'**
+  String get fundStructureClosed;
+
+  /// No description provided for @fundStructureExclusive.
+  ///
+  /// In en, this message translates to:
+  /// **'Exclusive'**
+  String get fundStructureExclusive;
+
+  /// No description provided for @fundEstoqueGeneral.
+  ///
+  /// In en, this message translates to:
+  /// **'General rule (15%)'**
+  String get fundEstoqueGeneral;
+
+  /// No description provided for @fundEstoqueOption8.
+  ///
+  /// In en, this message translates to:
+  /// **'Option (8%)'**
+  String get fundEstoqueOption8;
+
+  /// No description provided for @fundErrNeedTermBeforeStructure.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the fund type before the structure'**
+  String get fundErrNeedTermBeforeStructure;
+
+  /// No description provided for @fundErrNeedTermBeforeEstoque.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the fund type before the 2023 stock'**
+  String get fundErrNeedTermBeforeEstoque;
+
+  /// No description provided for @fundErrNeedTermBeforeAdministrator.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the fund type before the administrator'**
+  String get fundErrNeedTermBeforeAdministrator;
+
+  /// No description provided for @fundErrNeedTermBeforeSubclass.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the fund type before the CVM subclass'**
+  String get fundErrNeedTermBeforeSubclass;
+
+  /// No description provided for @fundErrCnpjMustHave14Digits.
+  ///
+  /// In en, this message translates to:
+  /// **'The CNPJ must have 14 digits'**
+  String get fundErrCnpjMustHave14Digits;
 }
 
 class _AppLocalizationsDelegate
