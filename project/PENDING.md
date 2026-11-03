@@ -3,7 +3,7 @@
 > Criado na Sessão 272 para os alertas do Dependabot (procedimento `padrao/dependencias.md`, ADR 0006 do workspace). As demais pendências do anchor continuam no fim do `SESSIONS.md` (decisões da Sessão 271 e anteriores).
 > Resolvida: marcar `✅ Resolvida` com a sessão. Contagem de alertas sempre relida da API.
 >
-> Última atualização: 2026-11-03 (Sessão 281: i18n do mobile, Empréstimos e Dívidas no PR #56; restam Impostos, Custódias e as demais áreas do mobile, no fim do `SESSIONS.md`).
+> Última atualização: 2026-11-03 (Sessão 285: i18n do mobile, PRs #57 a #60 mesclados: IR de cripto e Trocar cripto, IR de fundos, IR de exterior, cadastro de ativo, busca de cotação e Custódias). **Restam**: PR 5b (nova transação, detalhes do ativo manual, `TransactionType.label`, `amortizationProblem` por código), PR 5c (histórico e importação de CSV, `ImportIssue` por código, titular `Imported`) e PR 6 (limpeza do padrão `pt`, remoção dos `.label` dos enums, teste-guarda). **Também aberto**: três testes de tela diferentes (`financas_screen_test`, `home_screen_test`, `fund_tax_screen_test`) falharam uma vez cada em rodada completa local e passaram no CI e ao repetir; causa não identificada, mensagem do erro não capturada. Detalhes no fim do `SESSIONS.md`.
 
 ---
 
