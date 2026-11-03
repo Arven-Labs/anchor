@@ -4,7 +4,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../domain/transactions_csv.dart';
+import '../domain/number_locale.dart' show formatFixed;
+import '../domain/tax_format.dart' show formatDay, formatHoldingQuantity;
 import '../domain/transactions_csv_import.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/transaction_labels.dart';
 import '../models/asset.dart';
 import '../models/custodia.dart';
 import '../models/portfolio_transaction.dart';
@@ -69,6 +73,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
   /// pela fila de revisão (só acrescenta, nunca apaga nada lá).
   Future<void> _exportCsv() async {
     final messenger = ScaffoldMessenger.of(context);
+    final l = AppLocalizations.of(context);
     final day = DateTime.now().toIso8601String().substring(0, 10);
     final result = transactionsCsv(
       _assetsById.values.toList(),
@@ -77,7 +82,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
     );
     try {
       final path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Salvar transações para o desktop',
+        dialogTitle: l.txhExportDialogTitle,
         fileName: 'anchor-transactions-$day.csv',
         type: FileType.custom,
         allowedExtensions: const ['csv'],
@@ -86,13 +91,13 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       if (path == null) return;
       final skipped = result.skipped == 0
           ? ''
-          : ' ${result.skipped} ficaram de fora (transferência, amortização ou ativo removido).';
+          : ' ${l.txhExportedSkipped(result.skipped)}';
       messenger.showSnackBar(
-        SnackBar(content: Text('${result.exported} linhas salvas.$skipped')),
+        SnackBar(content: Text('${l.txhExported(result.exported)}$skipped')),
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Não consegui salvar o CSV: $e')),
+        SnackBar(content: Text(l.txhExportFailed('$e'))),
       );
     }
   }
@@ -101,6 +106,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
   /// duplicadas, erros) e só grava depois da confirmação. Só acrescenta.
   Future<void> _importCsv() async {
     final messenger = ScaffoldMessenger.of(context);
+    final l = AppLocalizations.of(context);
     try {
       final picked = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -119,36 +125,37 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       if (!mounted) return;
       final confirmed = await showDialog<bool>(
         context: context,
-        builder: (_) => _ImportPreviewDialog(plan: plan),
+        builder: (_) => ImportPreviewDialog(plan: plan),
       );
       if (confirmed != true) return;
 
       final written = await _repository.applyTransactionsImport(plan);
       await _load();
       messenger.showSnackBar(
-        SnackBar(content: Text('$written transações importadas.')),
+        SnackBar(content: Text(l.txhImported(written))),
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Não consegui importar o CSV: $e')),
+        SnackBar(content: Text(l.txhImportFailed('$e'))),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Histórico'),
+        title: Text(l.portfolioHistory),
         actions: [
           IconButton(
             icon: const Icon(Icons.file_download_outlined),
-            tooltip: 'Importar CSV do desktop',
+            tooltip: l.txhImportTooltip,
             onPressed: _importCsv,
           ),
           IconButton(
             icon: const Icon(Icons.ios_share),
-            tooltip: 'Exportar CSV para o desktop',
+            tooltip: l.txhExportTooltip,
             onPressed: _transactions.isEmpty ? null : _exportCsv,
           ),
         ],
@@ -156,7 +163,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _transactions.isEmpty
-          ? const Center(child: Text('Nenhuma transação lançada ainda.'))
+          ? Center(child: Text(l.txhEmpty))
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView.builder(
@@ -181,26 +188,27 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
   }
 }
 
-class _ImportPreviewDialog extends StatelessWidget {
+/// Prévia do import (público para os testes de tela montarem com um plano pronto).
+class ImportPreviewDialog extends StatelessWidget {
   final ImportPlan plan;
 
-  const _ImportPreviewDialog({required this.plan});
+  const ImportPreviewDialog({super.key, required this.plan});
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final lines = <String>[
-      '${plan.rows.length} transações novas',
-      if (plan.newAssets.isNotEmpty) '${plan.newAssets.length} ativos novos',
+      l.txhPreviewNewTransactions(plan.rows.length),
+      if (plan.newAssets.isNotEmpty) l.txhPreviewNewAssets(plan.newAssets.length),
       if (plan.newCustodias.isNotEmpty)
-        '${plan.newCustodias.length} custódias novas',
-      if (plan.duplicates > 0) '${plan.duplicates} já existem (ignoradas)',
-      if (plan.skipped > 0)
-        '${plan.skipped} transferências ignoradas (o CSV não traz o destino)',
+        l.txhPreviewNewCustodians(plan.newCustodias.length),
+      if (plan.duplicates > 0) l.txhPreviewDuplicates(plan.duplicates),
+      if (plan.skipped > 0) l.txhPreviewSkipped(plan.skipped),
     ];
     final shownIssues = plan.issues.take(5).toList();
 
     return AlertDialog(
-      title: const Text('Importar do desktop'),
+      title: Text(l.txhPreviewTitle),
       content: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,17 +218,17 @@ class _ImportPreviewDialog extends StatelessWidget {
             if (plan.issues.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text(
-                '${plan.issues.length} linhas com problema (não entram):',
+                l.txhPreviewIssues(plan.issues.length),
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
               for (final issue in shownIssues)
                 Text(
                   issue.line == 0
-                      ? issue.message
-                      : 'linha ${issue.line}: ${issue.message}',
+                      ? importIssueText(l, issue)
+                      : l.txhPreviewIssueLine(issue.line, importIssueText(l, issue)),
                 ),
               if (plan.issues.length > shownIssues.length)
-                Text('… e mais ${plan.issues.length - shownIssues.length}'),
+                Text(l.txhPreviewMore(plan.issues.length - shownIssues.length)),
             ],
           ],
         ),
@@ -228,13 +236,13 @@ class _ImportPreviewDialog extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancelar'),
+          child: Text(l.txhCancel),
         ),
         FilledButton(
           onPressed: plan.rows.isEmpty
               ? null
               : () => Navigator.of(context).pop(true),
-          child: const Text('Importar'),
+          child: Text(l.txhImport),
         ),
       ],
     );
@@ -266,30 +274,34 @@ class _TransactionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final date = transaction.date;
-    final dateLabel =
-        '${date.day.toString().padLeft(2, '0')}/'
-        '${date.month.toString().padLeft(2, '0')}/${date.year}';
+    final l = AppLocalizations.of(context);
+    final locale = l.localeName;
+    String money(double value) => formatFixed(value, 2, locale: locale);
     final paidOn = transaction.foreignTaxPaidOn;
     final paidLabel = paidOn == null
         ? ''
-        : ' (pago em ${paidOn.day.toString().padLeft(2, '0')}/'
-              '${paidOn.month.toString().padLeft(2, '0')}/${paidOn.year})';
+        : ' (${l.txhPaidOn(formatDay(paidOn, locale: locale))})';
     final quantity = transaction.quantity;
     final custodiaLabel = _custodiaLabel;
+    final fee = transaction.fee;
+    final withheld = transaction.foreignTaxWithheld;
+    final lossCredit = transaction.lossCreditUsed;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        title: Text('${transaction.type.label} — ${ticker ?? '—'}'),
+        title: Text('${transactionTypeLabel(l, transaction.type)} — ${ticker ?? '—'}'),
         subtitle: Text(
-          '$dateLabel'
-          '${quantity != null ? ' · ${quantity.toStringAsFixed(quantity == quantity.roundToDouble() ? 0 : 2)} un.' : ''}'
-          '${custodiaLabel != null ? ' · $custodiaLabel' : ''}'
-          ' · ${transaction.totalValue.toStringAsFixed(2)}'
-          '${transaction.fee != null && transaction.fee! > 0 ? ' · taxa ${transaction.fee!.toStringAsFixed(2)}' : ''}'
-          '${transaction.foreignTaxWithheld != null && transaction.foreignTaxWithheld! > 0 ? ' · retido ${transaction.foreignTaxWithheld!.toStringAsFixed(2)}$paidLabel' : ''}'
-          '${transaction.lossCreditUsed != null ? ' · crédito usado ${transaction.lossCreditUsed!.toStringAsFixed(2)}' : ''}',
+          [
+            formatDay(transaction.date, locale: locale),
+            if (quantity != null)
+              l.portfolioUnits(formatHoldingQuantity(quantity, locale: locale)),
+            ?custodiaLabel,
+            money(transaction.totalValue),
+            if (fee != null && fee > 0) l.txhFee(money(fee)),
+            if (withheld != null && withheld > 0) '${l.txhWithheld(money(withheld))}$paidLabel',
+            if (lossCredit != null) l.txhLossCreditUsed(money(lossCredit)),
+          ].join(' · '),
         ),
         onTap: onTap,
         trailing: Row(

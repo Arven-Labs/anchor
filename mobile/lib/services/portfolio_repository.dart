@@ -662,7 +662,7 @@ class PortfolioRepository {
           'custodias',
           Custodia(
             instituicao: name,
-            titular: 'Importado',
+            titular: 'Imported',
             createdAt: now,
           ).toMap()..remove('id'),
         );
