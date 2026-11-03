@@ -2080,4 +2080,234 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get custodianEditTitle => 'Editar custódia';
+
+  @override
+  String get ptxTitleNew => 'Lançar transação';
+
+  @override
+  String get ptxTitleEdit => 'Editar transação';
+
+  @override
+  String get ptxType => 'Tipo';
+
+  @override
+  String get ptxNeedFund => 'Cadastre um ativo da classe Fundo primeiro.';
+
+  @override
+  String get ptxNeedAsset => 'Cadastre um ativo primeiro, na aba Portfolio.';
+
+  @override
+  String get ptxAsset => 'Ativo';
+
+  @override
+  String get ptxIssuer => 'Emissor (opcional)';
+
+  @override
+  String get ptxIndex => 'Indexador';
+
+  @override
+  String get ptxRate => 'Taxa contratada (%)';
+
+  @override
+  String ptxMaturity(String date) {
+    return 'Vencimento: $date';
+  }
+
+  @override
+  String get ptxMaturityOptional => 'Vencimento (opcional)';
+
+  @override
+  String get ptxLiquidity => 'Liquidez';
+
+  @override
+  String get ptxQuantity => 'Quantidade';
+
+  @override
+  String get ptxQuotaValue => 'Valor da cota';
+
+  @override
+  String get ptxUnitPrice => 'Preço unitário';
+
+  @override
+  String get ptxFee => 'Taxa (opcional)';
+
+  @override
+  String ptxTotal(String value) {
+    return 'Total: $value';
+  }
+
+  @override
+  String get ptxAmount => 'Valor';
+
+  @override
+  String ptxForeignTax(String currency) {
+    return 'Imposto retido no exterior ($currency, opcional)';
+  }
+
+  @override
+  String ptxTaxPaidOn(String date) {
+    return 'Imposto pago em: $date';
+  }
+
+  @override
+  String get ptxTaxPaidOnHint =>
+      'Data do pagamento do imposto (opcional; padrão: a do provento)';
+
+  @override
+  String get ptxLossCredit =>
+      'Crédito de prejuízo usado (rendimento, R\$, opcional)';
+
+  @override
+  String get ptxLossCreditHelp =>
+      'Vazio = não sei; 0 = nenhum crédito foi usado.';
+
+  @override
+  String get ptxCustodianFrom => 'Custódia (origem)';
+
+  @override
+  String get ptxCustodianOptional => 'Custódia (opcional)';
+
+  @override
+  String get ptxCustodianNone => 'Nenhuma';
+
+  @override
+  String get ptxCustodianTo => 'Custódia (destino)';
+
+  @override
+  String ptxDate(String date) {
+    return 'Data: $date';
+  }
+
+  @override
+  String get ptxSave => 'Salvar';
+
+  @override
+  String get ptxTypeCompra => 'Compra';
+
+  @override
+  String get ptxTypeVenda => 'Venda';
+
+  @override
+  String get ptxTypeAporte => 'Aporte';
+
+  @override
+  String get ptxTypeRetirada => 'Retirada';
+
+  @override
+  String get ptxTypeProvento => 'Provento';
+
+  @override
+  String get ptxTypeTransferencia => 'Transferência';
+
+  @override
+  String get ptxTypeComeCotas => 'Come-cotas';
+
+  @override
+  String get ptxTypeAmortizacao => 'Amortização';
+
+  @override
+  String get ptxLiqDaily => 'Diária';
+
+  @override
+  String get ptxLiqAtMaturity => 'No vencimento';
+
+  @override
+  String get ptxLiqOther => 'Outro';
+
+  @override
+  String get ptxIdxFixed => 'Prefixado';
+
+  @override
+  String get ptxIdxOther => 'Outro';
+
+  @override
+  String get ptxAmortNoShares =>
+      'A amortização precisa de cotas em carteira nessa data.';
+
+  @override
+  String ptxAmortExceeds(String amount, String position) {
+    return 'O valor amortizado ($amount) passa do valor da posição nessa data ($position).';
+  }
+
+  @override
+  String get madTitleCompany => 'Detalhes da empresa';
+
+  @override
+  String get madTitleProperty => 'Detalhes do imóvel';
+
+  @override
+  String get madEquityTitle => 'Participação societária';
+
+  @override
+  String madEquityPct(String percent) {
+    return 'Participação societária ($percent%)';
+  }
+
+  @override
+  String madEquityPctValue(String percent, String value, String currency) {
+    return 'Participação societária ($percent% — $value $currency)';
+  }
+
+  @override
+  String get madEquityNote =>
+      'O percentual é sempre calculado a partir de cotas possuídas / total de cotas da empresa — nunca digitado direto.';
+
+  @override
+  String get madSharesOwned => 'Cotas/ações possuídas';
+
+  @override
+  String get madTotalShares => 'Total de cotas/ações';
+
+  @override
+  String madCompanyValuation(String currency) {
+    return 'Valuation ($currency)';
+  }
+
+  @override
+  String get madSaveEquity => 'Salvar participação';
+
+  @override
+  String get madHistory => 'Histórico de avaliação';
+
+  @override
+  String madHistoryLatest(String value, String currency) {
+    return 'Histórico de avaliação (última: $value $currency)';
+  }
+
+  @override
+  String get madNoValuations => 'Nenhuma avaliação registrada ainda.';
+
+  @override
+  String get madPickDate => 'Escolher data';
+
+  @override
+  String madDate(String date) {
+    return 'Data: $date';
+  }
+
+  @override
+  String madValue(String currency) {
+    return 'Valor ($currency)';
+  }
+
+  @override
+  String get madNotes => 'Notas (opcional)';
+
+  @override
+  String get madAddValuation => 'Adicionar avaliação';
+
+  @override
+  String get madAttachments => 'Anexos';
+
+  @override
+  String get madNoAttachments => 'Nenhum anexo ainda.';
+
+  @override
+  String get madDocType => 'Tipo de documento (opcional)';
+
+  @override
+  String get madDocTypeHint => 'Escritura, ITBI, cap table...';
+
+  @override
+  String get madAddAttachment => 'Adicionar anexo';
 }

@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../domain/fund_tax.dart' show amortizationProblem;
+import '../domain/number_locale.dart' show formatFixed;
+import '../domain/tax_format.dart' show formatDay;
+import '../l10n/app_localizations.dart';
+import '../l10n/transaction_labels.dart';
 import '../models/asset.dart';
 import '../models/custodia.dart';
 import '../models/portfolio_transaction.dart';
@@ -250,8 +254,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       );
       if (problem != null) {
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(problem)));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                amortizationProblemText(AppLocalizations.of(context), problem),
+              ),
+            ),
+          );
         }
         return;
       }
@@ -325,10 +334,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     final needsTransferDestination = _type.needsTransferDestination;
     final autoTotal = needsQuantity && needsUnitPrice;
     final blockedByMissingAsset = needsAsset && _eligibleAssets.isEmpty;
+    final l = AppLocalizations.of(context);
+    final locale = l.localeName;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_editing ? 'Editar transação' : 'Lançar transação'),
+        title: Text(_editing ? l.ptxTitleEdit : l.ptxTitleNew),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
@@ -337,9 +348,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           children: [
             DropdownButtonFormField<TransactionType>(
               initialValue: _type,
-              decoration: const InputDecoration(labelText: 'Tipo'),
+              decoration: InputDecoration(labelText: l.ptxType),
               items: TransactionType.values
-                  .map((t) => DropdownMenuItem(value: t, child: Text(t.label)))
+                  .map(
+                    (t) => DropdownMenuItem(
+                      value: t,
+                      child: Text(transactionTypeLabel(l, t)),
+                    ),
+                  )
                   .toList(),
               onChanged: (value) {
                 if (value != null) _onTypeChanged(value);
@@ -348,9 +364,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             const SizedBox(height: 16),
             if (blockedByMissingAsset)
               Text(
-                _type.isFundOnly
-                    ? 'Cadastre um ativo da classe Fundo primeiro.'
-                    : 'Cadastre um ativo primeiro, na aba Portfolio.',
+                _type.isFundOnly ? l.ptxNeedFund : l.ptxNeedAsset,
               )
             else ...[
               if (needsAsset) ...[
@@ -358,7 +372,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   // Recria ao trocar o tipo: a lista de ativos muda.
                   key: ValueKey(_type.isFundOnly),
                   initialValue: _selectedAsset,
-                  decoration: const InputDecoration(labelText: 'Ativo'),
+                  decoration: InputDecoration(labelText: l.ptxAsset),
                   items: _eligibleAssets
                       .map(
                         (a) => DropdownMenuItem(
@@ -374,16 +388,19 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               if (_showFixedIncomeFields) ...[
                 TextField(
                   controller: _fiEmissorController,
-                  decoration: const InputDecoration(
-                    labelText: 'Emissor (opcional)',
-                  ),
+                  decoration: InputDecoration(labelText: l.ptxIssuer),
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   initialValue: _fiIndexador,
-                  decoration: const InputDecoration(labelText: 'Indexador'),
+                  decoration: InputDecoration(labelText: l.ptxIndex),
                   items: fiIndexadores
-                      .map((i) => DropdownMenuItem(value: i, child: Text(i)))
+                      .map(
+                        (i) => DropdownMenuItem(
+                          value: i,
+                          child: Text(fiIndexName(l, i)),
+                        ),
+                      )
                       .toList(),
                   onChanged: (value) {
                     if (value != null) setState(() => _fiIndexador = value);
@@ -395,18 +412,17 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
-                    labelText: 'Taxa contratada (%)',
-                  ),
+                  decoration: InputDecoration(labelText: l.ptxRate),
                 ),
                 const SizedBox(height: 16),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(
                     _fiDataVencimento != null
-                        ? 'Vencimento: ${_fiDataVencimento!.day.toString().padLeft(2, '0')}/'
-                              '${_fiDataVencimento!.month.toString().padLeft(2, '0')}/${_fiDataVencimento!.year}'
-                        : 'Vencimento (opcional)',
+                        ? l.ptxMaturity(
+                            formatDay(_fiDataVencimento!, locale: locale),
+                          )
+                        : l.ptxMaturityOptional,
                   ),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: _pickFiDataVencimento,
@@ -414,9 +430,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   initialValue: _fiLiquidez,
-                  decoration: const InputDecoration(labelText: 'Liquidez'),
+                  decoration: InputDecoration(labelText: l.ptxLiquidity),
                   items: fiLiquidezOptions
-                      .map((l) => DropdownMenuItem(value: l, child: Text(l)))
+                      .map(
+                        (code) => DropdownMenuItem(
+                          value: code,
+                          child: Text(fiLiquidityName(l, code)),
+                        ),
+                      )
                       .toList(),
                   onChanged: (value) {
                     if (value != null) setState(() => _fiLiquidez = value);
@@ -430,7 +451,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(labelText: 'Quantidade'),
+                  decoration: InputDecoration(labelText: l.ptxQuantity),
                 ),
                 const SizedBox(height: 16),
               ],
@@ -442,8 +463,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   ),
                   decoration: InputDecoration(
                     labelText: _type.isFundOnly
-                        ? 'Valor da cota'
-                        : 'Preço unitário',
+                        ? l.ptxQuotaValue
+                        : l.ptxUnitPrice,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -453,22 +474,22 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
-                    decoration: const InputDecoration(
-                      labelText: 'Taxa (opcional)',
-                    ),
+                    decoration: InputDecoration(labelText: l.ptxFee),
                   ),
                   const SizedBox(height: 16),
                 ],
               ],
               if (autoTotal)
-                Text('Total: ${_computedTotal.toStringAsFixed(2)}')
+                Text(
+                  l.ptxTotal(formatFixed(_computedTotal, 2, locale: locale)),
+                )
               else
                 TextField(
                   controller: _totalValueController,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(labelText: 'Valor'),
+                  decoration: InputDecoration(labelText: l.ptxAmount),
                 ),
               const SizedBox(height: 16),
               if (_showForeignWithholding) ...[
@@ -479,9 +500,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   ),
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
-                    labelText:
-                        'Imposto retido no exterior '
-                        '(${_selectedAsset?.currency}, opcional)',
+                    labelText: l.ptxForeignTax(_selectedAsset?.currency ?? ''),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -490,9 +509,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     contentPadding: EdgeInsets.zero,
                     title: Text(
                       _foreignTaxPaidOn != null
-                          ? 'Imposto pago em: ${_foreignTaxPaidOn!.day.toString().padLeft(2, '0')}/'
-                                '${_foreignTaxPaidOn!.month.toString().padLeft(2, '0')}/${_foreignTaxPaidOn!.year}'
-                          : 'Data do pagamento do imposto (opcional; padrão: a do provento)',
+                          ? l.ptxTaxPaidOn(
+                              formatDay(_foreignTaxPaidOn!, locale: locale),
+                            )
+                          : l.ptxTaxPaidOnHint,
                     ),
                     trailing: const Icon(Icons.calendar_today),
                     onTap: _pickForeignTaxPaidOn,
@@ -506,9 +526,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
-                    labelText: 'Crédito de prejuízo usado (rendimento, R\$, opcional)',
-                    helperText: 'Vazio = não sei; 0 = nenhum crédito foi usado.',
+                  decoration: InputDecoration(
+                    labelText: l.ptxLossCredit,
+                    helperText: l.ptxLossCreditHelp,
                     helperMaxLines: 2,
                   ),
                 ),
@@ -518,14 +538,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 initialValue: _custodia,
                 decoration: InputDecoration(
                   labelText: needsTransferDestination
-                      ? 'Custódia (origem)'
-                      : 'Custódia (opcional)',
+                      ? l.ptxCustodianFrom
+                      : l.ptxCustodianOptional,
                 ),
                 items: [
                   if (!needsTransferDestination)
-                    const DropdownMenuItem<Custodia?>(
+                    DropdownMenuItem<Custodia?>(
                       value: null,
-                      child: Text('Nenhuma'),
+                      child: Text(l.ptxCustodianNone),
                     ),
                   ..._custodias.map(
                     (c) => DropdownMenuItem(value: c, child: Text(c.label)),
@@ -537,9 +557,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 const SizedBox(height: 16),
                 DropdownButtonFormField<Custodia?>(
                   initialValue: _transferToCustodia,
-                  decoration: const InputDecoration(
-                    labelText: 'Custódia (destino)',
-                  ),
+                  decoration: InputDecoration(labelText: l.ptxCustodianTo),
                   items: _custodias
                       .map(
                         (c) => DropdownMenuItem(value: c, child: Text(c.label)),
@@ -552,17 +570,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               const SizedBox(height: 16),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text(
-                  'Data: ${_date.day.toString().padLeft(2, '0')}/'
-                  '${_date.month.toString().padLeft(2, '0')}/${_date.year}',
-                ),
+                title: Text(l.ptxDate(formatDay(_date, locale: locale))),
                 trailing: const Icon(Icons.calendar_today),
                 onTap: _pickDate,
               ),
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: _saving ? null : _save,
-                child: const Text('Salvar'),
+                child: Text(l.ptxSave),
               ),
             ],
           ],

@@ -136,11 +136,25 @@ double _quotaOf(PortfolioTransaction tx) {
   return quantity > 0 ? tx.totalValue / quantity : 0;
 }
 
+/// Por que uma amortização não cabe no histórico do fundo (ADR 0001): a tela traduz pelo
+/// código (`l10n/transaction_labels.dart`).
+enum AmortizationProblemCode { noSharesOnDate, exceedsPosition }
+
+/// O motivo da recusa mais os números que a frase cita ([amount] e [positionValue] só vêm
+/// em `exceedsPosition`), para a camada de idioma formatá-los.
+class AmortizationProblem {
+  final AmortizationProblemCode code;
+  final double? amount;
+  final double? positionValue;
+
+  const AmortizationProblem(this.code, {this.amount, this.positionValue});
+}
+
 /// Por que uma amortização não cabe no histórico do fundo; `null` se cabe. Mesmo guard
 /// do desktop (`ensure_amortization_fits`): precisa de cotas na data e o valor não passa
 /// do valor da posição (cotas × cota), com folga de `max(0,011; 0,1%)`. [assetTxs] são as
 /// transações do fundo; [ignoreId] é a que está sendo editada.
-String? amortizationProblem(
+AmortizationProblem? amortizationProblem(
   List<PortfolioTransaction> assetTxs, {
   required DateTime date,
   required double quotaValue,
@@ -165,15 +179,18 @@ String? amortizationProblem(
     }
   }
   if (quantity <= costEps) {
-    return 'A amortização precisa de cotas em carteira nessa data.';
+    return const AmortizationProblem(AmortizationProblemCode.noSharesOnDate);
   }
   final positionValue = quantity * quotaValue;
   final tolerance = positionValue * 0.001 > 0.011
       ? positionValue * 0.001
       : 0.011;
   if (amount > positionValue + tolerance) {
-    return 'O valor amortizado (${amount.toStringAsFixed(2)}) passa do valor da '
-        'posição nessa data (${positionValue.toStringAsFixed(2)}).';
+    return AmortizationProblem(
+      AmortizationProblemCode.exceedsPosition,
+      amount: amount,
+      positionValue: positionValue,
+    );
   }
   return null;
 }

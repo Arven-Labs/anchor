@@ -2085,4 +2085,232 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get custodianEditTitle => 'Edit custodian';
+
+  @override
+  String get ptxTitleNew => 'New transaction';
+
+  @override
+  String get ptxTitleEdit => 'Edit transaction';
+
+  @override
+  String get ptxType => 'Type';
+
+  @override
+  String get ptxNeedFund => 'Add a fund asset first.';
+
+  @override
+  String get ptxNeedAsset => 'Add an asset first, in the Portfolio tab.';
+
+  @override
+  String get ptxAsset => 'Asset';
+
+  @override
+  String get ptxIssuer => 'Issuer (optional)';
+
+  @override
+  String get ptxIndex => 'Index';
+
+  @override
+  String get ptxRate => 'Contracted rate (%)';
+
+  @override
+  String ptxMaturity(String date) {
+    return 'Maturity: $date';
+  }
+
+  @override
+  String get ptxMaturityOptional => 'Maturity (optional)';
+
+  @override
+  String get ptxLiquidity => 'Liquidity';
+
+  @override
+  String get ptxQuantity => 'Quantity';
+
+  @override
+  String get ptxQuotaValue => 'Quota value';
+
+  @override
+  String get ptxUnitPrice => 'Unit price';
+
+  @override
+  String get ptxFee => 'Fee (optional)';
+
+  @override
+  String ptxTotal(String value) {
+    return 'Total: $value';
+  }
+
+  @override
+  String get ptxAmount => 'Amount';
+
+  @override
+  String ptxForeignTax(String currency) {
+    return 'Foreign tax withheld ($currency, optional)';
+  }
+
+  @override
+  String ptxTaxPaidOn(String date) {
+    return 'Tax paid on: $date';
+  }
+
+  @override
+  String get ptxTaxPaidOnHint =>
+      'Tax payment date (optional; default: the income date)';
+
+  @override
+  String get ptxLossCredit => 'Loss credit used (income, R\$, optional)';
+
+  @override
+  String get ptxLossCreditHelp => 'Empty = unknown; 0 = no credit was used.';
+
+  @override
+  String get ptxCustodianFrom => 'Custodian (from)';
+
+  @override
+  String get ptxCustodianOptional => 'Custodian (optional)';
+
+  @override
+  String get ptxCustodianNone => 'None';
+
+  @override
+  String get ptxCustodianTo => 'Custodian (to)';
+
+  @override
+  String ptxDate(String date) {
+    return 'Date: $date';
+  }
+
+  @override
+  String get ptxSave => 'Save';
+
+  @override
+  String get ptxTypeCompra => 'Buy';
+
+  @override
+  String get ptxTypeVenda => 'Sell';
+
+  @override
+  String get ptxTypeAporte => 'Deposit';
+
+  @override
+  String get ptxTypeRetirada => 'Withdrawal';
+
+  @override
+  String get ptxTypeProvento => 'Income';
+
+  @override
+  String get ptxTypeTransferencia => 'Transfer';
+
+  @override
+  String get ptxTypeComeCotas => 'Fund tax withholding';
+
+  @override
+  String get ptxTypeAmortizacao => 'Amortization';
+
+  @override
+  String get ptxLiqDaily => 'Daily';
+
+  @override
+  String get ptxLiqAtMaturity => 'At maturity';
+
+  @override
+  String get ptxLiqOther => 'Other';
+
+  @override
+  String get ptxIdxFixed => 'Fixed rate';
+
+  @override
+  String get ptxIdxOther => 'Other';
+
+  @override
+  String get ptxAmortNoShares =>
+      'An amortization needs fund quotas in the portfolio on that date.';
+
+  @override
+  String ptxAmortExceeds(String amount, String position) {
+    return 'The amortized amount ($amount) exceeds the position value on that date ($position).';
+  }
+
+  @override
+  String get madTitleCompany => 'Company details';
+
+  @override
+  String get madTitleProperty => 'Property details';
+
+  @override
+  String get madEquityTitle => 'Equity stake';
+
+  @override
+  String madEquityPct(String percent) {
+    return 'Equity stake ($percent%)';
+  }
+
+  @override
+  String madEquityPctValue(String percent, String value, String currency) {
+    return 'Equity stake ($percent% — $value $currency)';
+  }
+
+  @override
+  String get madEquityNote =>
+      'The percentage is always calculated from shares owned / total company shares — never typed directly.';
+
+  @override
+  String get madSharesOwned => 'Shares owned';
+
+  @override
+  String get madTotalShares => 'Total shares';
+
+  @override
+  String madCompanyValuation(String currency) {
+    return 'Company valuation ($currency)';
+  }
+
+  @override
+  String get madSaveEquity => 'Save stake';
+
+  @override
+  String get madHistory => 'Valuation history';
+
+  @override
+  String madHistoryLatest(String value, String currency) {
+    return 'Valuation history (latest: $value $currency)';
+  }
+
+  @override
+  String get madNoValuations => 'No valuations recorded yet.';
+
+  @override
+  String get madPickDate => 'Pick a date';
+
+  @override
+  String madDate(String date) {
+    return 'Date: $date';
+  }
+
+  @override
+  String madValue(String currency) {
+    return 'Value ($currency)';
+  }
+
+  @override
+  String get madNotes => 'Notes (optional)';
+
+  @override
+  String get madAddValuation => 'Add valuation';
+
+  @override
+  String get madAttachments => 'Attachments';
+
+  @override
+  String get madNoAttachments => 'No attachments yet.';
+
+  @override
+  String get madDocType => 'Document type (optional)';
+
+  @override
+  String get madDocTypeHint => 'Deed, transfer tax, cap table...';
+
+  @override
+  String get madAddAttachment => 'Add attachment';
 }

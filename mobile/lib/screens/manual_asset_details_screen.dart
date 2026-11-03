@@ -2,15 +2,18 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 
+import '../domain/number_locale.dart' show formatFixed;
+import '../domain/tax_format.dart' show formatDay;
+import '../l10n/app_localizations.dart';
 import '../models/asset.dart';
 import '../models/asset_attachment.dart';
 import '../models/asset_valuation.dart';
 import '../services/portfolio_repository.dart';
 
-String _formatBytes(int bytes) {
+String _formatBytes(int bytes, String locale) {
   if (bytes < 1024) return '$bytes B';
-  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  if (bytes < 1024 * 1024) return '${formatFixed(bytes / 1024, 1, locale: locale)} KB';
+  return '${formatFixed(bytes / (1024 * 1024), 1, locale: locale)} MB';
 }
 
 /// Mirror de `ManualAssetDetails.tsx` do desktop — histórico de avaliação +
@@ -220,11 +223,13 @@ class _ManualAssetDetailsScreenState extends State<ManualAssetDetailsScreen> {
         : null;
 
     final latestValue = _valuations.isEmpty ? null : _valuations.last.value;
+    final l = AppLocalizations.of(context);
+    final locale = l.localeName;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _isEmpresaNaoListada ? 'Detalhes da empresa' : 'Detalhes do imóvel',
+          _isEmpresaNaoListada ? l.madTitleCompany : l.madTitleProperty,
         ),
       ),
       body: _loading
@@ -234,15 +239,22 @@ class _ManualAssetDetailsScreenState extends State<ManualAssetDetailsScreen> {
               children: [
                 if (_isEmpresaNaoListada) ...[
                   Text(
-                    'Participação societária'
-                    '${percentual != null ? ' (${(percentual * 100).toStringAsFixed(2)}%'
-                              '${participationValue != null ? ' — ${participationValue.toStringAsFixed(2)} ${_asset.currency}' : ''})' : ''}',
+                    percentual == null
+                        ? l.madEquityTitle
+                        : participationValue == null
+                        ? l.madEquityPct(
+                            formatFixed(percentual * 100, 2, locale: locale),
+                          )
+                        : l.madEquityPctValue(
+                            formatFixed(percentual * 100, 2, locale: locale),
+                            formatFixed(participationValue, 2, locale: locale),
+                            _asset.currency,
+                          ),
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'O percentual é sempre calculado a partir de cotas possuídas / total de '
-                    'cotas da empresa — nunca digitado direto.',
+                    l.madEquityNote,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 12),
@@ -251,9 +263,7 @@ class _ManualAssetDetailsScreenState extends State<ManualAssetDetailsScreen> {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
-                    decoration: const InputDecoration(
-                      labelText: 'Cotas/ações possuídas',
-                    ),
+                    decoration: InputDecoration(labelText: l.madSharesOwned),
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -261,9 +271,7 @@ class _ManualAssetDetailsScreenState extends State<ManualAssetDetailsScreen> {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
-                    decoration: const InputDecoration(
-                      labelText: 'Total de cotas/ações',
-                    ),
+                    decoration: InputDecoration(labelText: l.madTotalShares),
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -272,37 +280,39 @@ class _ManualAssetDetailsScreenState extends State<ManualAssetDetailsScreen> {
                       decimal: true,
                     ),
                     decoration: InputDecoration(
-                      labelText: 'Valuation (${_asset.currency})',
+                      labelText: l.madCompanyValuation(_asset.currency),
                     ),
                   ),
                   const SizedBox(height: 12),
                   FilledButton(
                     onPressed: _savingEquity ? null : _saveEquity,
-                    child: const Text('Salvar participação'),
+                    child: Text(l.madSaveEquity),
                   ),
                   const Divider(height: 32),
                 ],
                 Text(
-                  'Histórico de avaliação'
-                  '${latestValue != null ? ' (última: ${latestValue.toStringAsFixed(2)} ${_asset.currency})' : ''}',
+                  latestValue == null
+                      ? l.madHistory
+                      : l.madHistoryLatest(
+                          formatFixed(latestValue, 2, locale: locale),
+                          _asset.currency,
+                        ),
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 12),
                 if (_valuations.isEmpty)
-                  const Text('Nenhuma avaliação registrada ainda.')
+                  Text(l.madNoValuations)
                 else
                   for (final valuation in _valuations)
                     Card(
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
                         title: Text(
-                          '${valuation.value.toStringAsFixed(2)} ${_asset.currency}',
+                          '${formatFixed(valuation.value, 2, locale: locale)} ${_asset.currency}',
                         ),
                         subtitle: Text(
-                          '${valuation.valuationDate.day.toString().padLeft(2, '0')}/'
-                          '${valuation.valuationDate.month.toString().padLeft(2, '0')}/'
-                          '${valuation.valuationDate.year}'
-                          '${valuation.notes != null ? ' · ${valuation.notes}' : ''}',
+                          formatDay(valuation.valuationDate, locale: locale) +
+                              (valuation.notes != null ? ' · ${valuation.notes}' : ''),
                         ),
                         trailing: IconButton(
                           icon: const Icon(Icons.delete_outline),
@@ -315,9 +325,8 @@ class _ManualAssetDetailsScreenState extends State<ManualAssetDetailsScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(
                     _valuationDate != null
-                        ? 'Data: ${_valuationDate!.day.toString().padLeft(2, '0')}/'
-                              '${_valuationDate!.month.toString().padLeft(2, '0')}/${_valuationDate!.year}'
-                        : 'Escolher data',
+                        ? l.madDate(formatDay(_valuationDate!, locale: locale))
+                        : l.madPickDate,
                   ),
                   trailing: const Icon(Icons.calendar_today),
                   onTap: _pickValuationDate,
@@ -329,29 +338,27 @@ class _ManualAssetDetailsScreenState extends State<ManualAssetDetailsScreen> {
                     decimal: true,
                   ),
                   decoration: InputDecoration(
-                    labelText: 'Valor (${_asset.currency})',
+                    labelText: l.madValue(_asset.currency),
                   ),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _valuationNotesController,
-                  decoration: const InputDecoration(
-                    labelText: 'Notas (opcional)',
-                  ),
+                  decoration: InputDecoration(labelText: l.madNotes),
                 ),
                 const SizedBox(height: 16),
                 FilledButton(
                   onPressed: _savingValuation ? null : _addValuation,
-                  child: const Text('Adicionar avaliação'),
+                  child: Text(l.madAddValuation),
                 ),
                 const Divider(height: 32),
                 Text(
-                  'Anexos',
+                  l.madAttachments,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 12),
                 if (_attachments.isEmpty)
-                  const Text('Nenhum anexo ainda.')
+                  Text(l.madNoAttachments)
                 else
                   for (final attachment in _attachments)
                     Card(
@@ -361,7 +368,7 @@ class _ManualAssetDetailsScreenState extends State<ManualAssetDetailsScreen> {
                         title: Text(attachment.originalFileName),
                         subtitle: Text(
                           '${attachment.documentType ?? "—"} · '
-                          '${_formatBytes(attachment.fileSizeBytes)}',
+                          '${_formatBytes(attachment.fileSizeBytes, locale)}',
                         ),
                         trailing: IconButton(
                           icon: const Icon(Icons.delete_outline),
@@ -372,16 +379,16 @@ class _ManualAssetDetailsScreenState extends State<ManualAssetDetailsScreen> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: _documentTypeController,
-                  decoration: const InputDecoration(
-                    labelText: 'Tipo de documento (opcional)',
-                    hintText: 'Escritura, ITBI, cap table...',
+                  decoration: InputDecoration(
+                    labelText: l.madDocType,
+                    hintText: l.madDocTypeHint,
                   ),
                 ),
                 const SizedBox(height: 16),
                 FilledButton.icon(
                   onPressed: _addingAttachment ? null : _pickAndAddAttachment,
                   icon: const Icon(Icons.attach_file),
-                  label: const Text('Adicionar anexo'),
+                  label: Text(l.madAddAttachment),
                 ),
               ],
             ),
