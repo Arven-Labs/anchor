@@ -1726,4 +1726,277 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get fundErrCnpjMustHave14Digits => 'The CNPJ must have 14 digits';
+
+  @override
+  String get foreignTitle => 'Foreign tax';
+
+  @override
+  String get foreignIntroNote =>
+      'Calculated only from the transactions entered in this app, at average cost, with each operation\'s fee and in reais using the Central Bank PTAX (closing, selling rate; buying rate for tax withheld abroad), and on a day with no quote using the previous one. Where the PTAX is missing, the market rate (Yahoo) applies and the year warns that it is approximate. It goes in the annual return, with no monthly DARF. The rules come from secondary sources: check with the tax authority before paying.';
+
+  @override
+  String get foreignFxUnavailableNote =>
+      'Exchange rate unavailable right now for some currency (neither PTAX nor market): its operations were left out. Try again in a moment.';
+
+  @override
+  String get foreignEmpty =>
+      'No sales or dividends from foreign assets from 2024 on yet.';
+
+  @override
+  String foreignStatusTaxDue(String value) {
+    return 'Estimated tax of $value on the return';
+  }
+
+  @override
+  String foreignStatusCovered(String value) {
+    return 'No tax due: the tax withheld abroad covers the $value owed';
+  }
+
+  @override
+  String foreignStatusLoss(String value) {
+    return 'No tax: the year closed with a loss of $value, which offsets the following years';
+  }
+
+  @override
+  String get foreignStatusFitInLoss =>
+      'No tax: the year\'s result fit within the loss from earlier years';
+
+  @override
+  String foreignRatePtax(String rate) {
+    return 'Rate $rate (PTAX)';
+  }
+
+  @override
+  String foreignRateMarket(String rate) {
+    return 'Rate $rate (market)';
+  }
+
+  @override
+  String foreignWarnCostUnknown(String ticker, String date) {
+    return 'Sale of $ticker on $date exceeds the purchases entered: the gain counts only the part with known cost. Enter the missing purchases.';
+  }
+
+  @override
+  String foreignWarnFxMissing(int year) {
+    return 'Operations or dividends of $year have no exchange rate (neither PTAX nor market) for the date: they were left out of the assessment.';
+  }
+
+  @override
+  String foreignWarnFxApproximate(int year) {
+    return 'Operations or dividends of $year were converted at the market rate because the Central Bank PTAX was not available for them (no network, a currency the PTAX does not quote, or a long gap): the values for the year are approximate.';
+  }
+
+  @override
+  String foreignCapitalGain(String value) {
+    return 'Capital gain: $value';
+  }
+
+  @override
+  String foreignDividends(String value) {
+    return 'Dividends: $value';
+  }
+
+  @override
+  String foreignLossUsed(String value) {
+    return 'Loss from earlier years used: $value';
+  }
+
+  @override
+  String foreignTaxableBase(String value) {
+    return 'Calculation base: $value';
+  }
+
+  @override
+  String foreignTax(String value, String rate) {
+    return 'Tax: $value (rate $rate%)';
+  }
+
+  @override
+  String foreignWithheld(String value, String credit) {
+    return 'Withheld abroad: $value (credit of $credit)';
+  }
+
+  @override
+  String foreignLossCarriedOut(String value) {
+    return 'Loss that offsets the following years: $value';
+  }
+
+  @override
+  String foreignSalesCount(int count) {
+    return 'Sales ($count)';
+  }
+
+  @override
+  String foreignDividendsCount(int count) {
+    return 'Dividends ($count)';
+  }
+
+  @override
+  String foreignItemTitle(String ticker, String date) {
+    return '$ticker — $date';
+  }
+
+  @override
+  String foreignSaleDetail(String rate, String sale, String cost, String gain) {
+    return '$rate · sale $sale · cost $cost · gain $gain';
+  }
+
+  @override
+  String foreignDividendDetail(String rate, String gross, String withheld) {
+    return '$rate · $gross$withheld';
+  }
+
+  @override
+  String foreignDividendWithheld(String value) {
+    return ' · withheld $value';
+  }
+
+  @override
+  String get foreignHoldingsTitle => 'Assets and Rights (Bens e Direitos)';
+
+  @override
+  String get foreignHoldingsNote =>
+      'Acquisition cost in reais, not market value, only of what is entered in this app. One line per custody: the cost of each is its quantity times the asset\'s average cost, so the custodies add up to the position. Group, code and country of the record are yours: fill them in from the Receita program (sources disagree and the app does not check; it only pads zeros, so 3 becomes 03). They go into the copied description and the CSV. Estimate from secondary sources: check in the Receita program.';
+
+  @override
+  String get foreignHoldingsLegend =>
+      '\"approximate\": a purchase with no PTAX used the market rate. \"incomplete\": an operation was left with no exchange rate, or a sale was larger than the purchases entered, and the cost is understated.';
+
+  @override
+  String foreignReturnOf(int year) {
+    return 'Return of $year';
+  }
+
+  @override
+  String get foreignExportCsv => 'Export CSV';
+
+  @override
+  String foreignNoPosition(String previous, String current) {
+    return 'No foreign position on $previous or $current.';
+  }
+
+  @override
+  String get foreignNoCustody => 'No custody';
+
+  @override
+  String foreignHoldingNone(String date) {
+    return '$date: —';
+  }
+
+  @override
+  String foreignHoldingValue(
+    String date,
+    String cost,
+    String quantity,
+    String approximate,
+    String incomplete,
+  ) {
+    return '$date: $cost ($quantity units)$approximate$incomplete';
+  }
+
+  @override
+  String get foreignApproximate => ' · approximate';
+
+  @override
+  String get foreignIncomplete => ' · incomplete';
+
+  @override
+  String foreignFichaLine(String ficha) {
+    return 'Record: $ficha';
+  }
+
+  @override
+  String get foreignFichaNotFilled => 'not filled in';
+
+  @override
+  String foreignFichaGroup(String value) {
+    return 'Group $value';
+  }
+
+  @override
+  String foreignFichaCode(String value) {
+    return 'Code $value';
+  }
+
+  @override
+  String foreignFichaCountry(String value) {
+    return 'Country $value';
+  }
+
+  @override
+  String get foreignEditFichaTooltip =>
+      'Edit the record\'s group, code and country';
+
+  @override
+  String get foreignCopyTooltip => 'Copy description';
+
+  @override
+  String get foreignDescriptionCopied => 'Description copied.';
+
+  @override
+  String foreignFichaDialogTitle(String ticker) {
+    return 'Record of $ticker';
+  }
+
+  @override
+  String get foreignFieldGroup => 'Group';
+
+  @override
+  String get foreignFieldCode => 'Code';
+
+  @override
+  String get foreignFieldCountry => 'Country';
+
+  @override
+  String get foreignFichaHelp =>
+      'Copy from the Receita program; the app does not check it. Empty clears.';
+
+  @override
+  String get foreignFichaInvalid =>
+      'Invalid record. Use digits only: group and code up to 2, country up to 3.';
+
+  @override
+  String get foreignCsvDialogTitle => 'Save Assets and Rights report';
+
+  @override
+  String foreignCsvSaved(int count) {
+    return '$count rows saved.';
+  }
+
+  @override
+  String foreignCsvFailed(String error) {
+    return 'Could not save the CSV: $error';
+  }
+
+  @override
+  String foreignDescHead(String ticker, String name, String custody) {
+    return '$ticker — $name.$custody';
+  }
+
+  @override
+  String foreignDescCustody(String label) {
+    return ' Custody: $label.';
+  }
+
+  @override
+  String foreignDescFicha(String ficha) {
+    return 'Record: $ficha.';
+  }
+
+  @override
+  String foreignDescPosition(String date, String units, String cost) {
+    return 'Position on $date: $units, acquisition cost $cost.';
+  }
+
+  @override
+  String get foreignDescNoPosition => 'no position';
+
+  @override
+  String foreignDescUnits(String quantity) {
+    return '$quantity units';
+  }
+
+  @override
+  String get foreignDescBasis =>
+      'Acquisition cost converted into reais at the Central Bank\'s closing (selling) rate on the date of each purchase.';
 }

@@ -4,128 +4,19 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../domain/dirpf.dart';
+import '../domain/dirpf.dart' show dirpfCodeLength, dirpfCountryLength, dirpfGroupLength;
 import '../domain/foreign_holdings_csv.dart';
 import '../domain/foreign_tax.dart';
 import '../domain/fx_history.dart';
+import '../domain/number_locale.dart' show formatFixed;
 import '../domain/ptax_series.dart';
+import '../domain/tax_format.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/foreign_tax_labels.dart';
 import '../models/portfolio_transaction.dart';
 import '../services/bcb_ptax_service.dart';
 import '../services/portfolio_repository.dart';
 import '../services/yahoo_quote_service.dart';
-import '../domain/tax_format.dart' show formatBrl, formatDay;
-
-@visibleForTesting
-const foreignIntroNote =
-    'Calculado só com as transações lançadas neste app, a custo médio, com a '
-    'taxa de cada operação e em reais pela PTAX do Banco Central (fechamento, '
-    'venda; compra no imposto retido no exterior), e no dia sem cotação pela '
-    'última anterior. Onde a PTAX falta, vale o câmbio de mercado (Yahoo) e o '
-    'ano avisa que é aproximado. Vai na declaração anual, sem DARF mensal. As '
-    'regras vêm de fontes secundárias: confira na Receita antes de pagar.';
-
-@visibleForTesting
-const foreignFxUnavailableNote =
-    'Câmbio indisponível agora para alguma moeda (nem PTAX nem de mercado): '
-    'as operações nela ficaram de fora. Tente de novo em instantes.';
-
-/// Câmbio de um fato e de onde veio: `Câmbio 6,0000 (PTAX)` ou `(mercado)`.
-@visibleForTesting
-String foreignRateLabel(double rate, RateSource source) =>
-    'Câmbio ${rate.toStringAsFixed(4).replaceAll('.', ',')} '
-    '(${source == RateSource.ptax ? 'PTAX' : 'mercado'})';
-
-/// Situação do ano numa frase: imposto estimado, coberto pelo crédito, sem
-/// imposto por prejuízo ou sem imposto por ficar abaixo do que já foi retido.
-@visibleForTesting
-String foreignYearStatus(ForeignYear year) {
-  if (year.taxDue > 0) {
-    return 'Imposto estimado de ${formatBrl(year.taxDue)} na declaração';
-  }
-  if (year.taxBeforeCredit > 0) {
-    return 'Sem imposto a pagar: o retido no exterior cobre os '
-        '${formatBrl(year.taxBeforeCredit)} devidos';
-  }
-  if (year.lossCarriedOut > year.lossCarriedIn) {
-    return 'Sem imposto: o ano fechou com prejuízo de '
-        '${formatBrl(year.lossCarriedOut - year.lossCarriedIn)}, que abate os '
-        'anos seguintes';
-  }
-  return 'Sem imposto: o resultado do ano coube no prejuízo de anos anteriores';
-}
-
-@visibleForTesting
-String foreignWarningText(ForeignTaxWarning warning) {
-  switch (warning.kind) {
-    case ForeignTaxWarningKind.costUnknown:
-      return 'Venda de ${warning.ticker} em ${formatDay(warning.date!)} maior '
-          'que as compras lançadas: o ganho considera só a parte com custo '
-          'conhecido. Lance as compras que faltam.';
-    case ForeignTaxWarningKind.fxMissing:
-      return 'Operações ou proventos de ${warning.year} sem câmbio (nem PTAX '
-          'nem de mercado) para a data: ficaram de fora da apuração.';
-    case ForeignTaxWarningKind.fxApproximate:
-      return 'Operações ou proventos de ${warning.year} foram convertidos pelo '
-          'câmbio de mercado porque a PTAX do Banco Central não estava '
-          'disponível para eles (sem rede, moeda que a PTAX não cota ou '
-          'buraco longo): os valores do ano são aproximados.';
-  }
-}
-
-@visibleForTesting
-const foreignHoldingsNote =
-    'Custo de aquisição em reais, não valor de mercado, só do que está lançado '
-    'neste app. Uma linha por custódia: o custo de cada uma é a quantidade dela '
-    'vezes o custo médio do ativo, então as custódias somam a posição. Grupo, '
-    'código e país da ficha são seus: preencha pelo programa da Receita (as '
-    'fontes divergem e o app não confere; só completa zeros, então 3 vira 03). '
-    'Entram na descrição copiada e no CSV. Estimativa de fontes secundárias: '
-    'confira no programa da Receita.';
-
-@visibleForTesting
-const foreignHoldingsLegend =
-    '"aproximado": alguma compra sem PTAX usou o câmbio de mercado. '
-    '"incompleto": uma operação ficou sem câmbio, ou uma venda foi maior que '
-    'as compras lançadas, e o custo está subestimado.';
-
-/// Quantidade sem zeros à direita, com vírgula decimal (até 8 casas).
-@visibleForTesting
-String formatHoldingQuantity(double quantity) {
-  var text = quantity.toStringAsFixed(8);
-  text = text.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
-  return text.replaceAll('.', ',');
-}
-
-/// Texto de discriminação de um ativo na declaração de `year` (posição em
-/// 31/12 do ano anterior e do ano), para colar no programa da Receita.
-@visibleForTesting
-String foreignHoldingDescription({
-  required int year,
-  required String ticker,
-  required String name,
-  String? custodiaLabel,
-  ForeignHolding? previous,
-  ForeignHolding? current,
-  String? group,
-  String? code,
-  String? country,
-}) {
-  String units(ForeignHolding? h) =>
-      h == null ? 'sem posição' : '${formatHoldingQuantity(h.quantity)} un.';
-  String cost(ForeignHolding? h) => formatBrl(h?.costBrl ?? 0);
-  final custody = custodiaLabel == null ? '' : ' Custódia: $custodiaLabel.';
-  final ficha = dirpfFichaText(group: group, code: code, country: country);
-  return [
-    '$ticker — $name.$custody',
-    if (ficha.isNotEmpty) 'Ficha: $ficha.',
-    'Situação em 31/12/${year - 1}: ${units(previous)}, custo de aquisição '
-        '${cost(previous)}.',
-    'Situação em 31/12/$year: ${units(current)}, custo de aquisição '
-        '${cost(current)}.',
-    'Custo de aquisição convertido em reais pela cotação de fechamento (venda) '
-        'do Banco Central na data de cada compra.',
-  ].join('\n');
-}
 
 /// IR de ativos no exterior ano a ano (ver `assessForeignTax`). Somente
 /// leitura: a apuração é anual, não há DARF para marcar como pago.
@@ -161,6 +52,7 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
     );
     if (result == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    final l = AppLocalizations.of(context);
     try {
       await _repository.setAssetDirpf(
         holding.assetId,
@@ -168,15 +60,8 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
         code: result.code,
         country: result.country,
       );
-    } on FormatException catch (e) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Ficha inválida (${e.message}). Use só dígitos: grupo e código '
-            'até 2, país até 3.',
-          ),
-        ),
-      );
+    } on FormatException {
+      messenger.showSnackBar(SnackBar(content: Text(l.foreignFichaInvalid)));
       return;
     }
     await _load();
@@ -256,21 +141,22 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
   @override
   Widget build(BuildContext context) {
     final assessment = _assessment;
+    final l = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('IR de exterior')),
+      appBar: AppBar(title: Text(l.foreignTitle)),
       body: _loading || assessment == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 Text(
-                  foreignIntroNote,
+                  l.foreignIntroNote,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 if (_fxUnavailable) ...[
                   const SizedBox(height: 8),
                   Text(
-                    foreignFxUnavailableNote,
+                    l.foreignFxUnavailableNote,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.error,
                     ),
@@ -281,21 +167,17 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
-                      foreignWarningText(warning),
+                      foreignWarningText(l, warning),
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.error,
                       ),
                     ),
                   ),
                 if (assessment.years.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 24),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 24),
                     child: Center(
-                      child: Text(
-                        'Nenhuma venda ou provento de ativo do exterior a '
-                        'partir de 2024 ainda.',
-                        textAlign: TextAlign.center,
-                      ),
+                      child: Text(l.foreignEmpty, textAlign: TextAlign.center),
                     ),
                   )
                 else
@@ -336,10 +218,11 @@ class _HoldingsCardState extends State<_HoldingsCard> {
   /// Salva o informe inteiro (todos os anos) num CSV com as colunas do desktop.
   Future<void> _exportCsv() async {
     final messenger = ScaffoldMessenger.of(context);
+    final l = AppLocalizations.of(context);
     final day = DateTime.now().toIso8601String().substring(0, 10);
     try {
       final path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Salvar informe de Bens e Direitos',
+        dialogTitle: l.foreignCsvDialogTitle,
         fileName: 'anchor-foreign-holdings-$day.csv',
         type: FileType.custom,
         allowedExtensions: const ['csv'],
@@ -349,12 +232,10 @@ class _HoldingsCardState extends State<_HoldingsCard> {
       );
       if (path == null) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('${widget.holdings.length} linhas salvas.')),
+        SnackBar(content: Text(l.foreignCsvSaved(widget.holdings.length))),
       );
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Não consegui salvar o CSV: $e')),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(l.foreignCsvFailed('$e'))));
     }
   }
 
@@ -376,6 +257,8 @@ class _HoldingsCardState extends State<_HoldingsCard> {
     if (years.isEmpty) return const SizedBox.shrink();
     final year = years.contains(_year) ? _year! : years.first;
     final textTheme = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context);
+    final locale = l.localeName;
 
     ForeignHolding? at((int, int?) key, int y) {
       for (final h in widget.holdings) {
@@ -410,9 +293,9 @@ class _HoldingsCardState extends State<_HoldingsCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Bens e Direitos', style: textTheme.titleMedium),
+            Text(l.foreignHoldingsTitle, style: textTheme.titleMedium),
             const SizedBox(height: 4),
-            Text(foreignHoldingsNote, style: textTheme.bodySmall),
+            Text(l.foreignHoldingsNote, style: textTheme.bodySmall),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -422,7 +305,7 @@ class _HoldingsCardState extends State<_HoldingsCard> {
                     for (final y in years)
                       DropdownMenuItem(
                         value: y,
-                        child: Text('Declaração de $y'),
+                        child: Text(l.foreignReturnOf(y)),
                       ),
                   ],
                   onChanged: (y) => setState(() => _year = y),
@@ -430,14 +313,16 @@ class _HoldingsCardState extends State<_HoldingsCard> {
                 const Spacer(),
                 OutlinedButton(
                   onPressed: _exportCsv,
-                  child: const Text('Exportar CSV'),
+                  child: Text(l.foreignExportCsv),
                 ),
               ],
             ),
             if (rows.isEmpty)
               Text(
-                'Nenhuma posição no exterior em 31/12/${year - 1} nem em '
-                '31/12/$year.',
+                l.foreignNoPosition(
+                  formatDay(DateTime(year - 1, 12, 31), locale: locale),
+                  formatDay(DateTime(year, 12, 31), locale: locale),
+                ),
               ),
             for (final row in rows)
               _HoldingRow(
@@ -448,7 +333,7 @@ class _HoldingsCardState extends State<_HoldingsCard> {
                 onEditFicha: widget.onEditFicha,
               ),
             const SizedBox(height: 4),
-            Text(foreignHoldingsLegend, style: textTheme.bodySmall),
+            Text(l.foreignHoldingsLegend, style: textTheme.bodySmall),
           ],
         ),
       ),
@@ -473,17 +358,24 @@ class _HoldingRow extends StatelessWidget {
     required this.onEditFicha,
   });
 
-  String _line(String label, ForeignHolding? h) => h == null
-      ? '$label: —'
-      : '$label: ${formatBrl(h.costBrl)} '
-            '(${formatHoldingQuantity(h.quantity)} un.)'
-            '${h.fxApproximate ? ' · aproximado' : ''}'
-            '${h.incomplete ? ' · incompleto' : ''}';
+  String _line(AppLocalizations l, DateTime day, ForeignHolding? h) {
+    final label = formatDay(day, locale: l.localeName);
+    if (h == null) return l.foreignHoldingNone(label);
+    return l.foreignHoldingValue(
+      label,
+      formatBrl(h.costBrl, locale: l.localeName),
+      formatHoldingQuantity(h.quantity, locale: l.localeName),
+      h.fxApproximate ? l.foreignApproximate : '',
+      h.incomplete ? l.foreignIncomplete : '',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final base = (current ?? previous)!;
     final ficha = dirpfFichaText(
+      l,
       group: base.dirpfGroup,
       code: base.dirpfCode,
       country: base.dirpfCountry,
@@ -492,10 +384,10 @@ class _HoldingRow extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       title: Text('${base.ticker} — ${base.name}'),
       subtitle: Text(
-        '${custodiaLabel.isEmpty ? 'Sem custódia' : custodiaLabel}\n'
-        '${_line('31/12/${year - 1}', previous)}\n'
-        '${_line('31/12/$year', current)}\n'
-        'Ficha: ${ficha.isEmpty ? 'não preenchida' : ficha}',
+        '${custodiaLabel.isEmpty ? l.foreignNoCustody : custodiaLabel}\n'
+        '${_line(l, DateTime(year - 1, 12, 31), previous)}\n'
+        '${_line(l, DateTime(year, 12, 31), current)}\n'
+        '${l.foreignFichaLine(ficha.isEmpty ? l.foreignFichaNotFilled : ficha)}',
       ),
       isThreeLine: true,
       trailing: Row(
@@ -503,17 +395,18 @@ class _HoldingRow extends StatelessWidget {
         children: [
           IconButton(
             icon: const Icon(Icons.edit_note),
-            tooltip: 'Editar grupo, código e país da ficha',
+            tooltip: l.foreignEditFichaTooltip,
             onPressed: () => onEditFicha(base),
           ),
           IconButton(
             icon: const Icon(Icons.copy),
-            tooltip: 'Copiar descrição',
+            tooltip: l.foreignCopyTooltip,
             onPressed: () async {
               final messenger = ScaffoldMessenger.of(context);
               await Clipboard.setData(
                 ClipboardData(
                   text: foreignHoldingDescription(
+                    l,
                     year: year,
                     ticker: base.ticker,
                     name: base.name,
@@ -527,7 +420,7 @@ class _HoldingRow extends StatelessWidget {
                 ),
               );
               messenger.showSnackBar(
-                const SnackBar(content: Text('Descrição copiada.')),
+                SnackBar(content: Text(l.foreignDescriptionCopied)),
               );
             },
           ),
@@ -573,23 +466,22 @@ class _FichaDialogState extends State<_FichaDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return AlertDialog(
-      title: Text('Ficha de ${widget.holding.ticker}'),
+      title: Text(l.foreignFichaDialogTitle(widget.holding.ticker)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _field(_group, 'Grupo', dirpfGroupLength),
-          _field(_code, 'Código', dirpfCodeLength),
-          _field(_country, 'País', dirpfCountryLength),
-          const Text(
-            'Copie do programa da Receita; o app não confere. Vazio apaga.',
-          ),
+          _field(_group, l.foreignFieldGroup, dirpfGroupLength),
+          _field(_code, l.foreignFieldCode, dirpfCodeLength),
+          _field(_country, l.foreignFieldCountry, dirpfCountryLength),
+          Text(l.foreignFichaHelp),
         ],
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
+          child: Text(l.actionCancel),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop((
@@ -597,7 +489,7 @@ class _FichaDialogState extends State<_FichaDialog> {
             code: _code.text,
             country: _country.text,
           )),
-          child: const Text('Salvar'),
+          child: Text(l.actionSave),
         ),
       ],
     );
@@ -612,6 +504,9 @@ class _YearCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context);
+    final locale = l.localeName;
+    String brl(double value) => formatBrl(value, locale: locale);
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -622,7 +517,7 @@ class _YearCard extends StatelessWidget {
             Text('${year.year}', style: textTheme.titleMedium),
             const SizedBox(height: 4),
             Text(
-              foreignYearStatus(year),
+              foreignYearStatus(l, year),
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: year.taxDue > 0
@@ -631,33 +526,26 @@ class _YearCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            Text('Ganho de capital: ${formatBrl(year.capitalGain)}'),
-            Text('Proventos: ${formatBrl(year.dividends)}'),
+            Text(l.foreignCapitalGain(brl(year.capitalGain))),
+            Text(l.foreignDividends(brl(year.dividends))),
             if (year.lossCarriedIn > 0)
-              Text(
-                'Prejuízo de anos anteriores usado: '
-                '${formatBrl(year.lossCarriedIn - year.lossCarriedOut)}',
-              ),
-            Text('Base de cálculo: ${formatBrl(year.taxableBase)}'),
+              Text(l.foreignLossUsed(brl(year.lossCarriedIn - year.lossCarriedOut))),
+            Text(l.foreignTaxableBase(brl(year.taxableBase))),
             Text(
-              'Imposto: ${formatBrl(year.taxBeforeCredit)} '
-              '(alíquota ${(year.rate * 100).toStringAsFixed(1)}%)',
+              l.foreignTax(
+                brl(year.taxBeforeCredit),
+                formatFixed(year.rate * 100, 1, locale: locale),
+              ),
             ),
             if (year.withheld > 0)
-              Text(
-                'Retido no exterior: ${formatBrl(year.withheld)} '
-                '(crédito de ${formatBrl(year.creditUsed)})',
-              ),
+              Text(l.foreignWithheld(brl(year.withheld), brl(year.creditUsed))),
             if (year.lossCarriedOut > 0)
-              Text(
-                'Prejuízo que abate os anos seguintes: '
-                '${formatBrl(year.lossCarriedOut)}',
-              ),
+              Text(l.foreignLossCarriedOut(brl(year.lossCarriedOut))),
             if (year.sales.isNotEmpty)
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 title: Text(
-                  'Vendas (${year.sales.length})',
+                  l.foreignSalesCount(year.sales.length),
                   style: textTheme.bodyMedium,
                 ),
                 children: [
@@ -665,12 +553,16 @@ class _YearCard extends StatelessWidget {
                     ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      title: Text('${sale.ticker} — ${formatDay(sale.date)}'),
+                      title: Text(
+                        l.foreignItemTitle(sale.ticker, formatDay(sale.date, locale: locale)),
+                      ),
                       subtitle: Text(
-                        '${foreignRateLabel(sale.fxRate, sale.fxSource)}'
-                        ' · venda ${formatBrl(sale.saleValue)}'
-                        ' · custo ${formatBrl(sale.cost)}'
-                        ' · ganho ${formatBrl(sale.gain)}',
+                        l.foreignSaleDetail(
+                          foreignRateLabel(l, sale.fxRate, sale.fxSource),
+                          brl(sale.saleValue),
+                          brl(sale.cost),
+                          brl(sale.gain),
+                        ),
                       ),
                     ),
                 ],
@@ -679,7 +571,7 @@ class _YearCard extends StatelessWidget {
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 title: Text(
-                  'Proventos (${year.dividendItems.length})',
+                  l.foreignDividendsCount(year.dividendItems.length),
                   style: textTheme.bodyMedium,
                 ),
                 children: [
@@ -687,11 +579,17 @@ class _YearCard extends StatelessWidget {
                     ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      title: Text('${item.ticker} — ${formatDay(item.date)}'),
+                      title: Text(
+                        l.foreignItemTitle(item.ticker, formatDay(item.date, locale: locale)),
+                      ),
                       subtitle: Text(
-                        '${foreignRateLabel(item.fxRate, item.fxSource)}'
-                        ' · ${formatBrl(item.gross)}'
-                        '${item.withheld > 0 ? ' · retido ${formatBrl(item.withheld)}' : ''}',
+                        l.foreignDividendDetail(
+                          foreignRateLabel(l, item.fxRate, item.fxSource),
+                          brl(item.gross),
+                          item.withheld > 0
+                              ? l.foreignDividendWithheld(brl(item.withheld))
+                              : '',
+                        ),
                       ),
                     ),
                 ],
