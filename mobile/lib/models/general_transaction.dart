@@ -3,19 +3,18 @@
 /// dívida em `createLiability`; o empréstimo concedido e o recebimento dele
 /// nascem em `createLoan` e `registerLoanRepayment`.
 enum GeneralTransactionType {
-  receita('receita', 'Receita'),
-  despesa('despesa', 'Despesa'),
-  transferenciaSaida('transferencia_saida', 'Transferência (saída)'),
-  transferenciaEntrada('transferencia_entrada', 'Transferência (entrada)'),
-  parcelaDivida('parcela_divida', 'Parcela de dívida'),
-  emprestimoConcedido('emprestimo_concedido', 'Empréstimo concedido'),
-  recebimentoEmprestimo('recebimento_emprestimo', 'Recebimento de empréstimo');
+  receita('receita'),
+  despesa('despesa'),
+  transferenciaSaida('transferencia_saida'),
+  transferenciaEntrada('transferencia_entrada'),
+  parcelaDivida('parcela_divida'),
+  emprestimoConcedido('emprestimo_concedido'),
+  recebimentoEmprestimo('recebimento_emprestimo');
 
   /// Texto gravado em `transaction_type`, o mesmo do desktop.
   final String value;
-  final String label;
 
-  const GeneralTransactionType(this.value, this.label);
+  const GeneralTransactionType(this.value);
 
   /// O que o usuário escolhe ao lançar um movimento.
   static const manual = [receita, despesa];

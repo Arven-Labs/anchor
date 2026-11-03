@@ -144,7 +144,7 @@ void main() {
     for (final key in HomeWidgetKey.values) {
       expect(has('home-card-${key.id}'), isTrue, reason: key.id);
     }
-    expect(text(tester, 'home-total-value-text'), formatMoney(370, 'BRL'));
+    expect(text(tester, 'home-total-value-text'), formatMoney(370, 'BRL', locale: 'pt'));
     expect(
       text(tester, 'home-profit-text'),
       homeProfitPercentLabel(70 / 300 * 100, locale: 'pt'),
@@ -156,7 +156,7 @@ void main() {
     // 70 / 300 = 23,333…%: a vírgula decimal é nova no Início em pt (antes saía "23.3%").
     expect(text(tester, 'home-profit-text'), '+23,3%');
     // caixa 1000 + carteira 370
-    expect(text(tester, 'home-net-worth-text'), formatMoney(1370, 'BRL'));
+    expect(text(tester, 'home-net-worth-text'), formatMoney(1370, 'BRL', locale: 'pt'));
     expect(has('home-allocation-row-acao_br'), isTrue);
     expect(has('home-allocation-row-acao_internacional'), isTrue);
   });
@@ -187,7 +187,7 @@ void main() {
       ],
     );
 
-    expect(text(tester, 'home-total-value-text'), formatMoney(250, 'BRL'));
+    expect(text(tester, 'home-total-value-text'), formatMoney(250, 'BRL', locale: 'pt'));
     expect(
       text(tester, 'home-profit-text'),
       homeProfitPercentLabel(25, locale: 'pt'),

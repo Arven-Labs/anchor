@@ -62,8 +62,8 @@ void main() {
     });
 
     test('sem locale o formato segue pt (telas de fundos e exterior ainda não migradas)', () {
-      expect(formatBrl(1234.5), 'R\$ 1.234,50');
-      expect(formatDay(DateTime.utc(2026, 3, 5)), '05/03/2026');
+      expect(formatBrl(1234.5, locale: 'pt'), 'R\$ 1.234,50');
+      expect(formatDay(DateTime.utc(2026, 3, 5), locale: 'pt'), '05/03/2026');
     });
 
     test('data: dia/mês/ano em pt, mês/dia/ano em en', () {

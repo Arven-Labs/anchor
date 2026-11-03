@@ -187,15 +187,15 @@ void main() {
     );
 
     test('formatMoney põe o código na frente, com milhar e vírgula', () {
-      expect(formatMoney(1234.5, 'USD'), 'USD 1.234,50');
-      expect(formatMoney(-1234567.891, 'BRL'), 'BRL -1.234.567,89');
-      expect(formatMoney(0, 'PYG'), 'PYG 0,00');
-      expect(formatMoney(999.999, 'EUR'), 'EUR 1.000,00');
+      expect(formatMoney(1234.5, 'USD', locale: 'pt'), 'USD 1.234,50');
+      expect(formatMoney(-1234567.891, 'BRL', locale: 'pt'), 'BRL -1.234.567,89');
+      expect(formatMoney(0, 'PYG', locale: 'pt'), 'PYG 0,00');
+      expect(formatMoney(999.999, 'EUR', locale: 'pt'), 'EUR 1.000,00');
     });
 
     test('formatMoney não mostra zero negativo', () {
-      expect(formatMoney(-0.0, 'BRL'), 'BRL 0,00');
-      expect(formatMoney(-0.004, 'BRL'), 'BRL 0,00');
+      expect(formatMoney(-0.0, 'BRL', locale: 'pt'), 'BRL 0,00');
+      expect(formatMoney(-0.004, 'BRL', locale: 'pt'), 'BRL 0,00');
     });
   });
 

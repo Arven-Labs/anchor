@@ -174,7 +174,7 @@ class _FinancasLoansScreenState extends State<FinancasLoansScreen> {
                     isExpanded: true,
                     decoration: InputDecoration(labelText: l.loanCurrency),
                     items: [
-                      for (final (code, _) in currencyCatalog)
+                      for (final code in currencyCatalog)
                         DropdownMenuItem(
                           value: code,
                           child: Text('$code — ${currencyName(l, code)}'),

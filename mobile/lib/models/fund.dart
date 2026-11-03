@@ -1,18 +1,17 @@
 /// Tipo tributário do fundo aberto, escolhido pelo usuário (o app não lê isso de
 /// lugar nenhum). Valores string iguais ao desktop (`fund_details.term`).
 enum FundTerm {
-  longTerm('longo_prazo', 'Longo prazo'),
-  shortTerm('curto_prazo', 'Curto prazo'),
-  equity('acoes', 'Ações'),
+  longTerm('longo_prazo'),
+  shortTerm('curto_prazo'),
+  equity('acoes'),
 
   /// Entidade de investimento (FIP, FIDC, ETF que não é de renda fixa; Lei 14.754,
   /// arts. 18 e 24): 15% fixo, sem IOF e sem come-cotas.
-  investmentEntity('entidade_investimento', 'Entidade de investimento');
+  investmentEntity('entidade_investimento');
 
   final String value;
-  final String label;
 
-  const FundTerm(this.value, this.label);
+  const FundTerm(this.value);
 
   /// Alíquota fixa, sem IOF nem come-cotas (ações e entidade de investimento).
   bool get isFlatRate => this == equity || this == investmentEntity;
@@ -30,14 +29,13 @@ enum FundTerm {
 /// e o exclusivo têm estoque de 2023. Valores string iguais ao desktop
 /// (`fund_details.structure`).
 enum FundStructure {
-  open('aberto', 'Aberto'),
-  closed('fechado', 'Fechado'),
-  exclusive('exclusivo', 'Exclusivo');
+  open('aberto'),
+  closed('fechado'),
+  exclusive('exclusivo');
 
   final String value;
-  final String label;
 
-  const FundStructure(this.value, this.label);
+  const FundStructure(this.value);
 
   /// `null` para texto desconhecido.
   static FundStructure? parse(String? value) {
@@ -51,13 +49,12 @@ enum FundStructure {
 /// Como o estoque de rendimento até 31/12/2023 foi tributado (arts. 27 e 28). Valores
 /// string iguais ao desktop (`fund_details.estoque_option`).
 enum EstoqueOption {
-  general('geral', 'Regra geral (15%)'),
-  option8('opcao_8', 'Opção (8%)');
+  general('geral'),
+  option8('opcao_8');
 
   final String value;
-  final String label;
 
-  const EstoqueOption(this.value, this.label);
+  const EstoqueOption(this.value);
 
   /// `null` para texto desconhecido.
   static EstoqueOption? parse(String? value) {

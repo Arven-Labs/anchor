@@ -1,27 +1,26 @@
 /// Os tipos do desktop que o mobile usa. Valores string iguais ao desktop
 /// (`desktop/src/portfolio/types.ts`).
 enum TransactionType {
-  compra('compra', 'Compra'),
-  venda('venda', 'Venda'),
-  aporte('aporte', 'Aporte'),
-  retirada('retirada', 'Retirada'),
-  provento('provento', 'Provento'),
-  transferencia('transferencia', 'Transferência'),
+  compra('compra'),
+  venda('venda'),
+  aporte('aporte'),
+  retirada('retirada'),
+  provento('provento'),
+  transferencia('transferencia'),
 
   /// Desconto real do come-cotas de um fundo: cotas retiradas, valor da cota do dia e
   /// total = imposto em reais. Só vale para ativo `fundo`, sem taxa e sem caixa.
-  comeCotas('come_cotas', 'Come-cotas'),
+  comeCotas('come_cotas'),
 
   /// Amortização de fundo fechado ou exclusivo (Lei 14.754, art. 17): valor recebido
   /// em `totalValue` e valor da cota do dia em `unitPrice`, sem quantidade nem taxa. As
   /// cotas ficam e o custo cai na fração `valor ÷ (cota × cotas)`. Só vale para ativo
   /// `fundo`.
-  amortizacao('amortizacao', 'Amortização');
+  amortizacao('amortizacao');
 
   final String value;
-  final String label;
 
-  const TransactionType(this.value, this.label);
+  const TransactionType(this.value);
 
   static TransactionType fromValue(String value) {
     return TransactionType.values.firstWhere((t) => t.value == value);

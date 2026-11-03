@@ -7,8 +7,7 @@ import 'package:anchor_mobile/l10n/home_labels.dart';
 import 'package:anchor_mobile/models/asset.dart';
 
 // Nomes dos cards do Início e das classes de ativo vivem nos `.arb` (ADR 0001). O português
-// é o texto que o app já mostrava; o `AssetClass.label` segue existindo (em português) até
-// a última tela migrar, e este teste trava que os dois nomes não divergem em pt.
+// é o texto que o app já mostrava, fixado aqui por extenso (o `AssetClass.label` saiu).
 Future<AppLocalizations> _load(String code) => AppLocalizations.delegate.load(Locale(code));
 
 void main() {
@@ -50,9 +49,29 @@ void main() {
   });
 
   group('classes de ativo', () {
-    test('pt: igual ao AssetClass.label de hoje, para toda classe', () {
+    // Os nomes em português que o `AssetClass.label` guardava, por extenso.
+    const ptNames = {
+      AssetClass.acaoBr: 'Ação BR',
+      AssetClass.fii: 'FII',
+      AssetClass.etfBr: 'ETF BR',
+      AssetClass.etfRendaFixa: 'ETF Renda Fixa BR',
+      AssetClass.bdr: 'BDR',
+      AssetClass.acaoInternacional: 'Ação internacional',
+      AssetClass.reit: 'REIT',
+      AssetClass.etfUs: 'ETF US',
+      AssetClass.cripto: 'Cripto',
+      AssetClass.metal: 'Metal',
+      AssetClass.tesouroDireto: 'Tesouro Direto',
+      AssetClass.rendaFixa: 'Renda Fixa',
+      AssetClass.imovel: 'Imóvel',
+      AssetClass.empresaNaoListada: 'Empresa não listada',
+      AssetClass.fundo: 'Fundo',
+    };
+
+    test('pt: o nome de antes, para toda classe', () {
+      expect(ptNames.keys.toSet(), AssetClass.values.toSet(), reason: 'tabela cobre todas');
       for (final c in AssetClass.values) {
-        expect(assetClassName(pt, c), c.label, reason: c.value);
+        expect(assetClassName(pt, c), ptNames[c], reason: c.value);
       }
     });
 
@@ -82,7 +101,7 @@ void main() {
       const same = {'fii', 'bdr', 'reit', 'metal', 'tesouro_direto'};
       for (final c in AssetClass.values) {
         if (same.contains(c.value)) continue;
-        expect(assetClassName(en, c), isNot(c.label), reason: c.value);
+        expect(assetClassName(en, c), isNot(ptNames[c]), reason: c.value);
       }
     });
   });

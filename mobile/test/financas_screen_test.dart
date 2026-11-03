@@ -73,11 +73,6 @@ void main() {
       );
 
   group('helpers de texto', () {
-    test('formatIsoDay vira dd/MM/yyyy e deixa passar o que não é data ISO', () {
-      expect(formatIsoDay('2026-03-09'), '09/03/2026');
-      expect(formatIsoDay('9/3/2026'), '9/3/2026');
-    });
-
     test('toIsoDay completa com zeros', () {
       expect(toIsoDay(DateTime(2026, 3, 9)), '2026-03-09');
       expect(toIsoDay(DateTime(987, 1, 2)), '0987-01-02');
