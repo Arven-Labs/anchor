@@ -4898,5 +4898,6 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Pedido**: a opção de baixo risco deixada na Sessão 291: trocar a espera fixa do `pumpScreen` (20 × 50 ms) do `fund_tax_screen_test` por espera da condição real. Tarefa mecânica, sem plan mode.
 - **Feito**: só teste. `pumpScreen` agora sonda de 25 em 25 ms (até 200 vezes) até sumir o `CircularProgressIndicator` da tela (`_loading` em `fund_tax_screen.dart`) e falha com mensagem se não sumir. Nenhum código de `lib/` mudou.
 - **Verificação (local, cópia no scratchpad)**: `flutter analyze` sem problemas; o arquivo passa (4 testes) sem carga e **6 de 6** com 16 laços de CPU. O arquivo antigo também passou 6 de 6 e 8 de 8 sob carga (Sessão 291), então **isto é endurecimento defensivo, não correção provada**: não houve falha para "fechar".
-- **Não verificado**: que a falha da Sessão 285 tenha sido essa espera fixa; a suíte completa sob carga; CI (ver PR).
+- **CI (PR #68, commit 9ea24a6)**: `mobile / test` (3m19s), `gate`, `changes` e `guard` verdes; os demais pulados.
+- **Não verificado**: que a falha da Sessão 285 tenha sido essa espera fixa; a suíte completa sob carga.
 - **Pendente**: `financas_screen_test` e `home_screen_test` seguem sem causa (esperam por marcador, não por tempo fixo; não os mexi).
