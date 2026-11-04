@@ -4885,3 +4885,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI (PR #66, commit b65eebc)**: `mobile / test` (2m56s), `gate`, `changes` e `guard` verdes; `contracts`, `e2e`, `frontend`, `mobile / apk` e `rust` pulados (nenhum arquivo deles mudou).
 - **Não verificado**: o app num aparelho real, nos dois idiomas e com a troca em tempo de execução; aparência da tela de Configurações e da engrenagem (só testei comportamento); o `ui_text_guard_test` não precisou de entrada nova em `_allowed` (os nomes dos idiomas não entram por `Text('...')`).
 - **Pendente**: as 3 instabilidades de teste de tela da Sessão 289 (reproduzir sob carga de CPU).
+
+## Sessão 291 — tentativa de reproduzir as 3 instabilidades de teste de tela (não reproduziu)
+- **Pedido**: o pendente da Sessão 289: reproduzir sob carga de CPU as falhas de `financas_screen_test` (283), `home_screen_test` (284) e `fund_tax_screen_test` (285), como na Sessão 288. Etapas A a C em plan mode.
+- **Medido** (cópia limpa da `main` em `a5f941c`, `flutter test` no scratchpad): (1) 16 laços de CPU, um arquivo por vez, 6 rodadas cada: **18 de 18 passaram**; (2) 32 laços, os 3 arquivos juntos num só `flutter test`, 8 rodadas: **8 de 8 passaram**. Total: **26 rodadas, 0 falhas**.
+- **Conclusão**: não reproduzi. Sem a falha, qualquer correção seria palpite; **nenhum teste nem código mudou**. A técnica da Sessão 288 funcionou para o `crypto_score_screen_test` (espera pelo fim da releitura do banco) e não funcionou para estes, então a causa pode ser outra (ordem de execução na suíte completa, estado deixado por outro arquivo, tempo de disco) ou ter sido a mesma corrida com uma janela muito estreita.
+- **Hipótese que sobrou, não provada**: `fund_tax_screen_test.dart`, `pumpScreen`, espera tempo fixo (20 × 50 ms) em vez de uma condição; é o único dos três sem sonda de pronto. Não falhou nas 26 rodadas.
+- **Não verificado**: a suíte completa inteira sob carga (onde as 3 falhas aconteceram, com todos os arquivos em paralelo); falha em CI (nunca ocorreu).
+- **Pendente**: as 3 instabilidades seguem sem causa. Se uma voltar, **capturar a mensagem na hora** (rodar a suíte com a saída em arquivo, ver memória `anchor-flutter-local-setup`) e só então corrigir. Opcional e de baixo risco: trocar a espera fixa do `fund_tax_screen_test` por espera da condição real.
