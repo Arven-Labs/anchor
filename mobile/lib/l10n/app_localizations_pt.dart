@@ -306,6 +306,18 @@ class AppLocalizationsPt extends AppLocalizations {
   String get homeCustomizeTooltip => 'Personalizar';
 
   @override
+  String get homeSettingsTooltip => 'Configurações';
+
+  @override
+  String get settingsTitle => 'Configurações';
+
+  @override
+  String get settingsLanguage => 'Idioma';
+
+  @override
+  String get settingsLanguageSystem => 'Seguir o aparelho';
+
+  @override
   String get homeRestoreDefault => 'Restaurar padrão';
 
   @override

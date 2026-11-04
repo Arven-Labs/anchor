@@ -8,7 +8,7 @@ O `GUIDELINES.md` manda a UI em inglês (o repositório é público) e o desktop
 ## Decisão
 - Inglês é o idioma-fonte e pt-BR é uma tradução, via `flutter_localizations` + `intl` e arquivos `.arb` (`mobile/lib/l10n/app_en.arb` é o modelo, `app_pt.arb` a tradução). Nenhuma string de UI fica fixa no código.
 - A camada de domínio **não depende do Flutter**: funções puras devolvem códigos tipados (enum ou valor), e a tela os traduz com `AppLocalizations`.
-- O idioma é o do aparelho; qualquer idioma que não seja português cai em inglês. Números e datas seguem o locale (`1,234.56` em inglês, `1.234,56` em pt-BR). Sem seletor de idioma dentro do app.
+- O idioma é o do aparelho; qualquer idioma que não seja português cai em inglês. Números e datas seguem o locale (`1,234.56` em inglês, `1.234,56` em pt-BR). **Emenda de 2026-11-04 (Sessão 290):** o app ganhou um seletor de idioma (Configurações, pela engrenagem da Início) com três opções: seguir o aparelho (padrão, o comportamento acima), English e Português. A escolha fica em `app_settings` (chave `language`).
 - Siglas e nomes próprios brasileiros (DARF, DIRPF, CVM, B3) não são traduzidos.
 - Migração em série de PRs: infraestrutura + ADR + aba "Cripto" como piloto; depois um PR por área (Início e Carteira, Finanças, Impostos, Custódias e importações); por fim, limpeza e um teste que falha com string de UI fixa. Cada PR entrega inglês e pt-BR e testa os dois.
 
@@ -16,7 +16,7 @@ O `GUIDELINES.md` manda a UI em inglês (o repositório é público) e o desktop
 - **Só um ADR aceitando o mobile em português:** é barato, mas deixa a UI de um repositório público em português e contradiz o `GUIDELINES.md`. O dono pediu inglês como foco.
 - **Traduzir para inglês sem infraestrutura:** perde o português, que é o idioma do uso diário e do domínio (imposto de renda, CVM).
 - **Passar `AppLocalizations` para o domínio:** muda menos assinaturas, mas acopla o domínio ao Flutter e deixa os testes de domínio dependentes de idioma.
-- **Seletor de idioma dentro do app:** mais código e mais um fluxo para testar, sem necessidade hoje (um usuário, aparelho já em pt-BR).
+- **Seletor de idioma dentro do app:** descartado na decisão original (mais código e mais um fluxo para testar, sem necessidade hoje). **Revisto em 2026-11-04**: o dono pediu o seletor. Custo real: uma linha em `app_settings`, um `InheritedWidget` e uma tela, sem dependência nova nem mudança de schema.
 
 ## Consequências
 - Dependência nova: `intl` (e `flutter_localizations`, do SDK), aprovada pelo dono. O `flutter gen-l10n` roda no build e pode pedir ajuste no `ci-mobile.yml`.
