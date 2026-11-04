@@ -76,10 +76,14 @@ void main() {
     addTearDown(tester.view.reset);
     if (seed) await tester.runAsync(seedZeroedXpFund);
     await tester.pumpWidget(localizedApp(const FundTaxScreen(), locale: locale));
-    for (var i = 0; i < 20; i++) {
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    // Espera o fim do carregamento (o SQLite ffi roda fora do relógio falso), não um tempo
+    // fixo: sob carga de CPU a leitura demora mais.
+    for (var i = 0; i < 200; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
       await tester.pump();
+      if (find.byType(CircularProgressIndicator).evaluate().isEmpty) break;
     }
+    expect(find.byType(CircularProgressIndicator), findsNothing, reason: 'a tela não terminou de carregar');
   }
 
   testWidgets(
