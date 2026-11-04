@@ -4893,3 +4893,10 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Hipótese que sobrou, não provada**: `fund_tax_screen_test.dart`, `pumpScreen`, espera tempo fixo (20 × 50 ms) em vez de uma condição; é o único dos três sem sonda de pronto. Não falhou nas 26 rodadas.
 - **Não verificado**: a suíte completa inteira sob carga (onde as 3 falhas aconteceram, com todos os arquivos em paralelo); falha em CI (nunca ocorreu).
 - **Pendente**: as 3 instabilidades seguem sem causa. Se uma voltar, **capturar a mensagem na hora** (rodar a suíte com a saída em arquivo, ver memória `anchor-flutter-local-setup`) e só então corrigir. Opcional e de baixo risco: trocar a espera fixa do `fund_tax_screen_test` por espera da condição real.
+
+## Sessão 292 — `fund_tax_screen_test` espera a condição, não um tempo fixo
+- **Pedido**: a opção de baixo risco deixada na Sessão 291: trocar a espera fixa do `pumpScreen` (20 × 50 ms) do `fund_tax_screen_test` por espera da condição real. Tarefa mecânica, sem plan mode.
+- **Feito**: só teste. `pumpScreen` agora sonda de 25 em 25 ms (até 200 vezes) até sumir o `CircularProgressIndicator` da tela (`_loading` em `fund_tax_screen.dart`) e falha com mensagem se não sumir. Nenhum código de `lib/` mudou.
+- **Verificação (local, cópia no scratchpad)**: `flutter analyze` sem problemas; o arquivo passa (4 testes) sem carga e **6 de 6** com 16 laços de CPU. O arquivo antigo também passou 6 de 6 e 8 de 8 sob carga (Sessão 291), então **isto é endurecimento defensivo, não correção provada**: não houve falha para "fechar".
+- **Não verificado**: que a falha da Sessão 285 tenha sido essa espera fixa; a suíte completa sob carga; CI (ver PR).
+- **Pendente**: `financas_screen_test` e `home_screen_test` seguem sem causa (esperam por marcador, não por tempo fixo; não os mexi).
