@@ -590,6 +590,30 @@ abstract class AppLocalizations {
   /// **'Customize'**
   String get homeCustomizeTooltip;
 
+  /// No description provided for @homeSettingsTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get homeSettingsTooltip;
+
+  /// No description provided for @settingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get settingsTitle;
+
+  /// No description provided for @settingsLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get settingsLanguage;
+
+  /// No description provided for @settingsLanguageSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow device'**
+  String get settingsLanguageSystem;
+
   /// No description provided for @homeRestoreDefault.
   ///
   /// In en, this message translates to:

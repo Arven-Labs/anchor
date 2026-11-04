@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import 'l10n/app_localizations.dart';
+import 'domain/language_preference.dart';
+import 'l10n/language_settings.dart';
 import 'l10n/locale_resolution.dart';
+import 'services/language_preference_repository.dart';
 import 'screens/crypto_score_screen.dart';
 import 'screens/financas_screen.dart';
 import 'screens/home_screen.dart';
@@ -13,20 +16,59 @@ void main() {
   runApp(const AnchorApp());
 }
 
-class AnchorApp extends StatelessWidget {
-  const AnchorApp({super.key});
+class AnchorApp extends StatefulWidget {
+  /// Onde o idioma escolhido fica guardado; injetável para teste.
+  final LanguagePreferenceRepository? repository;
+
+  /// Tela inicial; o padrão é a navegação por abas. Injetável para teste, sem rede.
+  final Widget? home;
+
+  const AnchorApp({super.key, this.repository, this.home});
+
+  @override
+  State<AnchorApp> createState() => _AnchorAppState();
+}
+
+class _AnchorAppState extends State<AnchorApp> {
+  late final LanguagePreferenceRepository _repository =
+      widget.repository ?? LanguagePreferenceRepository();
+
+  // Enquanto o banco não responde, segue o aparelho (sem tela de carregamento).
+  LanguagePreference _preference = LanguagePreference.system;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreference();
+  }
+
+  Future<void> _loadPreference() async {
+    final saved = await _repository.load();
+    if (mounted) setState(() => _preference = saved);
+  }
+
+  void _changePreference(LanguagePreference preference) {
+    setState(() => _preference = preference);
+    _repository.save(preference);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Anchor',
-      theme: buildAnchorTheme(),
-      // Idioma do aparelho; o que não for português cai em inglês (ADR 0001).
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: appSupportedLocales,
-      localeListResolutionCallback: resolveAppLocale,
-      home: const AnchorHome(),
-      debugShowCheckedModeBanner: false,
+    return LanguageSettings(
+      preference: _preference,
+      onChanged: _changePreference,
+      child: MaterialApp(
+        title: 'Anchor',
+        theme: buildAnchorTheme(),
+        // A escolha do usuário; `null` (seguir o aparelho) deixa o callback abaixo
+        // decidir: o que não for português cai em inglês (ADR 0001).
+        locale: _preference.locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: appSupportedLocales,
+        localeListResolutionCallback: resolveAppLocale,
+        home: widget.home ?? const AnchorHome(),
+        debugShowCheckedModeBanner: false,
+      ),
     );
   }
 }

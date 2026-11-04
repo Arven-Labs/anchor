@@ -8,6 +8,8 @@ import '../domain/money_format.dart';
 import '../domain/number_locale.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/home_labels.dart';
+import '../l10n/language_settings.dart';
+import 'settings_screen.dart';
 import '../services/general_finance_repository.dart';
 import '../services/home_layout_repository.dart';
 import '../services/live_positions.dart';
@@ -197,6 +199,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ]
             : [
+                // Só dentro do app (que fornece o idioma); a tela solta dos testes não tem.
+                if (LanguageSettings.maybeOf(context) != null)
+                  IconButton(
+                    key: const Key('home-settings'),
+                    tooltip: l.homeSettingsTooltip,
+                    icon: const Icon(Icons.settings_outlined),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const SettingsScreen(),
+                      ),
+                    ),
+                  ),
                 IconButton(
                   key: const Key('home-customize'),
                   tooltip: l.homeCustomizeTooltip,

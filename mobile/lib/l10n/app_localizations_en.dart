@@ -304,6 +304,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeCustomizeTooltip => 'Customize';
 
   @override
+  String get homeSettingsTooltip => 'Settings';
+
+  @override
+  String get settingsTitle => 'Settings';
+
+  @override
+  String get settingsLanguage => 'Language';
+
+  @override
+  String get settingsLanguageSystem => 'Follow device';
+
+  @override
   String get homeRestoreDefault => 'Restore default';
 
   @override
