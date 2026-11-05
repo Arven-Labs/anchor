@@ -4911,3 +4911,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI**: ver o PR.
 - **Não verificado**: as 3 instabilidades originais (283, 284, 285) seguem sem causa.
 - **Decisão do dono**: daqui em diante, nada de rodada local de teste; validação só pelo CI.
+
+## Sessão 294 — tentativa de reproduzir as 3 instabilidades no CI (não reproduziu)
+- **Pedido**: seguir nas instabilidades de `financas_screen_test` (283), `home_screen_test` (284) e `fund_tax_screen_test` (285), agora só pelo CI (sem rodada local). Plan mode.
+- **Hipótese**: as três falharam na 1ª rodada completa depois de editar código (cache frio), então testei frio e quente.
+- **Medido** (workflow descartável em branch `repro/flaky-telas`, `main` em `c17b5cb`, run 42130038547): suíte completa do mobile, 16 laços de CPU, 12 jobs (6 com `flutter clean` e sem cache do Flutter, 6 com cache): **12 de 12 passaram**. Branch apagada, nada foi para a `main`.
+- **Conclusão**: não reproduzi. Somando as 26 rodadas da Sessão 291 e as 6 da 293, são 44 rodadas sem falha desses 3 testes. Nenhum teste nem código mudou.
+- **Não verificado**: o runner do GitHub tem poucos núcleos e a carga artificial pode diferir da máquina local (onde as falhas ocorreram); a hipótese do cache frio não foi confirmada nem refutada, só não apareceu.
+- **Pendente**: se uma falha voltar, capturar a mensagem na hora. Sem nova ocorrência, não há o que corrigir; sugiro tirar o item de "Aberto" se não voltar em algumas sessões.
