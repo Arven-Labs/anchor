@@ -4901,3 +4901,13 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI (PR #68, commit 9ea24a6)**: `mobile / test` (3m19s), `gate`, `changes` e `guard` verdes; os demais pulados.
 - **Não verificado**: que a falha da Sessão 285 tenha sido essa espera fixa; a suíte completa sob carga.
 - **Pendente**: `financas_screen_test` e `home_screen_test` seguem sem causa (esperam por marcador, não por tempo fixo; não os mexi).
+
+## Sessão 293 — instabilidade nova do `crypto_score_screen_test` reproduzida sob carga e corrigida
+- **Pedido**: reproduzir de novo, sob carga, as instabilidades de teste de tela. Desta vez a **suíte completa** (a Sessão 291 só rodou arquivos isolados ou os 3 juntos).
+- **Medido** (cópia limpa da `main` em `c2b3197`, 32 laços de CPU, 6 rodadas da suíte completa): **3 de 6 falharam**, sempre no mesmo teste: `crypto_score_screen_test`, "o ícone abre os limites da moeda selecionada" (`Found 0 widgets with key 'threshold-mvrv_z_score'`). `financas_screen_test`, `home_screen_test` e `fund_tax_screen_test` **não falharam** (somadas às 26 da Sessão 291: 32 rodadas sem reproduzir).
+- **Causa**: o teste esperava o texto `'MVRV Z-Score'`, que a tela de score por baixo já mostra; a espera acabava na hora, antes de a tela de limites ler o banco. O teste "editar um limite e voltar..." tinha a mesma espera (não falhou, risco teórico). Os testes de limites vieram na Sessão 274, depois da correção da 288.
+- **Feito**: só teste. As duas esperas agora aguardam a chave `threshold-mvrv_z_score`, que só existe na tela de limites. Nenhum código de `lib/` mudou.
+- **Verificação (local, cópia no scratchpad)**: `flutter analyze` sem problemas; mesma carga, suíte completa: **6 de 6 passaram** (antes 3 de 6 falharam). Não prova sozinho, só que o mecanismo foi coberto. Cópia do scratchpad apagada.
+- **CI**: ver o PR.
+- **Não verificado**: as 3 instabilidades originais (283, 284, 285) seguem sem causa.
+- **Decisão do dono**: daqui em diante, nada de rodada local de teste; validação só pelo CI.
