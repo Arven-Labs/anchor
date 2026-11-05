@@ -480,7 +480,10 @@ void main() {
 
       await tester.tap(find.byKey(const Key('open-thresholds')));
       await tester.pump();
-      await settle(tester, () => find.text('MVRV Z-Score').evaluate().isNotEmpty);
+      await settle(
+        tester,
+        () => find.byKey(const ValueKey('threshold-mvrv_z_score')).evaluate().isNotEmpty,
+      );
 
       expect(find.byKey(const ValueKey('threshold-mvrv_z_score')), findsOneWidget);
     });
@@ -509,7 +512,10 @@ void main() {
 
       await tester.tap(find.byKey(const Key('open-thresholds')));
       await tester.pump();
-      await settle(tester, () => find.text('MVRV Z-Score').evaluate().isNotEmpty);
+      await settle(
+        tester,
+        () => find.byKey(const ValueKey('threshold-mvrv_z_score')).evaluate().isNotEmpty,
+      );
       await tester.tap(find.byKey(const ValueKey('threshold-mvrv_z_score')));
       await tester.pump(const Duration(milliseconds: 300));
       // O MVRV gravado é verde (menor é melhor); com verde até -100 e vermelho a
