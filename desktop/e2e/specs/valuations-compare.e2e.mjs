@@ -12,6 +12,8 @@ const GRAHAM = 102;
 const BAZIN_8 = 103;
 const BAZIN_10 = 104;
 const BAZIN_12 = 105;
+// Bazin sem a linha em `bazin_inputs`: `get_valuation_inputs` devolve NotFound.
+const BAZIN_SEM_PREMISSAS = 106;
 
 function seed() {
   sql(
@@ -38,6 +40,8 @@ function seed() {
   bazin(BAZIN_10, 0.1);
   valuation(BAZIN_12, "bazin", 16.67, -0.5, "EXPENSIVE", "2026-11-01T10:04:00Z");
   bazin(BAZIN_12, 0.12);
+  // Sem `bazin(...)` de propósito.
+  valuation(BAZIN_SEM_PREMISSAS, "bazin", 30.0, 0.17, "CHEAP", "2026-11-01T10:05:00Z");
 }
 
 const check = (id) => byId(`compare-check-${id}`);
@@ -126,5 +130,23 @@ describe("Anchor — comparar cálculos salvos", () => {
     await clickCentered(check(BAZIN_12));
     expect(await check(BAZIN_12).isSelected()).toBe(false);
     expect(await byId("compare-button").isEnabled()).toBe(true);
+  });
+
+  it("cálculo sem premissas salvas: a célula mostra error e o resto da tabela continua", async () => {
+    await clearSelection([BAZIN_6, GRAHAM, BAZIN_8, BAZIN_10]);
+    await setSelected([BAZIN_6, BAZIN_SEM_PREMISSAS]);
+    await clickCentered(byId("compare-button"));
+    await byId("compare-view").waitForDisplayed({ timeout: 20_000 });
+
+    // A busca que falha é repetida 3 vezes pelo react-query (1s + 2s + 4s) antes
+    // de desistir; só então as premissas aparecem. Por isso a espera é maior.
+    await byId("compare-row-desired-yield").waitForDisplayed({ timeout: 30_000 });
+    const yieldRow = await textOf(row("desired-yield"));
+    expect(yieldRow).toContain("6.0%");
+    expect(yieldRow).toContain("error");
+    expect(await row("desired-yield").getAttribute("data-differs")).toBe("true");
+
+    // As linhas do resultado vêm da tabela `valuation` e não dependem da busca.
+    expect(await textOf(row("fair-price"))).toContain("R$ 30.00");
   });
 });
