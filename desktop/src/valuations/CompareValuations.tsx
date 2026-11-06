@@ -81,7 +81,7 @@ function assumptionRows(
     (INPUT_FIELDS[valuation.model] ?? []).forEach((field) => {
       const row = rows.get(field.label);
       if (!row) return;
-      row.cells[column] = data ? formatInputValue(data[field.key], field.format) : MISSING;
+      row.cells[column] = data ? formatInputValue(data[field.key], field.format) : "error";
     });
   });
 
