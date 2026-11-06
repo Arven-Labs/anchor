@@ -59,6 +59,7 @@ pub fn run() {
         })
         .manage(AtomicBool::new(false))
         .invoke_handler(tauri::generate_handler![
+            commands::update_check::check_for_update,
             commands::bazin::calculate_bazin,
             commands::bazin::save_bazin,
             commands::graham::calculate_graham,

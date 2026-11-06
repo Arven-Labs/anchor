@@ -1,3 +1,94 @@
+// Fase 6.5 — aviso de atualização disponível. Só avisa: consulta a última
+// release publicada no GitHub e compara com a versão do app. Não baixa nem
+// instala nada (o updater completo do Tauri está nas pendências). A chamada
+// é feita em Rust, e não pelo webview, para não abrir o `connect-src` da CSP.
+
+use serde::{Deserialize, Serialize};
+
+use crate::error::AppError;
+use crate::finance_core::http;
+
+const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/Arven-Labs/anchor/releases/latest";
+// O link vem de dado externo e vira algo que o usuário abre: só o nosso repo.
+const RELEASE_URL_PREFIX: &str = "https://github.com/Arven-Labs/anchor/";
+
+#[derive(Debug, Serialize)]
+pub struct UpdateStatus {
+    pub current: String,
+    pub latest: Option<String>,
+    pub update_available: bool,
+    pub release_url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+    html_url: String,
+}
+
+/// `MAJOR.MINOR.PATCH`, com `v` opcional na frente. Qualquer outra forma
+/// (pré-release, só dois números, texto) é erro: nunca vira "update disponível".
+fn parse_version(text: &str) -> Result<(u64, u64, u64), AppError> {
+    let invalid = || AppError::InvalidInput(format!("version {text:?} is not MAJOR.MINOR.PATCH"));
+    let parts: Vec<&str> = text.strip_prefix('v').unwrap_or(text).split('.').collect();
+    if parts.len() != 3 {
+        return Err(invalid());
+    }
+    let mut numbers = [0u64; 3];
+    for (slot, part) in numbers.iter_mut().zip(parts) {
+        if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(invalid());
+        }
+        *slot = part.parse().map_err(|_| invalid())?;
+    }
+    Ok((numbers[0], numbers[1], numbers[2]))
+}
+
+fn is_newer(current: &str, tag: &str) -> Result<bool, AppError> {
+    Ok(parse_version(tag)? > parse_version(current)?)
+}
+
+/// Transforma a resposta do GitHub (ou o erro de rede) no estado mostrado na
+/// tela. 404 = nenhuma release publicada ainda, o que não é erro.
+fn interpret(current: &str, fetched: Result<String, AppError>) -> Result<UpdateStatus, AppError> {
+    let body = match fetched {
+        Ok(body) => body,
+        Err(AppError::NoData(_)) => {
+            return Ok(UpdateStatus {
+                current: current.to_string(),
+                latest: None,
+                update_available: false,
+                release_url: None,
+            })
+        }
+        Err(other) => return Err(other),
+    };
+    let release: GithubRelease = serde_json::from_str(&body)
+        .map_err(|e| AppError::ProviderUnavailable(format!("github: unexpected release response ({e})")))?;
+    if !release.html_url.starts_with(RELEASE_URL_PREFIX) {
+        return Err(AppError::ProviderUnavailable("github: release link points outside the project".to_string()));
+    }
+    let (major, minor, patch) = parse_version(&release.tag_name)?;
+    Ok(UpdateStatus {
+        current: current.to_string(),
+        latest: Some(format!("{major}.{minor}.{patch}")),
+        update_available: is_newer(current, &release.tag_name)?,
+        release_url: Some(release.html_url),
+    })
+}
+
+#[tauri::command]
+pub async fn check_for_update() -> Result<UpdateStatus, AppError> {
+    let fetched = http::get_text_with_headers(
+        "github",
+        LATEST_RELEASE_URL,
+        http::DEFAULT_TIMEOUT,
+        &[("Accept", "application/vnd.github+json")],
+    )
+    .await;
+    interpret(env!("CARGO_PKG_VERSION"), fetched)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
