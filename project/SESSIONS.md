@@ -4919,3 +4919,9 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Conclusão**: não reproduzi. Somando as 26 rodadas da Sessão 291 e as 6 da 293, são 44 rodadas sem falha desses 3 testes. Nenhum teste nem código mudou.
 - **Não verificado**: o runner do GitHub tem poucos núcleos e a carga artificial pode diferir da máquina local (onde as falhas ocorreram); a hipótese do cache frio não foi confirmada nem refutada, só não apareceu.
 - **Pendente**: se uma falha voltar, capturar a mensagem na hora. Sem nova ocorrência, não há o que corrigir; sugiro tirar o item de "Aberto" se não voltar em algumas sessões.
+
+## Sessão 295 — arquivadas as 3 instabilidades de teste de tela (só doc)
+- **Pedido**: item 1 do /projeto anchor (as instabilidades da 283, 284 e 285). Plan mode; o dono escolheu por `AskUserQuestion` **fechar o item** (as outras opções eram mais rodadas no CI, instrumentar o CI e endurecer os outros dois testes).
+- **Feito**: só `PENDING.md` e `SESSIONS.md`. O item foi para "Resolvidas" como **P8, arquivado e não corrigido**, com o histórico (44 rodadas, 0 falhas) e o gatilho de reabertura: se voltar, capturar a mensagem na hora. Nenhum código, teste ou CI mudou; nenhuma rodada de teste.
+- **Não verificado**: a causa das falhas originais.
+- **Pendente**: nada novo deste item.
