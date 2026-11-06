@@ -4925,3 +4925,10 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Feito**: só `PENDING.md` e `SESSIONS.md`. O item foi para "Resolvidas" como **P8, arquivado e não corrigido**, com o histórico (44 rodadas, 0 falhas) e o gatilho de reabertura: se voltar, capturar a mensagem na hora. Nenhum código, teste ou CI mudou; nenhuma rodada de teste.
 - **Não verificado**: a causa das falhas originais.
 - **Pendente**: nada novo deste item.
+
+## Sessão 296 — conferência dos pendentes da Sessão 271 e do infinito no banco (só doc)
+- **Pedido**: seguir pelas pendências do fim do `SESSIONS.md`. Plan mode.
+- **Erro meu**: listei como abertos a corrida do `AppDatabase.instance()`, o `staking_yield` do desktop, o `NaN` no `classify` e a caixa `11.2`, sem conferir. Já estavam resolvidos nas Sessões 276, 277, 275 e 275 (a `11.2` decidida e deixada desmarcada). Idioma foi a série de i18n (Sessão 289) e o Dependabot a 272. **Dos 7 itens da Sessão 271 não resta nenhum aberto.**
+- **Conferido no código (só leitura)**: todo caminho que grava `crypto_indicators` passa por `classify` (`record_crypto_indicator_in`, `finance_api/crypto.rs:154`); o INSERT cru em `crypto_indicator.rs:338` é fixture de teste; o JSON do Tauri não carrega NaN nem infinito; os coletores filtram `is_finite` (`crypto_sources.rs:155, 409, 445`). Logo, uma linha com infinito no banco real é improvável e a edição de limites (`apply_threshold`) não deve travar. Confiança média-alta. **Nenhum código mudou**, por não haver caminho de escrita conhecido (guarda extra em código crítico seria defensiva demais).
+- **Não verificado**: o banco real, nem os coletores antes da Sessão 275. Consulta para o dono rodar: `SELECT count(*) FROM crypto_indicators WHERE raw_value IS NULL OR abs(raw_value) > 1e308;` (esperado 0). Se der mais que 0, abrir tarefa com guarda no lote (pular a linha e avisar), sob o §4.
+- **Pendente**: a consulta acima; teste do mobile num aparelho real (nada da frente Sessões 255 a 290 foi visto num aparelho nem contra as fontes ao vivo); sobras de ambiente (2 containers parados e arquivos de `root` em `mobile/`).
