@@ -4941,3 +4941,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI** (commit `c78c59c`, antes do commit de mutação e da reversão): `rust / test`, `frontend / build`, `e2e`, `gate`, `guard` e `changes` verdes; `contracts` e `mobile` pulados. O resultado do commit final está no PR.
 - **Não verificado**: o caminho "update disponível" ponta a ponta no app real (não existe release publicada: 0 tags e 0 releases; o `build.yml` cria rascunho e a API pública não devolve rascunho); o limite anônimo de 60 requisições por hora do GitHub; a aparência do ponto no ícone (nenhum teste de tela cobre).
 - **Pendente**: P9 (updater completo, §4); publicar a primeira release quando o dono quiser (sem ela o aviso nunca dispara).
+
+## Sessão 298 — auditoria das caixas desmarcadas do `PHASE.md` (só doc)
+- **Pedido**: conferir no código se as caixas abertas do `PHASE.md` são trabalho faltando ou só caixas esquecidas. Leitura do código, depois o dono escolheu por `AskUserQuestion` quais correções aplicar (marcou todas).
+- **Marcadas como feitas**: **0.6** (o checklist rodou na 6.1, Sessão 47; `.gitignore` cobre `.env`, `*.db`, `*.sqlite`), **4.4** (`AlertsPanel.tsx` ligado no `App.tsx`, lista as regras e marca `is_triggered`; Fase 5 já completa) e **3.4** (**por decisão do dono, com ressalva escrita na própria caixa**: achei a lista por ticker e um detalhe com todos os cálculos numa tabela em `SavedValuationsPanel.tsx`, mas não uma comparação lado a lado de verdade; confiança baixa de que nada falte).
+- **Marcadas como obsoletas** (`[-]`, novo marcador no arquivo; histórico mantido): **2.7**, **2.4**, **7.8** e **7.9**. Dependiam da IA do app (`DocumentExtractDialog`, chat), removida na Sessão 101 (Fase 20). O componente não existe mais em `desktop/src`.
+- **Continuam abertas, e são reais** (5): 2.3 (parcial; o `PHASE.md` diz que 5 indicadores cripto não têm fonte grátis), 8.3 (bloqueada no TruthID, que fixa a rede em Mainnet), 8.5, 10.7 e 11.2 (o dono decidiu na Sessão 275 manter desmarcada).
+- **Não verificado**: não abri o app para ver as telas; a 4.4 e a 3.4 foram lidas só pelo código. Não conferi as caixas `[x]`, só as abertas.
+- **Pendente**: nada novo.
