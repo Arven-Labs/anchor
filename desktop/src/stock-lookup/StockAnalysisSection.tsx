@@ -319,6 +319,7 @@ function StockAnalysisSection({
                   type="button"
                   variant="outline"
                   size="sm"
+                  data-testid="open-saved-valuations"
                   onClick={() => setSavedValuationsOpen(true)}
                 >
                   All Saved Valuations

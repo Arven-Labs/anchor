@@ -10,6 +10,7 @@ import {
 import type { AppError, ValuationModel } from "../types";
 import { INPUT_FIELDS, formatInputValue } from "./inputFields";
 import EditValuationForm from "./EditValuationForm";
+import CompareValuations from "./CompareValuations";
 import { Button } from "@/components/ui/button";
 import VerdictBadge from "../components/VerdictBadge";
 import {
@@ -41,7 +42,12 @@ const MODEL_LABELS: Record<string, string> = {
 type View =
   | { screen: "list" }
   | { screen: "detail"; ticker: string }
+  | { screen: "compare"; ticker: string }
   | { screen: "edit"; valuation: ValuationModel };
+
+// Fase 3.4 — quantos cálculos cabem na comparação lado a lado (a tela já é apertada).
+const MIN_COMPARE = 2;
+const MAX_COMPARE = 4;
 
 type TickerSummary = {
   ticker: string;
@@ -219,8 +225,23 @@ function getDetailColumns(
   onEdit: (valuation: ValuationModel) => void,
   confirmingDeleteId: number | null,
   onDeleteClick: (id: number) => void,
+  compareIds: number[],
+  onToggleCompare: (id: number) => void,
 ): ColumnDef<ValuationModel, any>[] {
   return [
+    {
+      id: "compare",
+      header: "Compare",
+      cell: ({ row }) => (
+        <input
+          type="checkbox"
+          aria-label="Select for comparison"
+          data-testid={`compare-check-${row.original.id}`}
+          checked={compareIds.includes(row.original.id)}
+          onChange={() => onToggleCompare(row.original.id)}
+        />
+      ),
+    },
     {
       accessorKey: "model",
       header: "Model",
@@ -299,6 +320,7 @@ function SavedValuationsPanel() {
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(
     null,
   );
+  const [compareIds, setCompareIds] = useState<number[]>([]);
 
   const queryClient = useQueryClient();
 
@@ -331,6 +353,14 @@ function SavedValuationsPanel() {
     }
   }
 
+  // Marcar além do limite é ignorado; desmarcar sempre funciona.
+  function toggleCompare(id: number) {
+    setCompareIds((current) => {
+      if (current.includes(id)) return current.filter((other) => other !== id);
+      return current.length >= MAX_COMPARE ? current : [...current, id];
+    });
+  }
+
   const detailColumns = useMemo(
     () =>
       getDetailColumns(
@@ -339,8 +369,10 @@ function SavedValuationsPanel() {
         (valuation) => setView({ screen: "edit", valuation }),
         confirmingDeleteId,
         handleDeleteClick,
+        compareIds,
+        toggleCompare,
       ),
-    [expandedId, confirmingDeleteId],
+    [expandedId, confirmingDeleteId, compareIds],
   );
 
   if (view.screen === "edit") {
@@ -357,9 +389,28 @@ function SavedValuationsPanel() {
     );
   }
 
+  if (view.screen === "compare") {
+    const ticker = view.ticker;
+    // Só os cálculos que ainda existem (um apagado/editado some da seleção), na ordem da tabela.
+    const selected = valuations.filter(
+      (v) => v.ticker === ticker && compareIds.includes(v.id),
+    );
+    return (
+      <CompareValuations
+        valuations={selected}
+        modelLabel={(model) => MODEL_LABELS[model] ?? model}
+        onBack={() => setView({ screen: "detail", ticker })}
+      />
+    );
+  }
+
   if (view.screen === "detail") {
     const ticker = view.ticker;
     const tickerValuations = valuations.filter((v) => v.ticker === ticker);
+    const selectedCount = tickerValuations.filter((v) =>
+      compareIds.includes(v.id),
+    ).length;
+    const canCompare = selectedCount >= MIN_COMPARE && selectedCount <= MAX_COMPARE;
 
     return (
       <Card>
@@ -368,11 +419,29 @@ function SavedValuationsPanel() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setView({ screen: "list" })}
+              onClick={() => {
+                setCompareIds([]);
+                setView({ screen: "list" });
+              }}
             >
               Back
             </Button>
             <CardTitle>{ticker} — saved calculations</CardTitle>
+            <div className="ml-auto flex items-center gap-3">
+              {!canCompare && (
+                <span className="text-xs text-muted-foreground">
+                  Select {MIN_COMPARE} to {MAX_COMPARE} calculations to compare
+                </span>
+              )}
+              <Button
+                size="sm"
+                data-testid="compare-button"
+                disabled={!canCompare}
+                onClick={() => setView({ screen: "compare", ticker })}
+              >
+                Compare
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
