@@ -45,7 +45,7 @@ fn parse_version(text: &str) -> Result<(u64, u64, u64), AppError> {
 }
 
 fn is_newer(current: &str, tag: &str) -> Result<bool, AppError> {
-    Ok(parse_version(tag)? >= parse_version(current)?)
+    Ok(parse_version(tag)? > parse_version(current)?)
 }
 
 /// Transforma a resposta do GitHub (ou o erro de rede) no estado mostrado na
