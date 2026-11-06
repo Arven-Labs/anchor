@@ -4957,3 +4957,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Observação**: no run do commit só com o spec, o `lookup.e2e` (PETR4, rede do Yahoo) também falhou; passou nos runs seguintes. Não investiguei; tratei como instabilidade da fonte de rede, sem prova.
 - **Não verificado**: a aparência da tela (nenhum teste visual; as capturas do CI não foram abertas); comparar com um cálculo cujas premissas dão erro (`NotFound`), tratado no código como "error" na célula mas sem teste; a UI do `UsStockLookupSection` (só ganhou o `data-testid`, o fluxo de ações dos EUA não foi exercitado pelo spec).
 - **Pendente**: nada novo.
+
+## Sessão 300 — teste do erro de premissas na comparação (PR #76)
+- **Pedido**: fechar a lacuna da Sessão 299 (comparar um cálculo cujas premissas dão `NotFound`). Mecânico, sem plan mode.
+- **Feito (só teste)**: novo caso em `e2e/specs/valuations-compare.e2e.mjs` e um 6º cálculo semeado (id 106, Bazin sem linha em `bazin_inputs`). Espera `error` na célula, linha `desired-yield` com `data-differs="true"` e o preço justo (`R$ 30.00`) intacto. Nenhum código de produção mudou.
+- **Achado**: o `QueryClient` de `main.tsx` usa o padrão do react-query (3 retentativas, 1s+2s+4s), então o erro só aparece depois de ~7s de "Loading assumptions...". O caso espera até 30 s (os outros usam 20 s). Não mudei esse comportamento.
+- **CI**: commit `56c636c` (com o teste): `e2e` 5m38s verde. **Quebra de propósito** (`"error"` virou `MISSING` em `CompareValuations.tsx`, commit `0f16703`): `e2e` falhou só no caso novo (`Expected substring: "error"`, `Received: "Desired yielddiffers—6.0%"`), os outros 6 do spec passaram. Revertida (`84e3bf5`); o diff final contra a `main` é só o spec.
+- **Não verificado**: a rodada de CI do commit final (idêntico em código ao `56c636c`, mais o registro); a aparência da tela com o `error`.
+- **Pendente**: nada novo. Possível melhoria fora deste PR: mostrar o erro sem esperar as retentativas e trocar o texto cru `error`.
