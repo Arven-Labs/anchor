@@ -54,7 +54,7 @@ describe("Anchor — navegação, Settings e regras fiscais", () => {
 
     const sections = await elementsOf('[data-testid^="settings-section-"]');
     const names = await Promise.all(sections.map((el) => textOf(el)));
-    expect(names).toEqual(["TruthID", "Data sources", "Storage", "Backup", "Taxes", "Currency", "Updates"]);
+    expect(names).toEqual(["TruthID", "Data sources", "Storage", "Backup", "Taxes", "Currency", "Updates", "About"]);
   });
 
   it("Currency: a moeda base começa em BRL e a troca fica gravada", async () => {

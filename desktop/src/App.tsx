@@ -8,6 +8,12 @@ import PortfolioPanel from "./portfolio/PortfolioPanel";
 import FinancesPanel from "./finances/FinancesPanel";
 import WorkspaceGate from "./workspace/WorkspaceGate";
 import SettingsPage from "./settings/SettingsPage";
+import {
+  checkForUpdate,
+  UPDATE_CHECK_KEY,
+  type UpdateCheckError,
+  type UpdateStatus,
+} from "./settings/updateCheck";
 import GlobalSearch from "./nav/GlobalSearch";
 import PendingPanel from "./pending/PendingPanel";
 import { PendingNavContext, type PendingFocus } from "./pending/PendingNav";
@@ -79,6 +85,16 @@ function App() {
     enabled: workspaceId !== null,
   });
   const pendingTotal = pendingCountsQuery.data?.total ?? 0;
+
+  // Fase 6.5 — checagem silenciosa de versão nova ao abrir o app; falha de rede é ignorada
+  // (sem retry). Compartilha a query com Settings → About, onde há o botão manual.
+  const updateQuery = useQuery<UpdateStatus, UpdateCheckError>({
+    queryKey: UPDATE_CHECK_KEY,
+    queryFn: checkForUpdate,
+    staleTime: Infinity,
+    retry: false,
+  });
+  const updateAvailable = updateQuery.data?.update_available === true;
 
   function selectSection(next: SectionKey) {
     setPendingFocus(null);
@@ -192,11 +208,21 @@ function App() {
               type="button"
               variant="ghost"
               size="icon-sm"
+              className="relative"
               data-testid="open-settings"
               onClick={() => setView("settings")}
             >
               <SettingsIcon />
-              <span className="sr-only">Settings</span>
+              {updateAvailable && (
+                <span
+                  data-testid="update-badge"
+                  title={`Version ${updateQuery.data?.latest} is available (Settings → About)`}
+                  className="absolute right-0.5 top-0.5 size-2 rounded-full bg-primary"
+                />
+              )}
+              <span className="sr-only">
+                {updateAvailable ? "Settings (update available)" : "Settings"}
+              </span>
             </Button>
             <Button
               type="button"
