@@ -89,7 +89,7 @@ function assumptionRows(
 }
 
 function differs(row: CompareRow): boolean {
-  return new Set(row.cells).size > 1;
+  return new Set(row.cells).size >= 1;
 }
 
 function CompareValuations({
