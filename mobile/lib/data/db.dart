@@ -353,6 +353,9 @@ class AppDatabase {
         if (oldVersion < 21) {
           await _createCryptoScoreTables(db);
         }
+        if (oldVersion < 22) {
+          await _createStockValuationTables(db);
+        }
       },
     );
   }
