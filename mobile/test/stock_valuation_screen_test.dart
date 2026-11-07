@@ -248,7 +248,7 @@ void main() {
         tester.widget<TextField>(field('Dividendo médio anual por ação (R\$)')).controller!.text,
         '3',
       );
-      await tester.pageBack();
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
       await tester.pumpAndSettle();
 
       await tester.tap(find.byTooltip('Excluir'));
