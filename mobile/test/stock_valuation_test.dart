@@ -305,6 +305,34 @@ void main() {
       );
     });
 
+    test('anos que não são número inteiro, ou negativos, são recusados', () {
+      const rim = {
+        'book_value_per_share': 20.0,
+        'roe_current': 0.18,
+        'payout': 0.4,
+        'ke': 0.12,
+        'fade_years': 2.5,
+      };
+      expect(
+        () => calc(ValuationModel.rim, rim, 20),
+        refuses(ValuationErrorCode.wholeNumberRequired),
+      );
+      expect(
+        () => calc(
+          ValuationModel.projectedCeiling,
+          {
+            'current_dividend': 3.0,
+            'expected_growth': 0.05,
+            'projection_years': -1.0,
+            'desired_yield': 0.06,
+            'ke': 0.10,
+          },
+          30,
+        ),
+        refuses(ValuationErrorCode.projectionYearsNegative),
+      );
+    });
+
     test('dividendo negativo dá justo negativo: recusado, nunca Barata', () {
       expect(
         () => calc(
