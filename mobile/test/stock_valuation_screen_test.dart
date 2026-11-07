@@ -8,7 +8,7 @@ import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/stock_valuation.dart';
 import 'package:anchor_mobile/domain/valuation_fields.dart';
 import 'package:anchor_mobile/l10n/app_localizations.dart';
-import 'package:anchor_mobile/l10n/registration_labels.dart';
+import 'package:anchor_mobile/l10n/home_labels.dart';
 import 'package:anchor_mobile/l10n/valuation_labels.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/quote.dart';
@@ -44,7 +44,8 @@ void main() {
         for (final model in ValuationModel.values) {
           expect(valuationModelName(l, model), isNotEmpty, reason: model.name);
           for (final field in valuationFields[model]!) {
-            expect(valuationFieldLabel(l, field.key), isNotEmpty, reason: field.key);
+            // Sem rótulo, a função devolve a própria chave.
+            expect(valuationFieldLabel(l, field.key), isNot(field.key), reason: field.key);
           }
         }
       }

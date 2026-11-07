@@ -1351,6 +1351,244 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get valuationButton => 'Valuation';
+
+  @override
+  String valuationTitle(String ticker) {
+    return 'Valuation — $ticker';
+  }
+
+  @override
+  String valuationCurrentPrice(String value) {
+    return 'Current price: $value';
+  }
+
+  @override
+  String get valuationModelLabel => 'Model';
+
+  @override
+  String get valuationDisclaimer =>
+      'Only the arithmetic of the assumptions you enter, not a recommendation. Rates are typed in percent. Amounts and shares must use the same scale: if the amounts are in R\$ millions, enter the shares in millions.';
+
+  @override
+  String get valuationCalculate => 'Calculate';
+
+  @override
+  String get valuationSave => 'Save';
+
+  @override
+  String get valuationSaved => 'Calculation saved';
+
+  @override
+  String valuationFairPrice(String value) {
+    return 'Fair price: $value';
+  }
+
+  @override
+  String valuationSafetyMargin(String value) {
+    return 'Safety margin: $value';
+  }
+
+  @override
+  String get valuationVerdictCheap =>
+      'Cheap: the price is below the fair price';
+
+  @override
+  String get valuationVerdictExpensive =>
+      'Expensive: the price is at or above the fair price';
+
+  @override
+  String get valuationVerdictCheapShort => 'Cheap';
+
+  @override
+  String get valuationVerdictExpensiveShort => 'Expensive';
+
+  @override
+  String get valuationSavedList => 'Saved valuations';
+
+  @override
+  String valuationSavedEmpty(String ticker) {
+    return 'No saved valuations for $ticker yet.';
+  }
+
+  @override
+  String valuationSavedDetail(
+    String price,
+    String fair,
+    String margin,
+    String verdict,
+    String date,
+  ) {
+    return 'Price $price · fair $fair · margin $margin · $verdict · $date';
+  }
+
+  @override
+  String get valuationDelete => 'Delete';
+
+  @override
+  String get valuationModelBazin => 'Bazin (dividend price ceiling)';
+
+  @override
+  String get valuationModelGraham => 'Graham (intrinsic value)';
+
+  @override
+  String get valuationModelGordon => 'Gordon (dividend growth)';
+
+  @override
+  String get valuationModelDcf => 'DCF (discounted cash flow)';
+
+  @override
+  String get valuationModelBanks => 'Banks (P/B via ROE)';
+
+  @override
+  String get valuationModelRim => 'RIM (residual income)';
+
+  @override
+  String get valuationModelRnav => 'RNAV (net asset value)';
+
+  @override
+  String get valuationModelProjectedCeiling => 'Projected ceiling';
+
+  @override
+  String get valuationFieldAverageDividend =>
+      'Average annual dividend per share (R\$)';
+
+  @override
+  String get valuationFieldDesiredYield => 'Desired yield (%)';
+
+  @override
+  String get valuationFieldEps => 'Earnings per share, EPS (R\$)';
+
+  @override
+  String get valuationFieldBookValuePerShare => 'Book value per share (R\$)';
+
+  @override
+  String get valuationFieldCurrentDividend =>
+      'Current annual dividend per share (R\$)';
+
+  @override
+  String get valuationFieldExpectedGrowth => 'Expected growth (%)';
+
+  @override
+  String get valuationFieldKe => 'Cost of equity, Ke (%)';
+
+  @override
+  String get valuationFieldEbit => 'EBIT (R\$)';
+
+  @override
+  String get valuationFieldTaxRate => 'Tax rate (%)';
+
+  @override
+  String get valuationFieldDepreciationAmortization =>
+      'Depreciation and amortization (R\$)';
+
+  @override
+  String get valuationFieldCapex => 'Capex (R\$)';
+
+  @override
+  String get valuationFieldNwcChange => 'Change in working capital (R\$)';
+
+  @override
+  String get valuationFieldTotalDebt => 'Total debt (R\$)';
+
+  @override
+  String get valuationFieldCash => 'Cash (R\$)';
+
+  @override
+  String get valuationFieldSharesOutstanding => 'Shares outstanding (millions)';
+
+  @override
+  String get valuationFieldBeta => 'Beta';
+
+  @override
+  String get valuationFieldRiskFreeRate => 'Risk-free rate (%)';
+
+  @override
+  String get valuationFieldMarketRiskPremium => 'Market risk premium (%)';
+
+  @override
+  String get valuationFieldKd => 'Cost of debt, Kd (%)';
+
+  @override
+  String get valuationFieldPerpetuityGrowth => 'Perpetuity growth (%)';
+
+  @override
+  String get valuationFieldRoe => 'ROE (%)';
+
+  @override
+  String get valuationFieldPayout => 'Payout (%)';
+
+  @override
+  String get valuationFieldRoeCurrent => 'Current ROE (%)';
+
+  @override
+  String get valuationFieldFadeYears => 'Years for ROE to converge to Ke';
+
+  @override
+  String get valuationFieldLandbank => 'Landbank (R\$)';
+
+  @override
+  String get valuationFieldInventoryAtMarketValue =>
+      'Inventory at market value (R\$)';
+
+  @override
+  String get valuationFieldNetCash => 'Net cash (R\$)';
+
+  @override
+  String get valuationFieldProjectionYears => 'Projection years';
+
+  @override
+  String valuationErrMissingInput(String field) {
+    return 'Fill in the field: $field';
+  }
+
+  @override
+  String valuationErrInputNotFinite(String field) {
+    return 'Invalid number in: $field';
+  }
+
+  @override
+  String get valuationErrPriceMustBePositive =>
+      'The current price must be greater than zero';
+
+  @override
+  String get valuationErrDesiredYieldMustBePositive =>
+      'The desired yield must be greater than zero';
+
+  @override
+  String get valuationErrEpsAndBookValueMustBePositive =>
+      'EPS and book value per share must both be greater than zero';
+
+  @override
+  String get valuationErrKeMustExceedGrowth =>
+      'The cost of equity (Ke) must be greater than the growth rate';
+
+  @override
+  String get valuationErrWaccMustExceedGrowth =>
+      'The discount rate (WACC) must be greater than the perpetuity growth';
+
+  @override
+  String get valuationErrSharesMustBePositive =>
+      'Shares outstanding must be greater than zero';
+
+  @override
+  String get valuationErrFadeYearsMustBePositive =>
+      'The years to converge must be at least 1';
+
+  @override
+  String valuationErrWholeNumberRequired(String field) {
+    return '$field must be a whole number';
+  }
+
+  @override
+  String get valuationErrProjectionYearsNegative =>
+      'Projection years cannot be negative';
+
+  @override
+  String get valuationErrFairPriceMustBePositive =>
+      'These assumptions give a fair price of zero or less, so there is no valuation. Review the numbers.';
+
+  @override
   String get swapIntro =>
       'Swapping one coin for another counts as a sale of the coin given up for tax purposes: it enters the month\'s sales (R\$ 35 thousand limit) and realizes a gain over the average cost. It records one sale and one purchase for the same value.';
 
