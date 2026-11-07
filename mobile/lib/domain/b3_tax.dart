@@ -361,7 +361,7 @@ B3TaxAssessment assessB3Tax(
 
     final eligible = monthSales.where((s) => s.exemptionEligible);
     final stockSalesTotal = eligible.fold(0.0, (sum, s) => sum + s.saleValue);
-    final stockExempt = stockSalesTotal < b3StockExemptionMonthlySales - _eps;
+    final stockExempt = stockSalesTotal <= b3StockExemptionMonthlySales + _eps;
     final eligibleNet = eligible.fold(0.0, (sum, s) => sum + s.gain);
     final exemptGain = stockExempt && eligibleNet > 0 ? eligibleNet : 0.0;
 
