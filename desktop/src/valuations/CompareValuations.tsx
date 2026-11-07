@@ -81,7 +81,7 @@ function assumptionRows(
     (INPUT_FIELDS[valuation.model] ?? []).forEach((field) => {
       const row = rows.get(field.label);
       if (!row) return;
-      row.cells[column] = data ? formatInputValue(data[field.key], field.format) : "error";
+      row.cells[column] = data ? formatInputValue(data[field.key], field.format) : "Unavailable";
     });
   });
 
@@ -111,6 +111,8 @@ function CompareValuations({
           valuationId: valuation.id,
           model: valuation.model,
         }),
+      // `NotFound` vem do SQLite local: repetir não ajuda e só atrasa o erro (~7s).
+      retry: false,
     })),
   });
 
