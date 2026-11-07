@@ -138,12 +138,12 @@ describe("Anchor — comparar cálculos salvos", () => {
     await clickCentered(byId("compare-button"));
     await byId("compare-view").waitForDisplayed({ timeout: 20_000 });
 
-    // A busca que falha é repetida 3 vezes pelo react-query (1s + 2s + 4s) antes
-    // de desistir; só então as premissas aparecem. Por isso a espera é maior.
-    await byId("compare-row-desired-yield").waitForDisplayed({ timeout: 30_000 });
+    // `NotFound` vem do SQLite local: a busca não é repetida, então o erro
+    // aparece na hora (antes, 3 retentativas do react-query levavam ~7s).
+    await byId("compare-row-desired-yield").waitForDisplayed({ timeout: 5_000 });
     const yieldRow = await textOf(row("desired-yield"));
     expect(yieldRow).toContain("6.0%");
-    expect(yieldRow).toContain("error");
+    expect(yieldRow).toContain("Unavailable");
     expect(await row("desired-yield").getAttribute("data-differs")).toBe("true");
 
     // As linhas do resultado vêm da tabela `valuation` e não dependem da busca.
