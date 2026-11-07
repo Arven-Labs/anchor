@@ -2260,6 +2260,408 @@ abstract class AppLocalizations {
   /// **'Sale of {ticker} on {date} exceeds the purchases entered: the gain counts only the part with known cost. Enter the missing purchases.'**
   String b3TaxWarnCostUnknown(String ticker, String date);
 
+  /// No description provided for @valuationButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Valuation'**
+  String get valuationButton;
+
+  /// No description provided for @valuationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Valuation — {ticker}'**
+  String valuationTitle(String ticker);
+
+  /// No description provided for @valuationCurrentPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Current price: {value}'**
+  String valuationCurrentPrice(String value);
+
+  /// No description provided for @valuationModelLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get valuationModelLabel;
+
+  /// No description provided for @valuationDisclaimer.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the arithmetic of the assumptions you enter, not a recommendation. Rates are typed in percent. Amounts and shares must use the same scale: if the amounts are in R\$ millions, enter the shares in millions.'**
+  String get valuationDisclaimer;
+
+  /// No description provided for @valuationCalculate.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculate'**
+  String get valuationCalculate;
+
+  /// No description provided for @valuationSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get valuationSave;
+
+  /// No description provided for @valuationSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculation saved'**
+  String get valuationSaved;
+
+  /// No description provided for @valuationFairPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Fair price: {value}'**
+  String valuationFairPrice(String value);
+
+  /// No description provided for @valuationSafetyMargin.
+  ///
+  /// In en, this message translates to:
+  /// **'Safety margin: {value}'**
+  String valuationSafetyMargin(String value);
+
+  /// No description provided for @valuationVerdictCheap.
+  ///
+  /// In en, this message translates to:
+  /// **'Cheap: the price is below the fair price'**
+  String get valuationVerdictCheap;
+
+  /// No description provided for @valuationVerdictExpensive.
+  ///
+  /// In en, this message translates to:
+  /// **'Expensive: the price is at or above the fair price'**
+  String get valuationVerdictExpensive;
+
+  /// No description provided for @valuationVerdictCheapShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Cheap'**
+  String get valuationVerdictCheapShort;
+
+  /// No description provided for @valuationVerdictExpensiveShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Expensive'**
+  String get valuationVerdictExpensiveShort;
+
+  /// No description provided for @valuationSavedList.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved valuations'**
+  String get valuationSavedList;
+
+  /// No description provided for @valuationSavedEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved valuations for {ticker} yet.'**
+  String valuationSavedEmpty(String ticker);
+
+  /// No description provided for @valuationSavedDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Price {price} · fair {fair} · margin {margin} · {verdict} · {date}'**
+  String valuationSavedDetail(
+    String price,
+    String fair,
+    String margin,
+    String verdict,
+    String date,
+  );
+
+  /// No description provided for @valuationDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get valuationDelete;
+
+  /// No description provided for @valuationModelBazin.
+  ///
+  /// In en, this message translates to:
+  /// **'Bazin (dividend price ceiling)'**
+  String get valuationModelBazin;
+
+  /// No description provided for @valuationModelGraham.
+  ///
+  /// In en, this message translates to:
+  /// **'Graham (intrinsic value)'**
+  String get valuationModelGraham;
+
+  /// No description provided for @valuationModelGordon.
+  ///
+  /// In en, this message translates to:
+  /// **'Gordon (dividend growth)'**
+  String get valuationModelGordon;
+
+  /// No description provided for @valuationModelDcf.
+  ///
+  /// In en, this message translates to:
+  /// **'DCF (discounted cash flow)'**
+  String get valuationModelDcf;
+
+  /// No description provided for @valuationModelBanks.
+  ///
+  /// In en, this message translates to:
+  /// **'Banks (P/B via ROE)'**
+  String get valuationModelBanks;
+
+  /// No description provided for @valuationModelRim.
+  ///
+  /// In en, this message translates to:
+  /// **'RIM (residual income)'**
+  String get valuationModelRim;
+
+  /// No description provided for @valuationModelRnav.
+  ///
+  /// In en, this message translates to:
+  /// **'RNAV (net asset value)'**
+  String get valuationModelRnav;
+
+  /// No description provided for @valuationModelProjectedCeiling.
+  ///
+  /// In en, this message translates to:
+  /// **'Projected ceiling'**
+  String get valuationModelProjectedCeiling;
+
+  /// No description provided for @valuationFieldAverageDividend.
+  ///
+  /// In en, this message translates to:
+  /// **'Average annual dividend per share (R\$)'**
+  String get valuationFieldAverageDividend;
+
+  /// No description provided for @valuationFieldDesiredYield.
+  ///
+  /// In en, this message translates to:
+  /// **'Desired yield (%)'**
+  String get valuationFieldDesiredYield;
+
+  /// No description provided for @valuationFieldEps.
+  ///
+  /// In en, this message translates to:
+  /// **'Earnings per share, EPS (R\$)'**
+  String get valuationFieldEps;
+
+  /// No description provided for @valuationFieldBookValuePerShare.
+  ///
+  /// In en, this message translates to:
+  /// **'Book value per share (R\$)'**
+  String get valuationFieldBookValuePerShare;
+
+  /// No description provided for @valuationFieldCurrentDividend.
+  ///
+  /// In en, this message translates to:
+  /// **'Current annual dividend per share (R\$)'**
+  String get valuationFieldCurrentDividend;
+
+  /// No description provided for @valuationFieldExpectedGrowth.
+  ///
+  /// In en, this message translates to:
+  /// **'Expected growth (%)'**
+  String get valuationFieldExpectedGrowth;
+
+  /// No description provided for @valuationFieldKe.
+  ///
+  /// In en, this message translates to:
+  /// **'Cost of equity, Ke (%)'**
+  String get valuationFieldKe;
+
+  /// No description provided for @valuationFieldEbit.
+  ///
+  /// In en, this message translates to:
+  /// **'EBIT (R\$)'**
+  String get valuationFieldEbit;
+
+  /// No description provided for @valuationFieldTaxRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Tax rate (%)'**
+  String get valuationFieldTaxRate;
+
+  /// No description provided for @valuationFieldDepreciationAmortization.
+  ///
+  /// In en, this message translates to:
+  /// **'Depreciation and amortization (R\$)'**
+  String get valuationFieldDepreciationAmortization;
+
+  /// No description provided for @valuationFieldCapex.
+  ///
+  /// In en, this message translates to:
+  /// **'Capex (R\$)'**
+  String get valuationFieldCapex;
+
+  /// No description provided for @valuationFieldNwcChange.
+  ///
+  /// In en, this message translates to:
+  /// **'Change in working capital (R\$)'**
+  String get valuationFieldNwcChange;
+
+  /// No description provided for @valuationFieldTotalDebt.
+  ///
+  /// In en, this message translates to:
+  /// **'Total debt (R\$)'**
+  String get valuationFieldTotalDebt;
+
+  /// No description provided for @valuationFieldCash.
+  ///
+  /// In en, this message translates to:
+  /// **'Cash (R\$)'**
+  String get valuationFieldCash;
+
+  /// No description provided for @valuationFieldSharesOutstanding.
+  ///
+  /// In en, this message translates to:
+  /// **'Shares outstanding (millions)'**
+  String get valuationFieldSharesOutstanding;
+
+  /// No description provided for @valuationFieldBeta.
+  ///
+  /// In en, this message translates to:
+  /// **'Beta'**
+  String get valuationFieldBeta;
+
+  /// No description provided for @valuationFieldRiskFreeRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Risk-free rate (%)'**
+  String get valuationFieldRiskFreeRate;
+
+  /// No description provided for @valuationFieldMarketRiskPremium.
+  ///
+  /// In en, this message translates to:
+  /// **'Market risk premium (%)'**
+  String get valuationFieldMarketRiskPremium;
+
+  /// No description provided for @valuationFieldKd.
+  ///
+  /// In en, this message translates to:
+  /// **'Cost of debt, Kd (%)'**
+  String get valuationFieldKd;
+
+  /// No description provided for @valuationFieldPerpetuityGrowth.
+  ///
+  /// In en, this message translates to:
+  /// **'Perpetuity growth (%)'**
+  String get valuationFieldPerpetuityGrowth;
+
+  /// No description provided for @valuationFieldRoe.
+  ///
+  /// In en, this message translates to:
+  /// **'ROE (%)'**
+  String get valuationFieldRoe;
+
+  /// No description provided for @valuationFieldPayout.
+  ///
+  /// In en, this message translates to:
+  /// **'Payout (%)'**
+  String get valuationFieldPayout;
+
+  /// No description provided for @valuationFieldRoeCurrent.
+  ///
+  /// In en, this message translates to:
+  /// **'Current ROE (%)'**
+  String get valuationFieldRoeCurrent;
+
+  /// No description provided for @valuationFieldFadeYears.
+  ///
+  /// In en, this message translates to:
+  /// **'Years for ROE to converge to Ke'**
+  String get valuationFieldFadeYears;
+
+  /// No description provided for @valuationFieldLandbank.
+  ///
+  /// In en, this message translates to:
+  /// **'Landbank (R\$)'**
+  String get valuationFieldLandbank;
+
+  /// No description provided for @valuationFieldInventoryAtMarketValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Inventory at market value (R\$)'**
+  String get valuationFieldInventoryAtMarketValue;
+
+  /// No description provided for @valuationFieldNetCash.
+  ///
+  /// In en, this message translates to:
+  /// **'Net cash (R\$)'**
+  String get valuationFieldNetCash;
+
+  /// No description provided for @valuationFieldProjectionYears.
+  ///
+  /// In en, this message translates to:
+  /// **'Projection years'**
+  String get valuationFieldProjectionYears;
+
+  /// No description provided for @valuationErrMissingInput.
+  ///
+  /// In en, this message translates to:
+  /// **'Fill in the field: {field}'**
+  String valuationErrMissingInput(String field);
+
+  /// No description provided for @valuationErrInputNotFinite.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid number in: {field}'**
+  String valuationErrInputNotFinite(String field);
+
+  /// No description provided for @valuationErrPriceMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The current price must be greater than zero'**
+  String get valuationErrPriceMustBePositive;
+
+  /// No description provided for @valuationErrDesiredYieldMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The desired yield must be greater than zero'**
+  String get valuationErrDesiredYieldMustBePositive;
+
+  /// No description provided for @valuationErrEpsAndBookValueMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'EPS and book value per share must both be greater than zero'**
+  String get valuationErrEpsAndBookValueMustBePositive;
+
+  /// No description provided for @valuationErrKeMustExceedGrowth.
+  ///
+  /// In en, this message translates to:
+  /// **'The cost of equity (Ke) must be greater than the growth rate'**
+  String get valuationErrKeMustExceedGrowth;
+
+  /// No description provided for @valuationErrWaccMustExceedGrowth.
+  ///
+  /// In en, this message translates to:
+  /// **'The discount rate (WACC) must be greater than the perpetuity growth'**
+  String get valuationErrWaccMustExceedGrowth;
+
+  /// No description provided for @valuationErrSharesMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'Shares outstanding must be greater than zero'**
+  String get valuationErrSharesMustBePositive;
+
+  /// No description provided for @valuationErrFadeYearsMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The years to converge must be at least 1'**
+  String get valuationErrFadeYearsMustBePositive;
+
+  /// No description provided for @valuationErrWholeNumberRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'{field} must be a whole number'**
+  String valuationErrWholeNumberRequired(String field);
+
+  /// No description provided for @valuationErrProjectionYearsNegative.
+  ///
+  /// In en, this message translates to:
+  /// **'Projection years cannot be negative'**
+  String get valuationErrProjectionYearsNegative;
+
+  /// No description provided for @valuationErrFairPriceMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'These assumptions give a fair price of zero or less, so there is no valuation. Review the numbers.'**
+  String get valuationErrFairPriceMustBePositive;
+
   /// No description provided for @swapIntro.
   ///
   /// In en, this message translates to:

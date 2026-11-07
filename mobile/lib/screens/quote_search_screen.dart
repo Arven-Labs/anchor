@@ -7,9 +7,13 @@ import '../models/asset.dart';
 import '../models/quote.dart';
 import '../services/quote_dispatcher.dart';
 import '../services/quote_exceptions.dart';
+import 'stock_valuation_screen.dart';
 
 class QuoteSearchScreen extends StatefulWidget {
-  const QuoteSearchScreen({super.key});
+  /// Quem busca a cotação; o padrão usa a rede. Injetável para teste, sem rede.
+  final QuoteDispatcher? dispatcher;
+
+  const QuoteSearchScreen({super.key, this.dispatcher});
 
   @override
   State<QuoteSearchScreen> createState() => _QuoteSearchScreenState();
@@ -17,12 +21,16 @@ class QuoteSearchScreen extends StatefulWidget {
 
 class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
   final _tickerController = TextEditingController();
-  final _dispatcher = QuoteDispatcher();
+  late final QuoteDispatcher _dispatcher = widget.dispatcher ?? QuoteDispatcher();
 
   AssetClass _assetClass = AssetClass.acaoBr;
   bool _loading = false;
   String? _error;
   Quote? _quote;
+
+  /// Classe e ticker da busca que gerou [_quote]: trocar a classe depois não muda o cartão.
+  AssetClass? _quoteClass;
+  String _quoteTicker = '';
 
   Future<void> _search() async {
     final ticker = _tickerController.text.trim().toUpperCase();
@@ -37,7 +45,11 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
 
     try {
       final quote = await _dispatcher.fetchQuoteForTicker(ticker, _assetClass);
-      setState(() => _quote = quote);
+      setState(() {
+        _quote = quote;
+        _quoteClass = _assetClass;
+        _quoteTicker = ticker;
+      });
     } on QuoteUnavailableException {
       setState(() => _error = l.quoteSourceUnavailable);
     } catch (_) {
@@ -47,6 +59,16 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
     } finally {
       setState(() => _loading = false);
     }
+  }
+
+  void _openValuation() {
+    final quote = _quote;
+    if (quote == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StockValuationScreen(ticker: _quoteTicker, currentPrice: quote.price),
+      ),
+    );
   }
 
   @override
@@ -111,7 +133,12 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
                 _error!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
-            if (_quote != null) _QuoteCard(quote: _quote!),
+            if (_quote != null)
+              _QuoteCard(
+                quote: _quote!,
+                // Valuation por modelos de ação: só para Ação BR.
+                onValuation: _quoteClass == AssetClass.acaoBr ? _openValuation : null,
+              ),
           ],
         ),
       ),
@@ -121,11 +148,13 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
 
 class _QuoteCard extends StatelessWidget {
   final Quote quote;
+  final VoidCallback? onValuation;
 
-  const _QuoteCard({required this.quote});
+  const _QuoteCard({required this.quote, this.onValuation});
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -149,6 +178,10 @@ class _QuoteCard extends StatelessWidget {
                 fontWeight: FontWeight.bold,
               ),
             ),
+            if (onValuation != null) ...[
+              const SizedBox(height: 12),
+              OutlinedButton(onPressed: onValuation, child: Text(l.valuationButton)),
+            ],
           ],
         ),
       ),
