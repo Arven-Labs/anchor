@@ -183,19 +183,27 @@ void main() {
       expect(find.byTooltip('B3 tax'), findsNothing);
     });
 
-    testWidgets('IR de B3 aparece com ação, ETF, BDR ou FII e some com as outras classes', (tester) async {
-      for (final assetClass in [
-        AssetClass.acaoBr,
-        AssetClass.etfBr,
-        AssetClass.bdr,
-        AssetClass.fii,
-      ]) {
+    // Um teste por classe: um 2º `pumpWidget` no mesmo teste reaproveita o estado da tela
+    // (mesmo tipo de widget, sem chave) e manteria as linhas da primeira rodada.
+    for (final assetClass in [
+      AssetClass.acaoBr,
+      AssetClass.etfBr,
+      AssetClass.bdr,
+      AssetClass.fii,
+    ]) {
+      testWidgets('IR de B3 aparece com ativo da classe ${assetClass.name}', (tester) async {
         await pumpPortfolio(tester, [_row(ticker: 'XPTO3', assetClass: assetClass)], locale: 'en');
-        expect(find.byTooltip('B3 tax'), findsOneWidget, reason: assetClass.name);
-        expect(find.byTooltip('Crypto tax'), findsNothing, reason: assetClass.name);
-      }
+        expect(find.byTooltip('B3 tax'), findsOneWidget);
+        expect(find.byTooltip('Crypto tax'), findsNothing);
+      });
+    }
 
-      await pumpPortfolio(tester, [_row(ticker: 'AAPL', assetClass: AssetClass.acaoInternacional)], locale: 'en');
+    testWidgets('IR de B3 some com ativo do exterior, que tem o IR de exterior', (tester) async {
+      await pumpPortfolio(
+        tester,
+        [_row(ticker: 'AAPL', assetClass: AssetClass.acaoInternacional)],
+        locale: 'en',
+      );
       expect(find.byTooltip('B3 tax'), findsNothing);
       expect(find.byTooltip('Foreign tax'), findsOneWidget);
     });
