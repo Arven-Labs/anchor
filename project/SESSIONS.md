@@ -5013,3 +5013,9 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI**: só os testes: `mobile / test` falhou por `valuation_labels.dart` e `stock_valuation_screen.dart` inexistentes. 1ª rodada com a implementação: 1257 passando e 1 falha, **do meu teste** (`pageBack()` não achou o botão de voltar nesse tema); troquei por `Navigator.pop` e a seguinte passou, 1258 passando e 2 pulados. **Quebra de propósito** (tirei o `/ 100` da porcentagem): 3 falharam, os 3 que usam o yield (calcular, salvar, en); revertida.
 - **Não verificado**: a tela num aparelho real (teclado numérico com vírgula, rolagem do DCF com 13 campos, dropdown de nomes longos); o botão na busca com a cotação ao vivo do Yahoo (o teste usa uma cotação falsa); a rodada de CI do commit final (idêntico em código ao testado, mais o registro). Sem captura de tela.
 - **Pendente**: nada novo no valuation do celular. Fora de escopo mantido: auto-preenchimento (dividendos do Yahoo, LPA/VPA, ROE e DCF da CVM), alertas de zona de compra, sync com o desktop, edição de cálculo salvo, outras classes de ativo. Segue aberto, em outro escopo, o defeito do desktop que aceita preço justo ≤ 0 (Sessão 304).
+
+## Sessão 307 — registro do defeito do valuation do desktop no `PENDING.md` (só doc)
+- **Pedido**: no fechamento da sessão, a conferência do §14 mostrou que o defeito achado na Sessão 304 (justo ≤ 0 vira "Barata" no desktop) só estava no `SESSIONS.md`; o dono pediu para registrar.
+- **Feito**: linha **P10** no `PENDING.md`, com os 8 arquivos, o exemplo reproduzido à mão (DCF com EBIT −1000: justo −214,28, margem +104,7%, CHEAP), a correção sugerida e o que não foi verificado. Nenhum código mudou.
+- **Não verificado**: o desktop em execução, o banco real (a consulta SQL está na P10) e a tela do desktop. O exemplo vem de uma conta em Python com a fórmula do `dcf.rs`, não de rodar o Rust.
+- **Pendente**: a P10 em si (correção no desktop, §4, com plano).
