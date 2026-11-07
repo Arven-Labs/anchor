@@ -74,7 +74,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 21,
+      version: 22,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -152,6 +152,7 @@ class AppDatabase {
         await _createFundTables(db);
         await _createFinanceTables(db);
         await _createCryptoScoreTables(db);
+        await _createStockValuationTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -352,8 +353,33 @@ class AppDatabase {
         if (oldVersion < 21) {
           await _createCryptoScoreTables(db);
         }
+        if (oldVersion < 22) {
+          await _createStockValuationTables(db);
+        }
       },
     );
+  }
+
+  /// Valuation de ações: um cálculo salvo por linha, append-only (cada save é
+  /// uma linha nova, como no desktop). As premissas ficam em `inputs_json`
+  /// (as chaves de `domain/valuation_fields.dart`) em vez de uma tabela por
+  /// modelo; `model` é o identificador do desktop (`ValuationModel.value`).
+  /// Só cria uma tabela nova: nenhuma tabela existente é tocada.
+  static Future<void> _createStockValuationTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS stock_valuations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker TEXT NOT NULL,
+        model TEXT NOT NULL,
+        reference_year INTEGER NOT NULL,
+        current_price REAL NOT NULL,
+        fair_price REAL NOT NULL,
+        safety_margin REAL NOT NULL,
+        verdict TEXT NOT NULL,
+        inputs_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   /// Score cripto: os limites editáveis de cada indicador, semeados com os de
