@@ -81,7 +81,7 @@ class _StockValuationScreenState extends State<StockValuationScreen> {
       final text = _controllersFor(_model, locale)[field.key]!.text.trim().replaceAll(',', '.');
       final parsed = double.tryParse(text);
       if (parsed == null) continue;
-      inputs[field.key] = field.format == ValuationFieldFormat.percent ? parsed / 100 : parsed;
+      inputs[field.key] = parsed;
     }
     return inputs;
   }
