@@ -30,6 +30,14 @@ extension ValuationModelMeta on ValuationModel {
   };
 }
 
+/// O modelo com este identificador (`ValuationModel.value`), ou null se não existir.
+ValuationModel? valuationModelFromValue(String value) {
+  for (final model in ValuationModel.values) {
+    if (model.value == value) return model;
+  }
+  return null;
+}
+
 enum ValuationVerdict { cheap, expensive }
 
 class ValuationOutcome {
