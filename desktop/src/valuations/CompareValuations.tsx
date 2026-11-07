@@ -112,7 +112,6 @@ function CompareValuations({
           model: valuation.model,
         }),
       // `NotFound` vem do SQLite local: repetir não ajuda e só atrasa o erro (~7s).
-      retry: false,
     })),
   });
 
