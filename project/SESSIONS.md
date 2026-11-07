@@ -4965,3 +4965,10 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI**: commit `56c636c` (com o teste): `e2e` 5m38s verde. **Quebra de propósito** (`"error"` virou `MISSING` em `CompareValuations.tsx`, commit `0f16703`): `e2e` falhou só no caso novo (`Expected substring: "error"`, `Received: "Desired yielddiffers—6.0%"`), os outros 6 do spec passaram. Revertida (`84e3bf5`); o diff final contra a `main` é só o spec.
 - **Não verificado**: a rodada de CI do commit final (idêntico em código ao `56c636c`, mais o registro); a aparência da tela com o `error`.
 - **Pendente**: nada novo. Possível melhoria fora deste PR: mostrar o erro sem esperar as retentativas e trocar o texto cru `error`.
+
+## Sessão 301 — comparação mostra o erro de premissas na hora (PR #77)
+- **Pedido**: a melhoria deixada na Sessão 300. Sem plan mode; opções e testes combinados no chat (`retry: false` só nessa query, texto `Unavailable`).
+- **Feito**: `CompareValuations.tsx` ganhou `retry: false` na query de premissas (o `NotFound` vem do SQLite local, repetir não ajuda) e a célula sem premissas mostra `Unavailable` em vez de `error`. O caso do e2e passou a esperar a linha em 5 s (antes 30 s) e o texto novo. `QueryClient` global intocado.
+- **CI**: só o teste (`f2965f1`): `e2e` falhou com `compare-row-desired-yield still not displayed after 5000ms`. Com a correção (`9d6ac2d`): `e2e` 5m48s verde, `frontend / build` e `gate` verdes. **Quebra de propósito** (sem `retry: false`, `7a8baea`): `e2e` falhou só nesse caso, pelo mesmo erro de 5000ms; revertida (`15df4d8`).
+- **Não verificado**: a rodada de CI do commit final (idêntico em código ao `9d6ac2d`, mais o registro); a aparência da tela com `Unavailable`; se 5 s dá margem no runner em dias lentos (a espera sem retentativas fica bem abaixo disso, mas não medi o tempo real).
+- **Pendente**: nada novo.
