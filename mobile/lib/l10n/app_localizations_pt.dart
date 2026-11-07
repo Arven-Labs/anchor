@@ -445,6 +445,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get portfolioFundTax => 'IR de fundos';
 
   @override
+  String get portfolioB3Tax => 'IR de B3';
+
+  @override
   String get portfolioSwapCrypto => 'Trocar cripto';
 
   @override
@@ -1255,6 +1258,94 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String cryptoTaxWarnFxMissing(String period) {
     return 'Venda de cripto em USD em $period sem câmbio para converter: ficou de fora da apuração.';
+  }
+
+  @override
+  String get b3TaxTitle => 'IR de B3';
+
+  @override
+  String get b3TaxDisclaimer =>
+      'Estimativa feita só com as transações lançadas neste app, a custo médio e com a taxa informada em cada operação. Day trade é compra e venda do mesmo ativo, no mesmo dia e na mesma custódia. Não cobre opções, desdobramentos nem bonificações. Alíquotas e limite de isenção vêm de fontes secundárias: confira na Receita e nas notas de corretagem antes de pagar.';
+
+  @override
+  String get b3TaxEmpty => 'Nenhuma venda na B3 ainda.';
+
+  @override
+  String b3TaxMonthStockSales(String value) {
+    return 'Vendas de ações (swing): $value';
+  }
+
+  @override
+  String b3TaxMonthExemptGain(String value) {
+    return 'Ganho isento: $value';
+  }
+
+  @override
+  String b3TaxBucketLine(
+    String name,
+    String result,
+    String used,
+    String tax,
+    String rate,
+  ) {
+    return '$name: resultado $result, prejuízo compensado $used, imposto $tax ($rate%)';
+  }
+
+  @override
+  String b3TaxIrrf(String value) {
+    return 'IRRF retido (estimado): $value';
+  }
+
+  @override
+  String b3TaxCarriedIn(String value) {
+    return 'Saldo de meses anteriores: $value';
+  }
+
+  @override
+  String get b3TaxBucketCommon => 'Comum';
+
+  @override
+  String get b3TaxBucketDayTrade => 'Day trade';
+
+  @override
+  String get b3TaxBucketFii => 'FII';
+
+  @override
+  String b3TaxSalesCount(int count) {
+    return 'Vendas ($count)';
+  }
+
+  @override
+  String b3TaxSaleTitle(String ticker, String date) {
+    return '$ticker — $date';
+  }
+
+  @override
+  String b3TaxSaleDetail(String bucket, String sale, String cost, String gain) {
+    return '$bucket · venda $sale · custo $cost · ganho $gain';
+  }
+
+  @override
+  String b3TaxStatusExempt(String limit) {
+    return 'Isento: vendas de ações até $limit no mês';
+  }
+
+  @override
+  String b3TaxStatusDarf(int code, String value, String date) {
+    return 'DARF $code de $value até $date';
+  }
+
+  @override
+  String b3TaxStatusBelowMinimum(String value, String minimum) {
+    return 'Imposto de $value abaixo do mínimo de $minimum: soma ao mês seguinte';
+  }
+
+  @override
+  String get b3TaxStatusNoTax => 'Sem imposto: nada a pagar no mês';
+
+  @override
+  String b3TaxWarnCostUnknown(String ticker, String date) {
+    return 'Venda de $ticker em $date maior que as compras lançadas: o ganho considera só a parte com custo conhecido. Lance as compras que faltam.';
   }
 
   @override

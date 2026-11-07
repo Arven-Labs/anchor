@@ -180,6 +180,24 @@ void main() {
       expect(find.byTooltip('Swap crypto'), findsNothing); // só com duas criptos
       expect(find.byTooltip('Foreign tax'), findsNothing);
       expect(find.byTooltip('Fund tax'), findsNothing);
+      expect(find.byTooltip('B3 tax'), findsNothing);
+    });
+
+    testWidgets('IR de B3 aparece com ação, ETF, BDR ou FII e some com as outras classes', (tester) async {
+      for (final assetClass in [
+        AssetClass.acaoBr,
+        AssetClass.etfBr,
+        AssetClass.bdr,
+        AssetClass.fii,
+      ]) {
+        await pumpPortfolio(tester, [_row(ticker: 'XPTO3', assetClass: assetClass)], locale: 'en');
+        expect(find.byTooltip('B3 tax'), findsOneWidget, reason: assetClass.name);
+        expect(find.byTooltip('Crypto tax'), findsNothing, reason: assetClass.name);
+      }
+
+      await pumpPortfolio(tester, [_row(ticker: 'AAPL', assetClass: AssetClass.acaoInternacional)], locale: 'en');
+      expect(find.byTooltip('B3 tax'), findsNothing);
+      expect(find.byTooltip('Foreign tax'), findsOneWidget);
     });
   });
 }

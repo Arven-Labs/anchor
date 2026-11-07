@@ -842,6 +842,12 @@ abstract class AppLocalizations {
   /// **'Fund tax'**
   String get portfolioFundTax;
 
+  /// No description provided for @portfolioB3Tax.
+  ///
+  /// In en, this message translates to:
+  /// **'B3 tax'**
+  String get portfolioB3Tax;
+
   /// No description provided for @portfolioSwapCrypto.
   ///
   /// In en, this message translates to:
@@ -2133,6 +2139,126 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'USD crypto sale in {period} has no exchange rate to convert: left out of the assessment.'**
   String cryptoTaxWarnFxMissing(String period);
+
+  /// No description provided for @b3TaxTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'B3 tax'**
+  String get b3TaxTitle;
+
+  /// No description provided for @b3TaxDisclaimer.
+  ///
+  /// In en, this message translates to:
+  /// **'An estimate from the transactions entered in this app, at average cost and with the fee entered on each operation. Day trade is a purchase and a sale of the same asset, on the same day, in the same custody. Options, splits and bonus shares are not covered. Rates and the exemption limit come from secondary sources: check with the tax authority and your broker\'s notes before paying.'**
+  String get b3TaxDisclaimer;
+
+  /// No description provided for @b3TaxEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No sales on B3 yet.'**
+  String get b3TaxEmpty;
+
+  /// No description provided for @b3TaxMonthStockSales.
+  ///
+  /// In en, this message translates to:
+  /// **'Stock sales (swing): {value}'**
+  String b3TaxMonthStockSales(String value);
+
+  /// No description provided for @b3TaxMonthExemptGain.
+  ///
+  /// In en, this message translates to:
+  /// **'Exempt gain: {value}'**
+  String b3TaxMonthExemptGain(String value);
+
+  /// No description provided for @b3TaxBucketLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}: result {result}, loss offset {used}, tax {tax} ({rate}%)'**
+  String b3TaxBucketLine(
+    String name,
+    String result,
+    String used,
+    String tax,
+    String rate,
+  );
+
+  /// No description provided for @b3TaxIrrf.
+  ///
+  /// In en, this message translates to:
+  /// **'Withholding tax (estimated): {value}'**
+  String b3TaxIrrf(String value);
+
+  /// No description provided for @b3TaxCarriedIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Carried from earlier months: {value}'**
+  String b3TaxCarriedIn(String value);
+
+  /// No description provided for @b3TaxBucketCommon.
+  ///
+  /// In en, this message translates to:
+  /// **'Common'**
+  String get b3TaxBucketCommon;
+
+  /// No description provided for @b3TaxBucketDayTrade.
+  ///
+  /// In en, this message translates to:
+  /// **'Day trade'**
+  String get b3TaxBucketDayTrade;
+
+  /// No description provided for @b3TaxBucketFii.
+  ///
+  /// In en, this message translates to:
+  /// **'REITs (FII)'**
+  String get b3TaxBucketFii;
+
+  /// No description provided for @b3TaxSalesCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Sales ({count})'**
+  String b3TaxSalesCount(int count);
+
+  /// No description provided for @b3TaxSaleTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{ticker} — {date}'**
+  String b3TaxSaleTitle(String ticker, String date);
+
+  /// No description provided for @b3TaxSaleDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'{bucket} · sale {sale} · cost {cost} · gain {gain}'**
+  String b3TaxSaleDetail(String bucket, String sale, String cost, String gain);
+
+  /// No description provided for @b3TaxStatusExempt.
+  ///
+  /// In en, this message translates to:
+  /// **'Exempt: stock sales up to {limit} in the month'**
+  String b3TaxStatusExempt(String limit);
+
+  /// No description provided for @b3TaxStatusDarf.
+  ///
+  /// In en, this message translates to:
+  /// **'DARF {code} of {value} due {date}'**
+  String b3TaxStatusDarf(int code, String value, String date);
+
+  /// No description provided for @b3TaxStatusBelowMinimum.
+  ///
+  /// In en, this message translates to:
+  /// **'Tax of {value} is below the {minimum} minimum: added to next month'**
+  String b3TaxStatusBelowMinimum(String value, String minimum);
+
+  /// No description provided for @b3TaxStatusNoTax.
+  ///
+  /// In en, this message translates to:
+  /// **'No tax: nothing to pay this month'**
+  String get b3TaxStatusNoTax;
+
+  /// No description provided for @b3TaxWarnCostUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Sale of {ticker} on {date} exceeds the purchases entered: the gain counts only the part with known cost. Enter the missing purchases.'**
+  String b3TaxWarnCostUnknown(String ticker, String date);
 
   /// No description provided for @swapIntro.
   ///
