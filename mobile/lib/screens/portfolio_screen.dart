@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../domain/b3_tax.dart' show b3AssetClasses;
 import '../domain/foreign_tax.dart' show foreignAssetClasses;
 import '../domain/number_locale.dart';
 import '../l10n/app_localizations.dart';
@@ -10,6 +11,7 @@ import '../services/portfolio_repository.dart';
 import '../services/quote_dispatcher.dart';
 import 'add_asset_screen.dart';
 import 'add_transaction_screen.dart';
+import 'b3_tax_screen.dart';
 import 'crypto_swap_screen.dart';
 import 'crypto_tax_screen.dart';
 import 'custodias_screen.dart';
@@ -99,6 +101,12 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     if (saved == true) _load();
   }
 
+  Future<void> _openB3Tax() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const B3TaxScreen()));
+  }
+
   Future<void> _openCryptoTax() async {
     await Navigator.of(
       context,
@@ -147,6 +155,14 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       appBar: AppBar(
         title: Text(l.portfolioTitle),
         actions: [
+          if (_rows.any(
+            (r) => b3AssetClasses.contains(r.position.asset.assetClass),
+          ))
+            IconButton(
+              icon: const Icon(Icons.receipt_long),
+              tooltip: l.portfolioB3Tax,
+              onPressed: _openB3Tax,
+            ),
           if (_rows.any((r) => r.position.asset.assetClass == AssetClass.cripto))
             IconButton(
               icon: const Icon(Icons.calculate),
