@@ -123,7 +123,7 @@ ValuationOutcome calculateValuation(
   return ValuationOutcome(
     fairPrice: fairPrice,
     safetyMargin: safetyMargin,
-    verdict: safetyMargin > 0 ? ValuationVerdict.cheap : ValuationVerdict.expensive,
+    verdict: safetyMargin >= 0 ? ValuationVerdict.cheap : ValuationVerdict.expensive,
   );
 }
 
