@@ -71,12 +71,15 @@ class WatchlistRepository {
     final note = normalizeWatchlistNotes(notes);
     final db = await AppDatabase.instance();
     return db.transaction((txn) async {
-      await txn.query(
+      final existing = await txn.query(
         'watchlist_items',
         columns: ['id'],
         where: 'watchlist_id = ? AND asset_id = ?',
         whereArgs: [watchlistId, assetId],
       );
+      if (existing.length > 99) {
+        throw FinanceArgumentError(FinanceErrorCode.assetAlreadyInWatchlist);
+      }
       return txn.insert('watchlist_items', {
         'watchlist_id': watchlistId,
         'asset_id': assetId,
