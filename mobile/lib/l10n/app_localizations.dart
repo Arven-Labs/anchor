@@ -1094,6 +1094,78 @@ abstract class AppLocalizations {
   /// **'Add two accounts to transfer.'**
   String get finTransferNeedTwo;
 
+  /// No description provided for @finReconcile.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconcile balance'**
+  String get finReconcile;
+
+  /// No description provided for @finReconcileTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconcile balance: {account}'**
+  String finReconcileTitle(String account);
+
+  /// No description provided for @finReconcileIntroYield.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the balance your bank shows on a date. The difference against the balance built from the transactions is booked as yield, including yield not redeemed yet.'**
+  String get finReconcileIntroYield;
+
+  /// No description provided for @finReconcileIntroAdjustment.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the balance your bank or broker shows on a date. The difference against the balance built from the transactions is booked as income or an expense: use it for an opening balance or cash that is missing.'**
+  String get finReconcileIntroAdjustment;
+
+  /// No description provided for @finReconcileAdjustmentToggle.
+  ///
+  /// In en, this message translates to:
+  /// **'Balance adjustment (not yield, can go down)'**
+  String get finReconcileAdjustmentToggle;
+
+  /// No description provided for @finReconcileBankBalance.
+  ///
+  /// In en, this message translates to:
+  /// **'Bank balance ({currency})'**
+  String finReconcileBankBalance(String currency);
+
+  /// No description provided for @finReconcileLedger.
+  ///
+  /// In en, this message translates to:
+  /// **'Balance from the transactions on that date: {value}'**
+  String finReconcileLedger(String value);
+
+  /// No description provided for @finReconcileYieldToBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Yield to book: {value}'**
+  String finReconcileYieldToBook(String value);
+
+  /// No description provided for @finReconcileAdjustmentToBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Adjustment to book: {value}'**
+  String finReconcileAdjustmentToBook(String value);
+
+  /// No description provided for @finReconcileBookYield.
+  ///
+  /// In en, this message translates to:
+  /// **'Book yield'**
+  String get finReconcileBookYield;
+
+  /// No description provided for @finReconcileBookAdjustment.
+  ///
+  /// In en, this message translates to:
+  /// **'Book adjustment'**
+  String get finReconcileBookAdjustment;
+
+  /// No description provided for @finReconcileDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconciliation booked'**
+  String get finReconcileDone;
+
   /// No description provided for @finFrom.
   ///
   /// In en, this message translates to:
@@ -2019,6 +2091,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'A debt installment and a loan transaction are only deleted together with the debt or the loan'**
   String get finErrLinkedTransactionLocked;
+
+  /// No description provided for @finErrBalanceMustBeNonNegative.
+  ///
+  /// In en, this message translates to:
+  /// **'The bank balance must be zero or more'**
+  String get finErrBalanceMustBeNonNegative;
+
+  /// No description provided for @finErrDateInFuture.
+  ///
+  /// In en, this message translates to:
+  /// **'The balance date cannot be in the future: {date}'**
+  String finErrDateInFuture(String date);
+
+  /// No description provided for @finErrNothingToReconcile.
+  ///
+  /// In en, this message translates to:
+  /// **'The transactions already match the bank balance: nothing to reconcile'**
+  String get finErrNothingToReconcile;
+
+  /// No description provided for @finErrBankBalanceBelowLedger.
+  ///
+  /// In en, this message translates to:
+  /// **'The bank balance is lower than the balance from the transactions. A withdrawal may be missing, or use the balance adjustment'**
+  String get finErrBankBalanceBelowLedger;
 
   /// No description provided for @cryptoTaxTitle.
   ///

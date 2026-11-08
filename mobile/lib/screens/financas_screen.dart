@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/currency_catalog.dart';
+import '../domain/finance_error.dart';
 import '../domain/fx_history.dart';
 import '../domain/general_finance.dart';
 import '../domain/money_format.dart';
@@ -248,6 +249,138 @@ class _FinancasScreenState extends State<FinancasScreen> {
     );
     if (confirmed != true) return;
     await _repository.deleteAccount(account.id!);
+    await _load();
+  }
+
+  /// Conciliação de saldo: o usuário digita o saldo que o banco mostra numa data e a
+  /// diferença contra o saldo dos lançamentos vira um lançamento (rendimento, ou ajuste
+  /// de saldo, que também aceita diferença negativa). A prévia sai da mesma função pura
+  /// que o repositório usa para gravar.
+  Future<void> _reconcile(BankAccount account) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final l = AppLocalizations.of(context);
+    final transactions = await _repository.listTransactions(accountId: account.id);
+    if (!mounted) return;
+    final balanceController = TextEditingController();
+    var date = DateTime.now();
+    var adjustment = false;
+
+    ReconciliationPreview? previewOf() {
+      final bank = double.tryParse(balanceController.text.trim().replaceAll(',', '.'));
+      if (bank == null) return null;
+      try {
+        return reconciliationPreview(
+          transactions: transactions,
+          accountId: account.id!,
+          bankBalance: bank,
+          date: toIsoDay(date),
+          today: toIsoDay(DateTime.now()),
+        );
+      } on FinanceArgumentError {
+        return null;
+      }
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final preview = previewOf();
+          final canBook =
+              preview != null && (adjustment ? preview.difference != 0 : preview.difference > 0);
+          String money(double value) => formatMoney(value, account.currency, locale: l.localeName);
+          return AlertDialog(
+            title: Text(l.finReconcileTitle(account.nome)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(adjustment ? l.finReconcileIntroAdjustment : l.finReconcileIntroYield),
+                  CheckboxListTile(
+                    key: const Key('financas-reconcile-adjustment'),
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: Text(l.finReconcileAdjustmentToggle),
+                    value: adjustment,
+                    onChanged: (value) => setDialogState(() => adjustment = value ?? false),
+                  ),
+                  TextField(
+                    key: const Key('financas-reconcile-balance'),
+                    controller: balanceController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: InputDecoration(labelText: l.finReconcileBankBalance(account.currency)),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.calendar_today_outlined),
+                    label: Text(formatReadingDate(toIsoDay(date), locale: l.localeName)),
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: date,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) setDialogState(() => date = picked);
+                    },
+                  ),
+                  if (preview != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      l.finReconcileLedger(money(preview.ledgerBalance)),
+                      key: const Key('financas-reconcile-ledger'),
+                    ),
+                    Text(
+                      (adjustment ? l.finReconcileAdjustmentToBook : l.finReconcileYieldToBook)(
+                        money(preview.difference),
+                      ),
+                      key: const Key('financas-reconcile-difference'),
+                    ),
+                    if (preview.difference < 0 && !adjustment)
+                      Text(
+                        l.finErrBankBalanceBelowLedger,
+                        key: const Key('financas-reconcile-negative'),
+                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      ),
+                    if (preview.difference == 0) Text(l.finErrNothingToReconcile),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text(l.actionCancel),
+              ),
+              FilledButton(
+                key: const Key('financas-reconcile-confirm'),
+                onPressed: canBook ? () => Navigator.of(context).pop(true) : null,
+                child: Text(adjustment ? l.finReconcileBookAdjustment : l.finReconcileBookYield),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    final bank = double.tryParse(balanceController.text.trim().replaceAll(',', '.'));
+    // Sem `dispose()` do controlador: o diálogo ainda está na animação de saída (mesmo
+    // motivo do `_transfer`).
+    if (confirmed != true || bank == null || !mounted) return;
+    try {
+      await _repository.confirmReconciliation(
+        accountId: account.id!,
+        bankBalance: bank,
+        date: toIsoDay(date),
+        adjustment: adjustment,
+      );
+    } on Object catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(financeErrorText(l, error))));
+      return;
+    }
+    messenger.showSnackBar(SnackBar(content: Text(l.finReconcileDone)));
     await _load();
   }
 
@@ -644,11 +777,14 @@ class _FinancasScreenState extends State<FinancasScreen> {
               ],
             ),
             PopupMenuButton<String>(
-              onSelected: (action) => action == 'edit'
-                  ? _editAccount(account)
-                  : _deleteAccount(account),
+              onSelected: (action) => switch (action) {
+                'edit' => _editAccount(account),
+                'reconcile' => _reconcile(account),
+                _ => _deleteAccount(account),
+              },
               itemBuilder: (_) => [
                 PopupMenuItem(value: 'edit', child: Text(l.actionEdit)),
+                PopupMenuItem(value: 'reconcile', child: Text(l.finReconcile)),
                 PopupMenuItem(value: 'delete', child: Text(l.actionDelete)),
               ],
             ),

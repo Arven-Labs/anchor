@@ -604,6 +604,55 @@ class AppLocalizationsPt extends AppLocalizations {
   String get finTransferNeedTwo => 'Cadastre duas contas para transferir.';
 
   @override
+  String get finReconcile => 'Conciliar saldo';
+
+  @override
+  String finReconcileTitle(String account) {
+    return 'Conciliar saldo: $account';
+  }
+
+  @override
+  String get finReconcileIntroYield =>
+      'Digite o saldo que o banco mostra numa data. A diferença contra o saldo dos lançamentos vira rendimento, inclusive o que ainda não foi resgatado.';
+
+  @override
+  String get finReconcileIntroAdjustment =>
+      'Digite o saldo que o banco ou a corretora mostra numa data. A diferença contra o saldo dos lançamentos vira receita ou despesa: use para o saldo de abertura ou para um caixa que falta.';
+
+  @override
+  String get finReconcileAdjustmentToggle =>
+      'Ajuste de saldo (não é rendimento, pode diminuir)';
+
+  @override
+  String finReconcileBankBalance(String currency) {
+    return 'Saldo do banco ($currency)';
+  }
+
+  @override
+  String finReconcileLedger(String value) {
+    return 'Saldo dos lançamentos nessa data: $value';
+  }
+
+  @override
+  String finReconcileYieldToBook(String value) {
+    return 'Rendimento a lançar: $value';
+  }
+
+  @override
+  String finReconcileAdjustmentToBook(String value) {
+    return 'Ajuste a lançar: $value';
+  }
+
+  @override
+  String get finReconcileBookYield => 'Lançar rendimento';
+
+  @override
+  String get finReconcileBookAdjustment => 'Lançar ajuste';
+
+  @override
+  String get finReconcileDone => 'Conciliação lançada';
+
+  @override
   String get finFrom => 'De';
 
   @override
@@ -1163,6 +1212,23 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get finErrLinkedTransactionLocked =>
       'Parcela de dívida e lançamento de empréstimo só se apagam junto com a dívida ou o empréstimo';
+
+  @override
+  String get finErrBalanceMustBeNonNegative =>
+      'O saldo do banco deve ser zero ou mais';
+
+  @override
+  String finErrDateInFuture(String date) {
+    return 'A data do saldo não pode ser futura: $date';
+  }
+
+  @override
+  String get finErrNothingToReconcile =>
+      'Os lançamentos já batem com o saldo do banco: nada a conciliar';
+
+  @override
+  String get finErrBankBalanceBelowLedger =>
+      'O saldo do banco é menor que o dos lançamentos. Pode faltar uma retirada, ou use o ajuste de saldo';
 
   @override
   String get cryptoTaxTitle => 'IR de cripto';

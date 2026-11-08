@@ -35,6 +35,10 @@ String _financeCodeText(AppLocalizations l, FinanceErrorCode code, Map<String, S
       FinanceErrorCode.borrowerNotFound => l.finErrBorrowerNotFound,
       FinanceErrorCode.loanNotFound => l.finErrLoanNotFound,
       FinanceErrorCode.linkedTransactionLocked => l.finErrLinkedTransactionLocked,
+      FinanceErrorCode.balanceMustBeNonNegative => l.finErrBalanceMustBeNonNegative,
+      FinanceErrorCode.dateInFuture => l.finErrDateInFuture(args['date'] ?? ''),
+      FinanceErrorCode.nothingToReconcile => l.finErrNothingToReconcile,
+      FinanceErrorCode.bankBalanceBelowLedger => l.finErrBankBalanceBelowLedger,
     };
 
 /// O texto do erro para o usuário. Erro de Finanças vira a frase do `.arb` pelo código;
