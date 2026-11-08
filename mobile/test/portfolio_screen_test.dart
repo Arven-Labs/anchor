@@ -247,6 +247,17 @@ void main() {
       expect(await tester.runAsync(repository.listFavorites), isEmpty);
     });
 
+    // Tabela de testes B20: o ícone "Rentabilidade" só aparece com ativo de classe medida.
+    testWidgets('B20: ícone Rentabilidade aparece com ação e some com só cripto', (tester) async {
+      await pumpPortfolio(tester, [_row()], locale: 'en');
+      expect(find.byTooltip('Profitability'), findsOneWidget);
+    });
+
+    testWidgets('B20: só com cripto o ícone Rentabilidade não aparece', (tester) async {
+      await pumpPortfolio(tester, [_row(ticker: 'BTC', assetClass: AssetClass.cripto)], locale: 'en');
+      expect(find.byTooltip('Profitability'), findsNothing);
+    });
+
     testWidgets('28: o ícone da barra abre a tela de watchlists', (tester) async {
       await pumpPortfolio(tester, [_row()]);
 
