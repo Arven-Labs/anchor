@@ -125,10 +125,6 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   Future<void> _delete() async {
     final id = _selectedId;
     if (id == null) return;
-    if (!_confirmingDelete) {
-      setState(() => _confirmingDelete = true);
-      return;
-    }
     await _repository.deleteWatchlist(id);
     _confirmingDelete = false;
     _selectedId = null;

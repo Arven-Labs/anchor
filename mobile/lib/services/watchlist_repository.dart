@@ -28,7 +28,6 @@ class WatchlistRepository {
   Future<void> deleteWatchlist(int id) async {
     final db = await AppDatabase.instance();
     await db.transaction((txn) async {
-      await txn.delete('watchlist_items', where: 'watchlist_id = ?', whereArgs: [id]);
       await txn.delete('watchlists', where: 'id = ?', whereArgs: [id]);
     });
   }
@@ -72,15 +71,12 @@ class WatchlistRepository {
     final note = normalizeWatchlistNotes(notes);
     final db = await AppDatabase.instance();
     return db.transaction((txn) async {
-      final existing = await txn.query(
+      await txn.query(
         'watchlist_items',
         columns: ['id'],
         where: 'watchlist_id = ? AND asset_id = ?',
         whereArgs: [watchlistId, assetId],
       );
-      if (existing.isNotEmpty) {
-        throw FinanceArgumentError(FinanceErrorCode.assetAlreadyInWatchlist);
-      }
       return txn.insert('watchlist_items', {
         'watchlist_id': watchlistId,
         'asset_id': assetId,
@@ -132,7 +128,6 @@ class WatchlistRepository {
         whereArgs: [assetId],
       );
       if (existing.isNotEmpty) {
-        await txn.delete('asset_favorites', where: 'asset_id = ?', whereArgs: [assetId]);
         return false;
       }
       await txn.insert('asset_favorites', {
