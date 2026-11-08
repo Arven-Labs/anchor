@@ -305,6 +305,94 @@ void main() {
     expect(textOf(tester, 'financas-balance-$b').data, 'BRL 120,50');
   });
 
+  group('conciliar saldo', () {
+    Future<int> openReconcile(WidgetTester tester) async {
+      late int id;
+      await tester.runAsync(() async {
+        id = await account('Porquinho', 'BRL');
+        await add(id, GeneralTransactionType.receita, 500, '2026-01-02');
+      });
+      await pumpScreen(tester);
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Conciliar saldo'));
+      // O diálogo só abre depois de ler os lançamentos no SQLite (I/O real, fora do relógio falso).
+      for (var i = 0; i < 200; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump();
+        if (find.byKey(const Key('financas-reconcile-balance')).evaluate().isNotEmpty) break;
+      }
+      await tester.pumpAndSettle();
+      return id;
+    }
+
+    Future<void> waitBalance(WidgetTester tester, int id, String text) async {
+      for (var i = 0; i < 200; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump();
+        if (find.byType(CircularProgressIndicator).evaluate().isEmpty &&
+            textOf(tester, 'financas-balance-$id').data == text) {
+          break;
+        }
+      }
+    }
+
+    bool confirmEnabled(WidgetTester tester) =>
+        tester.widget<FilledButton>(find.byKey(const Key('financas-reconcile-confirm'))).onPressed != null;
+
+    testWidgets('rendimento: banco 512,50 contra 500,00 mostra a prévia e lança 12,50', (tester) async {
+      final id = await openReconcile(tester);
+
+      await tester.enterText(find.byKey(const Key('financas-reconcile-balance')), '512,50');
+      await tester.pump();
+
+      expect(textOf(tester, 'financas-reconcile-ledger').data, 'Saldo dos lançamentos nessa data: BRL 500,00');
+      expect(textOf(tester, 'financas-reconcile-difference').data, 'Rendimento a lançar: BRL 12,50');
+      expect(confirmEnabled(tester), isTrue);
+
+      await tester.tap(find.byKey(const Key('financas-reconcile-confirm')));
+      await tester.pumpAndSettle();
+      await waitBalance(tester, id, 'BRL 512,50');
+
+      expect(textOf(tester, 'financas-balance-$id').data, 'BRL 512,50');
+    });
+
+    testWidgets('rendimento com banco 480,00 contra 500,00 avisa e não deixa lançar', (tester) async {
+      await openReconcile(tester);
+
+      await tester.enterText(find.byKey(const Key('financas-reconcile-balance')), '480');
+      await tester.pump();
+
+      expect(find.byKey(const Key('financas-reconcile-negative')), findsOneWidget);
+      expect(confirmEnabled(tester), isFalse);
+    });
+
+    testWidgets('ajuste de saldo aceita a diferença negativa e baixa o saldo para 480,00', (tester) async {
+      final id = await openReconcile(tester);
+
+      await tester.enterText(find.byKey(const Key('financas-reconcile-balance')), '480');
+      await tester.tap(find.byKey(const Key('financas-reconcile-adjustment')));
+      await tester.pump();
+
+      expect(find.byKey(const Key('financas-reconcile-negative')), findsNothing);
+      expect(find.byKey(const Key('financas-reconcile-difference')), findsOneWidget);
+      expect(confirmEnabled(tester), isTrue);
+
+      await tester.tap(find.byKey(const Key('financas-reconcile-confirm')));
+      await tester.pumpAndSettle();
+      await waitBalance(tester, id, 'BRL 480,00');
+
+      expect(textOf(tester, 'financas-balance-$id').data, 'BRL 480,00');
+    });
+
+    testWidgets('sem digitar o saldo não há prévia e o botão fica desligado', (tester) async {
+      await openReconcile(tester);
+
+      expect(find.byKey(const Key('financas-reconcile-difference')), findsNothing);
+      expect(confirmEnabled(tester), isFalse);
+    });
+  });
+
   testWidgets('transferir com uma conta só avisa e não abre o diálogo', (tester) async {
     await tester.runAsync(() => account('Alfa', 'BRL'));
     await pumpScreen(tester);

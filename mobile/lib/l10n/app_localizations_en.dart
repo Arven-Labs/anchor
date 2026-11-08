@@ -604,6 +604,55 @@ class AppLocalizationsEn extends AppLocalizations {
   String get finTransferNeedTwo => 'Add two accounts to transfer.';
 
   @override
+  String get finReconcile => 'Reconcile balance';
+
+  @override
+  String finReconcileTitle(String account) {
+    return 'Reconcile balance: $account';
+  }
+
+  @override
+  String get finReconcileIntroYield =>
+      'Enter the balance your bank shows on a date. The difference against the balance built from the transactions is booked as yield, including yield not redeemed yet.';
+
+  @override
+  String get finReconcileIntroAdjustment =>
+      'Enter the balance your bank or broker shows on a date. The difference against the balance built from the transactions is booked as income or an expense: use it for an opening balance or cash that is missing.';
+
+  @override
+  String get finReconcileAdjustmentToggle =>
+      'Balance adjustment (not yield, can go down)';
+
+  @override
+  String finReconcileBankBalance(String currency) {
+    return 'Bank balance ($currency)';
+  }
+
+  @override
+  String finReconcileLedger(String value) {
+    return 'Balance from the transactions on that date: $value';
+  }
+
+  @override
+  String finReconcileYieldToBook(String value) {
+    return 'Yield to book: $value';
+  }
+
+  @override
+  String finReconcileAdjustmentToBook(String value) {
+    return 'Adjustment to book: $value';
+  }
+
+  @override
+  String get finReconcileBookYield => 'Book yield';
+
+  @override
+  String get finReconcileBookAdjustment => 'Book adjustment';
+
+  @override
+  String get finReconcileDone => 'Reconciliation booked';
+
+  @override
   String get finFrom => 'From';
 
   @override
