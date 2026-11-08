@@ -1167,6 +1167,23 @@ class AppLocalizationsEn extends AppLocalizations {
       'A debt installment and a loan transaction are only deleted together with the debt or the loan';
 
   @override
+  String get finErrBalanceMustBeNonNegative =>
+      'The bank balance must be zero or more';
+
+  @override
+  String finErrDateInFuture(String date) {
+    return 'The balance date cannot be in the future: $date';
+  }
+
+  @override
+  String get finErrNothingToReconcile =>
+      'The transactions already match the bank balance: nothing to reconcile';
+
+  @override
+  String get finErrBankBalanceBelowLedger =>
+      'The bank balance is lower than the balance from the transactions. A withdrawal may be missing, or use the balance adjustment';
+
+  @override
   String get cryptoTaxTitle => 'Crypto tax';
 
   @override

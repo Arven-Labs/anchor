@@ -90,7 +90,7 @@ void main() {
     });
 
     test('data que não é YYYY-MM-DD é recusada', () {
-      for (final bad in ['2026-13-01', '01/11/2026', '']) {
+      for (final bad in ['2026-13-01', '2026-02-30', '01/11/2026', '']) {
         expect(
           () => preview([], date: bad),
           throwsA(isA<FinanceArgumentError>().having((e) => e.code, 'code', FinanceErrorCode.invalidDate)),

@@ -2020,6 +2020,30 @@ abstract class AppLocalizations {
   /// **'A debt installment and a loan transaction are only deleted together with the debt or the loan'**
   String get finErrLinkedTransactionLocked;
 
+  /// No description provided for @finErrBalanceMustBeNonNegative.
+  ///
+  /// In en, this message translates to:
+  /// **'The bank balance must be zero or more'**
+  String get finErrBalanceMustBeNonNegative;
+
+  /// No description provided for @finErrDateInFuture.
+  ///
+  /// In en, this message translates to:
+  /// **'The balance date cannot be in the future: {date}'**
+  String finErrDateInFuture(String date);
+
+  /// No description provided for @finErrNothingToReconcile.
+  ///
+  /// In en, this message translates to:
+  /// **'The transactions already match the bank balance: nothing to reconcile'**
+  String get finErrNothingToReconcile;
+
+  /// No description provided for @finErrBankBalanceBelowLedger.
+  ///
+  /// In en, this message translates to:
+  /// **'The bank balance is lower than the balance from the transactions. A withdrawal may be missing, or use the balance adjustment'**
+  String get finErrBankBalanceBelowLedger;
+
   /// No description provided for @cryptoTaxTitle.
   ///
   /// In en, this message translates to:

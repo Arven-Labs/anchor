@@ -1,4 +1,4 @@
-import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
+import 'package:sqflite/sqflite.dart' show ConflictAlgorithm, DatabaseExecutor;
 
 import '../data/db.dart';
 import '../domain/currency_catalog.dart';
@@ -9,7 +9,7 @@ import '../models/general_transaction.dart';
 import '../models/general_transaction_category.dart';
 import '../models/liability.dart';
 import '../models/loan.dart';
-import '../domain/general_finance.dart' show toIsoDay;
+import '../domain/general_finance.dart' show ReconciliationPreview, reconciliationPreview, toIsoDay;
 import '../domain/liability.dart';
 
 /// Contas, lançamentos e a moeda base de Finanças Gerais. Cálculo de saldo e
@@ -726,6 +726,111 @@ class GeneralFinanceRepository {
         'transfer_id': transferId,
       });
       return transferId;
+    });
+  }
+
+  /// Começo da nota do rendimento conciliado (o mesmo texto do desktop).
+  static const reconciliationYieldNote = 'Yield by balance reconciliation';
+
+  /// Começo da nota do ajuste de saldo (o mesmo texto do desktop).
+  static const reconciliationAdjustmentNote = 'Balance adjustment by reconciliation';
+
+  /// Nome da categoria do rendimento conciliado, criada na primeira vez.
+  static const yieldCategoryName = 'Yield';
+
+  Future<ReconciliationPreview> _reconciliationPreviewIn(
+    DatabaseExecutor db, {
+    required int accountId,
+    required double bankBalance,
+    required String date,
+    required DateTime now,
+  }) async {
+    final accounts = await db.query('bank_accounts', where: 'id = ?', whereArgs: [accountId]);
+    if (accounts.isEmpty) throw FinanceStateError(FinanceErrorCode.accountNotFound);
+    final rows = await db.query('general_transactions', where: 'bank_account_id = ?', whereArgs: [accountId]);
+    return reconciliationPreview(
+      transactions: rows.map(GeneralTransaction.fromMap),
+      accountId: accountId,
+      bankBalance: bankBalance,
+      date: date,
+      today: toIsoDay(now),
+    );
+  }
+
+  /// Calcula a conciliação sem gravar nada: saldo dos lançamentos em [date] e a
+  /// diferença contra o saldo que o banco mostra.
+  Future<ReconciliationPreview> previewReconciliation({
+    required int accountId,
+    required double bankBalance,
+    required String date,
+    DateTime? now,
+  }) async {
+    final db = await AppDatabase.instance();
+    return _reconciliationPreviewIn(
+      db,
+      accountId: accountId,
+      bankBalance: bankBalance,
+      date: date,
+      now: now ?? DateTime.now(),
+    );
+  }
+
+  /// Grava a diferença como um lançamento e devolve o id dele. Rendimento
+  /// (padrão): só aceita diferença positiva e grava receita na categoria
+  /// `Yield` (criada se faltar). Ajuste de saldo: aceita diferença para os dois
+  /// lados e grava receita ou despesa sem categoria. Diferença zero é recusada
+  /// nos dois modos, então conciliar duas vezes na mesma data não duplica.
+  /// Porta de `confirm_balance_reconciliation_in` do desktop.
+  Future<int> confirmReconciliation({
+    required int accountId,
+    required double bankBalance,
+    required String date,
+    bool adjustment = false,
+    DateTime? now,
+  }) async {
+    final moment = now ?? DateTime.now();
+    final db = await AppDatabase.instance();
+    return db.transaction((txn) async {
+      final preview = await _reconciliationPreviewIn(
+        txn,
+        accountId: accountId,
+        bankBalance: bankBalance,
+        date: date,
+        now: moment,
+      );
+      if (preview.difference == 0) {
+        throw FinanceArgumentError(FinanceErrorCode.nothingToReconcile);
+      }
+      if (!adjustment && preview.difference < 0) {
+        throw FinanceArgumentError(FinanceErrorCode.bankBalanceBelowLedger);
+      }
+      final details =
+          'bank balance ${preview.bankBalance.toStringAsFixed(2)} on ${preview.date}, '
+          'ledger ${preview.ledgerBalance.toStringAsFixed(2)}';
+      final isIncome = preview.difference > 0;
+      return txn.insert('general_transactions', {
+        'bank_account_id': accountId,
+        'transaction_type': (isIncome ? GeneralTransactionType.receita : GeneralTransactionType.despesa).value,
+        'category_id': adjustment ? null : await _ensureYieldCategory(txn, moment),
+        'valor': preview.difference.abs(),
+        'transaction_date': preview.date,
+        'notes': '${adjustment ? reconciliationAdjustmentNote : reconciliationYieldNote}: $details',
+        'created_at': moment.toIso8601String(),
+      });
+    });
+  }
+
+  Future<int> _ensureYieldCategory(DatabaseExecutor db, DateTime now) async {
+    final rows = await db.query(
+      'general_transaction_categories',
+      where: 'nome = ?',
+      whereArgs: [yieldCategoryName],
+    );
+    if (rows.isNotEmpty) return rows.first['id'] as int;
+    return db.insert('general_transaction_categories', {
+      'nome': yieldCategoryName,
+      'limite_mensal': null,
+      'created_at': now.toIso8601String(),
     });
   }
 

@@ -1,4 +1,5 @@
 import '../models/general_transaction.dart';
+import 'finance_error.dart';
 import 'number_locale.dart';
 
 /// `YYYY-MM-DD` → `dd/MM/yyyy` em `pt` e `MM/dd/yyyy` nos outros idiomas (ADR 0001);
@@ -53,6 +54,60 @@ Map<int, double> computeBalances(
     );
   }
   return balances;
+}
+
+/// Resultado da conciliação de saldo: o que o banco mostra, o que os lançamentos
+/// dão na mesma data e a diferença (`bankBalance − ledgerBalance`), tudo em
+/// centavos.
+class ReconciliationPreview {
+  final String date;
+  final double bankBalance;
+  final double ledgerBalance;
+  final double difference;
+
+  const ReconciliationPreview({
+    required this.date,
+    required this.bankBalance,
+    required this.ledgerBalance,
+    required this.difference,
+  });
+}
+
+double _round2(double value) => (value * 100).roundToDouble() / 100;
+
+/// Porta de `preview_in` (`desktop/src-tauri/src/commands/balance_reconciliation.rs`):
+/// compara o saldo que o banco mostra em [date] com o saldo da conta
+/// [accountId] naquele dia (lançamentos de data posterior ficam de fora).
+/// [today] (`YYYY-MM-DD`) é o limite: data futura é recusada.
+ReconciliationPreview reconciliationPreview({
+  required Iterable<GeneralTransaction> transactions,
+  required int accountId,
+  required double bankBalance,
+  required String date,
+  required String today,
+}) {
+  if (!bankBalance.isFinite || bankBalance < 0) {
+    throw FinanceArgumentError(FinanceErrorCode.balanceMustBeNonNegative);
+  }
+  // `DateTime.tryParse` aceita mês 13 e dia 30 de fevereiro (normaliza para a data
+  // seguinte); só vale a data que volta igual ao ser formatada.
+  final parsed = date.length == 10 ? DateTime.tryParse(date) : null;
+  if (parsed == null || toIsoDay(parsed) != date) {
+    throw FinanceArgumentError(FinanceErrorCode.invalidDate, {'date': date});
+  }
+  if (date.compareTo(today) > 0) {
+    throw FinanceArgumentError(FinanceErrorCode.dateInFuture, {'date': date});
+  }
+  final ledger = _round2(
+    computeBalances(transactions.where((tx) => tx.bankAccountId == accountId), date)[accountId] ?? 0,
+  );
+  final bank = _round2(bankBalance);
+  return ReconciliationPreview(
+    date: date,
+    bankBalance: bank,
+    ledgerBalance: ledger,
+    difference: _round2(bank - ledger),
+  );
 }
 
 /// `value` de `from` para `base`, dadas as taxas de cada moeda em reais

@@ -411,6 +411,11 @@
   "finErrBorrowerNotFound": "Borrower not found",
   "finErrLoanNotFound": "Loan not found",
   "finErrLinkedTransactionLocked": "A debt installment and a loan transaction are only deleted together with the debt or the loan",
+  "finErrBalanceMustBeNonNegative": "The bank balance must be zero or more",
+  "finErrDateInFuture": "The balance date cannot be in the future: {date}",
+  "@finErrDateInFuture": {"placeholders": {"date": {"type": "String"}}},
+  "finErrNothingToReconcile": "The transactions already match the bank balance: nothing to reconcile",
+  "finErrBankBalanceBelowLedger": "The bank balance is lower than the balance from the transactions. A withdrawal may be missing, or use the balance adjustment",
 
   "cryptoTaxTitle": "Crypto tax",
   "cryptoTaxDisclaimer": "Calculated only from the transactions entered in this app, at average cost and with the fee entered on each operation. The rules come from secondary sources: check with the tax authority (GCAP) before paying.",

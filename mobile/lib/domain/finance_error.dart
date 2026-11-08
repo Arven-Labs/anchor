@@ -27,6 +27,10 @@ enum FinanceErrorCode {
   borrowerNotFound,
   loanNotFound,
   linkedTransactionLocked,
+  balanceMustBeNonNegative,
+  dateInFuture,
+  nothingToReconcile,
+  bankBalanceBelowLedger,
 }
 
 /// Mensagem de desenvolvedor (inglês) de cada código, com os argumentos no texto.
@@ -59,6 +63,11 @@ String _developerMessage(FinanceErrorCode code, Map<String, String> args) => swi
   FinanceErrorCode.loanNotFound => 'Loan not found',
   FinanceErrorCode.linkedTransactionLocked =>
     'A debt installment and a loan transaction are only deleted together with the debt or the loan',
+  FinanceErrorCode.balanceMustBeNonNegative => 'The bank balance must be a number of zero or more',
+  FinanceErrorCode.dateInFuture => 'The balance date cannot be in the future: ${args['date']}',
+  FinanceErrorCode.nothingToReconcile => 'The transactions already match the bank balance: nothing to reconcile',
+  FinanceErrorCode.bankBalanceBelowLedger =>
+    'The bank balance is lower than the balance from the transactions: a withdrawal may be missing, or use the balance adjustment',
 };
 
 /// Argumento inválido de Finanças. [args] leva o que a frase do usuário precisa (a moeda,

@@ -343,6 +343,10 @@
   "finErrBorrowerNotFound": "Devedor não encontrado",
   "finErrLoanNotFound": "Empréstimo não encontrado",
   "finErrLinkedTransactionLocked": "Parcela de dívida e lançamento de empréstimo só se apagam junto com a dívida ou o empréstimo",
+  "finErrBalanceMustBeNonNegative": "O saldo do banco deve ser zero ou mais",
+  "finErrDateInFuture": "A data do saldo não pode ser futura: {date}",
+  "finErrNothingToReconcile": "Os lançamentos já batem com o saldo do banco: nada a conciliar",
+  "finErrBankBalanceBelowLedger": "O saldo do banco é menor que o dos lançamentos. Pode faltar uma retirada, ou use o ajuste de saldo",
 
   "cryptoTaxTitle": "IR de cripto",
   "cryptoTaxDisclaimer": "Calculado só com as transações lançadas neste app, a custo médio e com a taxa informada em cada operação. As regras vêm de fontes secundárias: confira na Receita (GCAP) antes de pagar.",

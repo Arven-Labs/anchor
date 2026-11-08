@@ -1165,6 +1165,23 @@ class AppLocalizationsPt extends AppLocalizations {
       'Parcela de dívida e lançamento de empréstimo só se apagam junto com a dívida ou o empréstimo';
 
   @override
+  String get finErrBalanceMustBeNonNegative =>
+      'O saldo do banco deve ser zero ou mais';
+
+  @override
+  String finErrDateInFuture(String date) {
+    return 'A data do saldo não pode ser futura: $date';
+  }
+
+  @override
+  String get finErrNothingToReconcile =>
+      'Os lançamentos já batem com o saldo do banco: nada a conciliar';
+
+  @override
+  String get finErrBankBalanceBelowLedger =>
+      'O saldo do banco é menor que o dos lançamentos. Pode faltar uma retirada, ou use o ajuste de saldo';
+
+  @override
   String get cryptoTaxTitle => 'IR de cripto';
 
   @override
