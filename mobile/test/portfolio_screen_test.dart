@@ -9,7 +9,10 @@ import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/position.dart';
 import 'package:anchor_mobile/screens/portfolio_screen.dart';
+import 'package:anchor_mobile/screens/watchlist_screen.dart';
 import 'package:anchor_mobile/services/live_positions.dart';
+import 'package:anchor_mobile/services/portfolio_repository.dart';
+import 'package:anchor_mobile/services/watchlist_repository.dart';
 
 import 'support/localized_app.dart';
 
@@ -206,6 +209,54 @@ void main() {
       );
       expect(find.byTooltip('B3 tax'), findsNothing);
       expect(find.byTooltip('Foreign tax'), findsOneWidget);
+    });
+
+    // Tabela de testes 28: a estrela do card liga e desliga o favorito, e o ícone da barra
+    // abre a tela de watchlists.
+    testWidgets('28: a estrela marca e desmarca o favorito', (tester) async {
+      final assetId = await tester.runAsync(
+        () => PortfolioRepository().insertAsset(
+          Asset(
+            ticker: 'PETR4',
+            name: 'Petrobras',
+            assetClass: AssetClass.acaoBr,
+            currency: 'BRL',
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        ),
+      );
+      await pumpPortfolio(tester, [_row(ticker: 'PETR4')]);
+      final repository = WatchlistRepository();
+
+      expect(find.byIcon(Icons.star_border), findsOneWidget);
+
+      await tester.tap(find.byKey(Key('favorite-star-$assetId')));
+      for (var i = 0; i < 10; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump();
+      }
+      expect(find.byIcon(Icons.star), findsOneWidget);
+      expect((await tester.runAsync(repository.listFavorites))!.map((a) => a.ticker), ['PETR4']);
+
+      await tester.tap(find.byKey(Key('favorite-star-$assetId')));
+      for (var i = 0; i < 10; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump();
+      }
+      expect(find.byIcon(Icons.star_border), findsOneWidget);
+      expect(await tester.runAsync(repository.listFavorites), isEmpty);
+    });
+
+    testWidgets('28: o ícone da barra abre a tela de watchlists', (tester) async {
+      await pumpPortfolio(tester, [_row()]);
+
+      await tester.tap(find.byTooltip('Watchlists'));
+      for (var i = 0; i < 10; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump();
+      }
+
+      expect(find.byType(WatchlistScreen), findsOneWidget);
     });
   });
 }
