@@ -5019,3 +5019,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Feito**: linha **P10** no `PENDING.md`, com os 8 arquivos, o exemplo reproduzido à mão (DCF com EBIT −1000: justo −214,28, margem +104,7%, CHEAP), a correção sugerida e o que não foi verificado. Nenhum código mudou.
 - **Não verificado**: o desktop em execução, o banco real (a consulta SQL está na P10) e a tela do desktop. O exemplo vem de uma conta em Python com a fórmula do `dcf.rs`, não de rodar o Rust.
 - **Pendente**: a P10 em si (correção no desktop, §4, com plano).
+
+## Sessão 308 — P10: desktop recusa preço justo ≤ 0 nos 8 modelos
+- **Pedido**: corrigir a P10 (justo ≤ 0 virava "Barata" no desktop). Plano aprovado em plan mode, tabela de testes aprovada antes da implementação.
+- **Feito** (PR #84): `ensure_positive_fair_price` em `desktop/src-tauri/src/domain/mod.rs` (justo não finito ou ≤ 0 → `AppError::InvalidGuard`), chamada logo depois do `fair_price` em `bazin`, `graham`, `gordon`, `dcf`, `banks`, `rim`, `rnav` e `projected_ceiling`. Um teste por modelo (Graham só com NaN, porque o guard de LPA/VPA já cobre o resto) e um do helper. Nenhuma fórmula mudou.
+- **CI** (PR #84): `rust / test`, `e2e`, `gate`, `guard`, `changes` verdes; `contracts`, `frontend`, `mobile` pulados.
+- **Não verificado**: nada rodou localmente (regra do workspace); os testes novos falhavam antes é raciocínio, sem execução; quebra proposital não feita; a tela do desktop mostrando `INVALID_GUARD`; o banco real (consulta na P10); `BELOW_FAIR_PRICE` com justo negativo.
+- **Anotado para depois**: `Verdict`/`ValuationOutcome` e o bloco final de margem estão duplicados nos 8 módulos (refatoração, fora do escopo).
+- **Pendente**: mesclar o PR #84; rodar a consulta SQL da P10 no banco real.
