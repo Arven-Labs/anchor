@@ -13,7 +13,7 @@ String normalizeWatchlistName(String raw) {
 /// (O desktop aceita qualquer número; o mobile recusa ≤ 0, que não tem sentido como alvo.)
 double? validateTargetPrice(double? value) {
   if (value == null) return null;
-  if (!value.isFinite || value < 0) {
+  if (!value.isFinite || value <= 0) {
     throw FinanceArgumentError(FinanceErrorCode.targetPriceMustBePositive);
   }
   return value;
