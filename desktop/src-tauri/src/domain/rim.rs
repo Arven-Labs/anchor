@@ -69,6 +69,7 @@ pub fn calculate(inputs: &RimInputs, current_price: f64) -> Result<ValuationOutc
     }
 
     let fair_price = inputs.book_value_per_share + stage_value;
+    super::ensure_positive_fair_price(fair_price)?;
 
     let safety_margin = (fair_price - current_price) / fair_price;
     let verdict = if safety_margin > 0.0 {
@@ -87,6 +88,17 @@ pub fn calculate(inputs: &RimInputs, current_price: f64) -> Result<ValuationOutc
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_non_positive_fair_price() {
+        let mut inputs = base_inputs();
+        inputs.book_value_per_share = -20.0;
+
+        assert!(matches!(
+            calculate(&inputs, 20.0),
+            Err(AppError::InvalidGuard(_))
+        ));
+    }
 
     fn base_inputs() -> RimInputs {
         RimInputs {

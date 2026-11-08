@@ -62,6 +62,7 @@ pub fn calculate(inputs: &DcfInputs, current_price: f64) -> Result<ValuationOutc
     let firm_value = fcff * (1.0 + inputs.perpetuity_growth) / (wacc - inputs.perpetuity_growth);
     let equity_value = firm_value - inputs.total_debt + inputs.cash;
     let fair_price = equity_value / inputs.shares_outstanding;
+    super::ensure_positive_fair_price(fair_price)?;
 
     let safety_margin = (fair_price - current_price) / fair_price;
     let verdict = if safety_margin > 0.0 {
@@ -80,6 +81,17 @@ pub fn calculate(inputs: &DcfInputs, current_price: f64) -> Result<ValuationOutc
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_negative_fair_price_instead_of_calling_it_cheap() {
+        let mut inputs = base_inputs();
+        inputs.ebit = -1_000.0;
+
+        assert!(matches!(
+            calculate(&inputs, 10.0),
+            Err(AppError::InvalidGuard(_))
+        ));
+    }
 
     fn base_inputs() -> DcfInputs {
         DcfInputs {
