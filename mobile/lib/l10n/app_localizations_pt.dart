@@ -653,6 +653,68 @@ class AppLocalizationsPt extends AppLocalizations {
   String get finReconcileDone => 'Conciliação lançada';
 
   @override
+  String get finYieldEstimate => 'Estimar rendimento';
+
+  @override
+  String finYieldTitle(String account) {
+    return 'Estimar rendimento: $account';
+  }
+
+  @override
+  String get finYieldIntro =>
+      'Estima o rendimento de cada resgate a partir das aplicações e dos resgates desta conta e da taxa Selic. É uma estimativa: o CDI diário é aproximado (Selic meta menos 0,10 p.p.) e o IR é fixo em 22,5%. Confira os números com o extrato do banco antes de lançar.';
+
+  @override
+  String get finYieldPctLabel => '% do CDI';
+
+  @override
+  String get finYieldEstimateButton => 'Estimar';
+
+  @override
+  String finYieldRowTitle(String date, String paid) {
+    return '$date: pago $paid';
+  }
+
+  @override
+  String finYieldRowDetail(String gross, String iof, String ir, String net) {
+    return 'Rendimento bruto $gross · IOF $iof · IR $ir · líquido $net';
+  }
+
+  @override
+  String get finYieldPartial =>
+      'Parte deste resgate não tem aplicação nesta conta: só a parte conhecida foi estimada.';
+
+  @override
+  String finYieldBookSelected(int count) {
+    return 'Lançar $count selecionado(s)';
+  }
+
+  @override
+  String get finYieldBooked => 'Rendimento lançado';
+
+  @override
+  String get finYieldEmpty =>
+      'Nada a lançar: nenhum resgate sem rendimento foi encontrado.';
+
+  @override
+  String finYieldSkipped(int covered, int noYield) {
+    return 'Ficaram de fora: $covered em dias que já têm rendimento, $noYield sem rendimento.';
+  }
+
+  @override
+  String get finYieldSelicUnavailable =>
+      'Não foi possível buscar a Selic no Banco Central. Confira a conexão e tente de novo.';
+
+  @override
+  String finErrSelicNotCovered(String from, String to) {
+    return 'O histórico da Selic não cobre de $from a $to';
+  }
+
+  @override
+  String get finErrPctOfCdiOutOfRange =>
+      'A % do CDI deve ser maior que 0 e no máximo 200';
+
+  @override
   String get finFrom => 'De';
 
   @override

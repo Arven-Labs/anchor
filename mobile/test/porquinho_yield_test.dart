@@ -59,8 +59,9 @@ void main() {
       final newYearsEve = accrualFactor(flatSelic(), d(2025, 12, 30), d(2025, 12, 31), 1.0)!;
       final oneDay = accrualFactor(flatSelic(), d(2025, 6, 11), d(2025, 6, 12), 1.0)!;
       // 20/11/2023 foi uma segunda-feira útil; 20/11/2024 (Consciência Negra) não rende.
-      final before2024 = accrualFactor(flatSelic(), d(2023, 11, 19), d(2023, 11, 20), 1.0)!;
-      final from2024 = accrualFactor(flatSelic(), d(2024, 11, 19), d(2024, 11, 20), 1.0)!;
+      final since2023 = [SelicPoint(d(2023, 1, 1), 10.10)];
+      final before2024 = accrualFactor(since2023, d(2023, 11, 19), d(2023, 11, 20), 1.0)!;
+      final from2024 = accrualFactor(since2023, d(2024, 11, 19), d(2024, 11, 20), 1.0)!;
 
       expect(newYearsEve, closeTo(oneDay, 1e-12));
       expect(before2024, closeTo(oneDay, 1e-12));
@@ -100,6 +101,11 @@ void main() {
 
       // 7 dias aplicados: IOF de 76% do rendimento; o IR incide sobre os 24% que sobram.
       expect(e.holdingDays, 7);
+      // Valor esperado calculado à parte: 5 dias úteis (3, 4, 5, 6 e 9/6) a CDI de 10%, e o principal
+      // sai de pago ÷ k, com k = 1 + ganho × (1 − IOF) × (1 − IR). Sem o IOF em k o bruto sairia maior.
+      final gain = _pow(_pow(1.10, 1 / 252), 5) - 1;
+      final k = 1 + gain * (1 - 0.76) * (1 - 0.225);
+      expect(e.grossYield, closeTo(round2(10000 / k * gain), 0.011));
       expect((e.iof - round2(e.grossYield * 0.76)).abs(), lessThanOrEqualTo(0.011));
       expect((e.ir - round2((e.grossYield - e.iof) * 0.225)).abs(), lessThanOrEqualTo(0.011));
     });

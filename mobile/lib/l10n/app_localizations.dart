@@ -1166,6 +1166,96 @@ abstract class AppLocalizations {
   /// **'Reconciliation booked'**
   String get finReconcileDone;
 
+  /// No description provided for @finYieldEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimate yield'**
+  String get finYieldEstimate;
+
+  /// No description provided for @finYieldTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimate yield: {account}'**
+  String finYieldTitle(String account);
+
+  /// No description provided for @finYieldIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimates the yield of each redemption from the deposits and redemptions of this account and the Selic rate. It is an estimate: the daily CDI is approximated (target Selic minus 0.10 p.p.) and income tax is a flat 22.5%. Check the numbers against your bank statement before booking.'**
+  String get finYieldIntro;
+
+  /// No description provided for @finYieldPctLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'% of the CDI'**
+  String get finYieldPctLabel;
+
+  /// No description provided for @finYieldEstimateButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Estimate'**
+  String get finYieldEstimateButton;
+
+  /// No description provided for @finYieldRowTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{date}: paid {paid}'**
+  String finYieldRowTitle(String date, String paid);
+
+  /// No description provided for @finYieldRowDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'Gross yield {gross} · IOF {iof} · IR {ir} · net {net}'**
+  String finYieldRowDetail(String gross, String iof, String ir, String net);
+
+  /// No description provided for @finYieldPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Part of this redemption has no deposit in this account: only the known part was estimated.'**
+  String get finYieldPartial;
+
+  /// No description provided for @finYieldBookSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Book {count} selected'**
+  String finYieldBookSelected(int count);
+
+  /// No description provided for @finYieldBooked.
+  ///
+  /// In en, this message translates to:
+  /// **'Yield booked'**
+  String get finYieldBooked;
+
+  /// No description provided for @finYieldEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing to book: no redemption without yield was found.'**
+  String get finYieldEmpty;
+
+  /// No description provided for @finYieldSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'Left out: {covered} on days that already have yield, {noYield} with no yield.'**
+  String finYieldSkipped(int covered, int noYield);
+
+  /// No description provided for @finYieldSelicUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not fetch the Selic rates from the central bank. Check your connection and try again.'**
+  String get finYieldSelicUnavailable;
+
+  /// No description provided for @finErrSelicNotCovered.
+  ///
+  /// In en, this message translates to:
+  /// **'The Selic history does not cover {from} to {to}'**
+  String finErrSelicNotCovered(String from, String to);
+
+  /// No description provided for @finErrPctOfCdiOutOfRange.
+  ///
+  /// In en, this message translates to:
+  /// **'The percentage of the CDI must be above 0 and at most 200'**
+  String get finErrPctOfCdiOutOfRange;
+
   /// No description provided for @finFrom.
   ///
   /// In en, this message translates to:

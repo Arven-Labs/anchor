@@ -653,6 +653,68 @@ class AppLocalizationsEn extends AppLocalizations {
   String get finReconcileDone => 'Reconciliation booked';
 
   @override
+  String get finYieldEstimate => 'Estimate yield';
+
+  @override
+  String finYieldTitle(String account) {
+    return 'Estimate yield: $account';
+  }
+
+  @override
+  String get finYieldIntro =>
+      'Estimates the yield of each redemption from the deposits and redemptions of this account and the Selic rate. It is an estimate: the daily CDI is approximated (target Selic minus 0.10 p.p.) and income tax is a flat 22.5%. Check the numbers against your bank statement before booking.';
+
+  @override
+  String get finYieldPctLabel => '% of the CDI';
+
+  @override
+  String get finYieldEstimateButton => 'Estimate';
+
+  @override
+  String finYieldRowTitle(String date, String paid) {
+    return '$date: paid $paid';
+  }
+
+  @override
+  String finYieldRowDetail(String gross, String iof, String ir, String net) {
+    return 'Gross yield $gross · IOF $iof · IR $ir · net $net';
+  }
+
+  @override
+  String get finYieldPartial =>
+      'Part of this redemption has no deposit in this account: only the known part was estimated.';
+
+  @override
+  String finYieldBookSelected(int count) {
+    return 'Book $count selected';
+  }
+
+  @override
+  String get finYieldBooked => 'Yield booked';
+
+  @override
+  String get finYieldEmpty =>
+      'Nothing to book: no redemption without yield was found.';
+
+  @override
+  String finYieldSkipped(int covered, int noYield) {
+    return 'Left out: $covered on days that already have yield, $noYield with no yield.';
+  }
+
+  @override
+  String get finYieldSelicUnavailable =>
+      'Could not fetch the Selic rates from the central bank. Check your connection and try again.';
+
+  @override
+  String finErrSelicNotCovered(String from, String to) {
+    return 'The Selic history does not cover $from to $to';
+  }
+
+  @override
+  String get finErrPctOfCdiOutOfRange =>
+      'The percentage of the CDI must be above 0 and at most 200';
+
+  @override
   String get finFrom => 'From';
 
   @override

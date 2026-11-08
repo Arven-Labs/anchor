@@ -11,6 +11,7 @@ import '../models/liability.dart';
 import '../models/loan.dart';
 import '../domain/general_finance.dart' show ReconciliationPreview, reconciliationPreview, toIsoDay;
 import '../domain/liability.dart';
+import '../domain/porquinho_yield.dart';
 
 /// Contas, lançamentos e a moeda base de Finanças Gerais. Cálculo de saldo e
 /// de patrimônio fica em `domain/general_finance.dart`, puro.
@@ -820,17 +821,129 @@ class GeneralFinanceRepository {
     });
   }
 
-  Future<int> _ensureYieldCategory(DatabaseExecutor db, DateTime now) async {
-    final rows = await db.query(
-      'general_transaction_categories',
-      where: 'nome = ?',
-      whereArgs: [yieldCategoryName],
-    );
+  Future<int> _ensureYieldCategory(DatabaseExecutor db, DateTime now) =>
+      _ensureCategory(db, yieldCategoryName, now);
+
+  /// Procura a categoria pelo nome exato e a cria se faltar (a mesma regra do desktop).
+  Future<int> _ensureCategory(DatabaseExecutor db, String name, DateTime now) async {
+    final rows = await db.query('general_transaction_categories', where: 'nome = ?', whereArgs: [name]);
     if (rows.isNotEmpty) return rows.first['id'] as int;
     return db.insert('general_transaction_categories', {
-      'nome': yieldCategoryName,
+      'nome': name,
       'limite_mensal': null,
       'created_at': now.toIso8601String(),
+    });
+  }
+
+  /// Nome da categoria dos impostos retidos (IOF e IR), criada na primeira estimativa lançada.
+  static const taxesCategoryName = 'Taxes';
+
+  /// Começo da nota da receita de uma estimativa lançada (o mesmo texto do desktop).
+  static const estimatedYieldNote = 'Yield CDB Porquinho';
+
+  /// Fluxos da conta para o modelo do Porquinho: as pernas de transferência, em ordem de data e, no
+  /// mesmo dia, as aplicações (entrada) antes dos resgates (saída).
+  Future<List<Leg>> porquinhoLegs(int accountId) async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query(
+      'general_transactions',
+      where: 'bank_account_id = ? AND transaction_type IN (?, ?)',
+      whereArgs: [
+        accountId,
+        GeneralTransactionType.transferenciaEntrada.value,
+        GeneralTransactionType.transferenciaSaida.value,
+      ],
+      orderBy: 'transaction_date, id',
+    );
+    final legs = rows.map((row) {
+      final parsed = DateTime.parse(row['transaction_date'] as String);
+      return Leg(
+        date: DateTime.utc(parsed.year, parsed.month, parsed.day),
+        kind: row['transaction_type'] == GeneralTransactionType.transferenciaEntrada.value
+            ? LegKind.application
+            : LegKind.redemption,
+        amount: (row['valor'] as num).toDouble(),
+      );
+    }).toList();
+    // `List.sort` não é estável: o índice original desempata.
+    final order = {for (var i = 0; i < legs.length; i++) legs[i]: i};
+    legs.sort((a, b) {
+      final byDate = a.date.compareTo(b.date);
+      if (byDate != 0) return byDate;
+      final byKind = (a.kind == LegKind.redemption ? 1 : 0) - (b.kind == LegKind.redemption ? 1 : 0);
+      return byKind != 0 ? byKind : order[a]!.compareTo(order[b]!);
+    });
+    return legs;
+  }
+
+  /// Dias (`YYYY-MM-DD`) da conta que já têm rendimento: toda receita dela, menos as da conciliação e do
+  /// ajuste de saldo, que são de outro tipo (porta de `days_with_yield`).
+  Future<Set<String>> daysWithYield(int accountId) async {
+    final db = await AppDatabase.instance();
+    final rows = await db.query(
+      'general_transactions',
+      where: 'bank_account_id = ? AND transaction_type = ?',
+      whereArgs: [accountId, GeneralTransactionType.receita.value],
+    );
+    return {
+      for (final row in rows)
+        if (!((row['notes'] as String?) ?? '').startsWith(reconciliationYieldNote) &&
+            !((row['notes'] as String?) ?? '').startsWith(reconciliationAdjustmentNote))
+          row['transaction_date'] as String,
+    };
+  }
+
+  /// Lança as estimativas aprovadas, como a aprovação do desktop (`confirm_yield_pending_in`): receita do
+  /// rendimento bruto em `Yield` e uma despesa para o IOF e outra para o IR em `Taxes` (só as maiores que
+  /// zero), no dia do resgate. O saldo da conta sobe pelo rendimento líquido. Tudo ou nada: uma estimativa
+  /// inválida desfaz as outras. Devolve quantos lançamentos gravou.
+  Future<int> bookYieldEstimates({
+    required int accountId,
+    required List<RedemptionEstimate> estimates,
+    DateTime? now,
+  }) async {
+    final moment = now ?? DateTime.now();
+    final db = await AppDatabase.instance();
+    return db.transaction((txn) async {
+      final accounts = await txn.query('bank_accounts', where: 'id = ?', whereArgs: [accountId]);
+      if (accounts.isEmpty) throw FinanceStateError(FinanceErrorCode.accountNotFound);
+      var rows = 0;
+      for (final estimate in estimates) {
+        if (!estimate.grossYield.isFinite || estimate.grossYield <= 0) {
+          throw FinanceArgumentError(FinanceErrorCode.amountMustBePositive);
+        }
+        final day = toIsoDay(estimate.date);
+        Future<void> insert(GeneralTransactionType type, int categoryId, double valor, String notes) async {
+          await txn.insert('general_transactions', {
+            'bank_account_id': accountId,
+            'transaction_type': type.value,
+            'category_id': categoryId,
+            'valor': valor,
+            'transaction_date': day,
+            'notes': notes,
+            'created_at': moment.toIso8601String(),
+          });
+          rows++;
+        }
+
+        final yieldCategory = await _ensureYieldCategory(txn, moment);
+        await insert(GeneralTransactionType.receita, yieldCategory, estimate.grossYield, '$estimatedYieldNote (gross)');
+        if (estimate.iof > 0 || estimate.ir > 0) {
+          final taxes = await _ensureCategory(txn, taxesCategoryName, moment);
+          if (estimate.iof > 0) {
+            await insert(GeneralTransactionType.despesa, taxes, estimate.iof, 'IOF withheld on CDB Porquinho yield');
+          }
+          if (estimate.ir > 0) {
+            await insert(
+              GeneralTransactionType.despesa,
+              taxes,
+              estimate.ir,
+              'IR withheld on CDB Porquinho yield (${(porquinhoIrRate * 100).toStringAsFixed(1)}%)',
+            );
+          }
+        }
+      }
+      return rows;
     });
   }
 
