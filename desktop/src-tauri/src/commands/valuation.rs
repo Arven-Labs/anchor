@@ -14,11 +14,11 @@ use crate::error::AppError;
 
 // Sessão 56 — resposta compartilhada pelas 8 `calculate_<model>` (agora só
 // preview, sem insert — ver `save_<model>` em cada `commands/<model>.rs` pra
-// a versão que persiste). Todo `domain::<model>::ValuationOutcome` já tem
-// exatamente este shape (`fair_price`/`safety_margin`/`verdict`), só o
-// `Verdict` é um enum próprio por módulo — convertido pra `String` aqui, no
-// ponto de saída de cada comando, em vez de cada `domain` módulo precisar
-// derivar `Serialize`.
+// a versão que persiste). O `domain::valuation_outcome::ValuationOutcome`
+// (o mesmo pros 8 modelos) já tem exatamente este shape
+// (`fair_price`/`safety_margin`/`verdict`); o `Verdict` é convertido pra
+// `String` aqui, no ponto de saída de cada comando, em vez de o `domain`
+// precisar derivar `Serialize`.
 #[derive(Serialize)]
 pub struct ValuationOutcomeResponse {
     pub fair_price: f64,

@@ -5027,3 +5027,12 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não verificado**: nada rodou localmente (regra do workspace); os testes novos falhavam antes é raciocínio, sem execução; quebra proposital não feita; a tela do desktop mostrando `INVALID_GUARD`; o banco real (consulta na P10); `BELOW_FAIR_PRICE` com justo negativo.
 - **Anotado para depois**: `Verdict`/`ValuationOutcome` e o bloco final de margem estão duplicados nos 8 módulos (refatoração, fora do escopo).
 - **Pendente**: mesclar o PR #84; rodar a consulta SQL da P10 no banco real.
+- **Depois do merge (#84 e #85)**: verificações só de leitura. Os 8 formulários mostram `error.message` (`ValuationResult.tsx`); `BELOW_FAIR_PRICE` nunca dispara com justo negativo e `ABOVE_FAIR_PRICE` dispararia sempre, só para valuation salvo antes do #84; o `anchor.db` do volume `anchor_app-data` tem 0 bytes, então a consulta SQL não pôde ser rodada.
+
+## Sessão 309 — refatoração: um só `Verdict`/`ValuationOutcome` nos 8 modelos
+- **Pedido**: a refatoração anotada como fora de escopo na Sessão 308. Plano aprovado em plan mode.
+- **Feito** (PR #86): novo `domain/valuation_outcome.rs` com `Verdict`, `ValuationOutcome` e `ValuationOutcome::from_fair_price` (guard do justo ≤ 0/não finito + margem + veredito), 4 testes novos. Os 8 módulos perderam as cópias e terminam com uma chamada; o `ensure_positive_fair_price` do #84 saiu de `mod.rs`. Sem mudança de comportamento. Diff do código: +119/−309.
+- **CI** (commit do código `564bc04`): `rust / test`, `e2e`, `gate`, `guard`, `changes` verdes; `contracts`, `frontend`, `mobile` pulados. Todos os testes dos 8 módulos passaram sem alteração.
+- **Quebra proposital feita pelo CI** (commit temporário `5b861ee`, `>` por `>=` no veredito, já revertido em `c86b6c6`): `rust / test` falhou com exatamente 1 teste, `expensive_when_margin_is_exactly_zero` (1092 passaram, 1 falhou). Prova que o limite está fixado.
+- **Não verificado**: nada rodou localmente (regra do workspace); a tela do desktop em execução. O CI do commit final (revert + este registro) é conferido antes de mesclar.
+- **Anotado para depois**: nada novo.

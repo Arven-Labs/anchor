@@ -1,3 +1,4 @@
+use super::valuation_outcome::ValuationOutcome;
 use crate::error::AppError;
 
 #[derive(serde::Deserialize)]
@@ -5,26 +6,6 @@ pub struct GordonInputs {
     pub current_dividend: f64,
     pub expected_growth: f64,
     pub ke: f64,
-}
-
-pub enum Verdict {
-    Cheap,
-    Expensive,
-}
-
-impl Verdict {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Verdict::Cheap => "CHEAP",
-            Verdict::Expensive => "EXPENSIVE",
-        }
-    }
-}
-
-pub struct ValuationOutcome {
-    pub fair_price: f64,
-    pub safety_margin: f64,
-    pub verdict: Verdict,
 }
 
 // D1 = D0 × (1 + g)
@@ -38,19 +19,7 @@ pub fn calculate(inputs: &GordonInputs, current_price: f64) -> Result<ValuationO
 
     let d1 = inputs.current_dividend * (1.0 + inputs.expected_growth);
     let fair_price = d1 / (inputs.ke - inputs.expected_growth);
-    super::ensure_positive_fair_price(fair_price)?;
-    let safety_margin = (fair_price - current_price) / fair_price;
-    let verdict = if safety_margin > 0.0 {
-        Verdict::Cheap
-    } else {
-        Verdict::Expensive
-    };
-
-    Ok(ValuationOutcome {
-        fair_price,
-        safety_margin,
-        verdict,
-    })
+    ValuationOutcome::from_fair_price(fair_price, current_price)
 }
 
 #[cfg(test)]

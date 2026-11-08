@@ -1,3 +1,4 @@
+use super::valuation_outcome::ValuationOutcome;
 use crate::error::AppError;
 
 #[derive(serde::Deserialize)]
@@ -7,26 +8,6 @@ pub struct ProjectedCeilingInputs {
     pub projection_years: i32,
     pub desired_yield: f64,
     pub ke: f64,
-}
-
-pub enum Verdict {
-    Cheap,
-    Expensive,
-}
-
-impl Verdict {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Verdict::Cheap => "CHEAP",
-            Verdict::Expensive => "EXPENSIVE",
-        }
-    }
-}
-
-pub struct ValuationOutcome {
-    pub fair_price: f64,
-    pub safety_margin: f64,
-    pub verdict: Verdict,
 }
 
 // Dividendo_Projetado_N = D0 × (1 + g)^N
@@ -46,20 +27,8 @@ pub fn calculate(
         inputs.current_dividend * (1.0 + inputs.expected_growth).powi(inputs.projection_years);
     let future_ceiling_price = projected_dividend / inputs.desired_yield;
     let fair_price = future_ceiling_price / (1.0 + inputs.ke).powi(inputs.projection_years);
-    super::ensure_positive_fair_price(fair_price)?;
 
-    let safety_margin = (fair_price - current_price) / fair_price;
-    let verdict = if safety_margin > 0.0 {
-        Verdict::Cheap
-    } else {
-        Verdict::Expensive
-    };
-
-    Ok(ValuationOutcome {
-        fair_price,
-        safety_margin,
-        verdict,
-    })
+    ValuationOutcome::from_fair_price(fair_price, current_price)
 }
 
 #[cfg(test)]
