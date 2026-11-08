@@ -35,7 +35,7 @@ impl ValuationOutcome {
         }
 
         let safety_margin = (fair_price - current_price) / fair_price;
-        let verdict = if safety_margin >= 0.0 {
+        let verdict = if safety_margin > 0.0 {
             Verdict::Cheap
         } else {
             Verdict::Expensive
