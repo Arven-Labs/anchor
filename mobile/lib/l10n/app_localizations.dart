@@ -2554,6 +2554,66 @@ abstract class AppLocalizations {
     String date,
   );
 
+  /// No description provided for @valuationCompareButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Compare ({count})'**
+  String valuationCompareButton(int count);
+
+  /// No description provided for @valuationCompareTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{ticker}: comparison'**
+  String valuationCompareTitle(String ticker);
+
+  /// No description provided for @valuationCompareColumn.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculation {n}'**
+  String valuationCompareColumn(int n);
+
+  /// No description provided for @valuationCompareDiffers.
+  ///
+  /// In en, this message translates to:
+  /// **'differs'**
+  String get valuationCompareDiffers;
+
+  /// No description provided for @valuationCompareRowModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get valuationCompareRowModel;
+
+  /// No description provided for @valuationCompareRowReferenceYear.
+  ///
+  /// In en, this message translates to:
+  /// **'Reference year'**
+  String get valuationCompareRowReferenceYear;
+
+  /// No description provided for @valuationCompareRowCurrentPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Current price'**
+  String get valuationCompareRowCurrentPrice;
+
+  /// No description provided for @valuationCompareRowFairPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Fair price'**
+  String get valuationCompareRowFairPrice;
+
+  /// No description provided for @valuationCompareRowSafetyMargin.
+  ///
+  /// In en, this message translates to:
+  /// **'Safety margin'**
+  String get valuationCompareRowSafetyMargin;
+
+  /// No description provided for @valuationCompareRowVerdict.
+  ///
+  /// In en, this message translates to:
+  /// **'Verdict'**
+  String get valuationCompareRowVerdict;
+
   /// No description provided for @valuationDelete.
   ///
   /// In en, this message translates to:

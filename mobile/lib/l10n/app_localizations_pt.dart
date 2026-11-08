@@ -1549,6 +1549,42 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String valuationCompareButton(int count) {
+    return 'Comparar ($count)';
+  }
+
+  @override
+  String valuationCompareTitle(String ticker) {
+    return '$ticker: comparação';
+  }
+
+  @override
+  String valuationCompareColumn(int n) {
+    return 'Cálculo $n';
+  }
+
+  @override
+  String get valuationCompareDiffers => 'diferente';
+
+  @override
+  String get valuationCompareRowModel => 'Modelo';
+
+  @override
+  String get valuationCompareRowReferenceYear => 'Ano de referência';
+
+  @override
+  String get valuationCompareRowCurrentPrice => 'Cotação';
+
+  @override
+  String get valuationCompareRowFairPrice => 'Preço justo';
+
+  @override
+  String get valuationCompareRowSafetyMargin => 'Margem de segurança';
+
+  @override
+  String get valuationCompareRowVerdict => 'Veredito';
+
+  @override
   String get valuationDelete => 'Excluir';
 
   @override
