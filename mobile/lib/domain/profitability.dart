@@ -65,7 +65,7 @@ int _daysInMonth(int year, int month) => DateTime.utc(year, month + 1, 0).day;
 /// Dia 1 ≈ quase todo o mês "trabalhado"; último dia ≈ 0 (dia 10 de 31 → 21/31).
 double _flowWeight(DateTime date) {
   final days = _daysInMonth(date.year, date.month);
-  return date.day / days;
+  return (days - date.day) / days;
 }
 
 String _monthKey(int year, int month) => '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}';
@@ -114,7 +114,7 @@ ProfitabilityResult computeProfitability({
     final asset = byId[entry.key]!;
     final after = [
       for (final s in splits[asset.ticker] ?? const <DateTime>[])
-        if (_day(s).isAfter(entry.value)) s,
+        if (!_day(s).isBefore(entry.value)) s,
     ]..sort();
     if (after.isNotEmpty) {
       excluded.add(ExcludedAsset(asset: asset, splitDate: after.first));
@@ -158,7 +158,7 @@ ProfitabilityResult computeProfitability({
       switch (tx.type) {
         case TransactionType.compra:
           holdings[asset.id!] = (holdings[asset.id!] ?? 0.0) + (tx.quantity ?? 0.0);
-          flows.add(CashFlow(amount: flowAmount(FlowKind.contribution, value), weight: weight));
+          flows.add(CashFlow(amount: flowAmount(FlowKind.contribution, value + fee), weight: weight));
         case TransactionType.venda:
           holdings[asset.id!] = (holdings[asset.id!] ?? 0.0) - (tx.quantity ?? 0.0);
           flows.add(CashFlow(amount: flowAmount(FlowKind.withdrawal, value - fee), weight: weight));
@@ -194,7 +194,7 @@ ProfitabilityResult computeProfitability({
       } on ProfitabilityError catch (e) {
         // Nada investido durante o mês (ex.: compra no último dia sem saldo anterior):
         // o mês rende 0 em vez de derrubar a série.
-        if (e.code == ProfitabilityErrorCode.zeroDenominator) rethrow;
+        if (e.code != ProfitabilityErrorCode.zeroDenominator) rethrow;
         r = 0.0;
       }
     }
