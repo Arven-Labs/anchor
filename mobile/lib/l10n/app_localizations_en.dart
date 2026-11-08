@@ -1,6 +1,5 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
-
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -3100,4 +3099,83 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get favoriteRemove => 'Remove favorite';
+
+  @override
+  String get portfolioProfitability => 'Profitability';
+
+  @override
+  String get profitabilityTitle => 'Profitability';
+
+  @override
+  String get profitabilityBeforeTax => 'Return before taxes';
+
+  @override
+  String get profitabilityRefresh => 'Update price history';
+
+  @override
+  String get profitabilityEmpty =>
+      'No buys, sells or income on stocks, REITs, ETFs, BDRs or metals to measure.';
+
+  @override
+  String profitabilityCumulative(String value) {
+    return 'Cumulative: $value';
+  }
+
+  @override
+  String profitabilityTrailing12(String value) {
+    return 'Last 12 months: $value';
+  }
+
+  @override
+  String profitabilityFinalValue(String value) {
+    return 'Final value: $value';
+  }
+
+  @override
+  String profitabilityCumulativeShort(String value) {
+    return 'Cumulative $value';
+  }
+
+  @override
+  String profitabilityRefreshed(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count assets updated',
+      one: '1 asset updated',
+      zero: 'No assets updated',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String profitabilityFailed(String tickers) {
+    return 'Failed: $tickers';
+  }
+
+  @override
+  String get profitabilityExcludedTitle => 'Left out (stock split)';
+
+  @override
+  String get profitabilityExcludedNote =>
+      'The app does not record splits; these assets are left out so the value is not wrong.';
+
+  @override
+  String profitabilityExcludedLine(String ticker, String date) {
+    return '$ticker: split on $date';
+  }
+
+  @override
+  String profitErrMissingMonthPrice(String ticker, String month) {
+    return 'No price for $ticker in $month. Update the price history.';
+  }
+
+  @override
+  String profitErrMissingFx(String currency) {
+    return 'No exchange rate for $currency. Check the connection and try again.';
+  }
+
+  @override
+  String get profitErrZeroDenominator =>
+      'There is no base to compute this month\'s return.';
 }

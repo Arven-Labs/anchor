@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../domain/b3_tax.dart' show b3AssetClasses;
 import '../domain/foreign_tax.dart' show foreignAssetClasses;
 import '../domain/number_locale.dart';
+import '../domain/profitability.dart' show profitabilityAssetClasses;
 import '../l10n/app_localizations.dart';
 import '../models/asset.dart';
 import '../models/custodia.dart';
@@ -19,6 +20,7 @@ import 'custodias_screen.dart';
 import 'foreign_tax_screen.dart';
 import 'fund_tax_screen.dart';
 import 'manual_asset_details_screen.dart';
+import 'profitability_screen.dart';
 import 'transaction_history_screen.dart';
 import 'watchlist_screen.dart';
 
@@ -93,6 +95,12 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     setState(() {
       _favoriteIds = nowFavorite ? {..._favoriteIds, assetId} : ({..._favoriteIds}..remove(assetId));
     });
+  }
+
+  Future<void> _openProfitability() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ProfitabilityScreen()));
   }
 
   Future<void> _openWatchlists() async {
@@ -216,6 +224,14 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               icon: const Icon(Icons.swap_horiz),
               tooltip: l.portfolioSwapCrypto,
               onPressed: _openCryptoSwap,
+            ),
+          if (_rows.any(
+            (r) => profitabilityAssetClasses.contains(r.position.asset.assetClass),
+          ))
+            IconButton(
+              icon: const Icon(Icons.trending_up),
+              tooltip: l.portfolioProfitability,
+              onPressed: _openProfitability,
             ),
           IconButton(
             icon: const Icon(Icons.bookmarks),
