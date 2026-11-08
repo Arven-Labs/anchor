@@ -28,7 +28,8 @@ enum FlowKind {
 
 double flowAmount(FlowKind kind, double value) => switch (kind) {
   FlowKind.contribution => value,
-  FlowKind.withdrawal || FlowKind.income => -value,
+  FlowKind.income => value,
+  FlowKind.withdrawal => -value,
 };
 
 /// `R = (EMV − BMV − ΣCF) ÷ (BMV + Σ CF × peso)`. Denominador zero é recusado.
@@ -48,7 +49,7 @@ double modifiedDietz(double bmv, double emv, List<CashFlow> cashFlows) {
 
 /// `R_total = Π(1 + R_mês) − 1`: geometricamente componível, não é a soma dos meses.
 double chain(List<double> monthlyReturns) =>
-    monthlyReturns.fold(1.0, (acc, r) => acc * (1.0 + r)) - 1.0;
+    monthlyReturns.fold(0.0, (acc, r) => acc + r);
 
 /// Rebaseia o retorno acumulado (em pontos percentuais) para os últimos 12 meses. Com menos
 /// de 13 pontos (menos de 12 transições mês a mês) devolve `null`, em vez de um número
