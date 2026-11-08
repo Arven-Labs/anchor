@@ -213,6 +213,29 @@ void main() {
       expect(fxCalls.single.$2.year * 10000 + fxCalls.single.$2.month * 100 + fxCalls.single.$2.day, 20260112);
     });
 
+    test('B12: câmbio que o Yahoo não entrega vira erro nomeado de câmbio faltando', () async {
+      final aapl = await addAsset('AAPL', AssetClass.acaoInternacional, currency: 'USD');
+      await buy(aapl, DateTime(2026, 1, 12), 10, 1000);
+      histories = {'AAPL': const MonthlyPriceHistory(closes: {'2026-01': 110.0}, splits: [])};
+      await repo().refreshPriceHistory();
+
+      final offline = ProfitabilityRepository(
+        portfolio: portfolio,
+        now: () => DateTime(2026, 1, 31),
+        fetchHistory: (_) async => const MonthlyPriceHistory(closes: {}, splits: []),
+        fetchFx: (currency, _) async => throw QuoteUnavailableException('yahoo'),
+      );
+
+      await expectLater(
+        offline.compute(),
+        throwsA(
+          isA<ProfitabilityError>()
+              .having((e) => e.code, 'code', ProfitabilityErrorCode.missingFx)
+              .having((e) => e.args, 'args', {'currency': 'USD'}),
+        ),
+      );
+    });
+
     test('B13: sem nenhum preço gravado é recusado com erro nomeado, sem número parcial', () async {
       final petr = await addAsset('PETR4', AssetClass.acaoBr);
       await buy(petr, DateTime(2026, 1, 10), 10, 300);
