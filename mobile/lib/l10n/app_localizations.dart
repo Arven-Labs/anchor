@@ -4749,6 +4749,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'unit_price required for {type}'**
   String importIssueUnitPriceRequired(String type);
+
+  /// No description provided for @finErrWatchlistNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the watchlist name'**
+  String get finErrWatchlistNameRequired;
+
+  /// No description provided for @finErrTargetPriceMustBePositive.
+  ///
+  /// In en, this message translates to:
+  /// **'The target price must be greater than zero'**
+  String get finErrTargetPriceMustBePositive;
+
+  /// No description provided for @finErrAssetAlreadyInWatchlist.
+  ///
+  /// In en, this message translates to:
+  /// **'This asset is already in the watchlist'**
+  String get finErrAssetAlreadyInWatchlist;
+
+  /// No description provided for @portfolioWatchlists.
+  ///
+  /// In en, this message translates to:
+  /// **'Watchlists'**
+  String get portfolioWatchlists;
+
+  /// No description provided for @watchlistsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Watchlists'**
+  String get watchlistsTitle;
+
+  /// No description provided for @watchlistsFavorites.
+  ///
+  /// In en, this message translates to:
+  /// **'Favorites'**
+  String get watchlistsFavorites;
+
+  /// No description provided for @watchlistsFavoritesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No favorites yet.'**
+  String get watchlistsFavoritesEmpty;
+
+  /// No description provided for @watchlistsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No watchlists yet.'**
+  String get watchlistsEmpty;
+
+  /// No description provided for @watchlistsSelect.
+  ///
+  /// In en, this message translates to:
+  /// **'Watchlist'**
+  String get watchlistsSelect;
+
+  /// No description provided for @watchlistsNewName.
+  ///
+  /// In en, this message translates to:
+  /// **'New watchlist'**
+  String get watchlistsNewName;
+
+  /// No description provided for @watchlistsCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Create'**
+  String get watchlistsCreate;
+
+  /// No description provided for @watchlistsConfirmDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm?'**
+  String get watchlistsConfirmDelete;
+
+  /// No description provided for @watchlistsAddAsset.
+  ///
+  /// In en, this message translates to:
+  /// **'Add asset'**
+  String get watchlistsAddAsset;
+
+  /// No description provided for @watchlistsAssetField.
+  ///
+  /// In en, this message translates to:
+  /// **'Asset'**
+  String get watchlistsAssetField;
+
+  /// No description provided for @watchlistsTargetField.
+  ///
+  /// In en, this message translates to:
+  /// **'Target price (optional)'**
+  String get watchlistsTargetField;
+
+  /// No description provided for @watchlistsNotesField.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes (optional)'**
+  String get watchlistsNotesField;
+
+  /// No description provided for @watchlistsNoAssets.
+  ///
+  /// In en, this message translates to:
+  /// **'Register an asset in Portfolio first.'**
+  String get watchlistsNoAssets;
+
+  /// No description provided for @watchlistsTarget.
+  ///
+  /// In en, this message translates to:
+  /// **'Target: {value}'**
+  String watchlistsTarget(String value);
+
+  /// No description provided for @watchlistsNoTarget.
+  ///
+  /// In en, this message translates to:
+  /// **'No target'**
+  String get watchlistsNoTarget;
+
+  /// No description provided for @watchlistsRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get watchlistsRemove;
+
+  /// No description provided for @favoriteAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Favorite'**
+  String get favoriteAdd;
+
+  /// No description provided for @favoriteRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove favorite'**
+  String get favoriteRemove;
 }
 
 class _AppLocalizationsDelegate

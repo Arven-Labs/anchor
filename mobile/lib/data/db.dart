@@ -74,7 +74,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 22,
+      version: 23,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -153,6 +153,7 @@ class AppDatabase {
         await _createFinanceTables(db);
         await _createCryptoScoreTables(db);
         await _createStockValuationTables(db);
+        await _createWatchlistTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -356,8 +357,44 @@ class AppDatabase {
         if (oldVersion < 22) {
           await _createStockValuationTables(db);
         }
+        if (oldVersion < 23) {
+          await _createWatchlistTables(db);
+        }
       },
     );
+  }
+
+  /// Watchlists nomeadas, seus itens e os favoritos (estrela). Sem `workspace_id`: o mobile
+  /// não tem Workspace. Só cria tabelas novas. O `PRAGMA foreign_keys` não está ligado neste
+  /// banco, então o `REFERENCES` não faz cascata: quem apaga uma lista apaga os itens dela
+  /// (`WatchlistRepository.deleteWatchlist`) e as listagens fazem `JOIN` com `assets`, o que
+  /// esconde item ou favorito de ativo apagado.
+  static Future<void> _createWatchlistTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE watchlists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE watchlist_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        watchlist_id INTEGER NOT NULL REFERENCES watchlists(id) ON DELETE CASCADE,
+        asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        target_price REAL,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (watchlist_id, asset_id)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE asset_favorites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset_id INTEGER NOT NULL UNIQUE REFERENCES assets(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   /// Valuation de ações: um cálculo salvo por linha, append-only (cada save é

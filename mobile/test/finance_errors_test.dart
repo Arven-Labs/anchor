@@ -108,9 +108,9 @@ void main() {
   );
 
   group('os códigos e os tipos', () {
-    test('há um código por erro do repositório e do domínio (29) e nenhum se repete', () {
-      expect(FinanceErrorCode.values, hasLength(29));
-      expect(FinanceErrorCode.values.toSet(), hasLength(29));
+    test('há um código por erro do repositório e do domínio (32) e nenhum se repete', () {
+      expect(FinanceErrorCode.values, hasLength(32));
+      expect(FinanceErrorCode.values.toSet(), hasLength(32));
     });
 
     test('FinanceArgumentError é um ArgumentError e FinanceStateError é um StateError', () {

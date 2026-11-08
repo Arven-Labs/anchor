@@ -9,6 +9,7 @@ import '../models/custodia.dart';
 import '../services/live_positions.dart';
 import '../services/portfolio_repository.dart';
 import '../services/quote_dispatcher.dart';
+import '../services/watchlist_repository.dart';
 import 'add_asset_screen.dart';
 import 'add_transaction_screen.dart';
 import 'b3_tax_screen.dart';
@@ -19,6 +20,7 @@ import 'foreign_tax_screen.dart';
 import 'fund_tax_screen.dart';
 import 'manual_asset_details_screen.dart';
 import 'transaction_history_screen.dart';
+import 'watchlist_screen.dart';
 
 class PortfolioScreen extends StatefulWidget {
   /// Posições com preço atual; o padrão lê a carteira e cota na rede. Injetável para
@@ -33,7 +35,7 @@ class PortfolioScreen extends StatefulWidget {
 
 /// Texto do "Preço atual" do card: o número (separador decimal do idioma), "indisponível
 /// agora" quando a fonte falhou de forma passageira, ou "—" quando não há cotação.
-@visibleForTesting
+/// Também usado pela tela de watchlists.
 String livePriceLabel(
   AppLocalizations l,
   double? price, {
@@ -53,11 +55,13 @@ String _quantityLabel(double quantity, String locale) =>
 
 class _PortfolioScreenState extends State<PortfolioScreen> {
   final _repository = PortfolioRepository();
+  final _watchlists = WatchlistRepository();
   final _dispatcher = QuoteDispatcher();
 
   bool _loading = true;
   List<LivePositionRow> _rows = [];
   Map<int, Custodia> _custodiasById = {};
+  Set<int> _favoriteIds = {};
 
   @override
   void initState() {
@@ -69,6 +73,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     setState(() => _loading = true);
 
     final custodias = await _repository.listCustodias();
+    final favorites = await _watchlists.listFavorites();
 
     final rows = await (widget.loadPositions ?? _livePositions)();
 
@@ -76,9 +81,26 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       setState(() {
         _rows = rows;
         _custodiasById = {for (final c in custodias) c.id!: c};
+        _favoriteIds = {for (final a in favorites) a.id!};
         _loading = false;
       });
     }
+  }
+
+  Future<void> _toggleFavorite(int assetId) async {
+    final nowFavorite = await _watchlists.toggleFavorite(assetId);
+    if (!mounted) return;
+    setState(() {
+      _favoriteIds = nowFavorite ? {..._favoriteIds, assetId} : ({..._favoriteIds}..remove(assetId));
+    });
+  }
+
+  Future<void> _openWatchlists() async {
+    // Volta recarregando: a estrela pode ter mudado lá.
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const WatchlistScreen()));
+    _load();
   }
 
   Future<List<LivePositionRow>> _livePositions() async => loadLivePositions(
@@ -196,6 +218,11 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               onPressed: _openCryptoSwap,
             ),
           IconButton(
+            icon: const Icon(Icons.bookmarks),
+            tooltip: l.portfolioWatchlists,
+            onPressed: _openWatchlists,
+          ),
+          IconButton(
             icon: const Icon(Icons.account_balance),
             tooltip: l.portfolioCustodies,
             onPressed: _openCustodias,
@@ -224,6 +251,8 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                 itemBuilder: (context, index) => _PositionCard(
                   row: _rows[index],
                   custodiasById: _custodiasById,
+                  isFavorite: _favoriteIds.contains(_rows[index].position.asset.id),
+                  onToggleFavorite: _toggleFavorite,
                 ),
               ),
             ),
@@ -267,8 +296,15 @@ class _EmptyState extends StatelessWidget {
 class _PositionCard extends StatelessWidget {
   final LivePositionRow row;
   final Map<int, Custodia> custodiasById;
+  final bool isFavorite;
+  final void Function(int assetId) onToggleFavorite;
 
-  const _PositionCard({required this.row, required this.custodiasById});
+  const _PositionCard({
+    required this.row,
+    required this.custodiasById,
+    required this.isFavorite,
+    required this.onToggleFavorite,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -332,7 +368,20 @@ class _PositionCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  Text(l.portfolioUnits(_quantityLabel(quantity, locale))),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(l.portfolioUnits(_quantityLabel(quantity, locale))),
+                      if (position.asset.id != null)
+                        IconButton(
+                          key: Key('favorite-star-${position.asset.id}'),
+                          icon: Icon(isFavorite ? Icons.star : Icons.star_border),
+                          tooltip: isFavorite ? l.favoriteRemove : l.favoriteAdd,
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => onToggleFavorite(position.asset.id!),
+                        ),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 12),

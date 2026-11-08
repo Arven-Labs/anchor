@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -3029,4 +3030,73 @@ class AppLocalizationsPt extends AppLocalizations {
   String importIssueUnitPriceRequired(String type) {
     return 'unit_price obrigatório para $type';
   }
+
+  @override
+  String get finErrWatchlistNameRequired => 'Informe o nome da watchlist';
+
+  @override
+  String get finErrTargetPriceMustBePositive =>
+      'O preço-alvo deve ser maior que zero';
+
+  @override
+  String get finErrAssetAlreadyInWatchlist => 'Este ativo já está na watchlist';
+
+  @override
+  String get portfolioWatchlists => 'Watchlists';
+
+  @override
+  String get watchlistsTitle => 'Watchlists';
+
+  @override
+  String get watchlistsFavorites => 'Favoritos';
+
+  @override
+  String get watchlistsFavoritesEmpty => 'Nenhum favorito ainda.';
+
+  @override
+  String get watchlistsEmpty => 'Nenhuma watchlist ainda.';
+
+  @override
+  String get watchlistsSelect => 'Watchlist';
+
+  @override
+  String get watchlistsNewName => 'Nova watchlist';
+
+  @override
+  String get watchlistsCreate => 'Criar';
+
+  @override
+  String get watchlistsConfirmDelete => 'Confirmar?';
+
+  @override
+  String get watchlistsAddAsset => 'Adicionar ativo';
+
+  @override
+  String get watchlistsAssetField => 'Ativo';
+
+  @override
+  String get watchlistsTargetField => 'Preço-alvo (opcional)';
+
+  @override
+  String get watchlistsNotesField => 'Anotação (opcional)';
+
+  @override
+  String get watchlistsNoAssets => 'Cadastre um ativo na Carteira primeiro.';
+
+  @override
+  String watchlistsTarget(String value) {
+    return 'Alvo: $value';
+  }
+
+  @override
+  String get watchlistsNoTarget => 'Sem alvo';
+
+  @override
+  String get watchlistsRemove => 'Remover';
+
+  @override
+  String get favoriteAdd => 'Favoritar';
+
+  @override
+  String get favoriteRemove => 'Remover dos favoritos';
 }
