@@ -6,9 +6,11 @@ import '../domain/fx_history.dart';
 import '../domain/general_finance.dart';
 import '../domain/money_format.dart';
 import '../domain/number_locale.dart';
+import '../domain/porquinho_yield.dart' show SelicPoint;
 import '../l10n/app_localizations.dart';
 import '../l10n/finance_labels.dart';
 import '../models/bank_account.dart';
+import '../services/bcb_selic_service.dart';
 import '../services/general_finance_repository.dart';
 import '../services/live_positions.dart';
 import '../services/net_worth_loader.dart';
@@ -19,6 +21,7 @@ import 'financas_categories_screen.dart';
 import 'financas_liabilities_screen.dart';
 import 'financas_loans_screen.dart';
 import 'financas_transactions_screen.dart';
+import 'financas_yield_estimate_screen.dart';
 
 /// Aviso de câmbio que não veio: os itens dessas moedas ficam fora da soma.
 @visibleForTesting
@@ -46,7 +49,11 @@ class FinancasScreen extends StatefulWidget {
   /// Posições com preço atual; o padrão lê a carteira e cota na rede.
   final Future<List<LivePositionRow>> Function()? loadPositions;
 
-  const FinancasScreen({super.key, this.fetchFx, this.loadPositions});
+  /// Série diária da Selic meta desde a data (estimativa do Porquinho); o padrão é o SGS do Banco
+  /// Central. Injetável para teste, sem rede.
+  final Future<List<SelicPoint>> Function(DateTime from)? fetchSelic;
+
+  const FinancasScreen({super.key, this.fetchFx, this.loadPositions, this.fetchSelic});
 
   @override
   State<FinancasScreen> createState() => _FinancasScreenState();
@@ -548,6 +555,18 @@ class _FinancasScreenState extends State<FinancasScreen> {
     await _load();
   }
 
+  Future<void> _openYieldEstimate(BankAccount account) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FinancasYieldEstimateScreen(
+          account: account,
+          fetchSelic: widget.fetchSelic ?? (from) => BcbSelicService().fetchSince(from),
+        ),
+      ),
+    );
+    await _load();
+  }
+
   Future<void> _openLoans() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => FinancasLoansScreen(accounts: _accounts)),
@@ -780,11 +799,13 @@ class _FinancasScreenState extends State<FinancasScreen> {
               onSelected: (action) => switch (action) {
                 'edit' => _editAccount(account),
                 'reconcile' => _reconcile(account),
+                'yield' => _openYieldEstimate(account),
                 _ => _deleteAccount(account),
               },
               itemBuilder: (_) => [
                 PopupMenuItem(value: 'edit', child: Text(l.actionEdit)),
                 PopupMenuItem(value: 'reconcile', child: Text(l.finReconcile)),
+                PopupMenuItem(value: 'yield', child: Text(l.finYieldEstimate)),
                 PopupMenuItem(value: 'delete', child: Text(l.actionDelete)),
               ],
             ),

@@ -31,6 +31,8 @@ enum FinanceErrorCode {
   dateInFuture,
   nothingToReconcile,
   bankBalanceBelowLedger,
+  selicNotCovered,
+  pctOfCdiOutOfRange,
 }
 
 /// Mensagem de desenvolvedor (inglês) de cada código, com os argumentos no texto.
@@ -68,6 +70,9 @@ String _developerMessage(FinanceErrorCode code, Map<String, String> args) => swi
   FinanceErrorCode.nothingToReconcile => 'The transactions already match the bank balance: nothing to reconcile',
   FinanceErrorCode.bankBalanceBelowLedger =>
     'The bank balance is lower than the balance from the transactions: a withdrawal may be missing, or use the balance adjustment',
+  FinanceErrorCode.selicNotCovered =>
+    'The Selic history does not cover ${args['from']} to ${args['to']}: fetch the rates and try again',
+  FinanceErrorCode.pctOfCdiOutOfRange => 'The percentage of the CDI must be between 0 and 200%',
 };
 
 /// Argumento inválido de Finanças. [args] leva o que a frase do usuário precisa (a moeda,
