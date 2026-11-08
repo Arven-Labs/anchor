@@ -3142,7 +3142,6 @@ class AppLocalizationsPt extends AppLocalizations {
       locale: localeName,
       other: '$count ativos atualizados',
       one: '1 ativo atualizado',
-      zero: 'Nenhum ativo atualizado',
     );
     return '$_temp0';
   }

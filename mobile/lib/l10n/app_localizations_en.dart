@@ -3143,7 +3143,6 @@ class AppLocalizationsEn extends AppLocalizations {
       locale: localeName,
       other: '$count assets updated',
       one: '1 asset updated',
-      zero: 'No assets updated',
     );
     return '$_temp0';
   }

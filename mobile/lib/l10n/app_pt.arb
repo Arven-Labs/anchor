@@ -852,7 +852,7 @@
   "profitabilityTrailing12": "Últimos 12 meses: {value}",
   "profitabilityFinalValue": "Valor final: {value}",
   "profitabilityCumulativeShort": "Acumulado {value}",
-  "profitabilityRefreshed": "{count, plural, =0{Nenhum ativo atualizado} =1{1 ativo atualizado} other{{count} ativos atualizados}}",
+  "profitabilityRefreshed": "{count, plural, =1{1 ativo atualizado} other{{count} ativos atualizados}}",
   "profitabilityFailed": "Falharam: {tickers}",
   "profitabilityExcludedTitle": "Fora do cálculo (desdobramento)",
   "profitabilityExcludedNote": "O celular não registra desdobramentos; esses ativos ficam de fora para o valor não sair errado.",

@@ -4939,7 +4939,7 @@ abstract class AppLocalizations {
   /// No description provided for @profitabilityRefreshed.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, =0{No assets updated} =1{1 asset updated} other{{count} assets updated}}'**
+  /// **'{count, plural, =1{1 asset updated} other{{count} assets updated}}'**
   String profitabilityRefreshed(int count);
 
   /// No description provided for @profitabilityFailed.
