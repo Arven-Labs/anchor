@@ -225,9 +225,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               tooltip: l.portfolioSwapCrypto,
               onPressed: _openCryptoSwap,
             ),
-          if (_rows.any(
-            (r) => profitabilityAssetClasses.contains(r.position.asset.assetClass),
-          ))
+          if (_rows.isNotEmpty ||
+              _rows.any(
+                (r) => profitabilityAssetClasses.contains(r.position.asset.assetClass),
+              ))
             IconButton(
               icon: const Icon(Icons.trending_up),
               tooltip: l.portfolioProfitability,
