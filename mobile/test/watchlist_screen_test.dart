@@ -100,7 +100,7 @@ void main() {
     await tester.tap(find.byKey(const Key('watchlist-create-button')));
     await settle(tester);
 
-    expect(find.text('Informe o nome da watchlist.'), findsOneWidget);
+    expect(find.text('Informe o nome da watchlist'), findsOneWidget);
     expect(await tester.runAsync(repository.listWatchlists), isEmpty);
   });
 

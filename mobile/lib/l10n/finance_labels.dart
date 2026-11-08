@@ -41,6 +41,9 @@ String _financeCodeText(AppLocalizations l, FinanceErrorCode code, Map<String, S
       FinanceErrorCode.bankBalanceBelowLedger => l.finErrBankBalanceBelowLedger,
       FinanceErrorCode.selicNotCovered => l.finErrSelicNotCovered(args['from'] ?? '', args['to'] ?? ''),
       FinanceErrorCode.pctOfCdiOutOfRange => l.finErrPctOfCdiOutOfRange,
+      FinanceErrorCode.watchlistNameRequired => l.finErrWatchlistNameRequired,
+      FinanceErrorCode.targetPriceMustBePositive => l.finErrTargetPriceMustBePositive,
+      FinanceErrorCode.assetAlreadyInWatchlist => l.finErrAssetAlreadyInWatchlist,
     };
 
 /// O texto do erro para o usuário. Erro de Finanças vira a frase do `.arb` pelo código;

@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -3029,4 +3030,74 @@ class AppLocalizationsEn extends AppLocalizations {
   String importIssueUnitPriceRequired(String type) {
     return 'unit_price required for $type';
   }
+
+  @override
+  String get finErrWatchlistNameRequired => 'Enter the watchlist name';
+
+  @override
+  String get finErrTargetPriceMustBePositive =>
+      'The target price must be greater than zero';
+
+  @override
+  String get finErrAssetAlreadyInWatchlist =>
+      'This asset is already in the watchlist';
+
+  @override
+  String get portfolioWatchlists => 'Watchlists';
+
+  @override
+  String get watchlistsTitle => 'Watchlists';
+
+  @override
+  String get watchlistsFavorites => 'Favorites';
+
+  @override
+  String get watchlistsFavoritesEmpty => 'No favorites yet.';
+
+  @override
+  String get watchlistsEmpty => 'No watchlists yet.';
+
+  @override
+  String get watchlistsSelect => 'Watchlist';
+
+  @override
+  String get watchlistsNewName => 'New watchlist';
+
+  @override
+  String get watchlistsCreate => 'Create';
+
+  @override
+  String get watchlistsConfirmDelete => 'Confirm?';
+
+  @override
+  String get watchlistsAddAsset => 'Add asset';
+
+  @override
+  String get watchlistsAssetField => 'Asset';
+
+  @override
+  String get watchlistsTargetField => 'Target price (optional)';
+
+  @override
+  String get watchlistsNotesField => 'Notes (optional)';
+
+  @override
+  String get watchlistsNoAssets => 'Register an asset in Portfolio first.';
+
+  @override
+  String watchlistsTarget(String value) {
+    return 'Target: $value';
+  }
+
+  @override
+  String get watchlistsNoTarget => 'No target';
+
+  @override
+  String get watchlistsRemove => 'Remove';
+
+  @override
+  String get favoriteAdd => 'Favorite';
+
+  @override
+  String get favoriteRemove => 'Remove favorite';
 }

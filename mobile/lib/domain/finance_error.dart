@@ -33,6 +33,9 @@ enum FinanceErrorCode {
   bankBalanceBelowLedger,
   selicNotCovered,
   pctOfCdiOutOfRange,
+  watchlistNameRequired,
+  targetPriceMustBePositive,
+  assetAlreadyInWatchlist,
 }
 
 /// Mensagem de desenvolvedor (inglês) de cada código, com os argumentos no texto.
@@ -73,6 +76,9 @@ String _developerMessage(FinanceErrorCode code, Map<String, String> args) => swi
   FinanceErrorCode.selicNotCovered =>
     'The Selic history does not cover ${args['from']} to ${args['to']}: fetch the rates and try again',
   FinanceErrorCode.pctOfCdiOutOfRange => 'The percentage of the CDI must be between 0 and 200%',
+  FinanceErrorCode.watchlistNameRequired => 'The watchlist name is required',
+  FinanceErrorCode.targetPriceMustBePositive => 'The target price must be greater than zero',
+  FinanceErrorCode.assetAlreadyInWatchlist => 'This asset is already in the watchlist',
 };
 
 /// Argumento inválido de Finanças. [args] leva o que a frase do usuário precisa (a moeda,
