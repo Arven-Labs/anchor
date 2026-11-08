@@ -38,6 +38,7 @@ pub fn calculate(inputs: &GordonInputs, current_price: f64) -> Result<ValuationO
 
     let d1 = inputs.current_dividend * (1.0 + inputs.expected_growth);
     let fair_price = d1 / (inputs.ke - inputs.expected_growth);
+    super::ensure_positive_fair_price(fair_price)?;
     let safety_margin = (fair_price - current_price) / fair_price;
     let verdict = if safety_margin > 0.0 {
         Verdict::Cheap
@@ -55,6 +56,22 @@ pub fn calculate(inputs: &GordonInputs, current_price: f64) -> Result<ValuationO
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_non_positive_fair_price() {
+        for current_dividend in [-2.0, 0.0] {
+            let inputs = GordonInputs {
+                current_dividend,
+                expected_growth: 0.03,
+                ke: 0.10,
+            };
+
+            assert!(
+                matches!(calculate(&inputs, 25.0), Err(AppError::InvalidGuard(_))),
+                "dividendo atual {current_dividend}"
+            );
+        }
+    }
 
     #[test]
     fn cheap_when_fair_price_above_current_price() {

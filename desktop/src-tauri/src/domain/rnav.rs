@@ -39,6 +39,7 @@ pub fn calculate(inputs: &RnavInputs, current_price: f64) -> Result<ValuationOut
 
     let rnav_total = inputs.landbank + inputs.inventory_at_market_value + inputs.net_cash;
     let fair_price = rnav_total / inputs.shares_outstanding;
+    super::ensure_positive_fair_price(fair_price)?;
 
     let safety_margin = (fair_price - current_price) / fair_price;
     let verdict = if safety_margin > 0.0 {
@@ -57,6 +58,24 @@ pub fn calculate(inputs: &RnavInputs, current_price: f64) -> Result<ValuationOut
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_non_positive_fair_price() {
+        // 100 + 50 - 400 = -250 no total: mais dívida líquida que ativos.
+        for net_cash in [-400.0, -150.0] {
+            let inputs = RnavInputs {
+                landbank: 100.0,
+                inventory_at_market_value: 50.0,
+                net_cash,
+                shares_outstanding: 100.0,
+            };
+
+            assert!(
+                matches!(calculate(&inputs, 8.0), Err(AppError::InvalidGuard(_))),
+                "caixa líquido {net_cash}"
+            );
+        }
+    }
 
     #[test]
     fn cheap_when_fair_price_above_current_price() {

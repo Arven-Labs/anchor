@@ -46,6 +46,7 @@ pub fn calculate(
         inputs.current_dividend * (1.0 + inputs.expected_growth).powi(inputs.projection_years);
     let future_ceiling_price = projected_dividend / inputs.desired_yield;
     let fair_price = future_ceiling_price / (1.0 + inputs.ke).powi(inputs.projection_years);
+    super::ensure_positive_fair_price(fair_price)?;
 
     let safety_margin = (fair_price - current_price) / fair_price;
     let verdict = if safety_margin > 0.0 {
@@ -64,6 +65,24 @@ pub fn calculate(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_non_positive_fair_price() {
+        for current_dividend in [-3.0, 0.0] {
+            let inputs = ProjectedCeilingInputs {
+                current_dividend,
+                expected_growth: 0.05,
+                projection_years: 5,
+                desired_yield: 0.06,
+                ke: 0.10,
+            };
+
+            assert!(
+                matches!(calculate(&inputs, 30.0), Err(AppError::InvalidGuard(_))),
+                "dividendo atual {current_dividend}"
+            );
+        }
+    }
 
     #[test]
     fn cheap_when_fair_price_above_current_price() {

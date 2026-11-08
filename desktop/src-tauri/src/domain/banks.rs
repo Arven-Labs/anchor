@@ -42,6 +42,7 @@ pub fn calculate(inputs: &BanksInputs, current_price: f64) -> Result<ValuationOu
 
     let fair_pb = (inputs.roe - sustainable_growth) / (inputs.ke - sustainable_growth);
     let fair_price = fair_pb * inputs.book_value_per_share;
+    super::ensure_positive_fair_price(fair_price)?;
 
     let safety_margin = (fair_price - current_price) / fair_price;
     let verdict = if safety_margin > 0.0 {
@@ -60,6 +61,21 @@ pub fn calculate(inputs: &BanksInputs, current_price: f64) -> Result<ValuationOu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_non_positive_fair_price() {
+        let inputs = BanksInputs {
+            book_value_per_share: -20.0,
+            roe: 0.18,
+            payout: 0.5,
+            ke: 0.12,
+        };
+
+        assert!(matches!(
+            calculate(&inputs, 25.0),
+            Err(AppError::InvalidGuard(_))
+        ));
+    }
 
     #[test]
     fn cheap_when_fair_price_above_current_price() {

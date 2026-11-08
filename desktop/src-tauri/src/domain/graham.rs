@@ -35,6 +35,7 @@ pub fn calculate(inputs: &GrahamInputs, current_price: f64) -> Result<ValuationO
     }
 
     let fair_price = (22.5 * inputs.eps * inputs.book_value_per_share).sqrt();
+    super::ensure_positive_fair_price(fair_price)?;
     let safety_margin = (fair_price - current_price) / fair_price;
     let verdict = if safety_margin > 0.0 {
         Verdict::Cheap
@@ -52,6 +53,19 @@ pub fn calculate(inputs: &GrahamInputs, current_price: f64) -> Result<ValuationO
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_non_finite_fair_price() {
+        let inputs = GrahamInputs {
+            eps: f64::NAN,
+            book_value_per_share: 20.0,
+        };
+
+        assert!(matches!(
+            calculate(&inputs, 20.0),
+            Err(AppError::InvalidGuard(_))
+        ));
+    }
 
     #[test]
     fn cheap_when_fair_price_above_current_price() {

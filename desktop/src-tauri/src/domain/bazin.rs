@@ -35,6 +35,7 @@ pub fn calculate(inputs: &BazinInputs, current_price: f64) -> Result<ValuationOu
     }
 
     let fair_price = inputs.average_dividend / inputs.desired_yield;
+    super::ensure_positive_fair_price(fair_price)?;
     let safety_margin = (fair_price - current_price) / fair_price;
     let verdict = if safety_margin > 0.0 {
         Verdict::Cheap
@@ -52,6 +53,21 @@ pub fn calculate(inputs: &BazinInputs, current_price: f64) -> Result<ValuationOu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_non_positive_fair_price() {
+        for average_dividend in [-3.0, 0.0] {
+            let inputs = BazinInputs {
+                average_dividend,
+                desired_yield: 0.06,
+            };
+
+            assert!(
+                matches!(calculate(&inputs, 40.0), Err(AppError::InvalidGuard(_))),
+                "dividendo médio {average_dividend}"
+            );
+        }
+    }
 
     #[test]
     fn cheap_when_fair_price_above_current_price() {
