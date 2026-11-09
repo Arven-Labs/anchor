@@ -222,9 +222,11 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                         (r) => r.position.asset.assetClass == AssetClass.cripto,
                       )
                       .length >=
-                  1)
+                  3)
                 PopupMenuItem(value: _openCryptoSwap, child: Text(l.portfolioSwapCrypto)),
               PopupMenuItem(value: _openCustodias, child: Text(l.portfolioCustodies)),
+              if (_rows.isEmpty)
+                PopupMenuItem(value: _openHistory, child: Text(l.portfolioHistory)),
             ],
           ),
           IconButton(
