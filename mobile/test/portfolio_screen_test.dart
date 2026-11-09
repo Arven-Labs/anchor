@@ -312,9 +312,11 @@ void main() {
         localizedApp(
           PortfolioScreen(
             loadPositions: () async => [
-              _row(ticker: 'PETR4'),
-              _row(ticker: 'AAPL', assetClass: AssetClass.acaoInternacional),
-              _row(ticker: 'BTC', assetClass: AssetClass.cripto),
+              // Sem preço nem custo: com a fonte Ahem do flutter_test (cada letra do tamanho do
+              // corpo) a linha "Valor / resultado" do card estoura em 390 px e mascararia a barra.
+              _row(ticker: 'PETR4', avg: null, price: null),
+              _row(ticker: 'AAPL', assetClass: AssetClass.acaoInternacional, avg: null, price: null),
+              _row(ticker: 'BTC', assetClass: AssetClass.cripto, avg: null, price: null),
             ],
           ),
           locale: 'en',
