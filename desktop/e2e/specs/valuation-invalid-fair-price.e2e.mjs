@@ -109,7 +109,9 @@ const modelSelect = () =>
   $('//label[normalize-space(.)="Valuation model"]/following-sibling::button[@role="combobox"]');
 const input = (label) => $(`//label[normalize-space(.)="${label}"]/following-sibling::input`);
 const calculateButton = () => $('//button[normalize-space(.)="Calculate"]');
-const saveButton = () => $('//button[starts-with(normalize-space(.),"Sav")]');
+// O "Save" do formulário é o irmão do "Calculate" (a tela tem outros botões que
+// começam com "Save", como "Save notes").
+const saveButton = () => $('//button[normalize-space(.)="Calculate"]/following-sibling::button');
 const saved = () => $('//p[normalize-space(.)="Saved."]');
 const redError = () =>
   $(`//p[contains(@class,"text-red-600") and contains(normalize-space(.),"${ERROR_TEXT}")]`);
