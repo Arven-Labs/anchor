@@ -5129,4 +5129,16 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   - Revertidas em `ab92dd7`.
 - **Lacuna que a quebra mostrou**: NaN e infinito só são cobertos por 1 teste (o de `valuation_outcome`); nenhum teste por modelo os cobre, e o justo exatamente 0 não é coberto em Graham, DCF, Banks e RIM. Não corrigi (fora de escopo, sem mudança de comportamento); anotado abaixo.
 - **Não verificado**: tela em execução e banco real (itens 3 e 4 do P10, inalterados); o CI do commit final de docs (conferir antes de mesclar).
-- **Anotado para depois**: teste por modelo para justo 0, NaN e infinito (4 modelos sem o caso 0; todos sem NaN/infinito), só se você achar que vale além do teste central.
+- **Anotado para depois**: teste por modelo para justo 0, NaN e infinito (4 modelos sem o caso 0; todos sem NaN/infinito), só se você achar que vale além do teste central. ✅ Feito na Sessão 319.
+
+## Sessão 319 — desktop: testes por modelo para justo 0, NaN e infinito (P10)
+- **Pedido**: "vc consegue fazer os testes sozinho?", fechar a lacuna anotada na 318. Tabela de comportamentos apresentada antes de escrever; nenhuma mudança em código de produção.
+- **Feito**: 10 testes novos em `domain/{bazin,gordon,projected_ceiling,rnav,banks,rim,dcf}.rs` (`rejects_non_finite_fair_price` em cada um, com NaN, +∞ e −∞; justo exatamente 0 em Banks, RIM e DCF) e o teste do Graham passou a cobrir também `INFINITY`. O Graham não precisa de teste de justo 0: o guard de entrada (`eps` e `vpa` ≤ 0) o impede.
+- **CI** (`workflow_dispatch` de `ci-desktop-rust.yml` na branch `p10-testes-por-modelo`): linha de base com os testes novos, run 42621120047, **1103 passaram, 0 falharam** (1093 + 10).
+- **Quebras propositais** (árvore final com `valuation_outcome.rs` idêntico à `main`):
+  - **A2**, `>=` (`b0613f2`, run 42621379408): 8 falharam (antes, na 318, eram 5); Banks, DCF e RIM agora pegam o justo 0.
+  - **C2**, sem `is_finite` (`90debe6`, run 42621803497): 8 falharam (antes 1): Banks, Bazin, DCF, Gordon, Graham, Projected Ceiling, RNAV e o teste central.
+  - Revertidas em `f70bd5f`.
+- **Limite conhecido**: o teste do RIM não falha na C2. Com VPA infinito o laço do RIM sempre produz NaN antes (`0 × ∞` ou `∞ − ∞`), e o NaN já é recusado por `> 0`; o `+∞` isolado é inalcançável nesse modelo. O mutante é equivalente, não é lacuna do teste.
+- **Local**: só `rustfmt --check` nos 8 arquivos (limpo); nenhum teste local (ADR 0009).
+- **Não verificado**: tela em execução e banco real (itens 3 e 4 do P10, inalterados); o CI do commit final de docs (conferir antes de mesclar).
