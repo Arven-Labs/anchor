@@ -45,7 +45,7 @@ class YahooQuoteService {
     AssetClass.fii ||
     AssetClass.etfBr ||
     AssetClass.etfRendaFixa ||
-    AssetClass.bdr => asset.ticker,
+    AssetClass.bdr => '${asset.ticker}.SA',
     AssetClass.acaoInternacional || AssetClass.reit || AssetClass.etfUs => asset.ticker,
     AssetClass.metal => _metalYahooSymbol[asset.ticker.toUpperCase()],
     _ => null,

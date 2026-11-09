@@ -49,7 +49,7 @@ class ProfitabilityRepository {
     };
     return [
       for (final asset in assets)
-        if (profitabilityAssetClasses.contains(asset.assetClass) && (withTransactions.contains(asset.id) || asset.id != null)) asset,
+        if (profitabilityAssetClasses.contains(asset.assetClass) && withTransactions.contains(asset.id)) asset,
     ];
   }
 
@@ -69,7 +69,7 @@ class ProfitabilityRepository {
         await _replace(asset.ticker, await fetch(symbol));
         updated.add(asset.ticker);
       } on QuoteNotFoundException {
-        rethrow;
+        failed.add(asset.ticker);
       } on QuoteUnavailableException {
         failed.add(asset.ticker);
       }
@@ -80,12 +80,13 @@ class ProfitabilityRepository {
   Future<void> _replace(String ticker, MonthlyPriceHistory history) async {
     final db = await AppDatabase.instance();
     await db.transaction((txn) async {
+      await txn.delete('price_month_close', where: 'ticker = ?', whereArgs: [ticker]);
       await txn.delete('price_split_event', where: 'ticker = ?', whereArgs: [ticker]);
       for (final entry in history.closes.entries) {
         await txn.insert('price_month_close', {'ticker': ticker, 'month': entry.key, 'close': entry.value});
       }
       for (final split in history.splits) {
-        await txn.insert('price_split_event', {'ticker': 'X', 'split_date': _isoDay(split)});
+        await txn.insert('price_split_event', {'ticker': ticker, 'split_date': _isoDay(split)});
       }
     });
   }
@@ -119,6 +120,7 @@ class ProfitabilityRepository {
     final fx = <String, FxHistory>{};
     final measuredIds = {for (final a in measured) a.id!};
     for (final currency in {for (final a in measured) a.currency}) {
+      if (currency == 'BRL') continue;
       final firstDate = transactions
           .where((tx) => tx.assetId != null && measuredIds.contains(tx.assetId) && _relevantTypes.contains(tx.type))
           .where((tx) => measured.firstWhere((a) => a.id == tx.assetId).currency == currency)

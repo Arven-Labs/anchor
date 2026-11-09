@@ -123,7 +123,7 @@ class _ProfitabilityScreenState extends State<ProfitabilityScreen> {
       final cumulative = [for (final m in result.months) m.rCumulativePct];
       final trailing = trailingTwelveMonthPct(cumulative);
       widgets
-        ..add(Text(l.profitabilityCumulative(_pct(cumulative.first, locale))))
+        ..add(Text(l.profitabilityCumulative(_pct(cumulative.last, locale))))
         ..add(Text(l.profitabilityTrailing12(trailing == null ? '—' : _pct(trailing, locale))))
         ..add(const SizedBox(height: 8));
       final scheme = Theme.of(context).colorScheme;

@@ -31,7 +31,7 @@ MonthlyPriceHistory parseYahooMonthlyHistory(String body, String symbol) {
       final close = rawCloses[i];
       if (close is! num) continue;
       final date = DateTime.fromMillisecondsSinceEpoch(timestamps[i].toInt() * 1000, isUtc: true);
-      closes['${date.year.toString().padLeft(4, '0')}-${date.month.toString()}'] = close.toDouble();
+      closes['${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}'] = close.toDouble();
     }
     if (closes.isEmpty) throw QuoteNotFoundException(symbol);
 
