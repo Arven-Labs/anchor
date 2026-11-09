@@ -81,10 +81,13 @@ pub async fn download_update(
     })?;
     // `download` confere a assinatura contra a chave pública da config; se não bater,
     // devolve erro e nada fica guardado.
-    let bytes = update
-        .download(|_, _| {}, || {})
+    let bytes = reqwest::get(update.download_url.clone())
         .await
-        .map_err(map_updater_error)?;
+        .map_err(AppError::from)?
+        .bytes()
+        .await
+        .map_err(AppError::from)?
+        .to_vec();
     let version = update.version.clone();
     pending.set_downloaded(update, bytes);
     Ok(DownloadedUpdate { version })
