@@ -5118,3 +5118,15 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Local**: só `flutter analyze` limpo, em cópia no scratchpad (apagada); nenhum teste local (ADR 0009).
 - **Não verificado**: o seletor de arquivo e a abertura do anexo no app do sistema em aparelho real (os plugins `file_picker` e `open_filex` não rodam em teste, entram por callback); `getApplicationDocumentsDirectory` real (a pasta base é um diretório temporário nos testes); arquivos grandes (sem limite de tamanho); a migração v25 → v26 sobre o banco real do dono (testada só com um v25 mínimo); o CI do commit final (conferido antes de mesclar).
 - **Anotado para depois**: migrar o anexo de ativo manual para este armazenamento (hoje sem teste de arquivo); preview do anexo dentro do app; mover os atalhos de IR, Custódias e Histórico para o menu "Mais"; renderizar Markdown, teses dentro da análise de ativo e sync com o desktop seguem fora. Ficam só no desktop a importação de extrato e o que for além disso.
+
+## Sessão 318 — desktop: quebra proposital da guarda do preço justo (P10)
+- **Pedido**: "vamos de a", fechar os itens 1 e 2 do "não verificado" do P10 (quebra proposital e prova de que os testes falham sem a guarda). Plano aprovado antes; só CI (ADR 0009).
+- **Achado**: o P10 cita `ensure_positive_fair_price` em `domain/mod.rs`, mas o PR #86 (`valuation_outcome`) centralizou a guarda em `ValuationOutcome::from_fair_price` (`domain/valuation_outcome.rs`). A função do #84 não existe mais; texto do P10 corrigido.
+- **Quebras propositais** (`workflow_dispatch` do `ci-desktop-rust.yml` na branch `p10-quebra-proposital`, base verde `625e0e0` com 1093 testes; árvore final idêntica à base, `git diff 625e0e0 HEAD` vazio):
+  - **A**, `> 0.0` virou `>= 0.0` (commit `e344b0e`, run 42618968595): 5 falharam. `valuation_outcome` e `rejects_non_positive_fair_price` de Bazin, Gordon, Projected Ceiling e RNAV. Graham, DCF, Banks e RIM não pegam o justo exatamente 0.
+  - **B**, sem a checagem `> 0` (`2819ae4`, run 42619267062): 8 falharam, incluindo `dcf::rejects_negative_fair_price_instead_of_calling_it_cheap` (o caso original do P10). Só o Graham passou, porque o justo negativo vira NaN e o `is_finite` mantido na B o pega.
+  - **C**, sem `is_finite` (`fc51020`, run 42619559804): só 1 falhou, `valuation_outcome::rejects_fair_price_that_is_not_finite_and_positive` (caso `INFINITY`).
+  - Revertidas em `ab92dd7`.
+- **Lacuna que a quebra mostrou**: NaN e infinito só são cobertos por 1 teste (o de `valuation_outcome`); nenhum teste por modelo os cobre, e o justo exatamente 0 não é coberto em Graham, DCF, Banks e RIM. Não corrigi (fora de escopo, sem mudança de comportamento); anotado abaixo.
+- **Não verificado**: tela em execução e banco real (itens 3 e 4 do P10, inalterados); o CI do commit final de docs (conferir antes de mesclar).
+- **Anotado para depois**: teste por modelo para justo 0, NaN e infinito (4 modelos sem o caso 0; todos sem NaN/infinito), só se você achar que vale além do teste central.
