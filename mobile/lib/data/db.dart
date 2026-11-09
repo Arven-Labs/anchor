@@ -74,7 +74,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 23,
+      version: 24,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -154,6 +154,7 @@ class AppDatabase {
         await _createCryptoScoreTables(db);
         await _createStockValuationTables(db);
         await _createWatchlistTables(db);
+        await _createPriceHistoryTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -360,8 +361,32 @@ class AppDatabase {
         if (oldVersion < 23) {
           await _createWatchlistTables(db);
         }
+        if (oldVersion < 24) {
+          await _createPriceHistoryTables(db);
+        }
       },
     );
+  }
+
+  /// Fechamento mensal por ticker e desdobramentos, para a rentabilidade (TWR). É cache do
+  /// Yahoo: "atualizar histórico" apaga e regrava as linhas do ticker. Só cria tabelas novas;
+  /// guardado por ticker (como a `stock_price_history` do desktop), sem ligação com `assets`.
+  static Future<void> _createPriceHistoryTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE price_month_close (
+        ticker TEXT NOT NULL,
+        month TEXT NOT NULL,
+        close REAL NOT NULL,
+        PRIMARY KEY (ticker, month)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE price_split_event (
+        ticker TEXT NOT NULL,
+        split_date TEXT NOT NULL,
+        PRIMARY KEY (ticker, split_date)
+      )
+    ''');
   }
 
   /// Watchlists nomeadas, seus itens e os favoritos (estrela). Sem `workspace_id`: o mobile

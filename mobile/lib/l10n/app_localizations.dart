@@ -4881,6 +4881,108 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Remove favorite'**
   String get favoriteRemove;
+
+  /// No description provided for @portfolioProfitability.
+  ///
+  /// In en, this message translates to:
+  /// **'Profitability'**
+  String get portfolioProfitability;
+
+  /// No description provided for @profitabilityTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Profitability'**
+  String get profitabilityTitle;
+
+  /// No description provided for @profitabilityBeforeTax.
+  ///
+  /// In en, this message translates to:
+  /// **'Return before taxes'**
+  String get profitabilityBeforeTax;
+
+  /// No description provided for @profitabilityRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Update price history'**
+  String get profitabilityRefresh;
+
+  /// No description provided for @profitabilityEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No buys, sells or income on stocks, REITs, ETFs, BDRs or metals to measure.'**
+  String get profitabilityEmpty;
+
+  /// No description provided for @profitabilityCumulative.
+  ///
+  /// In en, this message translates to:
+  /// **'Cumulative: {value}'**
+  String profitabilityCumulative(String value);
+
+  /// No description provided for @profitabilityTrailing12.
+  ///
+  /// In en, this message translates to:
+  /// **'Last 12 months: {value}'**
+  String profitabilityTrailing12(String value);
+
+  /// No description provided for @profitabilityFinalValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Final value: {value}'**
+  String profitabilityFinalValue(String value);
+
+  /// No description provided for @profitabilityCumulativeShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Cumulative {value}'**
+  String profitabilityCumulativeShort(String value);
+
+  /// No description provided for @profitabilityRefreshed.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 asset updated} other{{count} assets updated}}'**
+  String profitabilityRefreshed(int count);
+
+  /// No description provided for @profitabilityFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed: {tickers}'**
+  String profitabilityFailed(String tickers);
+
+  /// No description provided for @profitabilityExcludedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Left out (stock split)'**
+  String get profitabilityExcludedTitle;
+
+  /// No description provided for @profitabilityExcludedNote.
+  ///
+  /// In en, this message translates to:
+  /// **'The app does not record splits; these assets are left out so the value is not wrong.'**
+  String get profitabilityExcludedNote;
+
+  /// No description provided for @profitabilityExcludedLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{ticker}: split on {date}'**
+  String profitabilityExcludedLine(String ticker, String date);
+
+  /// No description provided for @profitErrMissingMonthPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'No price for {ticker} in {month}. Update the price history.'**
+  String profitErrMissingMonthPrice(String ticker, String month);
+
+  /// No description provided for @profitErrMissingFx.
+  ///
+  /// In en, this message translates to:
+  /// **'No exchange rate for {currency}. Check the connection and try again.'**
+  String profitErrMissingFx(String currency);
+
+  /// No description provided for @profitErrZeroDenominator.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no base to compute this month\'s return.'**
+  String get profitErrZeroDenominator;
 }
 
 class _AppLocalizationsDelegate

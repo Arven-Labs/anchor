@@ -1,6 +1,5 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
-
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -3099,4 +3098,82 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get favoriteRemove => 'Remover dos favoritos';
+
+  @override
+  String get portfolioProfitability => 'Rentabilidade';
+
+  @override
+  String get profitabilityTitle => 'Rentabilidade';
+
+  @override
+  String get profitabilityBeforeTax => 'Retorno antes de impostos';
+
+  @override
+  String get profitabilityRefresh => 'Atualizar histórico de preços';
+
+  @override
+  String get profitabilityEmpty =>
+      'Nenhuma compra, venda ou provento de ação, FII, ETF, BDR ou metal para medir.';
+
+  @override
+  String profitabilityCumulative(String value) {
+    return 'Acumulado: $value';
+  }
+
+  @override
+  String profitabilityTrailing12(String value) {
+    return 'Últimos 12 meses: $value';
+  }
+
+  @override
+  String profitabilityFinalValue(String value) {
+    return 'Valor final: $value';
+  }
+
+  @override
+  String profitabilityCumulativeShort(String value) {
+    return 'Acumulado $value';
+  }
+
+  @override
+  String profitabilityRefreshed(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ativos atualizados',
+      one: '1 ativo atualizado',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String profitabilityFailed(String tickers) {
+    return 'Falharam: $tickers';
+  }
+
+  @override
+  String get profitabilityExcludedTitle => 'Fora do cálculo (desdobramento)';
+
+  @override
+  String get profitabilityExcludedNote =>
+      'O celular não registra desdobramentos; esses ativos ficam de fora para o valor não sair errado.';
+
+  @override
+  String profitabilityExcludedLine(String ticker, String date) {
+    return '$ticker: desdobramento em $date';
+  }
+
+  @override
+  String profitErrMissingMonthPrice(String ticker, String month) {
+    return 'Falta o preço de $ticker em $month. Atualize o histórico de preços.';
+  }
+
+  @override
+  String profitErrMissingFx(String currency) {
+    return 'Falta o câmbio de $currency. Confira a conexão e tente de novo.';
+  }
+
+  @override
+  String get profitErrZeroDenominator =>
+      'Não há base para calcular o retorno deste mês.';
 }

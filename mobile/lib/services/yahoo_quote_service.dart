@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../domain/fx_history.dart';
+import '../domain/yahoo_monthly_history.dart';
+import '../models/asset.dart';
 import '../models/quote.dart';
 import 'quote_exceptions.dart';
 import 'quote_http.dart';
@@ -34,6 +36,37 @@ class YahooQuoteService {
     'XPT': 'Platinum',
     'XPD': 'Palladium',
   };
+
+  /// Símbolo do Yahoo para o histórico do ativo: `.SA` nas classes da B3, o próprio ticker
+  /// nas do exterior, o contrato futuro no metal. `null` para classe sem histórico aqui
+  /// (cripto, fundo, renda fixa, imóvel, empresa não listada).
+  static String? symbolFor(Asset asset) => switch (asset.assetClass) {
+    AssetClass.acaoBr ||
+    AssetClass.fii ||
+    AssetClass.etfBr ||
+    AssetClass.etfRendaFixa ||
+    AssetClass.bdr => '${asset.ticker}.SA',
+    AssetClass.acaoInternacional || AssetClass.reit || AssetClass.etfUs => asset.ticker,
+    AssetClass.metal => _metalYahooSymbol[asset.ticker.toUpperCase()],
+    _ => null,
+  };
+
+  /// Fechamento mensal de até 10 anos e os desdobramentos, numa chamada só. Limite de
+  /// requisições, timeout e rede fora são [QuoteUnavailableException]; símbolo que o Yahoo
+  /// não conhece (ou resposta sem dado) é [QuoteNotFoundException].
+  Future<MonthlyPriceHistory> fetchMonthlyHistory(String symbol) async {
+    final uri = Uri.parse('$_chartUrl/$symbol').replace(
+      queryParameters: {'range': '10y', 'interval': '1mo', 'events': 'split'},
+    );
+    final response = await quoteGet(
+      _client,
+      uri,
+      source: 'yahoo',
+      headers: {'User-Agent': 'Mozilla/5.0'},
+    );
+    if (response.statusCode != 200) throw QuoteNotFoundException(symbol);
+    return parseYahooMonthlyHistory(response.body, symbol);
+  }
 
   /// `suffix` é `.SA` (B3) por padrão — ação internacional chama com
   /// `suffix: ''`, mesmo parâmetro que

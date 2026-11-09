@@ -841,5 +841,23 @@
   "watchlistsNoTarget": "Sem alvo",
   "watchlistsRemove": "Remover",
   "favoriteAdd": "Favoritar",
-  "favoriteRemove": "Remover dos favoritos"
+  "favoriteRemove": "Remover dos favoritos",
+
+  "portfolioProfitability": "Rentabilidade",
+  "profitabilityTitle": "Rentabilidade",
+  "profitabilityBeforeTax": "Retorno antes de impostos",
+  "profitabilityRefresh": "Atualizar histórico de preços",
+  "profitabilityEmpty": "Nenhuma compra, venda ou provento de ação, FII, ETF, BDR ou metal para medir.",
+  "profitabilityCumulative": "Acumulado: {value}",
+  "profitabilityTrailing12": "Últimos 12 meses: {value}",
+  "profitabilityFinalValue": "Valor final: {value}",
+  "profitabilityCumulativeShort": "Acumulado {value}",
+  "profitabilityRefreshed": "{count, plural, =1{1 ativo atualizado} other{{count} ativos atualizados}}",
+  "profitabilityFailed": "Falharam: {tickers}",
+  "profitabilityExcludedTitle": "Fora do cálculo (desdobramento)",
+  "profitabilityExcludedNote": "O celular não registra desdobramentos; esses ativos ficam de fora para o valor não sair errado.",
+  "profitabilityExcludedLine": "{ticker}: desdobramento em {date}",
+  "profitErrMissingMonthPrice": "Falta o preço de {ticker} em {month}. Atualize o histórico de preços.",
+  "profitErrMissingFx": "Falta o câmbio de {currency}. Confira a conexão e tente de novo.",
+  "profitErrZeroDenominator": "Não há base para calcular o retorno deste mês."
 }
