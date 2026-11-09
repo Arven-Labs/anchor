@@ -40,10 +40,12 @@ void main() {
     ),
   );
 
+  // Avança também o relógio falso (50 ms por volta): sem isso a transição de tela e o diálogo
+  // nunca terminam, e o botão do canto ainda está fora da tela quando o teste toca nele.
   Future<void> settle(WidgetTester tester) async {
     for (var i = 0; i < 20; i++) {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
     }
   }
 
