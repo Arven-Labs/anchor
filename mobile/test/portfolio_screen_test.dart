@@ -9,6 +9,7 @@ import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/position.dart';
 import 'package:anchor_mobile/screens/portfolio_screen.dart';
+import 'package:anchor_mobile/screens/theses_screen.dart';
 import 'package:anchor_mobile/screens/watchlist_screen.dart';
 import 'package:anchor_mobile/services/live_positions.dart';
 import 'package:anchor_mobile/services/portfolio_repository.dart';
@@ -256,6 +257,19 @@ void main() {
     testWidgets('B20: só com cripto o ícone Rentabilidade não aparece', (tester) async {
       await pumpPortfolio(tester, [_row(ticker: 'BTC', assetClass: AssetClass.cripto)], locale: 'en');
       expect(find.byTooltip('Profitability'), findsNothing);
+    });
+
+    // Tabela de testes TC1: o ícone "Teses" abre a tela de teses.
+    testWidgets('TC1: o ícone Teses abre a tela de teses', (tester) async {
+      await pumpPortfolio(tester, [_row()], locale: 'en');
+
+      await tester.tap(find.byTooltip('Theses'));
+      for (var i = 0; i < 10; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump();
+      }
+
+      expect(find.byType(ThesesScreen), findsOneWidget);
     });
 
     testWidgets('28: o ícone da barra abre a tela de watchlists', (tester) async {
