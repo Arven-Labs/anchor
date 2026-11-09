@@ -59,6 +59,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rejects_non_finite_fair_price() {
+        for book_value_per_share in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let inputs = RimInputs {
+                book_value_per_share,
+                roe_current: 0.15,
+                payout: 0.4,
+                ke: 0.12,
+                fade_years: 5,
+            };
+
+            assert!(
+                matches!(calculate(&inputs, 40.0), Err(AppError::InvalidGuard(_))),
+                "VPA {book_value_per_share}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_zero_fair_price_when_book_value_is_zero() {
+        let inputs = RimInputs {
+            book_value_per_share: 0.0,
+            roe_current: 0.15,
+            payout: 0.4,
+            ke: 0.12,
+            fade_years: 5,
+        };
+
+        assert!(matches!(
+            calculate(&inputs, 40.0),
+            Err(AppError::InvalidGuard(_))
+        ));
+    }
+
+    #[test]
     fn rejects_non_positive_fair_price() {
         let mut inputs = base_inputs();
         inputs.book_value_per_share = -20.0;

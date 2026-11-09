@@ -25,15 +25,17 @@ mod tests {
 
     #[test]
     fn rejects_non_finite_fair_price() {
-        let inputs = GrahamInputs {
-            eps: f64::NAN,
-            book_value_per_share: 20.0,
-        };
+        for eps in [f64::NAN, f64::INFINITY] {
+            let inputs = GrahamInputs {
+                eps,
+                book_value_per_share: 20.0,
+            };
 
-        assert!(matches!(
-            calculate(&inputs, 20.0),
-            Err(AppError::InvalidGuard(_))
-        ));
+            assert!(
+                matches!(calculate(&inputs, 20.0), Err(AppError::InvalidGuard(_))),
+                "LPA {eps}"
+            );
+        }
     }
 
     #[test]

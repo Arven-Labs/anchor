@@ -27,6 +27,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rejects_non_finite_fair_price() {
+        for current_dividend in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let inputs = GordonInputs {
+                current_dividend,
+                expected_growth: 0.03,
+                ke: 0.10,
+            };
+
+            assert!(
+                matches!(calculate(&inputs, 40.0), Err(AppError::InvalidGuard(_))),
+                "dividendo atual {current_dividend}"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_non_positive_fair_price() {
         for current_dividend in [-2.0, 0.0] {
             let inputs = GordonInputs {
