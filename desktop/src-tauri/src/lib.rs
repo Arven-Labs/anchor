@@ -37,6 +37,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // Fase 11.3 — conexão de banco precisa de um `AppHandle` pra resolver
         // `app_data_dir()` em build de release (`db::resolve_database_path`),
         // que só existe a partir daqui — não dá mais pra conectar antes do
@@ -58,8 +59,11 @@ pub fn run() {
             Ok(())
         })
         .manage(AtomicBool::new(false))
+        .manage(commands::update_install::PendingUpdate::default())
         .invoke_handler(tauri::generate_handler![
             commands::update_check::check_for_update,
+            commands::update_install::download_update,
+            commands::update_install::install_update,
             commands::bazin::calculate_bazin,
             commands::bazin::save_bazin,
             commands::graham::calculate_graham,

@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { generateKeyPair, UPDATER_PORT } from "./specs/updater-keys.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appBinary =
@@ -67,7 +68,17 @@ export const config = {
   mochaOpts: { ui: "bdd", timeout: 240_000 },
   waitforTimeout: 20_000,
 
-  beforeSession: () => {
+  beforeSession: (_config, _capabilities, specs) => {
+    // O spec do updater (P9) precisa que o app, ao abrir, já aponte para o servidor local do
+    // teste e confie numa chave descartável: o app lê o ambiente que herda do tauri-driver.
+    // Só esse worker recebe isso; os outros specs seguem com o endpoint de verdade.
+    if (specs?.some((spec) => spec.includes("update-install"))) {
+      const keysDir = fs.mkdtempSync(path.join(os.tmpdir(), "anchor-e2e-updater-"));
+      const trusted = generateKeyPair(keysDir, "trusted");
+      process.env.ANCHOR_UPDATER_ENDPOINT = `http://127.0.0.1:${UPDATER_PORT}/latest.json`;
+      process.env.ANCHOR_UPDATER_PUBKEY = trusted.publicKey;
+      process.env.ANCHOR_E2E_UPDATER_KEY = trusted.privatePath;
+    }
     const bin = path.resolve(os.homedir(), ".cargo", "bin", "tauri-driver");
     tauriDriver = spawn(bin, [], { stdio: [null, process.stdout, process.stderr] });
     tauriDriver.on("error", (error) => {

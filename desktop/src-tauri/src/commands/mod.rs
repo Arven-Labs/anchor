@@ -52,6 +52,7 @@ pub mod thesis;
 pub mod transaction;
 pub mod truthid;
 pub mod update_check;
+pub mod update_install;
 pub mod valuation;
 pub mod watchlist;
 pub mod workspace;

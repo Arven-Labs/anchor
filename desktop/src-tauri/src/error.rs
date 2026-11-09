@@ -47,6 +47,10 @@ pub enum AppError {
     /// o dado antigo como `stale`.
     #[error("data provider unavailable: {0}")]
     ProviderUnavailable(String),
+    /// P9 — o pacote de atualização não passou na verificação de assinatura
+    /// (ou veio com assinatura ilegível). Nada foi instalado.
+    #[error("update rejected: {0}")]
+    UpdateRejected(String),
 }
 
 impl AppError {
@@ -72,6 +76,7 @@ impl AppError {
             AppError::CryptoSource(_) => "CRYPTO_SOURCE_ERROR",
             AppError::NoData(_) => "NO_DATA",
             AppError::ProviderUnavailable(_) => "PROVIDER_UNAVAILABLE",
+            AppError::UpdateRejected(_) => "UPDATE_REJECTED",
         }
     }
 }
