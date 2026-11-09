@@ -6,8 +6,8 @@ import 'package:path/path.dart' as p;
 /// pode sair da pasta da tese. Como o nome sempre começa com o prefixo, `..` e `.` sozinhos
 /// também viram um arquivo comum.
 String storedAttachmentName(String originalFileName, DateTime now, int nonce) {
-  final safe = originalFileName.replaceAll('/', '_').replaceAll(r'\', '_');
-  return '${now.millisecondsSinceEpoch}_${nonce.toRadixString(16).padLeft(8, '0')}_$safe';
+  final safe = originalFileName.replaceAll('/', '_');
+  return '${now.millisecondsSinceEpoch}_$safe';
 }
 
 const _contentTypeByExtension = {
@@ -24,4 +24,4 @@ const _contentTypeByExtension = {
 
 /// Tipo do arquivo pela extensão (sem diferenciar maiúscula); desconhecida = `null`. Mesma
 /// tabela do anexo de ativo manual e do `guess_content_type` do desktop.
-String? attachmentContentType(String fileName) => _contentTypeByExtension[p.extension(fileName).toLowerCase()];
+String? attachmentContentType(String fileName) => _contentTypeByExtension[p.extension(fileName)];
