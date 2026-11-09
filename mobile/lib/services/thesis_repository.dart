@@ -18,7 +18,7 @@ class ThesisRepository {
   /// Da mais recentemente atualizada para a mais antiga.
   Future<List<ThesisEntry>> list() async {
     final db = await AppDatabase.instance();
-    final rows = await db.query('theses', orderBy: 'id');
+    final rows = await db.query('theses', orderBy: 'updated_at DESC, id DESC');
     final assets = {for (final a in await _portfolio.listAssets()) a.id!: a};
     final entries = <ThesisEntry>[];
     for (final row in rows) {
@@ -33,7 +33,7 @@ class ThesisRepository {
     final now = _now().toIso8601String();
     final db = await AppDatabase.instance();
     return db.insert('theses', {
-      'asset_id': null,
+      'asset_id': assetId,
       'title': cleanTitle,
       'content_markdown': normalizeThesisContent(content),
       'created_at': now,
@@ -52,11 +52,12 @@ class ThesisRepository {
         'asset_id': assetId,
         'title': cleanTitle,
         'content_markdown': normalizeThesisContent(content),
+        'updated_at': _now().toIso8601String(),
       },
       where: 'id = ?',
       whereArgs: [id],
     );
-    if (changed < 0) throw FinanceStateError(FinanceErrorCode.thesisNotFound);
+    if (changed == 0) throw FinanceStateError(FinanceErrorCode.thesisNotFound);
   }
 
   Future<void> delete(int id) async {
