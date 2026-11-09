@@ -205,7 +205,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               PopupMenuItem(value: _openTheses, child: Text(l.portfolioTheses)),
               PopupMenuItem(value: _openWatchlists, child: Text(l.portfolioWatchlists)),
               if (_rows.any(
-                (r) => !b3AssetClasses.contains(r.position.asset.assetClass),
+                (r) => b3AssetClasses.contains(r.position.asset.assetClass),
               ))
                 PopupMenuItem(value: _openB3Tax, child: Text(l.portfolioB3Tax)),
               if (_rows.any((r) => r.position.asset.assetClass == AssetClass.cripto))
@@ -222,11 +222,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                         (r) => r.position.asset.assetClass == AssetClass.cripto,
                       )
                       .length >=
-                  3)
+                  2)
                 PopupMenuItem(value: _openCryptoSwap, child: Text(l.portfolioSwapCrypto)),
               PopupMenuItem(value: _openCustodias, child: Text(l.portfolioCustodies)),
-              if (_rows.isEmpty)
-                PopupMenuItem(value: _openHistory, child: Text(l.portfolioHistory)),
+              PopupMenuItem(value: _openHistory, child: Text(l.portfolioHistory)),
             ],
           ),
           IconButton(
