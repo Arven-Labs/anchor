@@ -78,7 +78,8 @@ void main() {
     await settle(tester);
   }
 
-  Future<int> thesisId(WidgetTester tester) async => (await tester.runAsync(theses.list))!.single.thesis.id;
+  // Só chamado de dentro de um `runAsync` (o `runAsync` não pode ser aninhado).
+  Future<int> thesisId() async => (await theses.list()).single.thesis.id;
 
   testWidgets('TV1: tese nova (ainda não salva) não mostra a seção de anexos', (tester) async {
     await pumpEdit(tester, existing: false);
@@ -103,7 +104,7 @@ void main() {
     expect(find.text('relatorio.pdf'), findsOneWidget);
     expect(find.text('12 B'), findsOneWidget);
     expect(find.text('Nenhum anexo ainda.'), findsNothing);
-    final saved = await tester.runAsync(() async => attachments.list(await thesisId(tester)));
+    final saved = await tester.runAsync(() async => attachments.list(await thesisId()));
     expect(saved, hasLength(1));
   });
 
@@ -155,7 +156,7 @@ void main() {
     await pumpEdit(tester, pickFile: () async => path);
     await tester.tap(find.byKey(const Key('thesis-add-attachment-button')));
     await settle(tester);
-    final attachment = (await tester.runAsync(() async => (await attachments.list(await thesisId(tester))).single))!;
+    final attachment = (await tester.runAsync(() async => (await attachments.list(await thesisId())).single))!;
     final stored = await tester.runAsync(() => attachments.absolutePath(attachment));
 
     await tester.tap(find.byKey(Key('thesis-attachment-delete-${attachment.id}')));
