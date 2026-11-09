@@ -27,6 +27,14 @@
       }
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI5Q0Y1QTI0MEVFRTc4MDAKUldRQWVPNE9KRnJQS1g2U0FKSk1xK2g3YUpUTlhSUFpXdkZTVGdDNkloR2JETXhoZi9wN3ZhTGQK",
+      "endpoints": [
+        "https://github.com/Arven-Labs/anchor/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
