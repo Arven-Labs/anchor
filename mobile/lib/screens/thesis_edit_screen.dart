@@ -87,7 +87,7 @@ class _ThesisEditScreenState extends State<ThesisEditScreen> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed == null) return;
     await widget.repository.delete(entry.thesis.id);
     if (mounted) Navigator.of(context).pop(true);
   }
