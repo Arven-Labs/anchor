@@ -8,8 +8,10 @@ import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/position.dart';
+import 'package:anchor_mobile/screens/custodias_screen.dart';
 import 'package:anchor_mobile/screens/portfolio_screen.dart';
 import 'package:anchor_mobile/screens/theses_screen.dart';
+import 'package:anchor_mobile/screens/transaction_history_screen.dart';
 import 'package:anchor_mobile/screens/watchlist_screen.dart';
 import 'package:anchor_mobile/services/live_positions.dart';
 import 'package:anchor_mobile/services/portfolio_repository.dart';
@@ -20,6 +22,7 @@ import 'support/localized_app.dart';
 Future<AppLocalizations> _load(String code) => AppLocalizations.delegate.load(Locale(code));
 
 LivePositionRow _row({
+  int id = 1,
   String ticker = 'PETR4',
   double quantity = 10,
   double? avg = 20,
@@ -29,7 +32,7 @@ LivePositionRow _row({
 }) => LivePositionRow(
   Position(
     asset: Asset(
-      id: 1,
+      id: id,
       ticker: ticker,
       name: 'Petrobras',
       assetClass: assetClass,
@@ -154,37 +157,102 @@ void main() {
       expect(find.text('Value: —'), findsOneWidget);
     });
 
-    testWidgets('sem ativos: aviso e botão traduzidos; tooltips da barra', (tester) async {
+    // Os atalhos (Rentabilidade, Teses, Watchlists, IR, Permuta, Custódias, Histórico) moram
+    // num menu "Mais" da barra: a barra não cabe um ícone por atalho em celular estreito (390 px).
+    Future<void> openMoreMenu(WidgetTester tester, String tooltip) async {
+      await tester.tap(find.byTooltip(tooltip));
+      for (var i = 0; i < 10; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    // Os 5 itens condicionais do menu (IR e Permuta), pelo rótulo em inglês.
+    const conditionalItems = ['B3 tax', 'Crypto tax', 'Foreign tax', 'Fund tax', 'Swap crypto'];
+
+    void expectConditionalItems(Set<String> shown) {
+      for (final item in conditionalItems) {
+        expect(
+          find.text(item),
+          shown.contains(item) ? findsOneWidget : findsNothing,
+          reason: item,
+        );
+      }
+    }
+
+    testWidgets('sem ativos: aviso e botão traduzidos; na barra só "More" e "Add asset"', (
+      tester,
+    ) async {
       await pumpPortfolio(tester, const [], locale: 'en');
 
       expect(find.text('No assets yet.'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Add asset'), findsOneWidget);
-      expect(find.byTooltip('Custodians'), findsOneWidget);
-      expect(find.byTooltip('History'), findsOneWidget);
+      expect(find.byTooltip('More'), findsOneWidget);
       expect(find.byTooltip('Add asset'), findsOneWidget);
+      for (final tooltip in ['Custodians', 'History', ...conditionalItems]) {
+        expect(find.byTooltip(tooltip), findsNothing, reason: tooltip);
+      }
     });
 
-    testWidgets('pt: aviso, botão e tooltips de antes', (tester) async {
+    testWidgets('sem ativos: o menu tem Theses, Watchlists, Custodians e History, sem itens de IR', (
+      tester,
+    ) async {
+      await pumpPortfolio(tester, const [], locale: 'en');
+      await openMoreMenu(tester, 'More');
+
+      for (final item in ['Theses', 'Watchlists', 'Custodians', 'History']) {
+        expect(find.text(item), findsOneWidget, reason: item);
+      }
+      expectConditionalItems({});
+    });
+
+    testWidgets('pt: aviso, botão e itens do menu em português', (tester) async {
       await pumpPortfolio(tester, const []);
 
       expect(find.text('Nenhum ativo cadastrado ainda.'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Adicionar ativo'), findsOneWidget);
-      expect(find.byTooltip('Custódias'), findsOneWidget);
-      expect(find.byTooltip('Histórico'), findsOneWidget);
+      expect(find.byTooltip('Custódias'), findsNothing);
+      expect(find.byTooltip('Histórico'), findsNothing);
+
+      await openMoreMenu(tester, 'Mais');
+      expect(find.text('Custódias'), findsOneWidget);
+      expect(find.text('Histórico'), findsOneWidget);
     });
 
-    testWidgets('tooltips de imposto aparecem só com a classe de ativo certa', (tester) async {
+    testWidgets('com uma cripto: o menu tem IR de cripto e não tem Permuta', (tester) async {
       await pumpPortfolio(
         tester,
         [_row(ticker: 'BTC', assetClass: AssetClass.cripto)],
         locale: 'en',
       );
+      await openMoreMenu(tester, 'More');
 
-      expect(find.byTooltip('Crypto tax'), findsOneWidget);
-      expect(find.byTooltip('Swap crypto'), findsNothing); // só com duas criptos
-      expect(find.byTooltip('Foreign tax'), findsNothing);
-      expect(find.byTooltip('Fund tax'), findsNothing);
-      expect(find.byTooltip('B3 tax'), findsNothing);
+      expectConditionalItems({'Crypto tax'}); // Permuta só com duas criptos
+    });
+
+    testWidgets('com duas criptos: o menu tem IR de cripto e Permuta', (tester) async {
+      await pumpPortfolio(
+        tester,
+        [
+          _row(ticker: 'BTC', assetClass: AssetClass.cripto),
+          _row(id: 2, ticker: 'ETH', assetClass: AssetClass.cripto),
+        ],
+        locale: 'en',
+      );
+      await openMoreMenu(tester, 'More');
+
+      expectConditionalItems({'Crypto tax', 'Swap crypto'});
+    });
+
+    testWidgets('com um fundo: o menu tem só IR de fundos', (tester) async {
+      await pumpPortfolio(
+        tester,
+        [_row(ticker: 'FUNDO1', assetClass: AssetClass.fundo)],
+        locale: 'en',
+      );
+      await openMoreMenu(tester, 'More');
+
+      expectConditionalItems({'Fund tax'});
     });
 
     // Um teste por classe: um 2º `pumpWidget` no mesmo teste reaproveita o estado da tela
@@ -195,22 +263,71 @@ void main() {
       AssetClass.bdr,
       AssetClass.fii,
     ]) {
-      testWidgets('IR de B3 aparece com ativo da classe ${assetClass.name}', (tester) async {
+      testWidgets('IR de B3 aparece no menu com ativo da classe ${assetClass.name}', (
+        tester,
+      ) async {
         await pumpPortfolio(tester, [_row(ticker: 'XPTO3', assetClass: assetClass)], locale: 'en');
-        expect(find.byTooltip('B3 tax'), findsOneWidget);
-        expect(find.byTooltip('Crypto tax'), findsNothing);
+        await openMoreMenu(tester, 'More');
+        expectConditionalItems({'B3 tax'});
       });
     }
 
-    testWidgets('IR de B3 some com ativo do exterior, que tem o IR de exterior', (tester) async {
+    testWidgets('IR de B3 some do menu com ativo do exterior, que tem o IR de exterior', (
+      tester,
+    ) async {
       await pumpPortfolio(
         tester,
         [_row(ticker: 'AAPL', assetClass: AssetClass.acaoInternacional)],
         locale: 'en',
       );
-      expect(find.byTooltip('B3 tax'), findsNothing);
-      expect(find.byTooltip('Foreign tax'), findsOneWidget);
+      await openMoreMenu(tester, 'More');
+      expectConditionalItems({'Foreign tax'});
     });
+
+    // Tocar no item abre a tela e, ao voltar, a Carteira recarrega as posições.
+    for (final entry in {
+      'Custodians': CustodiasScreen,
+      'History': TransactionHistoryScreen,
+    }.entries) {
+      testWidgets('o item ${entry.key} do menu abre a tela e recarrega ao voltar', (tester) async {
+        var loads = 0;
+        tester.view.physicalSize = const Size(800, 3000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.runAsync(AppDatabase.instance);
+        await tester.pumpWidget(
+          localizedApp(
+            PortfolioScreen(
+              loadPositions: () async {
+                loads++;
+                return [_row()];
+              },
+            ),
+            locale: 'en',
+          ),
+        );
+        for (var i = 0; i < 20; i++) {
+          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+          await tester.pump();
+        }
+        final loadsBefore = loads;
+
+        await openMoreMenu(tester, 'More');
+        await tester.tap(find.text(entry.key));
+        for (var i = 0; i < 20; i++) {
+          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        expect(find.byType(entry.value), findsOneWidget);
+
+        Navigator.of(tester.element(find.byType(entry.value))).pop();
+        for (var i = 0; i < 20; i++) {
+          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        expect(loads, greaterThan(loadsBefore));
+      });
+    }
 
     // Tabela de testes 28: a estrela do card liga e desliga o favorito, e o ícone da barra
     // abre a tela de watchlists.
@@ -247,16 +364,6 @@ void main() {
       expect(find.byIcon(Icons.star_border), findsOneWidget);
       expect(await tester.runAsync(repository.listFavorites), isEmpty);
     });
-
-    // Os atalhos novos (Rentabilidade, Teses, Watchlists) moram num menu "Mais" da barra: a
-    // barra não cabe mais um ícone por atalho em celular estreito (390 px).
-    Future<void> openMoreMenu(WidgetTester tester, String tooltip) async {
-      await tester.tap(find.byTooltip(tooltip));
-      for (var i = 0; i < 10; i++) {
-        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
-        await tester.pump(const Duration(milliseconds: 50));
-      }
-    }
 
     // Tabela de testes B20: o item "Rentabilidade" só aparece com ativo de classe medida.
     testWidgets('B20: item Rentabilidade aparece no menu com ação', (tester) async {
