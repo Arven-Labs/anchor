@@ -239,7 +239,7 @@ class _ThesisEditScreenState extends State<ThesisEditScreen> {
             child: Text(l.actionSave),
           ),
           // O anexo precisa do id da tese: em tese nova, salva primeiro e depois anexa.
-          if (adding || widget.entry != null) ...[
+          if (!adding) ...[
             const Divider(height: 32),
             Column(
               key: const Key('thesis-attachments-section'),

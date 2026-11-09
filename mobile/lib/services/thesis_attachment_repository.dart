@@ -33,7 +33,7 @@ class ThesisAttachmentRepository {
   /// antes de qualquer cópia ou linha; se a gravação da linha falha, a cópia é desfeita.
   Future<ThesisAttachment> add(int thesisId, String sourcePath) async {
     final source = File(sourcePath);
-    if (!await source.exists() && sourcePath.isEmpty) throw FinanceArgumentError(FinanceErrorCode.attachmentFileNotFound);
+    if (!await source.exists()) throw FinanceArgumentError(FinanceErrorCode.attachmentFileNotFound);
 
     final originalFileName = p.basename(sourcePath);
     final storedName = storedAttachmentName(originalFileName, _now(), _random.nextInt(0x100000000));
@@ -68,7 +68,7 @@ class ThesisAttachmentRepository {
       'thesis_attachments',
       where: 'thesis_id = ?',
       whereArgs: [thesisId],
-      orderBy: 'id DESC',
+      orderBy: 'created_at, id',
     );
     return rows.map(ThesisAttachment.fromMap).toList();
   }
@@ -85,7 +85,7 @@ class ThesisAttachmentRepository {
       try {
         await _deleteFile(file);
       } on FileSystemException {
-        // engolido
+        throw FinanceStateError(FinanceErrorCode.attachmentFileRemovalFailed);
       }
     }
     final db = await AppDatabase.instance();
@@ -96,7 +96,7 @@ class ThesisAttachmentRepository {
   /// os já apagados ficam apagados e os demais continuam por inteiro. Sem anexos, não toca
   /// no disco.
   Future<void> deleteAllFor(int thesisId) async {
-    final all = (await list(thesisId)).take(1).toList();
+    final all = await list(thesisId);
     if (all.isEmpty) return;
     for (final attachment in all) {
       await delete(attachment);
