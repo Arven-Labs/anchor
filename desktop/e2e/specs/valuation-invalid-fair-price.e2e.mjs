@@ -1,4 +1,4 @@
-import { $, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 import { byId, clickCentered, enterWorkspace, pickOption, snap, sql } from "./helpers.mjs";
 
 // P10 — preço justo <= 0 não pode virar "Barata". A guarda mora no Rust
@@ -109,6 +109,8 @@ const modelSelect = () =>
   $('//label[normalize-space(.)="Valuation model"]/following-sibling::button[@role="combobox"]');
 const input = (label) => $(`//label[normalize-space(.)="${label}"]/following-sibling::input`);
 const calculateButton = () => $('//button[normalize-space(.)="Calculate"]');
+const saveButton = () => $('//button[starts-with(normalize-space(.),"Sav")]');
+const saved = () => $('//p[normalize-space(.)="Saved."]');
 const redError = () =>
   $(`//p[contains(@class,"text-red-600") and contains(normalize-space(.),"${ERROR_TEXT}")]`);
 const verdict = () => $('//p[starts-with(normalize-space(.),"Verdict:")]');
@@ -153,6 +155,19 @@ describe("Anchor — preço justo <= 0 nos 8 modelos de valuation", () => {
       await snap(`valuation-invalid-${model}`);
 
       expect(await verdict().isExisting()).toBe(false);
+
+      // O "Save" passa pelo mesmo `calculate` do Rust: com a mesma entrada
+      // também tem de recusar, sem "Saved." e sem gravar linha no banco.
+      await clickCentered(saveButton());
+      await browser.waitUntil(async () => (await saveButton().getText()) === "Save", {
+        timeout: 20_000,
+        timeoutMsg: "o botão Save não voltou ao estado normal",
+      });
+      await (await redError()).waitForDisplayed({ timeout: 20_000 });
+
+      expect(await saved().isExisting()).toBe(false);
+      expect(await verdict().isExisting()).toBe(false);
+      expect(sql("SELECT COUNT(*) FROM valuation WHERE ticker = 'TEST3'")).toBe("0");
     });
   }
 });
