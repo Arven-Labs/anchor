@@ -5141,4 +5141,15 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
   - Revertidas em `f70bd5f`.
 - **Limite conhecido**: o teste do RIM não falha na C2. Com VPA infinito o laço do RIM sempre produz NaN antes (`0 × ∞` ou `∞ − ∞`), e o NaN já é recusado por `> 0`; o `+∞` isolado é inalcançável nesse modelo. O mutante é equivalente, não é lacuna do teste.
 - **Local**: só `rustfmt --check` nos 8 arquivos (limpo); nenhum teste local (ADR 0009).
-- **Não verificado**: tela em execução e banco real (itens 3 e 4 do P10, inalterados); o CI do commit final de docs (conferir antes de mesclar).
+- **Não verificado**: tela em execução e banco real (itens 3 e 4 do P10, inalterados; fechados na Sessão 320); o CI do commit final de docs (conferir antes de mesclar).
+
+## Sessão 320 — desktop: E2E do preço justo ≤ 0 nos 8 formulários (P10, itens 3 e 4)
+- **Pedido**: "vamos de item 3 e 4". Decisões do dono: item 3 por E2E dos 8 modelos (não só do Bazin); item 4: não existe banco real de uso.
+- **Item 4**: `anchor.db` do volume `anchor_app-data` segue com 0 bytes (última escrita em 2026-08-08); o `finance_api.db` (221 KB) é só cache de mercado, sem tabela `valuation`. Não há banco real nesta máquina e o dono confirmou que não existe outro: nenhum valuation salvo antes do PR #84 pode existir. Fechado como não aplicável.
+- **Item 3** (`desktop/e2e/specs/valuation-invalid-fair-price.e2e.mjs`, 9 casos): abre a análise de `TEST3`, "New Valuation", e para cada modelo digita uma entrada que força justo ≤ 0, clica em Calculate e confere o erro em vermelho ("greater than zero") e a ausência de "Verdict:". **Sem tocar em código de produção**: o `Label` não é ligado ao `Input`, então os campos saem pelo texto do rótulo (XPath). O `SelectTrigger` do Radix é irmão direto do `<label>`; a 1ª rodada falhou por eu ter escrito um nível a mais no XPath (run 42624419411, 9 falhas em cascata).
+- **CI** (`workflow_dispatch` de `ci-desktop-e2e.yml` na branch `p10-e2e-justo-invalido`): verde, run 42625718667, **17 de 17 specs**, 9 de 9 casos.
+- **Capturas olhadas** (8 PNG, baixados no scratchpad): erro em vermelho abaixo dos botões e nenhum cartão de resultado nem selo de veredito, nos 8 formulários. 7 modelos mostram `fair price must be greater than zero`; o Graham mostra `EPS and book value per share must both be greater than zero` (justo negativo é impossível nele, quem barra é o guard de entrada).
+- **Quebra proposital** (commit `31e5198`, run 42626775632): com a guarda do justo desligada (`if false`), **7 dos 8 modelos falham** no E2E e só o Graham passa, como previsto. Revertida em `abd9412`; `git diff origin/main` só mostra o spec novo.
+- **Achado de UX, não corrigido**: a mensagem da guarda central começa em minúscula (`fair price must be...`), a do Graham em maiúscula. Cosmético; só vale corrigir junto de outra mudança nessas mensagens.
+- **Local**: nenhum build nem teste (ADR 0009); só leitura de código e de logs do CI.
+- **Não verificado**: o fluxo "Save" (só o Calculate foi exercitado; os dois passam pelo mesmo `domain::*::calculate`); a captura do DCF mostra só o fim do formulário (o EBIT fica acima da dobra), mas o spec digita todos os campos; o CI do commit final de docs (conferir antes de mesclar).
