@@ -1111,5 +1111,22 @@
   "@profitErrMissingMonthPrice": {"placeholders": {"ticker": {"type": "String"}, "month": {"type": "String"}}},
   "profitErrMissingFx": "No exchange rate for {currency}. Check the connection and try again.",
   "@profitErrMissingFx": {"placeholders": {"currency": {"type": "String"}}},
-  "profitErrZeroDenominator": "There is no base to compute this month's return."
+  "profitErrZeroDenominator": "There is no base to compute this month's return.",
+
+  "finErrThesisTitleRequired": "Enter the thesis title",
+  "finErrThesisNotFound": "Thesis not found",
+  "portfolioTheses": "Theses",
+  "thesesTitle": "Theses",
+  "thesesEmpty": "No theses yet.",
+  "thesesGlobal": "Global",
+  "thesesSubtitle": "{label} · {date}",
+  "@thesesSubtitle": {"placeholders": {"label": {"type": "String"}, "date": {"type": "String"}}},
+  "thesesNew": "New thesis",
+  "thesisEditTitle": "Edit thesis",
+  "thesisFieldTitle": "Title",
+  "thesisFieldAsset": "Asset (optional)",
+  "thesisAssetGlobal": "Global (no asset)",
+  "thesisFieldContent": "Text (Markdown)",
+  "thesisDeleteTitle": "Delete this thesis?",
+  "thesisDeleteBody": "The thesis text will be deleted and cannot be recovered."
 }

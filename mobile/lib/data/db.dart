@@ -74,7 +74,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 24,
+      version: 25,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -155,6 +155,7 @@ class AppDatabase {
         await _createStockValuationTables(db);
         await _createWatchlistTables(db);
         await _createPriceHistoryTables(db);
+        await _createThesisTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -364,8 +365,28 @@ class AppDatabase {
         if (oldVersion < 24) {
           await _createPriceHistoryTables(db);
         }
+        if (oldVersion < 25) {
+          await _createThesisTables(db);
+        }
       },
     );
+  }
+
+  /// Teses de investimento: título, texto em Markdown e vínculo opcional com um ativo
+  /// (`asset_id` nulo = global/macro). Sem `workspace_id` (o mobile não tem Workspace) e sem
+  /// FK: o `PRAGMA foreign_keys` não está ligado, então a tese de um ativo apagado segue na
+  /// lista como global (o repositório não depende do `REFERENCES`).
+  static Future<void> _createThesisTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE theses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset_id INTEGER,
+        title TEXT NOT NULL,
+        content_markdown TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
   }
 
   /// Fechamento mensal por ticker e desdobramentos, para a rentabilidade (TWR). É cache do

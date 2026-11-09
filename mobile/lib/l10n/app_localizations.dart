@@ -4983,6 +4983,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'There is no base to compute this month\'s return.'**
   String get profitErrZeroDenominator;
+
+  /// No description provided for @finErrThesisTitleRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the thesis title'**
+  String get finErrThesisTitleRequired;
+
+  /// No description provided for @finErrThesisNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Thesis not found'**
+  String get finErrThesisNotFound;
+
+  /// No description provided for @portfolioTheses.
+  ///
+  /// In en, this message translates to:
+  /// **'Theses'**
+  String get portfolioTheses;
+
+  /// No description provided for @thesesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Theses'**
+  String get thesesTitle;
+
+  /// No description provided for @thesesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No theses yet.'**
+  String get thesesEmpty;
+
+  /// No description provided for @thesesGlobal.
+  ///
+  /// In en, this message translates to:
+  /// **'Global'**
+  String get thesesGlobal;
+
+  /// No description provided for @thesesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} · {date}'**
+  String thesesSubtitle(String label, String date);
+
+  /// No description provided for @thesesNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New thesis'**
+  String get thesesNew;
+
+  /// No description provided for @thesisEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit thesis'**
+  String get thesisEditTitle;
+
+  /// No description provided for @thesisFieldTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get thesisFieldTitle;
+
+  /// No description provided for @thesisFieldAsset.
+  ///
+  /// In en, this message translates to:
+  /// **'Asset (optional)'**
+  String get thesisFieldAsset;
+
+  /// No description provided for @thesisAssetGlobal.
+  ///
+  /// In en, this message translates to:
+  /// **'Global (no asset)'**
+  String get thesisAssetGlobal;
+
+  /// No description provided for @thesisFieldContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Text (Markdown)'**
+  String get thesisFieldContent;
+
+  /// No description provided for @thesisDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this thesis?'**
+  String get thesisDeleteTitle;
+
+  /// No description provided for @thesisDeleteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The thesis text will be deleted and cannot be recovered.'**
+  String get thesisDeleteBody;
 }
 
 class _AppLocalizationsDelegate

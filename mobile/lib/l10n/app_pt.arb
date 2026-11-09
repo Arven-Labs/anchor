@@ -859,5 +859,21 @@
   "profitabilityExcludedLine": "{ticker}: desdobramento em {date}",
   "profitErrMissingMonthPrice": "Falta o preço de {ticker} em {month}. Atualize o histórico de preços.",
   "profitErrMissingFx": "Falta o câmbio de {currency}. Confira a conexão e tente de novo.",
-  "profitErrZeroDenominator": "Não há base para calcular o retorno deste mês."
+  "profitErrZeroDenominator": "Não há base para calcular o retorno deste mês.",
+
+  "finErrThesisTitleRequired": "Informe o título da tese",
+  "finErrThesisNotFound": "Tese não encontrada",
+  "portfolioTheses": "Teses",
+  "thesesTitle": "Teses",
+  "thesesEmpty": "Nenhuma tese ainda.",
+  "thesesGlobal": "Global",
+  "thesesSubtitle": "{label} · {date}",
+  "thesesNew": "Nova tese",
+  "thesisEditTitle": "Editar tese",
+  "thesisFieldTitle": "Título",
+  "thesisFieldAsset": "Ativo (opcional)",
+  "thesisAssetGlobal": "Global (sem ativo)",
+  "thesisFieldContent": "Texto (Markdown)",
+  "thesisDeleteTitle": "Excluir esta tese?",
+  "thesisDeleteBody": "O texto da tese será apagado e não dá para recuperar."
 }

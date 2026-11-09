@@ -3177,4 +3177,52 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get profitErrZeroDenominator =>
       'There is no base to compute this month\'s return.';
+
+  @override
+  String get finErrThesisTitleRequired => 'Enter the thesis title';
+
+  @override
+  String get finErrThesisNotFound => 'Thesis not found';
+
+  @override
+  String get portfolioTheses => 'Theses';
+
+  @override
+  String get thesesTitle => 'Theses';
+
+  @override
+  String get thesesEmpty => 'No theses yet.';
+
+  @override
+  String get thesesGlobal => 'Global';
+
+  @override
+  String thesesSubtitle(String label, String date) {
+    return '$label · $date';
+  }
+
+  @override
+  String get thesesNew => 'New thesis';
+
+  @override
+  String get thesisEditTitle => 'Edit thesis';
+
+  @override
+  String get thesisFieldTitle => 'Title';
+
+  @override
+  String get thesisFieldAsset => 'Asset (optional)';
+
+  @override
+  String get thesisAssetGlobal => 'Global (no asset)';
+
+  @override
+  String get thesisFieldContent => 'Text (Markdown)';
+
+  @override
+  String get thesisDeleteTitle => 'Delete this thesis?';
+
+  @override
+  String get thesisDeleteBody =>
+      'The thesis text will be deleted and cannot be recovered.';
 }

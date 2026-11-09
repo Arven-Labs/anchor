@@ -21,6 +21,7 @@ import 'foreign_tax_screen.dart';
 import 'fund_tax_screen.dart';
 import 'manual_asset_details_screen.dart';
 import 'profitability_screen.dart';
+import 'theses_screen.dart';
 import 'transaction_history_screen.dart';
 import 'watchlist_screen.dart';
 
@@ -95,6 +96,12 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     setState(() {
       _favoriteIds = nowFavorite ? {..._favoriteIds, assetId} : ({..._favoriteIds}..remove(assetId));
     });
+  }
+
+  Future<void> _openTheses() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ThesesScreen()));
   }
 
   Future<void> _openProfitability() async {
@@ -233,6 +240,11 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               tooltip: l.portfolioProfitability,
               onPressed: _openProfitability,
             ),
+          IconButton(
+            icon: const Icon(Icons.menu_book),
+            tooltip: l.portfolioTheses,
+            onPressed: _openTheses,
+          ),
           IconButton(
             icon: const Icon(Icons.bookmarks),
             tooltip: l.portfolioWatchlists,
