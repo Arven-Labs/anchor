@@ -5002,6 +5002,12 @@ abstract class AppLocalizations {
   /// **'Theses'**
   String get portfolioTheses;
 
+  /// No description provided for @portfolioMore.
+  ///
+  /// In en, this message translates to:
+  /// **'More'**
+  String get portfolioMore;
+
   /// No description provided for @thesesTitle.
   ///
   /// In en, this message translates to:

@@ -3187,6 +3187,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get portfolioTheses => 'Teses';
 
   @override
+  String get portfolioMore => 'Mais';
+
+  @override
   String get thesesTitle => 'Teses';
 
   @override

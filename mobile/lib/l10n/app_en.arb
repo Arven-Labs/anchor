@@ -1116,6 +1116,7 @@
   "finErrThesisTitleRequired": "Enter the thesis title",
   "finErrThesisNotFound": "Thesis not found",
   "portfolioTheses": "Theses",
+  "portfolioMore": "More",
   "thesesTitle": "Theses",
   "thesesEmpty": "No theses yet.",
   "thesesGlobal": "Global",
