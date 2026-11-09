@@ -62,6 +62,35 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn rejects_non_finite_fair_price() {
+        for ebit in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut inputs = base_inputs();
+            inputs.ebit = ebit;
+
+            assert!(
+                matches!(calculate(&inputs, 10.0), Err(AppError::InvalidGuard(_))),
+                "ebit {ebit}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_zero_fair_price_when_there_is_no_cash_flow_debt_or_cash() {
+        let mut inputs = base_inputs();
+        inputs.ebit = 0.0;
+        inputs.depreciation_amortization = 0.0;
+        inputs.capex = 0.0;
+        inputs.nwc_change = 0.0;
+        inputs.total_debt = 0.0;
+        inputs.cash = 0.0;
+
+        assert!(matches!(
+            calculate(&inputs, 10.0),
+            Err(AppError::InvalidGuard(_))
+        ));
+    }
+
     fn base_inputs() -> DcfInputs {
         DcfInputs {
             ebit: 1_000.0,

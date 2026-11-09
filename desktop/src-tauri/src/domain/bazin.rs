@@ -24,6 +24,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rejects_non_finite_fair_price() {
+        for average_dividend in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let inputs = BazinInputs {
+                average_dividend,
+                desired_yield: 0.06,
+            };
+
+            assert!(
+                matches!(calculate(&inputs, 40.0), Err(AppError::InvalidGuard(_))),
+                "dividendo médio {average_dividend}"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_non_positive_fair_price() {
         for average_dividend in [-3.0, 0.0] {
             let inputs = BazinInputs {

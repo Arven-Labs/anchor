@@ -29,6 +29,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rejects_non_finite_fair_price() {
+        for landbank in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let inputs = RnavInputs {
+                landbank,
+                inventory_at_market_value: 1_000.0,
+                net_cash: 500.0,
+                shares_outstanding: 100.0,
+            };
+
+            assert!(
+                matches!(calculate(&inputs, 40.0), Err(AppError::InvalidGuard(_))),
+                "landbank {landbank}"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_non_positive_fair_price() {
         // 100 + 50 - 400 = -250 no total: mais dívida líquida que ativos.
         for net_cash in [-400.0, -150.0] {
