@@ -28,7 +28,7 @@ impl ValuationOutcome {
     /// existe. Por isso o guard mora aqui, na mesma função que calcula a
     /// margem, e nenhum modelo consegue esquecer de chamá-lo.
     pub fn from_fair_price(fair_price: f64, current_price: f64) -> Result<Self, AppError> {
-        if !(fair_price.is_finite()) {
+        if !(fair_price > 0.0) {
             return Err(AppError::InvalidGuard(
                 "fair price must be greater than zero".to_string(),
             ));
