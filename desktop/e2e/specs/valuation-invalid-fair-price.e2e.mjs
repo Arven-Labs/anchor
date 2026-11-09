@@ -106,7 +106,7 @@ const CASES = [
 const ERROR_TEXT = "greater than zero";
 
 const modelSelect = () =>
-  $('//label[normalize-space(.)="Valuation model"]/following-sibling::*//button[@role="combobox"]');
+  $('//label[normalize-space(.)="Valuation model"]/following-sibling::button[@role="combobox"]');
 const input = (label) => $(`//label[normalize-space(.)="${label}"]/following-sibling::input`);
 const calculateButton = () => $('//button[normalize-space(.)="Calculate"]');
 const redError = () =>
