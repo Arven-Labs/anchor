@@ -21,6 +21,7 @@ import 'foreign_tax_screen.dart';
 import 'fund_tax_screen.dart';
 import 'manual_asset_details_screen.dart';
 import 'profitability_screen.dart';
+import 'theses_screen.dart';
 import 'transaction_history_screen.dart';
 import 'watchlist_screen.dart';
 
@@ -95,6 +96,12 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     setState(() {
       _favoriteIds = nowFavorite ? {..._favoriteIds, assetId} : ({..._favoriteIds}..remove(assetId));
     });
+  }
+
+  Future<void> _openTheses() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ThesesScreen()));
   }
 
   Future<void> _openProfitability() async {
@@ -225,18 +232,19 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               tooltip: l.portfolioSwapCrypto,
               onPressed: _openCryptoSwap,
             ),
-          if (_rows.any(
-            (r) => profitabilityAssetClasses.contains(r.position.asset.assetClass),
-          ))
-            IconButton(
-              icon: const Icon(Icons.trending_up),
-              tooltip: l.portfolioProfitability,
-              onPressed: _openProfitability,
-            ),
-          IconButton(
-            icon: const Icon(Icons.bookmarks),
-            tooltip: l.portfolioWatchlists,
-            onPressed: _openWatchlists,
+          // Rentabilidade, Teses e Watchlists moram num só menu: um ícone por atalho não cabe
+          // na barra de um celular de 390 px (cada ícone ocupa 48 px).
+          PopupMenuButton<VoidCallback>(
+            tooltip: l.portfolioMore,
+            onSelected: (open) => open(),
+            itemBuilder: (_) => [
+              if (_rows.any(
+                (r) => profitabilityAssetClasses.contains(r.position.asset.assetClass),
+              ))
+                PopupMenuItem(value: _openProfitability, child: Text(l.portfolioProfitability)),
+              PopupMenuItem(value: _openTheses, child: Text(l.portfolioTheses)),
+              PopupMenuItem(value: _openWatchlists, child: Text(l.portfolioWatchlists)),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.account_balance),

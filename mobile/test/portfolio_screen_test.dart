@@ -9,6 +9,7 @@ import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/position.dart';
 import 'package:anchor_mobile/screens/portfolio_screen.dart';
+import 'package:anchor_mobile/screens/theses_screen.dart';
 import 'package:anchor_mobile/screens/watchlist_screen.dart';
 import 'package:anchor_mobile/services/live_positions.dart';
 import 'package:anchor_mobile/services/portfolio_repository.dart';
@@ -247,27 +248,86 @@ void main() {
       expect(await tester.runAsync(repository.listFavorites), isEmpty);
     });
 
-    // Tabela de testes B20: o ícone "Rentabilidade" só aparece com ativo de classe medida.
-    testWidgets('B20: ícone Rentabilidade aparece com ação e some com só cripto', (tester) async {
-      await pumpPortfolio(tester, [_row()], locale: 'en');
-      expect(find.byTooltip('Profitability'), findsOneWidget);
-    });
-
-    testWidgets('B20: só com cripto o ícone Rentabilidade não aparece', (tester) async {
-      await pumpPortfolio(tester, [_row(ticker: 'BTC', assetClass: AssetClass.cripto)], locale: 'en');
-      expect(find.byTooltip('Profitability'), findsNothing);
-    });
-
-    testWidgets('28: o ícone da barra abre a tela de watchlists', (tester) async {
-      await pumpPortfolio(tester, [_row()]);
-
-      await tester.tap(find.byTooltip('Watchlists'));
+    // Os atalhos novos (Rentabilidade, Teses, Watchlists) moram num menu "Mais" da barra: a
+    // barra não cabe mais um ícone por atalho em celular estreito (390 px).
+    Future<void> openMoreMenu(WidgetTester tester, String tooltip) async {
+      await tester.tap(find.byTooltip(tooltip));
       for (var i = 0; i < 10; i++) {
         await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
-        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    // Tabela de testes B20: o item "Rentabilidade" só aparece com ativo de classe medida.
+    testWidgets('B20: item Rentabilidade aparece no menu com ação', (tester) async {
+      await pumpPortfolio(tester, [_row()], locale: 'en');
+      await openMoreMenu(tester, 'More');
+      expect(find.text('Profitability'), findsOneWidget);
+    });
+
+    testWidgets('B20: só com cripto o item Rentabilidade não aparece (Teses e Watchlists sim)', (tester) async {
+      await pumpPortfolio(tester, [_row(ticker: 'BTC', assetClass: AssetClass.cripto)], locale: 'en');
+      await openMoreMenu(tester, 'More');
+      expect(find.text('Profitability'), findsNothing);
+      expect(find.text('Theses'), findsOneWidget);
+      expect(find.text('Watchlists'), findsOneWidget);
+    });
+
+    // Tabela de testes TC1: o item "Teses" abre a tela de teses.
+    testWidgets('TC1: o item Teses do menu abre a tela de teses', (tester) async {
+      await pumpPortfolio(tester, [_row()], locale: 'en');
+      await openMoreMenu(tester, 'More');
+
+      await tester.tap(find.text('Theses'));
+      for (var i = 0; i < 10; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.byType(ThesesScreen), findsOneWidget);
+    });
+
+    testWidgets('28: o item Watchlists do menu abre a tela de watchlists', (tester) async {
+      await pumpPortfolio(tester, [_row()]);
+      await openMoreMenu(tester, 'Mais');
+
+      await tester.tap(find.text('Watchlists'));
+      for (var i = 0; i < 10; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump(const Duration(milliseconds: 50));
       }
 
       expect(find.byType(WatchlistScreen), findsOneWidget);
+    });
+
+    // Regressão do CI das capturas: ação + exterior + cripto (três atalhos de IR) estouravam a
+    // barra em 42 px numa tela de 390 px quando cada atalho novo era um ícone. Com o menu
+    // "Mais" são 7 ícones (336 px). Carteira com fundo e duas criptos (9 ícones) ainda não cabe.
+    testWidgets('a barra da Carteira cabe em 390 px com ação, exterior e cripto', (tester) async {
+      tester.view.physicalSize = const Size(390, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.runAsync(AppDatabase.instance);
+      await tester.pumpWidget(
+        localizedApp(
+          PortfolioScreen(
+            loadPositions: () async => [
+              // Sem preço nem custo: com a fonte Ahem do flutter_test (cada letra do tamanho do
+              // corpo) a linha "Valor / resultado" do card estoura em 390 px e mascararia a barra.
+              _row(ticker: 'PETR4', avg: null, price: null),
+              _row(ticker: 'AAPL', assetClass: AssetClass.acaoInternacional, avg: null, price: null),
+              _row(ticker: 'BTC', assetClass: AssetClass.cripto, avg: null, price: null),
+            ],
+          ),
+          locale: 'en',
+        ),
+      );
+      for (var i = 0; i < 20; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(tester.takeException(), isNull);
     });
   });
 }

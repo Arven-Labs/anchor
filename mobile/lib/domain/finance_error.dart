@@ -36,6 +36,8 @@ enum FinanceErrorCode {
   watchlistNameRequired,
   targetPriceMustBePositive,
   assetAlreadyInWatchlist,
+  thesisTitleRequired,
+  thesisNotFound,
 }
 
 /// Mensagem de desenvolvedor (inglês) de cada código, com os argumentos no texto.
@@ -79,6 +81,8 @@ String _developerMessage(FinanceErrorCode code, Map<String, String> args) => swi
   FinanceErrorCode.watchlistNameRequired => 'The watchlist name is required',
   FinanceErrorCode.targetPriceMustBePositive => 'The target price must be greater than zero',
   FinanceErrorCode.assetAlreadyInWatchlist => 'This asset is already in the watchlist',
+  FinanceErrorCode.thesisTitleRequired => 'The thesis title is required',
+  FinanceErrorCode.thesisNotFound => 'Thesis not found',
 };
 
 /// Argumento inválido de Finanças. [args] leva o que a frase do usuário precisa (a moeda,
