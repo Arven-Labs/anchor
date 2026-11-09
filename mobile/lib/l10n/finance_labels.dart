@@ -46,6 +46,8 @@ String _financeCodeText(AppLocalizations l, FinanceErrorCode code, Map<String, S
       FinanceErrorCode.assetAlreadyInWatchlist => l.finErrAssetAlreadyInWatchlist,
       FinanceErrorCode.thesisTitleRequired => l.finErrThesisTitleRequired,
       FinanceErrorCode.thesisNotFound => l.finErrThesisNotFound,
+      FinanceErrorCode.attachmentFileNotFound => l.finErrAttachmentFileNotFound,
+      FinanceErrorCode.attachmentFileRemovalFailed => l.finErrAttachmentFileRemovalFailed,
     };
 
 /// O texto do erro para o usuário. Erro de Finanças vira a frase do `.arb` pelo código;

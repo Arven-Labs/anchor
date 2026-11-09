@@ -4996,6 +4996,18 @@ abstract class AppLocalizations {
   /// **'Thesis not found'**
   String get finErrThesisNotFound;
 
+  /// No description provided for @finErrAttachmentFileNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'The file to attach was not found'**
+  String get finErrAttachmentFileNotFound;
+
+  /// No description provided for @finErrAttachmentFileRemovalFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'An attachment file could not be removed from the device. The thesis was not deleted; try again.'**
+  String get finErrAttachmentFileRemovalFailed;
+
   /// No description provided for @portfolioTheses.
   ///
   /// In en, this message translates to:

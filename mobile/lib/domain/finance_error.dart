@@ -38,6 +38,8 @@ enum FinanceErrorCode {
   assetAlreadyInWatchlist,
   thesisTitleRequired,
   thesisNotFound,
+  attachmentFileNotFound,
+  attachmentFileRemovalFailed,
 }
 
 /// Mensagem de desenvolvedor (inglês) de cada código, com os argumentos no texto.
@@ -83,6 +85,8 @@ String _developerMessage(FinanceErrorCode code, Map<String, String> args) => swi
   FinanceErrorCode.assetAlreadyInWatchlist => 'This asset is already in the watchlist',
   FinanceErrorCode.thesisTitleRequired => 'The thesis title is required',
   FinanceErrorCode.thesisNotFound => 'Thesis not found',
+  FinanceErrorCode.attachmentFileNotFound => 'The file to attach was not found',
+  FinanceErrorCode.attachmentFileRemovalFailed => 'An attachment file could not be removed from the device',
 };
 
 /// Argumento inválido de Finanças. [args] leva o que a frase do usuário precisa (a moeda,

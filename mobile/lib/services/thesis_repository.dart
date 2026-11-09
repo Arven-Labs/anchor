@@ -3,6 +3,7 @@ import '../domain/finance_error.dart';
 import '../domain/thesis_input.dart';
 import '../models/thesis.dart';
 import 'portfolio_repository.dart';
+import 'thesis_attachment_repository.dart';
 
 /// Teses de investimento. Porta de `desktop/src-tauri/src/commands/thesis.rs` (sem anexos
 /// ainda), sem `workspace_id`. Sem `foreign_keys` no banco: o ativo é buscado à parte e a
@@ -10,10 +11,15 @@ import 'portfolio_repository.dart';
 class ThesisRepository {
   final DateTime Function() _now;
   final PortfolioRepository _portfolio;
+  final ThesisAttachmentRepository _attachments;
 
-  ThesisRepository({DateTime Function()? now, PortfolioRepository? portfolio})
-    : _now = now ?? DateTime.now,
-      _portfolio = portfolio ?? PortfolioRepository();
+  ThesisRepository({
+    DateTime Function()? now,
+    PortfolioRepository? portfolio,
+    ThesisAttachmentRepository? attachments,
+  }) : _now = now ?? DateTime.now,
+       _portfolio = portfolio ?? PortfolioRepository(),
+       _attachments = attachments ?? ThesisAttachmentRepository();
 
   /// Da mais recentemente atualizada para a mais antiga.
   Future<List<ThesisEntry>> list() async {
@@ -60,7 +66,10 @@ class ThesisRepository {
     if (changed == 0) throw FinanceStateError(FinanceErrorCode.thesisNotFound);
   }
 
+  /// Apaga a tese e os anexos dela. Os arquivos saem primeiro: se um não puder ser removido, o
+  /// erro sobe e a tese continua (nada fica órfão, sem tela que o alcance).
   Future<void> delete(int id) async {
+    await _attachments.deleteAllFor(id);
     final db = await AppDatabase.instance();
     await db.delete('theses', where: 'id = ?', whereArgs: [id]);
   }

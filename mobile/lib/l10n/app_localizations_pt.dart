@@ -3184,6 +3184,14 @@ class AppLocalizationsPt extends AppLocalizations {
   String get finErrThesisNotFound => 'Tese não encontrada';
 
   @override
+  String get finErrAttachmentFileNotFound =>
+      'O arquivo a anexar não foi encontrado';
+
+  @override
+  String get finErrAttachmentFileRemovalFailed =>
+      'Um arquivo anexado não pôde ser removido do aparelho. A tese não foi apagada; tente de novo.';
+
+  @override
   String get portfolioTheses => 'Teses';
 
   @override

@@ -1115,6 +1115,8 @@
 
   "finErrThesisTitleRequired": "Enter the thesis title",
   "finErrThesisNotFound": "Thesis not found",
+  "finErrAttachmentFileNotFound": "The file to attach was not found",
+  "finErrAttachmentFileRemovalFailed": "An attachment file could not be removed from the device. The thesis was not deleted; try again.",
   "portfolioTheses": "Theses",
   "portfolioMore": "More",
   "thesesTitle": "Theses",
