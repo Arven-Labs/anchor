@@ -74,7 +74,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 25,
+      version: 26,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -156,6 +156,7 @@ class AppDatabase {
         await _createWatchlistTables(db);
         await _createPriceHistoryTables(db);
         await _createThesisTables(db);
+        await _createThesisAttachmentTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -368,8 +369,28 @@ class AppDatabase {
         if (oldVersion < 25) {
           await _createThesisTables(db);
         }
+        if (oldVersion < 26) {
+          await _createThesisAttachmentTables(db);
+        }
       },
     );
+  }
+
+  /// Metadados dos anexos das teses; o arquivo vive em disco, na pasta de documentos do app.
+  /// Sem FK (o `PRAGMA foreign_keys` está desligado): quem apaga a tese apaga os arquivos e as
+  /// linhas daqui (`ThesisRepository.delete`).
+  static Future<void> _createThesisAttachmentTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE thesis_attachments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thesis_id INTEGER NOT NULL,
+        original_file_name TEXT NOT NULL,
+        stored_relative_path TEXT NOT NULL,
+        file_size_bytes INTEGER NOT NULL,
+        content_type TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   /// Teses de investimento: título, texto em Markdown e vínculo opcional com um ativo

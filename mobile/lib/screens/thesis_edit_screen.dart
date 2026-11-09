@@ -1,12 +1,26 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
 
+import '../domain/file_size.dart';
 import '../domain/finance_error.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/finance_labels.dart';
 import '../models/asset.dart';
 import '../models/thesis.dart';
+import '../models/thesis_attachment.dart';
 import '../services/portfolio_repository.dart';
+import '../services/thesis_attachment_repository.dart';
 import '../services/thesis_repository.dart';
+
+/// Escolhe um arquivo no aparelho; devolve o caminho, ou `null` se o usuário cancelou.
+Future<String?> _pickFileWithPlatform() async => (await FilePicker.platform.pickFiles())?.files.single.path;
+
+/// Abre o arquivo no app padrão do sistema; devolve a mensagem de erro, ou `null` se abriu.
+Future<String?> _openFileWithPlatform(String path) async {
+  final result = await OpenFilex.open(path);
+  return result.type == ResultType.done ? null : result.message;
+}
 
 /// Cria ou edita uma tese (título, ativo opcional, texto em Markdown). Devolve `true` ao
 /// fechar quando algo mudou (salvou ou apagou), para a lista recarregar.
@@ -16,7 +30,20 @@ class ThesisEditScreen extends StatefulWidget {
   /// `null` = tese nova.
   final ThesisEntry? entry;
 
-  const ThesisEditScreen({super.key, required this.repository, this.entry});
+  /// Anexos, seletor de arquivo e abertura de arquivo; os padrões usam o disco e os plugins
+  /// do aparelho. Injetáveis para teste (os plugins não rodam no `flutter_test`).
+  final ThesisAttachmentRepository? attachments;
+  final Future<String?> Function()? pickFile;
+  final Future<String?> Function(String path)? openFile;
+
+  const ThesisEditScreen({
+    super.key,
+    required this.repository,
+    this.entry,
+    this.attachments,
+    this.pickFile,
+    this.openFile,
+  });
 
   @override
   State<ThesisEditScreen> createState() => _ThesisEditScreenState();
@@ -27,8 +54,11 @@ class _ThesisEditScreenState extends State<ThesisEditScreen> {
   late final TextEditingController _content = TextEditingController(
     text: widget.entry?.thesis.contentMarkdown ?? '',
   );
+  late final ThesisAttachmentRepository _attachmentRepository = widget.attachments ?? ThesisAttachmentRepository();
   int? _assetId;
   List<Asset> _assets = [];
+  List<ThesisAttachment> _attachments = [];
+  bool _addingAttachment = false;
   Object? _error;
 
   @override
@@ -36,6 +66,50 @@ class _ThesisEditScreenState extends State<ThesisEditScreen> {
     super.initState();
     _assetId = widget.entry?.asset?.id;
     _loadAssets();
+    _loadAttachments();
+  }
+
+  Future<void> _loadAttachments() async {
+    final entry = widget.entry;
+    if (entry == null) return;
+    final attachments = await _attachmentRepository.list(entry.thesis.id);
+    if (mounted) setState(() => _attachments = attachments);
+  }
+
+  Future<void> _addAttachment() async {
+    final entry = widget.entry;
+    if (entry == null) return;
+    final path = await (widget.pickFile ?? _pickFileWithPlatform)();
+    if (path == null) return;
+    setState(() {
+      _addingAttachment = true;
+      _error = null;
+    });
+    try {
+      await _attachmentRepository.add(entry.thesis.id, path);
+    } on FinanceArgumentError catch (e) {
+      if (mounted) setState(() => _error = e);
+    } finally {
+      if (mounted) setState(() => _addingAttachment = false);
+    }
+    await _loadAttachments();
+  }
+
+  Future<void> _openAttachment(ThesisAttachment attachment) async {
+    final path = await _attachmentRepository.absolutePath(attachment);
+    final message = await (widget.openFile ?? _openFileWithPlatform)(path);
+    if (message != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  Future<void> _deleteAttachment(ThesisAttachment attachment) async {
+    try {
+      await _attachmentRepository.delete(attachment);
+    } on FinanceStateError catch (e) {
+      if (mounted) setState(() => _error = e);
+    }
+    await _loadAttachments();
   }
 
   @override
@@ -88,7 +162,13 @@ class _ThesisEditScreenState extends State<ThesisEditScreen> {
       ),
     );
     if (confirmed != true) return;
-    await widget.repository.delete(entry.thesis.id);
+    try {
+      await widget.repository.delete(entry.thesis.id);
+    } on FinanceStateError catch (e) {
+      // Um arquivo anexado não saiu do aparelho: a tese continua e o erro aparece aqui.
+      if (mounted) setState(() => _error = e);
+      return;
+    }
     if (mounted) Navigator.of(context).pop(true);
   }
 
@@ -158,6 +238,43 @@ class _ThesisEditScreenState extends State<ThesisEditScreen> {
             onPressed: _save,
             child: Text(l.actionSave),
           ),
+          // O anexo precisa do id da tese: em tese nova, salva primeiro e depois anexa.
+          if (!adding) ...[
+            const Divider(height: 32),
+            Column(
+              key: const Key('thesis-attachments-section'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l.madAttachments, style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 12),
+                if (_attachments.isEmpty)
+                  Text(l.madNoAttachments)
+                else
+                  for (final attachment in _attachments)
+                    Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        onTap: () => _openAttachment(attachment),
+                        title: Text(attachment.originalFileName),
+                        subtitle: Text(formatFileSize(attachment.fileSizeBytes, l.localeName)),
+                        trailing: IconButton(
+                          key: Key('thesis-attachment-delete-${attachment.id}'),
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: l.actionDelete,
+                          onPressed: () => _deleteAttachment(attachment),
+                        ),
+                      ),
+                    ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  key: const Key('thesis-add-attachment-button'),
+                  onPressed: _addingAttachment ? null : _addAttachment,
+                  icon: const Icon(Icons.attach_file),
+                  label: Text(l.madAddAttachment),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

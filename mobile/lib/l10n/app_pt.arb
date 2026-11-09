@@ -863,6 +863,8 @@
 
   "finErrThesisTitleRequired": "Informe o título da tese",
   "finErrThesisNotFound": "Tese não encontrada",
+  "finErrAttachmentFileNotFound": "O arquivo a anexar não foi encontrado",
+  "finErrAttachmentFileRemovalFailed": "Um arquivo anexado não pôde ser removido do aparelho. A tese não foi apagada; tente de novo.",
   "portfolioTheses": "Teses",
   "portfolioMore": "Mais",
   "thesesTitle": "Teses",
