@@ -118,6 +118,9 @@ fn updater_override(
     endpoint: Option<String>,
     pubkey: Option<String>,
 ) -> Result<Option<UpdaterOverride>, AppError> {
+    if !debug {
+        return Ok(None);
+    }
     let (endpoint, pubkey) = match (endpoint, pubkey) {
         (None, None) => return Ok(None),
         (Some(endpoint), Some(pubkey)) => (endpoint, pubkey),
