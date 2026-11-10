@@ -5196,3 +5196,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Local**: nada rodou (sem Flutter local, ADR 0009).
 - **Não verificado**: aparência em aparelho real (a barra e o menu em 390 px; há um teste antigo de largura que passou); o CI do commit final desta revertida (conferido antes de mesclar).
 - **Anotado para depois**: teses dentro da análise de ativo, migrar o anexo de ativo manual para o armazenamento da 317, preview de anexo, Markdown e sync com o desktop seguem fora.
+
+## Sessão 325 — Dependabot: `minimatch` recriado (#115, #116), dispensa refeita
+- **Pedido**: abertura com `/projeto anchor` (2 alertas abertos), depois `/dependencias anchor`. Só doc neste PR; nenhum código nem lockfile mudou.
+- **Achado**: os 2 alertas eram o mesmo aviso (GHSA-g3hv-75wg-m249, médio, DoS por amplificação de `globparts`, corrigido só na 11.0.1) dos #113 e #114 já dispensados na Sessão 272. Foram recriados em 2026-11-09 às 15:00 como #115 (`desktop/e2e/package-lock.json`) e #116 (`desktop/package-lock.json`), sem herdar a dispensa. Os dois são `development`.
+- **Prova lida** (só leitura): `shadcn` é `devDependency`, entra no código só por `@import "shadcn/tailwind.css"` (`desktop/src/index.css:3`) e o CLI não roda em nenhum script (`dev`, `build`, `preview`, `tauri`); no E2E o único glob é fixo (`wdio.conf.mjs:54`). Ver `PENDING.md`.
+- **Feito**: você dispensou #116 e #115 como `not_used`, com comentário no GitHub, rodando os `gh api -X PATCH` com `!`. O classificador de permissões bloqueou a minha tentativa (escrita externa) e eu não contornei. Contagem relida: 1ª leitura logo após 1 (atraso do GitHub), a seguinte **0**.
+- **Não verificado**: o código interno de `ts-morph`, wdio e mocha; `npm audit --omit=dev`; por que o GitHub recriou os alertas.
+- **Achado de processo**: o `PENDING.md` ainda listava o P10 como aberto, mas o `SESSIONS.md` (Sessão 323, PR #101) o fecha. Recomendei o P10 na abertura com base no `PENDING.md` desatualizado; só vi o erro ao ler o `git log`. Não corrigi o P10 neste PR (fora de escopo).
