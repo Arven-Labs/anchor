@@ -78,7 +78,7 @@ jobs:
         if: github.ref_type == 'tag'
         shell: bash
         run: |
-          conf=$(jq -r .version desktop/src-tauri/tauri.conf.json)
+          conf=$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")
           if [ "${GITHUB_REF_NAME#v}" != "$conf" ]; then
             echo "A tag $GITHUB_REF_NAME não bate com a versão $conf do tauri.conf.json"
             exit 1
