@@ -1,10 +1,12 @@
 name: Build
 
-# Dispara apenas quando uma tag de versão é criada (ex: v0.1.0)
+# Dispara quando uma tag de versão é criada (ex: v0.1.0) e, à mão, sem tag.
+# Sem tag (workflow_dispatch) só compila e confere os pacotes: não cria release.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -18,12 +20,15 @@ jobs:
           - os: ubuntu-22.04
             rust_target: x86_64-unknown-linux-gnu
             artifact: '*.deb'
+            updater_sig: '*.AppImage.sig'
           - os: windows-latest
             rust_target: x86_64-pc-windows-msvc
             artifact: '*.msi'
+            updater_sig: '*.msi.sig'
           - os: macos-latest
             rust_target: aarch64-apple-darwin
             artifact: '*.dmg'
+            updater_sig: '*.app.tar.gz.sig'
 
     runs-on: ${{ matrix.os }}
 
@@ -67,22 +72,71 @@ jobs:
         working-directory: desktop
         run: npm ci --legacy-peer-deps
 
+      # O updater anuncia a versão do tauri.conf.json; se a tag disser outra, o app
+      # oferece a mesma atualização em loop (ou nunca). Falha antes de gastar o build.
+      - name: Tag igual à versão do app
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          conf=$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")
+          if [ "${GITHUB_REF_NAME#v}" != "$conf" ]; then
+            echo "A tag $GITHUB_REF_NAME não bate com a versão $conf do tauri.conf.json"
+            exit 1
+          fi
+
+      # Sem tag (workflow_dispatch) o tagName/releaseName ficam vazios e o tauri-action
+      # só compila, sem tocar em release.
       - name: Build
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Chave do updater: só aqui, nunca em log, arquivo ou artefato (ver project/RELEASE.md).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: desktop
-          tagName: ${{ github.ref_name }}
-          releaseName: Anchor ${{ github.ref_name }}
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: ${{ github.ref_type == 'tag' && format('Anchor {0}', github.ref_name) || '' }}
           releaseDraft: true
           includeDebug: false
+
+      # O updater só funciona se cada SO gerou o pacote assinado (.sig não vazio).
+      - name: Confere a assinatura do updater
+        shell: bash
+        run: |
+          found=$(find desktop/src-tauri/target -path '*/bundle/*' -name '${{ matrix.updater_sig }}' -size +0 | head -n 1)
+          if [ -z "$found" ]; then
+            echo "Nenhum ${{ matrix.updater_sig }} não vazio em desktop/src-tauri/target/**/bundle"
+            exit 1
+          fi
+          echo "OK: $found"
+
+      # Só no dispatch: sem release, os pacotes e as assinaturas sobem como artefato
+      # para eu baixar e olhar. Nunca a chave privada (ela só existe no env do Build).
+      - name: Sobe os pacotes (só dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundles-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            desktop/src-tauri/target/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/release/bundle/**/*.AppImage.sig
+            desktop/src-tauri/target/release/bundle/**/*.deb
+            desktop/src-tauri/target/release/bundle/**/*.msi
+            desktop/src-tauri/target/release/bundle/**/*.msi.sig
+            desktop/src-tauri/target/release/bundle/**/*-setup.exe
+            desktop/src-tauri/target/release/bundle/**/*-setup.exe.sig
+            desktop/src-tauri/target/release/bundle/**/*.dmg
+            desktop/src-tauri/target/release/bundle/**/*.app.tar.gz
+            desktop/src-tauri/target/release/bundle/**/*.app.tar.gz.sig
 
   # APK do companion Flutter, anexado ao mesmo release em rascunho. Por enquanto assinado
   # com a chave de debug (`signingConfig` em mobile/android/app/build.gradle.kts), o que
   # basta pra instalar no celular mas não serve pra Play Store. Quando houver versão
   # oficial, trocar por keystore próprio guardado nos secrets do GitHub.
   apk:
+    if: github.ref_type == 'tag'
     needs: build
     runs-on: ubuntu-24.04
     steps:
