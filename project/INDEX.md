@@ -23,6 +23,7 @@ Leia o arquivo relevante para o que você precisa:
 | Roadmap, evoluções planejadas | `ROADMAP.md` |
 | Log completo de sessões de trabalho | `SESSIONS.md` |
 | **Conferir telas por código (capturas no CI) e automatizar fluxos** — o processo, as regras e o que cada uma evitou | **`AUTOMACAO.md`** |
+| **Publicar uma release do desktop** — ensaio sem tag, tag, publicar, custódia e perda da chave de assinatura do updater | **`RELEASE.md`** |
 
 **Ao começar uma sessão**: diga ao Claude Code "leia os arquivos em `project/` e me ajude a continuar". Antes de qualquer tarefa, confira PR aberto ou branch já mesclada sobrando (`AGENTS.md` do workspace, §14, item 5)
 **Ao validar código**: `cd desktop && ./dev.sh check` (tsc + cargo check, leve) enquanto desenvolve; depois dê push da branch e confira o CI no GitHub Actions (`gh run list`), em vez de rodar os testes localmente. Ver `OVERVIEW.md`, "CI no GitHub Actions"
