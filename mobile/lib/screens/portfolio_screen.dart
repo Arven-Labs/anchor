@@ -192,48 +192,8 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       appBar: AppBar(
         title: Text(l.portfolioTitle),
         actions: [
-          if (_rows.any(
-            (r) => b3AssetClasses.contains(r.position.asset.assetClass),
-          ))
-            IconButton(
-              icon: const Icon(Icons.receipt_long),
-              tooltip: l.portfolioB3Tax,
-              onPressed: _openB3Tax,
-            ),
-          if (_rows.any((r) => r.position.asset.assetClass == AssetClass.cripto))
-            IconButton(
-              icon: const Icon(Icons.calculate),
-              tooltip: l.portfolioCryptoTax,
-              onPressed: _openCryptoTax,
-            ),
-          if (_rows.any(
-            (r) => foreignAssetClasses.contains(r.position.asset.assetClass),
-          ))
-            IconButton(
-              icon: const Icon(Icons.public),
-              tooltip: l.portfolioForeignTax,
-              onPressed: _openForeignTax,
-            ),
-          if (_rows.any((r) => r.position.asset.assetClass == AssetClass.fundo))
-            IconButton(
-              icon: const Icon(Icons.savings),
-              tooltip: l.portfolioFundTax,
-              onPressed: _openFundTax,
-            ),
-          // Permuta só faz sentido com duas criptos cadastradas (como no desktop).
-          if (_rows
-                  .where(
-                    (r) => r.position.asset.assetClass == AssetClass.cripto,
-                  )
-                  .length >=
-              2)
-            IconButton(
-              icon: const Icon(Icons.swap_horiz),
-              tooltip: l.portfolioSwapCrypto,
-              onPressed: _openCryptoSwap,
-            ),
-          // Rentabilidade, Teses e Watchlists moram num só menu: um ícone por atalho não cabe
-          // na barra de um celular de 390 px (cada ícone ocupa 48 px).
+          // Todos os atalhos moram num só menu: um ícone por atalho não cabe na barra de um
+          // celular de 390 px (cada ícone ocupa 48 px). Fica de fora só "Adicionar ativo".
           PopupMenuButton<VoidCallback>(
             tooltip: l.portfolioMore,
             onSelected: (open) => open(),
@@ -244,17 +204,29 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                 PopupMenuItem(value: _openProfitability, child: Text(l.portfolioProfitability)),
               PopupMenuItem(value: _openTheses, child: Text(l.portfolioTheses)),
               PopupMenuItem(value: _openWatchlists, child: Text(l.portfolioWatchlists)),
+              if (_rows.any(
+                (r) => b3AssetClasses.contains(r.position.asset.assetClass),
+              ))
+                PopupMenuItem(value: _openB3Tax, child: Text(l.portfolioB3Tax)),
+              if (_rows.any((r) => r.position.asset.assetClass == AssetClass.cripto))
+                PopupMenuItem(value: _openCryptoTax, child: Text(l.portfolioCryptoTax)),
+              if (_rows.any(
+                (r) => foreignAssetClasses.contains(r.position.asset.assetClass),
+              ))
+                PopupMenuItem(value: _openForeignTax, child: Text(l.portfolioForeignTax)),
+              if (_rows.any((r) => r.position.asset.assetClass == AssetClass.fundo))
+                PopupMenuItem(value: _openFundTax, child: Text(l.portfolioFundTax)),
+              // Permuta só faz sentido com duas criptos cadastradas (como no desktop).
+              if (_rows
+                      .where(
+                        (r) => r.position.asset.assetClass == AssetClass.cripto,
+                      )
+                      .length >=
+                  2)
+                PopupMenuItem(value: _openCryptoSwap, child: Text(l.portfolioSwapCrypto)),
+              PopupMenuItem(value: _openCustodias, child: Text(l.portfolioCustodies)),
+              PopupMenuItem(value: _openHistory, child: Text(l.portfolioHistory)),
             ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.account_balance),
-            tooltip: l.portfolioCustodies,
-            onPressed: _openCustodias,
-          ),
-          IconButton(
-            icon: const Icon(Icons.receipt_long),
-            tooltip: l.portfolioHistory,
-            onPressed: _openHistory,
           ),
           IconButton(
             icon: const Icon(Icons.add_chart),
