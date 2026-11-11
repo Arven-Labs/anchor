@@ -220,7 +220,8 @@ void main() {
 
       await tester.tap(find.byKey(const Key('asset-theses-new-button')));
       await settle(tester);
-      await tester.pageBack();
+      // O "voltar" do sistema (gesto ou botão do Android), sem depender do botão do tema.
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
       await settle(tester);
 
       expect(await tester.runAsync(repository.list), isEmpty);
