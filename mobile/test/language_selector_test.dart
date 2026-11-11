@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -208,6 +208,8 @@ void main() {
       tester,
     ) async {
       await pumpApp(tester, device: const [Locale('en', 'US')], home: home());
+      // a Início lê o SQLite em tempo real: sem esperar, o teste acaba com a leitura em voo
+      await settleUntil(tester, () => has('home-net-worth-text'));
 
       await tester.tap(find.byKey(const Key('home-settings')));
       await tester.pumpAndSettle();
@@ -239,6 +241,8 @@ void main() {
 
     testWidgets('a engrenagem some no modo de personalizar a Início', (tester) async {
       await pumpApp(tester, device: const [Locale('en', 'US')], home: home());
+      // a Início lê o SQLite em tempo real: sem esperar, o teste acaba com a leitura em voo
+      await settleUntil(tester, () => has('home-net-worth-text'));
       expect(has('home-settings'), isTrue);
 
       await tester.tap(find.byKey(const Key('home-customize')));

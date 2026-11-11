@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../domain/crypto_indicator_info.dart';
 import '../domain/crypto_score.dart';

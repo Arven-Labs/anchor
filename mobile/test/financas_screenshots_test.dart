@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +14,7 @@ import 'package:anchor_mobile/domain/liability.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/liability.dart';
 import 'package:anchor_mobile/models/position.dart';
+import 'package:anchor_mobile/l10n/app_delegates.dart';
 import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/screens/home_screen.dart';
 import 'package:anchor_mobile/screens/portfolio_screen.dart';
@@ -95,7 +96,7 @@ void main() {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
       locale: Locale(locale),
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      localizationsDelegates: appLocalizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: home,
     ),

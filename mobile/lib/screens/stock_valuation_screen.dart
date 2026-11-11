@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../domain/number_locale.dart';
 import '../domain/stock_valuation.dart';

@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
+import 'package:anchor_mobile/l10n/app_delegates.dart';
 import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/theme.dart';
 
@@ -8,7 +9,7 @@ import 'package:anchor_mobile/theme.dart';
 /// asserções existentes são em português: o app em si usa o idioma do aparelho.
 Widget localizedApp(Widget home, {String locale = 'pt', ThemeData? theme}) => MaterialApp(
   locale: Locale(locale),
-  localizationsDelegates: AppLocalizations.localizationsDelegates,
+  localizationsDelegates: appLocalizationsDelegates,
   supportedLocales: AppLocalizations.supportedLocales,
   theme: theme ?? buildAnchorTheme(),
   home: home,
