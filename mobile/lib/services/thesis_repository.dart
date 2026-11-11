@@ -35,23 +35,33 @@ class ThesisRepository {
     return entries;
   }
 
-  /// O ativo cadastrado com esse ticker **e** essa classe, ou `null`. O banco não tem `UNIQUE`
-  /// em `assets`, então casar só por ticker reaproveitaria o ativo de outra classe.
-  Future<Asset?> findAsset({required String ticker, required AssetClass assetClass}) async {
-    for (final asset in await _portfolio.listAssets()) {
-      if (asset.ticker == ticker && asset.assetClass == assetClass) return asset;
-    }
-    return null;
+  /// Todos os ativos cadastrados com esse ticker **e** essa classe. O banco não tem `UNIQUE` em
+  /// `assets`: casar só por ticker reaproveitaria o ativo de outra classe, e pode haver
+  /// duplicados. O ticker é comparado sem espaços nas pontas e em maiúsculas.
+  Future<List<Asset>> _matchingAssets(String ticker, AssetClass assetClass) async {
+    final wanted = ticker.trim().toUpperCase();
+    return [
+      for (final asset in await _portfolio.listAssets())
+        if (asset.assetClass == assetClass && asset.ticker.trim().toUpperCase() == wanted) asset,
+    ];
   }
 
-  /// As teses ligadas ao ativo desse ticker e classe, da mais recente para a mais antiga.
-  /// Ticker fora da carteira dá lista vazia (nada é criado aqui).
+  /// O ativo cadastrado com esse ticker **e** essa classe, ou `null`. Com duplicados, o de menor
+  /// id (a escolha não pode depender da ordem de leitura).
+  Future<Asset?> findAsset({required String ticker, required AssetClass assetClass}) async {
+    final matches = await _matchingAssets(ticker, assetClass);
+    if (matches.isEmpty) return null;
+    return matches.reduce((a, b) => a.id! <= b.id! ? a : b);
+  }
+
+  /// As teses ligadas a qualquer ativo desse ticker e classe (duplicados inclusos), da mais
+  /// recente para a mais antiga. Ticker fora da carteira dá lista vazia (nada é criado aqui).
   Future<List<ThesisEntry>> listFor({required String ticker, required AssetClass assetClass}) async {
-    final asset = await findAsset(ticker: ticker, assetClass: assetClass);
-    if (asset == null) return [];
+    final ids = {for (final asset in await _matchingAssets(ticker, assetClass)) asset.id};
+    if (ids.isEmpty) return [];
     return [
       for (final entry in await list())
-        if (entry.thesis.assetId == asset.id) entry,
+        if (ids.contains(entry.thesis.assetId)) entry,
     ];
   }
 

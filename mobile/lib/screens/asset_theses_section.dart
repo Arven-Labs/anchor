@@ -30,6 +30,10 @@ class _AssetThesesSectionState extends State<AssetThesesSection> {
   Asset? _asset;
   List<ThesisEntry> _entries = [];
 
+  /// Antes da 1ª leitura `_asset` é `null` por falta de resposta, não por o ativo não existir:
+  /// sem este sinal, "Nova tese" salvaria Global para um ativo que está na carteira.
+  bool _loaded = false;
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +47,7 @@ class _AssetThesesSectionState extends State<AssetThesesSection> {
     setState(() {
       _asset = asset;
       _entries = entries;
+      _loaded = true;
     });
   }
 
@@ -72,13 +77,15 @@ class _AssetThesesSectionState extends State<AssetThesesSection> {
             Expanded(child: Text(l.thesesTitle, style: Theme.of(context).textTheme.titleMedium)),
             OutlinedButton(
               key: const Key('asset-theses-new-button'),
-              onPressed: () => _open(),
+              onPressed: _loaded ? () => _open() : null,
               child: Text(l.thesesNew),
             ),
           ],
         ),
         const SizedBox(height: 8),
-        if (_entries.isEmpty)
+        if (!_loaded)
+          const SizedBox.shrink()
+        else if (_entries.isEmpty)
           Text(l.assetThesesEmpty(widget.ticker))
         else
           for (final entry in _entries)
