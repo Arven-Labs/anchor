@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'l10n/app_delegates.dart';
 import 'l10n/app_localizations.dart';
 import 'domain/language_preference.dart';
 import 'l10n/language_settings.dart';
@@ -63,7 +64,7 @@ class _AnchorAppState extends State<AnchorApp> {
         // A escolha do usuário; `null` (seguir o aparelho) deixa o callback abaixo
         // decidir: o que não for português cai em inglês (ADR 0001).
         locale: _preference.locale,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: appSupportedLocales,
         localeListResolutionCallback: resolveAppLocale,
         home: widget.home ?? const AnchorHome(),
