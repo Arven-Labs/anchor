@@ -6,7 +6,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/l10n/app_localizations.dart';
-import 'package:anchor_mobile/l10n/registration_labels.dart';
+import 'package:anchor_mobile/l10n/home_labels.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/quote.dart';
 import 'package:anchor_mobile/screens/asset_theses_section.dart';
