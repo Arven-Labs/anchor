@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../domain/b3_tax.dart';
 import '../domain/number_locale.dart';
