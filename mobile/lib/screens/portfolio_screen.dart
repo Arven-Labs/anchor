@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../domain/b3_tax.dart' show b3AssetClasses;
 import '../domain/foreign_tax.dart' show foreignAssetClasses;

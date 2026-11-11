@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../domain/fund_compensation.dart' show LossCredit, RecordNote;
 import '../domain/fund_redemption.dart';

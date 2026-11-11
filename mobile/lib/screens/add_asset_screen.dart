@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../domain/number_locale.dart' show formatFixed;
 import '../l10n/app_localizations.dart';

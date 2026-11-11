@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +9,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/crypto_score.dart';
+import 'package:anchor_mobile/l10n/app_delegates.dart';
 import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/screens/crypto_score_screen.dart';
 import 'package:anchor_mobile/services/crypto_collector.dart';
@@ -106,7 +107,7 @@ void main() {
           debugShowCheckedModeBanner: false,
           theme: buildAnchorTheme(),
           locale: Locale(locale),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          localizationsDelegates: appLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           home: CryptoScoreScreen(
             active: true,

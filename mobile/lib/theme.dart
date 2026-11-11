@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Mesma paleta usada no desktop (`desktop/src/index.css`, tema dark): verde
 /// `#4ade80` sobre fundo navy `#0b0f14` — a mesma identidade visual do
