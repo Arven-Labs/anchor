@@ -133,7 +133,7 @@ class _ThesisEditScreenState extends State<ThesisEditScreen> {
   }
 
   /// Com o ticker fixo (busca de cotação), o ativo é o da busca, ou nenhum; senão, o escolhido.
-  int? get _effectiveAssetId => widget.forTicker != null ? widget.forAsset?.id : _assetId;
+  int? get _effectiveAssetId => _assetId;
 
   Future<void> _save() async {
     final entry = widget.entry;

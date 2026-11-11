@@ -149,7 +149,7 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
               ),
             // Teses do ticker: só Ação BR e Ação internacional, como no desktop. A chave refaz
             // o bloco quando a busca muda de ticker ou de classe.
-            if (_quote != null && _quoteClass != null && _thesesClasses.contains(_quoteClass)) ...[
+            if (_quote != null && _quoteClass != null && _thesesClasses.isNotEmpty) ...[
               const SizedBox(height: 24),
               AssetThesesSection(
                 key: ValueKey('$_quoteTicker-${_quoteClass!.value}'),

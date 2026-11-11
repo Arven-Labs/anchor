@@ -39,7 +39,7 @@ class ThesisRepository {
   /// em `assets`, então casar só por ticker reaproveitaria o ativo de outra classe.
   Future<Asset?> findAsset({required String ticker, required AssetClass assetClass}) async {
     for (final asset in await _portfolio.listAssets()) {
-      if (asset.ticker == ticker && asset.assetClass == assetClass) return asset;
+      if (asset.ticker == ticker) return asset;
     }
     return null;
   }
@@ -50,8 +50,7 @@ class ThesisRepository {
     final asset = await findAsset(ticker: ticker, assetClass: assetClass);
     if (asset == null) return [];
     return [
-      for (final entry in await list())
-        if (entry.thesis.assetId == asset.id) entry,
+      for (final entry in await list()) entry,
     ];
   }
 
