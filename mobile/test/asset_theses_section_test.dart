@@ -229,16 +229,42 @@ void main() {
     });
   });
 
+  group('carregamento', () {
+    testWidgets('TS9: antes de carregar, sem "Nenhuma tese" e sem botão ativo; depois, ambos corretos', (tester) async {
+      await tester.runAsync(() => addAsset('PETR4'));
+      await bigScreen(tester);
+      await tester.pumpWidget(
+        localizedApp(
+          Scaffold(
+            body: SingleChildScrollView(
+              child: AssetThesesSection(ticker: 'PETR4', assetClass: AssetClass.acaoBr, repository: repository),
+            ),
+          ),
+        ),
+      );
+      // Um quadro só: a leitura do banco (assíncrona, real) ainda não terminou.
+      const newButton = Key('asset-theses-new-button');
+
+      expect(find.text('Nenhuma tese para PETR4.'), findsNothing);
+      expect(tester.widget<OutlinedButton>(find.byKey(newButton)).onPressed, isNull);
+
+      await settle(tester);
+
+      expect(find.text('Nenhuma tese para PETR4.'), findsOneWidget);
+      expect(tester.widget<OutlinedButton>(find.byKey(newButton)).onPressed, isNotNull);
+    });
+  });
+
   group('na busca de cotação', () {
     testWidgets('TQ1: Ação BR mostra o bloco de teses do ticker buscado', (tester) async {
       await tester.runAsync(() async {
         final petr = await addAsset('PETR4');
-        await repository.create(title: 'Petrobras', assetId: petr);
+        await repository.create(title: 'Dividendos', assetId: petr);
       });
       await pumpSearch(tester);
 
       expect(find.byKey(const Key('asset-theses-section')), findsOneWidget);
-      expect(find.text('Petrobras'), findsWidgets);
+      expect(find.text('Dividendos'), findsOneWidget);
     });
 
     testWidgets('TQ2: Ação internacional também mostra o bloco', (tester) async {

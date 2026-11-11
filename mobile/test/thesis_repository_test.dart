@@ -253,5 +253,35 @@ void main() {
 
       expect(await count('assets'), 0);
     });
+
+    test('TF7: ativo gravado com caixa ou espaço diferente ainda casa com o ticker da busca', () async {
+      final petr = await addAsset(' petr4 ');
+      await repository.create(title: 'Petro', assetId: petr);
+
+      expect((await repository.findAsset(ticker: 'PETR4', assetClass: AssetClass.acaoBr))?.id, petr);
+      expect(
+        (await repository.listFor(ticker: 'PETR4', assetClass: AssetClass.acaoBr)).map((e) => e.thesis.title),
+        ['Petro'],
+      );
+    });
+
+    test('TF8: com ativo duplicado, findAsset escolhe sempre o de menor id', () async {
+      final first = await addAsset('PETR4');
+      await addAsset('PETR4');
+
+      expect((await repository.findAsset(ticker: 'PETR4', assetClass: AssetClass.acaoBr))?.id, first);
+    });
+
+    test('TF9: com ativo duplicado, listFor mostra as teses dos dois cadastros', () async {
+      final first = await addAsset('PETR4');
+      final second = await addAsset('PETR4');
+      await repository.create(title: 'Do primeiro', assetId: first);
+      clock = DateTime(2026, 11, 8, 11);
+      await repository.create(title: 'Do segundo', assetId: second);
+
+      final entries = await repository.listFor(ticker: 'PETR4', assetClass: AssetClass.acaoBr);
+
+      expect(entries.map((e) => e.thesis.title), ['Do segundo', 'Do primeiro']);
+    });
   });
 }
