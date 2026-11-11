@@ -183,4 +183,75 @@ void main() {
       expect(entry.asset, isNull);
     });
   });
+
+  // Teses de um ticker na busca de cotação (TF1 a TF6). O ativo é achado por ticker E classe,
+  // porque o banco não tem UNIQUE em `assets`.
+  group('por ticker e classe', () {
+    Future<int> addAssetOfClass(String ticker, AssetClass assetClass) => portfolio.insertAsset(
+      Asset(
+        ticker: ticker,
+        name: 'Empresa $ticker',
+        assetClass: assetClass,
+        currency: 'BRL',
+        createdAt: DateTime(2026, 1, 1),
+      ),
+    );
+
+    test('TF1: findAsset acha o ativo do mesmo ticker e classe', () async {
+      final petr = await addAsset('PETR4');
+
+      final found = await repository.findAsset(ticker: 'PETR4', assetClass: AssetClass.acaoBr);
+
+      expect(found?.id, petr);
+    });
+
+    test('TF2: findAsset não usa o ativo de outra classe nem de outro ticker', () async {
+      await addAssetOfClass('PETR4', AssetClass.fii);
+      await addAsset('VALE3');
+
+      expect(await repository.findAsset(ticker: 'PETR4', assetClass: AssetClass.acaoBr), isNull);
+      expect(await repository.findAsset(ticker: 'PETR3', assetClass: AssetClass.acaoBr), isNull);
+    });
+
+    test('TF3: listFor devolve só as teses ligadas ao ativo do ticker, da mais recente para a mais antiga', () async {
+      final petr = await addAsset('PETR4');
+      final vale = await addAsset('VALE3');
+      await repository.create(title: 'Petro antiga', assetId: petr);
+      clock = DateTime(2026, 11, 8, 11);
+      await repository.create(title: 'Vale', assetId: vale);
+      clock = DateTime(2026, 11, 8, 12);
+      await repository.create(title: 'Petro nova', assetId: petr);
+      await repository.create(title: 'Global');
+
+      final entries = await repository.listFor(ticker: 'PETR4', assetClass: AssetClass.acaoBr);
+
+      expect(entries.map((e) => e.thesis.title), ['Petro nova', 'Petro antiga']);
+      expect(entries.every((e) => e.asset?.ticker == 'PETR4'), isTrue);
+    });
+
+    test('TF4: listFor de um ticker fora da carteira é vazio, mesmo com teses de outros', () async {
+      final vale = await addAsset('VALE3');
+      await repository.create(title: 'Vale', assetId: vale);
+
+      expect(await repository.listFor(ticker: 'PETR4', assetClass: AssetClass.acaoBr), isEmpty);
+    });
+
+    test('TF5: listFor não mistura a tese de um ativo de outra classe com o mesmo ticker', () async {
+      final fii = await addAssetOfClass('PETR4', AssetClass.fii);
+      await repository.create(title: 'Do FII', assetId: fii);
+
+      expect(await repository.listFor(ticker: 'PETR4', assetClass: AssetClass.acaoBr), isEmpty);
+      expect(
+        (await repository.listFor(ticker: 'PETR4', assetClass: AssetClass.fii)).map((e) => e.thesis.title),
+        ['Do FII'],
+      );
+    });
+
+    test('TF6: consultar por ticker não cria ativo nenhum', () async {
+      await repository.listFor(ticker: 'PETR4', assetClass: AssetClass.acaoBr);
+      await repository.findAsset(ticker: 'PETR4', assetClass: AssetClass.acaoBr);
+
+      expect(await count('assets'), 0);
+    });
+  });
 }
