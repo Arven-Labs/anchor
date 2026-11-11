@@ -3227,6 +3227,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get thesisAssetGlobal => 'Global (no asset)';
 
   @override
+  String thesisAssetFixed(String ticker) {
+    return 'Asset: $ticker';
+  }
+
+  @override
+  String thesisAssetNotInPortfolio(String ticker) {
+    return 'Global — $ticker is not in your portfolio';
+  }
+
+  @override
+  String assetThesesEmpty(String ticker) {
+    return 'No theses for $ticker.';
+  }
+
+  @override
   String get thesisFieldContent => 'Text (Markdown)';
 
   @override

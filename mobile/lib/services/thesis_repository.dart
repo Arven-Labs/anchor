@@ -1,6 +1,7 @@
 import '../data/db.dart';
 import '../domain/finance_error.dart';
 import '../domain/thesis_input.dart';
+import '../models/asset.dart';
 import '../models/thesis.dart';
 import 'portfolio_repository.dart';
 import 'thesis_attachment_repository.dart';
@@ -32,6 +33,26 @@ class ThesisRepository {
       entries.add(ThesisEntry(thesis: thesis, asset: assets[thesis.assetId]));
     }
     return entries;
+  }
+
+  /// O ativo cadastrado com esse ticker **e** essa classe, ou `null`. O banco não tem `UNIQUE`
+  /// em `assets`, então casar só por ticker reaproveitaria o ativo de outra classe.
+  Future<Asset?> findAsset({required String ticker, required AssetClass assetClass}) async {
+    for (final asset in await _portfolio.listAssets()) {
+      if (asset.ticker == ticker && asset.assetClass == assetClass) return asset;
+    }
+    return null;
+  }
+
+  /// As teses ligadas ao ativo desse ticker e classe, da mais recente para a mais antiga.
+  /// Ticker fora da carteira dá lista vazia (nada é criado aqui).
+  Future<List<ThesisEntry>> listFor({required String ticker, required AssetClass assetClass}) async {
+    final asset = await findAsset(ticker: ticker, assetClass: assetClass);
+    if (asset == null) return [];
+    return [
+      for (final entry in await list())
+        if (entry.thesis.assetId == asset.id) entry,
+    ];
   }
 
   Future<int> create({required String title, String? content, int? assetId}) async {

@@ -7,17 +7,25 @@ import '../models/asset.dart';
 import '../models/quote.dart';
 import '../services/quote_dispatcher.dart';
 import '../services/quote_exceptions.dart';
+import '../services/thesis_repository.dart';
+import 'asset_theses_section.dart';
 import 'stock_valuation_screen.dart';
 
 class QuoteSearchScreen extends StatefulWidget {
   /// Quem busca a cotação; o padrão usa a rede. Injetável para teste, sem rede.
   final QuoteDispatcher? dispatcher;
 
-  const QuoteSearchScreen({super.key, this.dispatcher});
+  /// Repositório das teses do bloco; o padrão usa o banco do app. Injetável para teste.
+  final ThesisRepository? thesisRepository;
+
+  const QuoteSearchScreen({super.key, this.dispatcher, this.thesisRepository});
 
   @override
   State<QuoteSearchScreen> createState() => _QuoteSearchScreenState();
 }
+
+/// Classes em que a busca mostra as teses do ticker (as mesmas do `AssetThesesSidebar` do desktop).
+const _thesesClasses = {AssetClass.acaoBr, AssetClass.acaoInternacional};
 
 class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
   final _tickerController = TextEditingController();
@@ -84,8 +92,8 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
       appBar: AppBar(title: const Text('Anchor')),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        // Rola: com o cartão de cotação e o bloco de teses a tela passa de 390 px de altura.
+        child: ListView(
           children: [
             DropdownButtonFormField<AssetClass>(
               initialValue: _assetClass,
@@ -139,6 +147,17 @@ class _QuoteSearchScreenState extends State<QuoteSearchScreen> {
                 // Valuation por modelos de ação: só para Ação BR.
                 onValuation: _quoteClass == AssetClass.acaoBr ? _openValuation : null,
               ),
+            // Teses do ticker: só Ação BR e Ação internacional, como no desktop. A chave refaz
+            // o bloco quando a busca muda de ticker ou de classe.
+            if (_quote != null && _quoteClass != null && _thesesClasses.contains(_quoteClass)) ...[
+              const SizedBox(height: 24),
+              AssetThesesSection(
+                key: ValueKey('$_quoteTicker-${_quoteClass!.value}'),
+                ticker: _quoteTicker,
+                assetClass: _quoteClass!,
+                repository: widget.thesisRepository,
+              ),
+            ],
           ],
         ),
       ),
