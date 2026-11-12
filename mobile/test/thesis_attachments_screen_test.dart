@@ -42,6 +42,25 @@ void main() {
     }
   }
 
+  // Espera a condição real além do tempo fixo (mesmo padrão do `theses_screen_test`, P11): sob
+  // carga o anexar/apagar e o recarregamento da lista passam do 1 s do `settle` (o TV5 falhou
+  // assim no CI do PR #110). Roda o `settle` inteiro e só depois sonda, até 200 voltas.
+  Future<void> settleUntil(WidgetTester tester, bool Function() done, String what) async {
+    await settle(tester);
+    for (var i = 0; i < 200; i++) {
+      if (done()) return;
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    fail('Não chegou a: $what');
+  }
+
+  Future<void> waitFor(WidgetTester tester, Finder finder, String what) =>
+      settleUntil(tester, () => finder.evaluate().isNotEmpty, what);
+
+  Future<void> waitGone(WidgetTester tester, Finder finder, String what) =>
+      settleUntil(tester, () => finder.evaluate().isEmpty, what);
+
   Future<String> sourceFile(WidgetTester tester, String name) async {
     final path = p.join(dir.path, name);
     await tester.runAsync(() => File(path).writeAsString('hello world!'));
@@ -99,7 +118,7 @@ void main() {
     await pumpEdit(tester, pickFile: () async => path);
 
     await tester.tap(find.byKey(const Key('thesis-add-attachment-button')));
-    await settle(tester);
+    await waitFor(tester, find.text('relatorio.pdf'), 'o anexo na lista');
 
     expect(find.text('relatorio.pdf'), findsOneWidget);
     expect(find.text('12 B'), findsOneWidget);
@@ -129,10 +148,10 @@ void main() {
       },
     );
     await tester.tap(find.byKey(const Key('thesis-add-attachment-button')));
-    await settle(tester);
+    await waitFor(tester, find.text('relatorio.pdf'), 'o anexo na lista');
 
     await tester.tap(find.text('relatorio.pdf'));
-    await settle(tester);
+    await settleUntil(tester, () => opened.isNotEmpty, 'a abertura do arquivo');
 
     expect(opened, hasLength(1));
     expect(p.isWithin(base.path, opened.single), isTrue);
@@ -143,10 +162,10 @@ void main() {
     final path = await sourceFile(tester, 'relatorio.pdf');
     await pumpEdit(tester, pickFile: () async => path, openFile: (_) async => 'Nenhum app abre este arquivo');
     await tester.tap(find.byKey(const Key('thesis-add-attachment-button')));
-    await settle(tester);
+    await waitFor(tester, find.text('relatorio.pdf'), 'o anexo na lista');
 
     await tester.tap(find.text('relatorio.pdf'));
-    await settle(tester);
+    await waitFor(tester, find.text('Nenhum app abre este arquivo'), 'a mensagem de falha ao abrir');
 
     expect(find.text('Nenhum app abre este arquivo'), findsOneWidget);
   });
@@ -155,12 +174,12 @@ void main() {
     final path = await sourceFile(tester, 'relatorio.pdf');
     await pumpEdit(tester, pickFile: () async => path);
     await tester.tap(find.byKey(const Key('thesis-add-attachment-button')));
-    await settle(tester);
+    await waitFor(tester, find.text('relatorio.pdf'), 'o anexo na lista');
     final attachment = (await tester.runAsync(() async => (await attachments.list(await thesisId())).single))!;
     final stored = await tester.runAsync(() => attachments.absolutePath(attachment));
 
     await tester.tap(find.byKey(Key('thesis-attachment-delete-${attachment.id}')));
-    await settle(tester);
+    await waitGone(tester, find.text('relatorio.pdf'), 'o anexo fora da lista');
 
     expect(find.text('relatorio.pdf'), findsNothing);
     expect(find.text('Nenhum anexo ainda.'), findsOneWidget);
