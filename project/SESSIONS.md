@@ -5275,3 +5275,10 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI** (commit `210afa3`, run 43322370261): `analyze` limpo, 3 tentativas verdes.
 - **Não verificado**: que a instabilidade acabou; nada rodou local (ADR 0009).
 - **Em aberto**: `settle` fixo em TS1, TS2, TS9 e TQ.
+
+## Sessão 334 — P11: `asset_theses_section_test` espera o carregamento (PR #113) e encerramento do P11
+- **Pedido**: "vamos de p11"; escolheram o plano "esperar o CI da `main`, trocar o `settle` fixo restante, marcar o P11".
+- **Feito**: em `asset_theses_section_test.dart`, `pumpSection` e o TS9 esperam o botão "Nova tese" habilitado (bloco carregado); `pumpSearch` espera a lista de classes aberta, o cartão da cotação ("Petrobras") e, onde há bloco, o carregamento dele. Só teste.
+- **CI**: `main` no `38b5c47` (#112) verde; PR #113 (commit `1b8221d`, run 43326035013): `analyze` limpo, 3 tentativas verdes.
+- **P11**: marcado ✅ Resolvida (monitorar). Fora de propósito: `home_screen_test` e `language_selector_test`.
+- **Não verificado**: que a instabilidade acabou (poucas rodadas por PR); nada rodou local (ADR 0009).
