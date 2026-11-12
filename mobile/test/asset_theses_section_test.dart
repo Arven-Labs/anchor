@@ -66,6 +66,35 @@ void main() {
     }
   }
 
+  // Espera a condição real além do tempo fixo (mesmo padrão do `theses_screen_test`, P11): sob
+  // carga o `pop` da rota e o recarregamento da lista passam do 1 s do `settle`. Roda primeiro o
+  // `settle` inteiro (a rota corre no relógio falso e precisa dele para entrar na tela) e só
+  // depois sonda a condição, até 200 voltas.
+  Future<void> settleUntil(WidgetTester tester, bool Function() done, String what) async {
+    await settle(tester);
+    for (var i = 0; i < 200; i++) {
+      if (done()) return;
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    fail('Não chegou a: $what');
+  }
+
+  bool editorOpen() => find.byKey(const Key('thesis-title-field')).evaluate().isNotEmpty;
+
+  Future<void> waitEditorOpen(WidgetTester tester) =>
+      settleUntil(tester, editorOpen, 'a tela de edição aberta');
+
+  Future<void> waitEditorClosed(WidgetTester tester) =>
+      settleUntil(tester, () => !editorOpen(), 'a tela de edição fechada');
+
+  // Depois de salvar: a edição fechou e o bloco já recarregou com [text].
+  Future<void> waitBackOnList(WidgetTester tester, String text) => settleUntil(
+    tester,
+    () => !editorOpen() && find.text(text).evaluate().length == 1,
+    'o bloco com "$text" depois de fechar a edição',
+  );
+
   Future<void> bigScreen(WidgetTester tester, {Size size = const Size(800, 3000)}) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -139,12 +168,12 @@ void main() {
       await pumpSection(tester);
 
       await tester.tap(find.byKey(const Key('asset-theses-new-button')));
-      await settle(tester);
+      await waitEditorOpen(tester);
       expect(find.text('Ativo: PETR4'), findsOneWidget);
       expect(find.byKey(const Key('thesis-asset-field')), findsNothing);
       await tester.enterText(find.byKey(const Key('thesis-title-field')), 'Dividendos');
       await tester.tap(find.byKey(const Key('thesis-save-button')));
-      await settle(tester);
+      await waitBackOnList(tester, 'Dividendos');
 
       expect(find.text('Dividendos'), findsOneWidget);
       final saved = (await tester.runAsync(repository.list))!.single;
@@ -157,11 +186,11 @@ void main() {
       await pumpSection(tester);
 
       await tester.tap(find.byKey(const Key('asset-theses-new-button')));
-      await settle(tester);
+      await waitEditorOpen(tester);
       expect(find.text('Global — PETR4 não está na carteira'), findsOneWidget);
       await tester.enterText(find.byKey(const Key('thesis-title-field')), 'Petrobras');
       await tester.tap(find.byKey(const Key('thesis-save-button')));
-      await settle(tester);
+      await waitEditorClosed(tester);
 
       final saved = (await tester.runAsync(repository.list))!.single;
       expect(saved.thesis.title, 'Petrobras');
@@ -174,11 +203,11 @@ void main() {
       await pumpSection(tester);
 
       await tester.tap(find.byKey(const Key('asset-theses-new-button')));
-      await settle(tester);
+      await waitEditorOpen(tester);
       expect(find.text('Global — PETR4 não está na carteira'), findsOneWidget);
       await tester.enterText(find.byKey(const Key('thesis-title-field')), 'Petrobras');
       await tester.tap(find.byKey(const Key('thesis-save-button')));
-      await settle(tester);
+      await waitEditorClosed(tester);
 
       expect((await tester.runAsync(repository.list))!.single.thesis.assetId, isNull);
     });
@@ -188,10 +217,14 @@ void main() {
       await pumpSection(tester);
 
       await tester.tap(find.byKey(const Key('asset-theses-new-button')));
-      await settle(tester);
+      await waitEditorOpen(tester);
       await tester.enterText(find.byKey(const Key('thesis-title-field')), '   ');
       await tester.tap(find.byKey(const Key('thesis-save-button')));
-      await settle(tester);
+      await settleUntil(
+        tester,
+        () => find.text('Informe o título da tese').evaluate().isNotEmpty,
+        'o erro de título em branco',
+      );
 
       expect(find.text('Informe o título da tese'), findsOneWidget);
       expect(await tester.runAsync(repository.list), isEmpty);
@@ -205,11 +238,11 @@ void main() {
       await pumpSection(tester);
 
       await tester.tap(find.text('Juros'));
-      await settle(tester);
+      await waitEditorOpen(tester);
       expect(find.widgetWithText(TextField, 'texto'), findsOneWidget);
       await tester.enterText(find.byKey(const Key('thesis-title-field')), 'Juros 2028');
       await tester.tap(find.byKey(const Key('thesis-save-button')));
-      await settle(tester);
+      await waitBackOnList(tester, 'Juros 2028');
 
       expect(find.text('Juros 2028'), findsOneWidget);
       expect(find.text('Juros'), findsNothing);
@@ -219,10 +252,10 @@ void main() {
       await pumpSection(tester);
 
       await tester.tap(find.byKey(const Key('asset-theses-new-button')));
-      await settle(tester);
+      await waitEditorOpen(tester);
       // O "voltar" do sistema (gesto ou botão do Android), sem depender do botão do tema.
       tester.state<NavigatorState>(find.byType(Navigator)).pop();
-      await settle(tester);
+      await waitEditorClosed(tester);
 
       expect(await tester.runAsync(repository.list), isEmpty);
       expect(await tester.runAsync(portfolio.listAssets), isEmpty);
