@@ -62,6 +62,22 @@ void main() {
     }
   }
 
+  // Espera a condição real além do tempo fixo (mesmo padrão do `theses_screen_test`, P11): sob
+  // carga o banco e o redesenho passam dos ~0,5 s do `settle` (o teste 27 falhou assim no CI do
+  // PR #109). Roda o `settle` inteiro e só depois sonda, até 200 voltas.
+  Future<void> settleUntil(WidgetTester tester, bool Function() done, String what) async {
+    await settle(tester);
+    for (var i = 0; i < 200; i++) {
+      if (done()) return;
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+      await tester.pump();
+    }
+    fail('Não chegou a: $what');
+  }
+
+  Future<void> waitFor(WidgetTester tester, Finder finder, String what) =>
+      settleUntil(tester, () => finder.evaluate().isNotEmpty, what);
+
   Future<void> pumpScreen(
     WidgetTester tester, {
     Future<List<LivePositionRow>> Function(List<Asset>)? loadPrices,
@@ -76,6 +92,7 @@ void main() {
 
   testWidgets('21: sem nenhuma lista, avisa que não há watchlist', (tester) async {
     await pumpScreen(tester);
+    await waitFor(tester, find.text('Nenhum favorito ainda.'), 'o carregamento da tela');
     expect(find.text('Nenhuma watchlist ainda.'), findsOneWidget);
     expect(find.text('Nenhum favorito ainda.'), findsOneWidget);
   });
@@ -85,7 +102,7 @@ void main() {
 
     await tester.enterText(find.byKey(const Key('watchlist-name-field')), 'Dividendos');
     await tester.tap(find.byKey(const Key('watchlist-create-button')));
-    await settle(tester);
+    await waitFor(tester, find.byKey(const Key('watchlist-add-item-button')), 'a lista criada e selecionada');
 
     expect(find.text('Dividendos'), findsWidgets);
     expect(find.text('Nenhuma watchlist ainda.'), findsNothing);
@@ -98,7 +115,7 @@ void main() {
 
     await tester.enterText(find.byKey(const Key('watchlist-name-field')), '   ');
     await tester.tap(find.byKey(const Key('watchlist-create-button')));
-    await settle(tester);
+    await waitFor(tester, find.text('Informe o nome da watchlist'), 'o erro de nome em branco');
 
     expect(find.text('Informe o nome da watchlist'), findsOneWidget);
     expect(await tester.runAsync(repository.listWatchlists), isEmpty);
@@ -109,12 +126,12 @@ void main() {
     await pumpScreen(tester);
 
     await tester.tap(find.byKey(const Key('watchlist-delete-button')));
-    await settle(tester);
+    await waitFor(tester, find.text('Confirmar?'), 'o pedido de confirmação');
     expect(find.text('Confirmar?'), findsOneWidget);
     expect(await tester.runAsync(repository.listWatchlists), hasLength(1));
 
     await tester.tap(find.byKey(const Key('watchlist-delete-button')));
-    await settle(tester);
+    await waitFor(tester, find.text('Nenhuma watchlist ainda.'), 'a tela sem watchlist');
     expect(await tester.runAsync(repository.listWatchlists), isEmpty);
     expect(find.text('Nenhuma watchlist ainda.'), findsOneWidget);
   });
@@ -127,14 +144,14 @@ void main() {
     await pumpScreen(tester, loadPrices: prices({'PETR4': 38.2}));
 
     await tester.tap(find.byKey(const Key('watchlist-add-item-button')));
-    await settle(tester);
+    await waitFor(tester, find.byKey(const Key('watchlist-asset-field')), 'o diálogo de adicionar');
     await tester.tap(find.byKey(const Key('watchlist-asset-field')));
-    await settle(tester);
+    await waitFor(tester, find.text('PETR4 — Empresa PETR4'), 'a lista de ativos aberta');
     await tester.tap(find.text('PETR4 — Empresa PETR4').last);
     await settle(tester);
     await tester.enterText(find.byKey(const Key('watchlist-target-field')), '30,00');
     await tester.tap(find.byKey(const Key('watchlist-item-confirm-button')));
-    await settle(tester);
+    await waitFor(tester, find.text('Alvo: 30,00'), 'o item na lista');
 
     expect(find.text('PETR4'), findsOneWidget);
     expect(find.text('Preço atual: BRL 38,20'), findsOneWidget);
@@ -150,6 +167,7 @@ void main() {
       await repository.addItem(watchlistId: list, assetId: vale);
     });
     await pumpScreen(tester, loadPrices: prices(const {}, unavailable: {'PETR4'}));
+    await waitFor(tester, find.text('Preço atual: indisponível agora'), 'as cotações carregadas');
 
     expect(find.text('Preço atual: indisponível agora'), findsOneWidget);
     expect(find.text('Preço atual: —'), findsOneWidget);
@@ -161,13 +179,14 @@ void main() {
       await repository.toggleFavorite(petr);
     });
     await pumpScreen(tester, loadPrices: prices({'PETR4': 38.2}));
+    await waitFor(tester, find.text('Preço atual: BRL 38,20'), 'o favorito com preço');
 
     expect(find.byKey(const Key('favorites-block')), findsOneWidget);
     expect(find.descendant(of: find.byKey(const Key('favorites-block')), matching: find.text('PETR4')), findsOneWidget);
     expect(find.text('Preço atual: BRL 38,20'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('favorite-remove-PETR4')));
-    await settle(tester);
+    await waitFor(tester, find.text('Nenhum favorito ainda.'), 'o favorito removido da tela');
 
     expect(await tester.runAsync(repository.listFavorites), isEmpty);
     expect(find.text('Nenhum favorito ainda.'), findsOneWidget);
