@@ -5282,3 +5282,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI**: `main` no `38b5c47` (#112) verde; PR #113 (commit `1b8221d`, run 43326035013): `analyze` limpo, 3 tentativas verdes.
 - **P11**: marcado ✅ Resolvida (monitorar). Fora de propósito: `home_screen_test` e `language_selector_test`.
 - **Não verificado**: que a instabilidade acabou (poucas rodadas por PR); nada rodou local (ADR 0009).
+
+## Sessão 335 — P12a: AGP 9.3.1 e Kotlin 2.4.20 no mobile (PR #114)
+- **Pedido**: "vamos de p10"; **errei**: listei o P10 como aberto, mas está ✅ Resolvida desde a Sessão 308 (resumi de memória, sem reler o `PENDING.md`). O dono escolheu o P12 (via `AskUserQuestion`); plano aprovado em plan mode (AGP/Kotlin e `language_selector_test`, em 2 PRs).
+- **Medido antes**: no Google Maven existem AGP 9.3.0 a 9.5.1; a doc do AGP 9.3 exige Gradle 9.5.0 (já o nosso). Escolhi 9.3.1, o mínimo que o aviso pede.
+- **Feito**: `mobile/android/settings.gradle.kts`: AGP 9.1.1 → 9.3.1 (commit `e3e6c42`) e Kotlin 2.3.20 → 2.4.20 (commit `a7c3849`).
+- **Prova** (`workflow_dispatch` do `CI Mobile` na branch, porque o `apk` não roda no PR): só o AGP (run 43330174224): `apk` e `test` verdes, aviso do AGP some, **aviso do Kotlin 2.4.10 continua**. Com os dois (run 43331183058): `apk` e `test` verdes, "Built app-release.apk (60.5MB)", nenhum "Flutter support … soon dropped".
+- **Sobrou**: aviso de `file_picker` (aplica o KGP); bump 10.3.10 → 13.3.3 é 3 majors, deixei para avaliar o changelog. `language_selector_test` (P12d) fica para o PR seguinte.
+- **Não verificado**: o APK num aparelho; o `build.yml` de release (só roda em tag, usa o mesmo `settings.gradle.kts`); o `mobile / test` do PR depois do commit de docs.
