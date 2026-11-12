@@ -36,6 +36,12 @@ class ThesisEditScreen extends StatefulWidget {
   final Future<String?> Function()? pickFile;
   final Future<String?> Function(String path)? openFile;
 
+  /// Vindo da busca de cotação: o ticker fica fixo (sem seletor de ativo). [forAsset] é o ativo
+  /// cadastrado com esse ticker e classe; `null` quando o ticker não está na carteira, caso em
+  /// que a tese é salva Global e **nenhum ativo é criado** (um ativo novo viraria card na Carteira).
+  final String? forTicker;
+  final Asset? forAsset;
+
   const ThesisEditScreen({
     super.key,
     required this.repository,
@@ -43,6 +49,8 @@ class ThesisEditScreen extends StatefulWidget {
     this.attachments,
     this.pickFile,
     this.openFile,
+    this.forTicker,
+    this.forAsset,
   });
 
   @override
@@ -124,13 +132,17 @@ class _ThesisEditScreenState extends State<ThesisEditScreen> {
     if (mounted) setState(() => _assets = assets);
   }
 
+  /// Com o ticker fixo (busca de cotação), o ativo é o da busca, ou nenhum; senão, o escolhido.
+  int? get _effectiveAssetId => widget.forTicker != null ? widget.forAsset?.id : _assetId;
+
   Future<void> _save() async {
     final entry = widget.entry;
+    final assetId = _effectiveAssetId;
     try {
       if (entry == null) {
-        await widget.repository.create(title: _title.text, content: _content.text, assetId: _assetId);
+        await widget.repository.create(title: _title.text, content: _content.text, assetId: assetId);
       } else {
-        await widget.repository.update(entry.thesis.id, title: _title.text, content: _content.text, assetId: _assetId);
+        await widget.repository.update(entry.thesis.id, title: _title.text, content: _content.text, assetId: assetId);
       }
     } on FinanceArgumentError catch (e) {
       if (mounted) setState(() => _error = e);
@@ -198,6 +210,15 @@ class _ThesisEditScreenState extends State<ThesisEditScreen> {
             decoration: InputDecoration(labelText: l.thesisFieldTitle),
           ),
           const SizedBox(height: 16),
+          if (widget.forTicker != null)
+            Text(
+              widget.forAsset != null
+                  ? l.thesisAssetFixed(widget.forTicker!)
+                  : l.thesisAssetNotInPortfolio(widget.forTicker!),
+              key: const Key('thesis-fixed-asset'),
+              style: Theme.of(context).textTheme.bodyMedium,
+            )
+          else
           // `initialValue` só vale na construção: reconstruir o campo quando a lista de ativos
           // chega faz uma tese já ligada a um ativo mostrar o ativo, não "Global".
           KeyedSubtree(

@@ -5074,6 +5074,24 @@ abstract class AppLocalizations {
   /// **'Global (no asset)'**
   String get thesisAssetGlobal;
 
+  /// No description provided for @thesisAssetFixed.
+  ///
+  /// In en, this message translates to:
+  /// **'Asset: {ticker}'**
+  String thesisAssetFixed(String ticker);
+
+  /// No description provided for @thesisAssetNotInPortfolio.
+  ///
+  /// In en, this message translates to:
+  /// **'Global — {ticker} is not in your portfolio'**
+  String thesisAssetNotInPortfolio(String ticker);
+
+  /// No description provided for @assetThesesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No theses for {ticker}.'**
+  String assetThesesEmpty(String ticker);
+
   /// No description provided for @thesisFieldContent.
   ///
   /// In en, this message translates to:

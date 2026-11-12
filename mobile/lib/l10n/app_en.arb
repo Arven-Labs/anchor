@@ -1129,6 +1129,12 @@
   "thesisFieldTitle": "Title",
   "thesisFieldAsset": "Asset (optional)",
   "thesisAssetGlobal": "Global (no asset)",
+  "thesisAssetFixed": "Asset: {ticker}",
+  "@thesisAssetFixed": {"placeholders": {"ticker": {"type": "String"}}},
+  "thesisAssetNotInPortfolio": "Global — {ticker} is not in your portfolio",
+  "@thesisAssetNotInPortfolio": {"placeholders": {"ticker": {"type": "String"}}},
+  "assetThesesEmpty": "No theses for {ticker}.",
+  "@assetThesesEmpty": {"placeholders": {"ticker": {"type": "String"}}},
   "thesisFieldContent": "Text (Markdown)",
   "thesisDeleteTitle": "Delete this thesis?",
   "thesisDeleteBody": "The thesis text will be deleted and cannot be recovered."

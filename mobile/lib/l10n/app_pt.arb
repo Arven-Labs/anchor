@@ -876,6 +876,9 @@
   "thesisFieldTitle": "Título",
   "thesisFieldAsset": "Ativo (opcional)",
   "thesisAssetGlobal": "Global (sem ativo)",
+  "thesisAssetFixed": "Ativo: {ticker}",
+  "thesisAssetNotInPortfolio": "Global — {ticker} não está na carteira",
+  "assetThesesEmpty": "Nenhuma tese para {ticker}.",
   "thesisFieldContent": "Texto (Markdown)",
   "thesisDeleteTitle": "Excluir esta tese?",
   "thesisDeleteBody": "O texto da tese será apagado e não dá para recuperar."

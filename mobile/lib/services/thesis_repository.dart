@@ -1,6 +1,7 @@
 import '../data/db.dart';
 import '../domain/finance_error.dart';
 import '../domain/thesis_input.dart';
+import '../models/asset.dart';
 import '../models/thesis.dart';
 import 'portfolio_repository.dart';
 import 'thesis_attachment_repository.dart';
@@ -32,6 +33,36 @@ class ThesisRepository {
       entries.add(ThesisEntry(thesis: thesis, asset: assets[thesis.assetId]));
     }
     return entries;
+  }
+
+  /// Todos os ativos cadastrados com esse ticker **e** essa classe. O banco não tem `UNIQUE` em
+  /// `assets`: casar só por ticker reaproveitaria o ativo de outra classe, e pode haver
+  /// duplicados. O ticker é comparado sem espaços nas pontas e em maiúsculas.
+  Future<List<Asset>> _matchingAssets(String ticker, AssetClass assetClass) async {
+    final wanted = ticker.trim().toUpperCase();
+    return [
+      for (final asset in await _portfolio.listAssets())
+        if (asset.assetClass == assetClass && asset.ticker.trim().toUpperCase() == wanted) asset,
+    ];
+  }
+
+  /// O ativo cadastrado com esse ticker **e** essa classe, ou `null`. Com duplicados, o de menor
+  /// id (a escolha não pode depender da ordem de leitura).
+  Future<Asset?> findAsset({required String ticker, required AssetClass assetClass}) async {
+    final matches = await _matchingAssets(ticker, assetClass);
+    if (matches.isEmpty) return null;
+    return matches.reduce((a, b) => a.id! <= b.id! ? a : b);
+  }
+
+  /// As teses ligadas a qualquer ativo desse ticker e classe (duplicados inclusos), da mais
+  /// recente para a mais antiga. Ticker fora da carteira dá lista vazia (nada é criado aqui).
+  Future<List<ThesisEntry>> listFor({required String ticker, required AssetClass assetClass}) async {
+    final ids = {for (final asset in await _matchingAssets(ticker, assetClass)) asset.id};
+    if (ids.isEmpty) return [];
+    return [
+      for (final entry in await list())
+        if (ids.contains(entry.thesis.assetId)) entry,
+    ];
   }
 
   Future<int> create({required String title, String? content, int? assetId}) async {
