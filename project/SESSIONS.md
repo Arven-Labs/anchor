@@ -5259,3 +5259,10 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI**: run 43313420813 (antes do conserto do TV5) falhou 2 de 2 só no TV5 (`thesis-attachment-delete-N` não achada), com `analyze` limpo e os 13 testes do `asset_theses_section_test` verdes; decisão do dono: consertar o TV5 no mesmo PR. Com o conserto (`4f72515`), run 43315318183: 3 tentativas verdes.
 - **Não verificado**: que a instabilidade acabou (3 verdes não provam); nada rodou local (ADR 0009); o `watchlist_screen_test` (teste 27) continua com `settle` fixo.
 - **Em aberto**: `watchlist_screen_test`; helper compartilhado de espera (5 cópias); TS1, TS2, TS9 e TQ com `settle` fixo.
+
+## Sessão 332 — P11: espera por condição no `watchlist_screen_test` (PR #111)
+- **Pedido**: "conserta o watchlist_screen_test" (o teste 27 tinha falhado no CI do #109).
+- **Feito**: `settleUntil`/`waitFor` em `watchlist_screen_test.dart`, testes 21 a 27 (esperas depois de criar, apagar, adicionar item, remover favorito e do carregamento das cotações). Só teste; `settle` sem duração (`pump()`), como o arquivo já tinha.
+- **CI** (commit `6fbd29d`, run 43318406408): 3 tentativas verdes, `analyze` limpo.
+- **Não verificado**: que a instabilidade acabou (3 verdes não provam); nada rodou local (ADR 0009).
+- **Em aberto**: decidir o helper compartilhado (6 cópias de `settleUntil`); `settle` fixo em TS1, TS2, TS9 e TQ do `asset_theses_section_test`.
