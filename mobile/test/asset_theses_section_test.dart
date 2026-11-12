@@ -64,6 +64,8 @@ void main() {
   Future<void> settle(WidgetTester tester) => wait.settle(tester, frame: routeFrame);
   Future<void> settleUntil(WidgetTester tester, bool Function() done, String what) =>
       wait.settleUntil(tester, done, what, frame: routeFrame);
+  Future<void> waitFor(WidgetTester tester, Finder finder, String what) =>
+      wait.waitFor(tester, finder, what, frame: routeFrame);
 
   bool editorOpen() => find.byKey(const Key('thesis-title-field')).evaluate().isNotEmpty;
 
@@ -87,6 +89,12 @@ void main() {
     await tester.runAsync(AppDatabase.instance);
   }
 
+  // O bloco terminou de ler o banco quando o botão "Nova tese" deixa de estar desabilitado.
+  Future<void> waitSectionLoaded(WidgetTester tester) => settleUntil(tester, () {
+    final button = find.byKey(const Key('asset-theses-new-button'));
+    return button.evaluate().isNotEmpty && tester.widget<OutlinedButton>(button).onPressed != null;
+  }, 'o bloco de teses carregado');
+
   Future<void> pumpSection(WidgetTester tester, {String ticker = 'PETR4'}) async {
     await bigScreen(tester);
     await tester.pumpWidget(
@@ -98,7 +106,7 @@ void main() {
         ),
       ),
     );
-    await settle(tester);
+    await waitSectionLoaded(tester);
   }
 
   Future<void> pumpSearch(WidgetTester tester, {AssetClass? assetClass, Size? size}) async {
@@ -109,13 +117,17 @@ void main() {
     await settle(tester);
     if (assetClass != null) {
       await tester.tap(find.byType(DropdownButtonFormField<AssetClass>));
-      await settle(tester);
+      await waitFor(tester, find.text(assetClassName(pt, assetClass)), 'a lista de classes aberta');
       await tester.tap(find.text(assetClassName(pt, assetClass)).last);
       await settle(tester);
     }
     await tester.enterText(find.byType(TextField), 'petr4');
     await tester.tap(find.text('Buscar'));
-    await settle(tester);
+    // A cotação (o `_FakeDispatcher` devolve "Petrobras") e, nas classes com bloco, a leitura das teses.
+    await waitFor(tester, find.text('Petrobras'), 'o cartão da cotação');
+    if (find.byKey(const Key('asset-theses-section')).evaluate().isNotEmpty) {
+      await waitSectionLoaded(tester);
+    }
   }
 
   group('o bloco', () {
@@ -266,7 +278,7 @@ void main() {
       expect(find.text('Nenhuma tese para PETR4.'), findsNothing);
       expect(tester.widget<OutlinedButton>(find.byKey(newButton)).onPressed, isNull);
 
-      await settle(tester);
+      await waitSectionLoaded(tester);
 
       expect(find.text('Nenhuma tese para PETR4.'), findsOneWidget);
       expect(tester.widget<OutlinedButton>(find.byKey(newButton)).onPressed, isNotNull);
