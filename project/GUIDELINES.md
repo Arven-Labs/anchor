@@ -11,6 +11,7 @@
 - Nomes de variáveis, funções, classes, arquivos: inglês
 - Comentários no código: podem ficar em português (não são visíveis ao usuário e facilitam o aprendizado)
 - Esta regra vale para qualquer linguagem que venha a ser usada (Python, TypeScript, Rust, etc. — a decidir)
+- **Testes de tela do mobile**: espere a condição, não um tempo fixo. Use `settleUntil`/`waitFor`/`waitGone` de `mobile/test/support/settle.dart` (roda o `settle` inteiro e depois sonda, até 200 voltas); telas com rota passam `frame: Duration(milliseconds: 50)`. Um `settle` fixo sozinho é palpite de tempo e falha sob carga no CI (P11).
 
 ---
 

@@ -16,6 +16,7 @@ import 'package:anchor_mobile/services/quote_dispatcher.dart';
 import 'package:anchor_mobile/services/thesis_repository.dart';
 
 import 'support/localized_app.dart';
+import 'support/settle.dart' as wait;
 
 // O bloco de teses do ticker, dentro da busca de cotação (SQLite ffi, sem rede). Tabela de
 // testes TS1 a TS8 (o bloco) e TQ1 a TQ4 (a busca). Dados fictícios.
@@ -58,27 +59,11 @@ void main() {
     ),
   );
 
-  // Avança também o relógio falso: sem isso a transição de tela nunca termina.
-  Future<void> settle(WidgetTester tester) async {
-    for (var i = 0; i < 20; i++) {
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-  }
-
-  // Espera a condição real além do tempo fixo (mesmo padrão do `theses_screen_test`, P11): sob
-  // carga o `pop` da rota e o recarregamento da lista passam do 1 s do `settle`. Roda primeiro o
-  // `settle` inteiro (a rota corre no relógio falso e precisa dele para entrar na tela) e só
-  // depois sonda a condição, até 200 voltas.
-  Future<void> settleUntil(WidgetTester tester, bool Function() done, String what) async {
-    await settle(tester);
-    for (var i = 0; i < 200; i++) {
-      if (done()) return;
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-    fail('Não chegou a: $what');
-  }
+  // Avança também o relógio falso (50 ms por volta): sem isso a transição de tela nunca termina.
+  const routeFrame = Duration(milliseconds: 50);
+  Future<void> settle(WidgetTester tester) => wait.settle(tester, frame: routeFrame);
+  Future<void> settleUntil(WidgetTester tester, bool Function() done, String what) =>
+      wait.settleUntil(tester, done, what, frame: routeFrame);
 
   bool editorOpen() => find.byKey(const Key('thesis-title-field')).evaluate().isNotEmpty;
 

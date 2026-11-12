@@ -13,6 +13,7 @@ import 'package:anchor_mobile/services/portfolio_repository.dart';
 import 'package:anchor_mobile/services/watchlist_repository.dart';
 
 import 'support/localized_app.dart';
+import 'support/settle.dart';
 
 // A tela de watchlists montada de verdade (SQLite ffi, cotação injetada, sem rede).
 // Tabela de testes 21 a 27.
@@ -54,29 +55,6 @@ void main() {
         priceUnavailable: unavailable.contains(asset.ticker),
       ),
   ];
-
-  Future<void> settle(WidgetTester tester) async {
-    for (var i = 0; i < 20; i++) {
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
-      await tester.pump();
-    }
-  }
-
-  // Espera a condição real além do tempo fixo (mesmo padrão do `theses_screen_test`, P11): sob
-  // carga o banco e o redesenho passam dos ~0,5 s do `settle` (o teste 27 falhou assim no CI do
-  // PR #109). Roda o `settle` inteiro e só depois sonda, até 200 voltas.
-  Future<void> settleUntil(WidgetTester tester, bool Function() done, String what) async {
-    await settle(tester);
-    for (var i = 0; i < 200; i++) {
-      if (done()) return;
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
-      await tester.pump();
-    }
-    fail('Não chegou a: $what');
-  }
-
-  Future<void> waitFor(WidgetTester tester, Finder finder, String what) =>
-      settleUntil(tester, () => finder.evaluate().isNotEmpty, what);
 
   Future<void> pumpScreen(
     WidgetTester tester, {
