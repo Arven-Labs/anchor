@@ -14,6 +14,7 @@ import 'package:anchor_mobile/screens/home_screen.dart';
 import 'package:anchor_mobile/services/language_preference_repository.dart';
 
 import 'support/localized_app.dart';
+import 'support/settle.dart' as wait;
 
 /// Tela mínima para provar o mecanismo sem rede: mostra um texto traduzido, guarda um
 /// contador no estado (para provar que trocar o idioma não recria a tela) e troca o idioma.
@@ -107,9 +108,25 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
   }
 
-  Future<void> choose(WidgetTester tester, String key) async {
+  // Toca na opção e espera o efeito real, em vez de um tempo fixo: o texto [shows] na tela e a
+  // preferência [saved] gravada no banco (a gravação é assíncrona e o teste seguinte pode
+  // reabrir o app).
+  Future<void> choose(
+    WidgetTester tester,
+    String key, {
+    required String shows,
+    required LanguagePreference saved,
+  }) async {
     await tester.tap(find.byKey(Key(key)));
-    await settleUntil(tester, () => false);
+    await wait.waitFor(tester, find.text(shows), 'o texto "$shows" na tela');
+    for (var i = 0; i < 200; i++) {
+      if (await tester.runAsync(repository.load) == saved) {
+        await tester.pump(const Duration(milliseconds: 300));
+        return;
+      }
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+    }
+    fail('A preferência ${saved.name} não foi gravada');
   }
 
   group('idioma aplicado ao abrir o app', () {
@@ -158,16 +175,16 @@ void main() {
     ) async {
       await pumpApp(tester, device: const [Locale('en', 'US')]);
 
-      await choose(tester, 'probe-pt');
+      await choose(tester, 'probe-pt', shows: 'Início', saved: LanguagePreference.pt);
       expect(probeText(tester), 'Início');
 
-      await choose(tester, 'probe-system');
+      await choose(tester, 'probe-system', shows: 'Home', saved: LanguagePreference.system);
       expect(probeText(tester), 'Home');
     });
 
     testWidgets('a escolha fica salva e vale na próxima abertura', (tester) async {
       await pumpApp(tester, device: const [Locale('en', 'US')]);
-      await choose(tester, 'probe-pt');
+      await choose(tester, 'probe-pt', shows: 'Início', saved: LanguagePreference.pt);
 
       await pumpApp(tester, device: const [Locale('en', 'US')]);
 
@@ -180,7 +197,7 @@ void main() {
       await tester.tap(find.byKey(const Key('probe-count')));
       await tester.pump();
 
-      await choose(tester, 'probe-pt');
+      await choose(tester, 'probe-pt', shows: 'Início', saved: LanguagePreference.pt);
 
       expect(tester.widget<Text>(find.byKey(const Key('probe-taps'))).data, '2');
     });
@@ -228,7 +245,7 @@ void main() {
       await tester.tap(find.byKey(const Key('home-settings')));
       await tester.pumpAndSettle();
 
-      await choose(tester, 'language-option-pt');
+      await choose(tester, 'language-option-pt', shows: 'Seguir o aparelho', saved: LanguagePreference.pt);
 
       expect(find.text('Seguir o aparelho'), findsOneWidget);
       final saved = await tester.runAsync(repository.load);
