@@ -5266,3 +5266,12 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI** (commit `6fbd29d`, run 43318406408): 3 tentativas verdes, `analyze` limpo.
 - **Não verificado**: que a instabilidade acabou (3 verdes não provam); nada rodou local (ADR 0009).
 - **Em aberto**: decidir o helper compartilhado (6 cópias de `settleUntil`); `settle` fixo em TS1, TS2, TS9 e TQ do `asset_theses_section_test`.
+
+## Sessão 333 — P11: helper compartilhado de espera (PR #112)
+- **Pedido**: "propõe o desenho" do helper e, aprovado ("sim"), implementar.
+- **Levantamento**: 16 arquivos de teste definem `settle` próprio; 6 têm `settleUntil`, **não idênticos** (`pump()` vs `pump(50 ms)`; `home_screen` e `language_selector` sondam sem `settle` antes e sem `fail`).
+- **Feito**: `mobile/test/support/settle.dart` (`settle`, `settleUntil` que roda o `settle` inteiro antes de sondar, `waitFor`, `waitGone`, `frame` opcional); importado por `watchlist_screen_test` (frame padrão) e, por wrapper local com `frame` de 50 ms, por `theses_screen`, `asset_theses_section` e `thesis_attachments_screen`. Linha nova no `GUIDELINES.md`.
+- **Desvio do que o dono aprovou**: a proposta incluía o `home_screen_test` (5 arquivos); deixei de fora porque a semântica do `settleUntil` dele é outra e trocar mudaria o comportamento. Também fora: `language_selector_test`, e as famílias `ready`/`CircularProgressIndicator`.
+- **CI** (commit `210afa3`, run 43322370261): `analyze` limpo, 3 tentativas verdes.
+- **Não verificado**: que a instabilidade acabou; nada rodou local (ADR 0009).
+- **Em aberto**: `settle` fixo em TS1, TS2, TS9 e TQ.

@@ -12,6 +12,7 @@ import 'package:anchor_mobile/services/thesis_attachment_repository.dart';
 import 'package:anchor_mobile/services/thesis_repository.dart';
 
 import 'support/localized_app.dart';
+import 'support/settle.dart' as wait;
 
 // A seção de anexos da tela de edição da tese, com o seletor de arquivo e a abertura
 // injetados (os plugins de plataforma não rodam no flutter_test). Tabela de testes TV1 a TV5.
@@ -35,31 +36,14 @@ void main() {
     await dir.delete(recursive: true);
   });
 
-  Future<void> settle(WidgetTester tester) async {
-    for (var i = 0; i < 20; i++) {
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-  }
-
-  // Espera a condição real além do tempo fixo (mesmo padrão do `theses_screen_test`, P11): sob
-  // carga o anexar/apagar e o recarregamento da lista passam do 1 s do `settle` (o TV5 falhou
-  // assim no CI do PR #110). Roda o `settle` inteiro e só depois sonda, até 200 voltas.
-  Future<void> settleUntil(WidgetTester tester, bool Function() done, String what) async {
-    await settle(tester);
-    for (var i = 0; i < 200; i++) {
-      if (done()) return;
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-    fail('Não chegou a: $what');
-  }
-
+  const routeFrame = Duration(milliseconds: 50);
+  Future<void> settle(WidgetTester tester) => wait.settle(tester, frame: routeFrame);
+  Future<void> settleUntil(WidgetTester tester, bool Function() done, String what) =>
+      wait.settleUntil(tester, done, what, frame: routeFrame);
   Future<void> waitFor(WidgetTester tester, Finder finder, String what) =>
-      settleUntil(tester, () => finder.evaluate().isNotEmpty, what);
-
+      wait.waitFor(tester, finder, what, frame: routeFrame);
   Future<void> waitGone(WidgetTester tester, Finder finder, String what) =>
-      settleUntil(tester, () => finder.evaluate().isEmpty, what);
+      wait.waitGone(tester, finder, what, frame: routeFrame);
 
   Future<String> sourceFile(WidgetTester tester, String name) async {
     final path = p.join(dir.path, name);

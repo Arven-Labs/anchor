@@ -11,6 +11,7 @@ import 'package:anchor_mobile/services/portfolio_repository.dart';
 import 'package:anchor_mobile/services/thesis_repository.dart';
 
 import 'support/localized_app.dart';
+import 'support/settle.dart' as wait;
 
 // As telas de teses montadas de verdade (SQLite ffi, sem rede). Tabela de testes TT1 a TT7.
 void main() {
@@ -40,30 +41,12 @@ void main() {
     ),
   );
 
-  // Avança também o relógio falso (50 ms por volta): sem isso a transição de tela e o diálogo
-  // nunca terminam, e o botão do canto ainda está fora da tela quando o teste toca nele.
-  Future<void> settle(WidgetTester tester) async {
-    for (var i = 0; i < 20; i++) {
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-  }
-
-  // Espera a condição real além do tempo fixo (como o `fund_tax_screen_test`, Sessão 292): sob
-  // carga o `pop` da rota e o recarregamento da lista passam do 1 s do `settle`, e o `expect`
-  // via a tela de edição ainda montada (TT5 e TT3 falharam assim no CI do PR #106). Roda
-  // primeiro o `settle` inteiro: a transição de rota corre no relógio falso e precisa dos seus
-  // 1 s para o botão do canto entrar na tela (a condição "o campo existe" vale já no 1º quadro,
-  // com a rota ainda fora dela). Só depois sonda a condição, até 200 voltas.
-  Future<void> settleUntil(WidgetTester tester, bool Function() done, String what) async {
-    await settle(tester);
-    for (var i = 0; i < 200; i++) {
-      if (done()) return;
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-    fail('Não chegou a: $what');
-  }
+  // 50 ms por volta no relógio falso: sem isso a transição de tela e o diálogo nunca terminam,
+  // e o botão do canto ainda está fora da tela quando o teste toca nele.
+  const routeFrame = Duration(milliseconds: 50);
+  Future<void> settle(WidgetTester tester) => wait.settle(tester, frame: routeFrame);
+  Future<void> settleUntil(WidgetTester tester, bool Function() done, String what) =>
+      wait.settleUntil(tester, done, what, frame: routeFrame);
 
   bool editorOpen() => find.byKey(const Key('thesis-title-field')).evaluate().isNotEmpty;
 
