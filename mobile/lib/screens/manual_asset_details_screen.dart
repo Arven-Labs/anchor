@@ -164,8 +164,8 @@ class _ManualAssetDetailsScreenState extends State<ManualAssetDetailsScreen> {
   }
 
   Future<void> _pickAndAddAttachment() async {
-    final result = await FilePicker.platform.pickFiles();
-    final path = result?.files.single.path;
+    final picked = await FilePicker.pickFile();
+    final path = picked?.path;
     if (path == null) return;
 
     setState(() => _addingAttachment = true);

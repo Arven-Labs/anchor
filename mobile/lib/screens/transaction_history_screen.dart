@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
@@ -81,14 +82,13 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       _transactions,
     );
     try {
-      final path = await FilePicker.platform.saveFile(
+      final saved = await FilePicker.saveFile(
         dialogTitle: l.txhExportDialogTitle,
         fileName: 'anchor-transactions-$day.csv',
-        type: FileType.custom,
-        allowedExtensions: const ['csv'],
-        bytes: utf8.encode(result.csv),
+        mimeType: 'text/csv',
+        bytes: Uint8List.fromList(utf8.encode(result.csv)),
       );
-      if (path == null) return;
+      if (saved == null) return;
       final skipped = result.skipped == 0
           ? ''
           : ' ${l.txhExportedSkipped(result.skipped)}';
@@ -108,13 +108,12 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final l = AppLocalizations.of(context);
     try {
-      final picked = await FilePicker.platform.pickFiles(
+      final picked = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: const ['csv'],
-        withData: true,
       );
-      final bytes = picked?.files.firstOrNull?.bytes;
-      if (bytes == null) return;
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
 
       final plan = planTransactionsImport(
         parseTransactionsCsv(utf8.decode(bytes, allowMalformed: true)),

@@ -221,16 +221,17 @@ class _HoldingsCardState extends State<_HoldingsCard> {
     final l = AppLocalizations.of(context);
     final day = DateTime.now().toIso8601String().substring(0, 10);
     try {
-      final path = await FilePicker.platform.saveFile(
+      final saved = await FilePicker.saveFile(
         dialogTitle: l.foreignCsvDialogTitle,
         fileName: 'anchor-foreign-holdings-$day.csv',
-        type: FileType.custom,
-        allowedExtensions: const ['csv'],
-        bytes: utf8.encode(
-          foreignHoldingsCsv(widget.holdings, widget.custodiaLabels),
+        mimeType: 'text/csv',
+        bytes: Uint8List.fromList(
+          utf8.encode(
+            foreignHoldingsCsv(widget.holdings, widget.custodiaLabels),
+          ),
         ),
       );
-      if (path == null) return;
+      if (saved == null) return;
       messenger.showSnackBar(
         SnackBar(content: Text(l.foreignCsvSaved(widget.holdings.length))),
       );
