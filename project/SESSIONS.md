@@ -5322,3 +5322,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI da `main`** (`6382152`, depois do #117): Desktop E2E, Frontend, Rust e Private Files verdes.
 - **Não verificado**: a verificação criptográfica completa dos `.sig`; a atualização no Windows e no macOS; macOS Intel; assinatura de código do SO; `notes` do `latest.json` está vazio (o app não mostra novidades).
 - **P9**: marcado ✅ Resolvida (Linux).
+
+## Sessão 340 — Registro de ideias no ROADMAP
+- **Pedido**: o dono quis registrar ideias, sem implementar nada. Só docs.
+- **Registradas em `ROADMAP.md`** (6 entradas, todas "puro registro", sem fase): automatizar a análise de ações (filtros, RI, análises e teses, valuations mais fáceis); Anchor para fundos, holdings, gestoras e consultoria (a estudar); Anchor mais didático, simples e visual; custos de transferência e conversão de moeda (IOF e outros); previdência privada (só o título, sem detalhes); visualizador de wallets (Ledger, Trezor, hot wallets) separado da carteira de investimentos.
+- **Decisões em aberto** ficaram dentro de cada entrada. A principal: onde mora o visualizador de wallets (Anchor, TruthID ou projeto próprio).
+- **Início da sessão**: `main` limpa, sem PR aberto, 1 alerta do Dependabot aberto (triagem não feita), disco sem alerta.
+- **CI**: PR só de docs; o resultado real fica no PR, abaixo.
+- **Não verificado**: nenhuma alíquota ou regra fiscal (IOF, previdência) foi escrita; todas dependem de conferir a fonte.
