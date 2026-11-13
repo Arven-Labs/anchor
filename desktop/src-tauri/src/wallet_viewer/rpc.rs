@@ -4,15 +4,77 @@
 use alloy_primitives::U256;
 
 use crate::error::AppError;
+use crate::finance_core::http::{check_status, DEFAULT_TIMEOUT, USER_AGENT};
+
+/// Uma rede EVM e os RPCs públicos que a atendem, em ordem de preferência. Medidos em
+/// 2026-11-13 (ver SESSIONS.md); sem chave de API, que não pode ir no código.
+pub struct Network {
+    pub name: &'static str,
+    pub endpoints: &'static [&'static str],
+}
+
+pub const ETHEREUM: Network =
+    Network { name: "Ethereum", endpoints: &["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org"] };
+
+pub const BASE: Network =
+    Network { name: "Base", endpoints: &["https://mainnet.base.org", "https://base-rpc.publicnode.com"] };
 
 /// Corpo JSON-RPC de `eth_getBalance` para o endereço, no bloco `latest`.
-pub fn balance_request_body(_address: &str) -> String {
-    todo!("Etapa 3 do plano do visualizador de wallets")
+pub fn balance_request_body(address: &str) -> String {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getBalance",
+        "params": [address, "latest"],
+    })
+    .to_string()
 }
 
 /// Lê a resposta de `eth_getBalance` e devolve o saldo em **wei**, sem perda (`U256`, nunca `f64`).
-pub fn parse_balance_response(_body: &str) -> Result<U256, AppError> {
-    todo!("Etapa 3 do plano do visualizador de wallets")
+pub fn parse_balance_response(body: &str) -> Result<U256, AppError> {
+    let value: serde_json::Value = serde_json::from_str(body)?;
+    if let Some(error) = value.get("error") {
+        let message = error.get("message").and_then(|m| m.as_str()).unwrap_or("unknown error");
+        return Err(AppError::Rpc(message.to_string()));
+    }
+    let result = value
+        .get("result")
+        .and_then(|r| r.as_str())
+        .ok_or_else(|| AppError::Rpc("response has no string `result`".to_string()))?;
+    let hex = result
+        .strip_prefix("0x")
+        .filter(|hex| !hex.is_empty())
+        .ok_or_else(|| AppError::Rpc(format!("balance `{result}` is not a 0x-prefixed hex number")))?;
+    U256::from_str_radix(hex, 16).map_err(|e| AppError::Rpc(format!("invalid balance `{result}`: {e}")))
+}
+
+/// Saldo nativo (em wei) do endereço. Tenta cada RPC da rede em ordem e devolve o primeiro que
+/// responde; se todos falharem, o erro do último.
+pub async fn fetch_balance(network: &Network, address: &str) -> Result<U256, AppError> {
+    let body = balance_request_body(address);
+    let mut last_error = AppError::ProviderUnavailable(format!("{}: no RPC endpoint configured", network.name));
+    for endpoint in network.endpoints {
+        match post_balance(network.name, endpoint, &body).await {
+            Ok(balance) => return Ok(balance),
+            Err(error) => last_error = error,
+        }
+    }
+    Err(last_error)
+}
+
+async fn post_balance(source: &str, url: &str, body: &str) -> Result<U256, AppError> {
+    let unavailable = |detail: reqwest::Error| AppError::ProviderUnavailable(format!("{source}: {detail}"));
+    let client = reqwest::Client::builder().timeout(DEFAULT_TIMEOUT).user_agent(USER_AGENT).build().map_err(unavailable)?;
+    let response = client
+        .post(url)
+        .header("content-type", "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+        .map_err(unavailable)?;
+    let status = response.status().as_u16();
+    let text = response.text().await.map_err(unavailable)?;
+    parse_balance_response(&check_status(source, status, text)?)
 }
 
 #[cfg(test)]

@@ -2,13 +2,33 @@
 //! endereço canônico (checksum EIP-55) ou `InvalidAddress`. O módulo "visualizador de
 //! wallets" (ADR 0002) só lê endereços públicos; nada aqui toca chave privada.
 
+use std::str::FromStr;
+
+use alloy_primitives::Address;
+
 use crate::error::AppError;
 
 /// Aceita `0x` + 40 hex, com espaços nas pontas. Tudo minúsculo ou tudo maiúsculo vale
 /// (não carrega checksum); com letras misturadas o checksum EIP-55 tem de bater. Devolve o
-/// endereço no formato com checksum.
-pub fn parse_address(_input: &str) -> Result<String, AppError> {
-    todo!("Etapa 3 do plano do visualizador de wallets")
+/// endereço no formato com checksum. A mensagem de erro não repete o texto digitado.
+pub fn parse_address(input: &str) -> Result<String, AppError> {
+    let text = input.trim();
+    let malformed = || AppError::InvalidAddress("expected 0x followed by 40 hexadecimal characters".to_string());
+
+    let hex = text.strip_prefix("0x").ok_or_else(malformed)?;
+    if hex.len() != 40 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(malformed());
+    }
+
+    let has_lowercase = hex.bytes().any(|byte| byte.is_ascii_lowercase());
+    let has_uppercase = hex.bytes().any(|byte| byte.is_ascii_uppercase());
+    let address = if has_lowercase && has_uppercase {
+        Address::parse_checksummed(text, None)
+            .map_err(|_| AppError::InvalidAddress("the checksum does not match".to_string()))?
+    } else {
+        Address::from_str(text).map_err(|_| malformed())?
+    };
+    Ok(address.to_checksum(None))
 }
 
 #[cfg(test)]
