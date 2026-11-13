@@ -55,6 +55,8 @@ pub mod stock_price_history;
 pub mod stock_quotes;
 pub mod stock_technicals;
 pub mod storage_settings;
+pub mod wallet_viewer_address;
+pub mod wallet_viewer_settings;
 pub mod suggested_dividends;
 pub mod tax_payments;
 pub mod tax_rules;

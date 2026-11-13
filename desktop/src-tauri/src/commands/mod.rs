@@ -54,6 +54,7 @@ pub mod truthid;
 pub mod update_check;
 pub mod update_install;
 pub mod valuation;
+pub mod wallet_viewer;
 pub mod watchlist;
 pub mod workspace;
 pub mod workspace_summary;

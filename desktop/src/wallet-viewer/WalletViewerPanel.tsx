@@ -1,0 +1,176 @@
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { AppError } from "../types";
+import Field from "../components/Field";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  formatEth,
+  WALLET_VIEWER_ADDRESSES_KEY,
+  type AddressBalances,
+  type NetworkBalance,
+  type WalletAddress,
+} from "./types";
+
+// ADR 0002 — visualizador de wallets: só leitura. Cadastra endereços públicos e mostra o saldo
+// nativo (ETH) na Ethereum e na Base. Não tem relação com a carteira de investimentos e nunca
+// assina nada. O saldo só é buscado quando o usuário clica em "Refresh balances": cada consulta
+// revela o endereço ao provedor de RPC público.
+function BalanceLine({ balance }: { balance: NetworkBalance }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 text-sm">
+      <span className="text-muted-foreground">{balance.network}</span>
+      {balance.error ? (
+        <span className="text-red-600" title={balance.error}>
+          Could not read the balance
+        </span>
+      ) : (
+        <span className="font-mono" title={balance.wei ? `${balance.wei} wei` : undefined}>
+          {balance.eth !== null ? `${formatEth(balance.eth)} ETH` : "—"}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function AddressRow({
+  wallet,
+  balances,
+  onRemove,
+  removing,
+}: {
+  wallet: WalletAddress;
+  balances: NetworkBalance[] | undefined;
+  onRemove: () => void;
+  removing: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-md border p-4" data-testid={`wallet-address-${wallet.id}`}>
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="min-w-0">
+          {wallet.label && <h4 className="text-sm font-semibold">{wallet.label}</h4>}
+          <p className="break-all font-mono text-xs text-muted-foreground">{wallet.address}</p>
+        </div>
+        <Button type="button" variant="outline" size="sm" disabled={removing} onClick={onRemove}>
+          Remove
+        </Button>
+      </div>
+      {balances ? (
+        balances.map((balance) => <BalanceLine key={balance.network} balance={balance} />)
+      ) : (
+        <p className="text-xs text-muted-foreground">Balances not loaded yet.</p>
+      )}
+    </div>
+  );
+}
+
+function WalletViewerPanel() {
+  const queryClient = useQueryClient();
+  const [address, setAddress] = useState("");
+  const [label, setLabel] = useState("");
+
+  const addressesQuery = useQuery<WalletAddress[], AppError>({
+    queryKey: WALLET_VIEWER_ADDRESSES_KEY,
+    queryFn: () => invoke("wallet_viewer_list_addresses"),
+  });
+
+  const balancesMutation = useMutation<AddressBalances[], AppError, void>({
+    mutationFn: () => invoke("wallet_viewer_get_balances"),
+  });
+
+  const addMutation = useMutation<WalletAddress, AppError, void>({
+    mutationFn: () =>
+      invoke("wallet_viewer_add_address", { address, label: label.trim() === "" ? null : label }),
+    onSuccess: () => {
+      setAddress("");
+      setLabel("");
+      queryClient.invalidateQueries({ queryKey: WALLET_VIEWER_ADDRESSES_KEY });
+    },
+  });
+
+  const removeMutation = useMutation<void, AppError, number>({
+    mutationFn: (id) => invoke("wallet_viewer_remove_address", { id }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: WALLET_VIEWER_ADDRESSES_KEY }),
+  });
+
+  const balancesById = new Map(balancesMutation.data?.map((entry) => [entry.id, entry.balances]));
+  const wallets = addressesQuery.data ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Wallets</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-6">
+        <p className="text-sm text-muted-foreground">
+          A read-only view of public addresses (Ethereum and Base, native ETH). It is separate from
+          your portfolio: nothing here is counted in positions, returns or taxes, and nothing is
+          ever signed.
+        </p>
+
+        <form
+          className="grid gap-3 sm:grid-cols-[2fr_1fr_auto] sm:items-end"
+          onSubmit={(event) => {
+            event.preventDefault();
+            addMutation.mutate();
+          }}
+        >
+          <Field label="Address">
+            <Input
+              value={address}
+              onChange={(e) => setAddress(e.currentTarget.value)}
+              placeholder="0x…"
+              autoComplete="off"
+              spellCheck={false}
+              data-testid="wallet-address-input"
+            />
+          </Field>
+          <Field label="Label (optional)">
+            <Input value={label} onChange={(e) => setLabel(e.currentTarget.value)} autoComplete="off" />
+          </Field>
+          <Button type="submit" disabled={address.trim().length === 0 || addMutation.isPending}>
+            {addMutation.isPending ? "Adding..." : "Add"}
+          </Button>
+        </form>
+        {addMutation.isError && <p className="text-sm text-red-600">{addMutation.error.message}</p>}
+        {removeMutation.isError && <p className="text-sm text-red-600">{removeMutation.error.message}</p>}
+
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={wallets.length === 0 || balancesMutation.isPending}
+            onClick={() => balancesMutation.mutate()}
+            data-testid="wallet-refresh"
+          >
+            {balancesMutation.isPending ? "Reading..." : "Refresh balances"}
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Each refresh asks public RPC providers for the balance, which tells them the address.
+          </span>
+        </div>
+        {balancesMutation.isError && <p className="text-sm text-red-600">{balancesMutation.error.message}</p>}
+
+        {addressesQuery.isError && <p className="text-red-600">{addressesQuery.error.message}</p>}
+        {addressesQuery.isSuccess && wallets.length === 0 && (
+          <p className="text-sm text-muted-foreground">No addresses yet.</p>
+        )}
+        <div className="flex flex-col gap-3">
+          {wallets.map((wallet) => (
+            <AddressRow
+              key={wallet.id}
+              wallet={wallet}
+              balances={balancesById.get(wallet.id)}
+              onRemove={() => removeMutation.mutate(wallet.id)}
+              removing={removeMutation.isPending}
+            />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default WalletViewerPanel;

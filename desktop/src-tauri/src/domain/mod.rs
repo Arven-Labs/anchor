@@ -28,3 +28,4 @@ pub mod tax;
 pub mod transaction_ledger;
 pub mod twr;
 pub mod valuation_outcome;
+pub mod wallet_address;

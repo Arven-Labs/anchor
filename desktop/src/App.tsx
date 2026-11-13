@@ -18,6 +18,8 @@ import GlobalSearch from "./nav/GlobalSearch";
 import PendingPanel from "./pending/PendingPanel";
 import { PendingNavContext, type PendingFocus } from "./pending/PendingNav";
 import type { AssetClass } from "./portfolio/types";
+import WalletViewerPanel from "./wallet-viewer/WalletViewerPanel";
+import { WALLET_VIEWER_SETTINGS_KEY, type WalletViewerSettings } from "./wallet-viewer/types";
 import { Button } from "@/components/ui/button";
 import {
   HomeIcon,
@@ -26,6 +28,7 @@ import {
   WalletIcon,
   LandmarkIcon,
   BellIcon,
+  EyeIcon,
   SettingsIcon,
   LogOutIcon,
 } from "lucide-react";
@@ -58,6 +61,9 @@ const SECTIONS = {
   finances: { label: "General Finances", icon: LandmarkIcon },
   pending: { label: "Pending", icon: InboxIcon },
   alerts: { label: "Alerts", icon: BellIcon },
+  // ADR 0002 — visualizador de wallets, módulo opcional: a aba só aparece com o módulo ligado
+  // (Settings → Wallet viewer). Fica fora da carteira de investimentos de propósito.
+  wallets: { label: "Wallets", icon: EyeIcon },
 } as const;
 
 type SectionKey = keyof typeof SECTIONS;
@@ -85,6 +91,18 @@ function App() {
     enabled: workspaceId !== null,
   });
   const pendingTotal = pendingCountsQuery.data?.total ?? 0;
+
+  // ADR 0002 — só mostra a aba "Wallets" com o módulo ligado. Desligado (ou ainda carregando),
+  // quem estava nela volta para Home.
+  const walletViewerQuery = useQuery<WalletViewerSettings, Error>({
+    queryKey: WALLET_VIEWER_SETTINGS_KEY,
+    queryFn: () => invoke("wallet_viewer_get_settings"),
+  });
+  const walletViewerEnabled = walletViewerQuery.data?.enabled === true;
+  const visibleSections = Object.entries(SECTIONS).filter(
+    ([key]) => key !== "wallets" || walletViewerEnabled,
+  );
+  const shownSection: SectionKey = section === "wallets" && !walletViewerEnabled ? "home" : section;
 
   // Fase 6.5 — checagem silenciosa de versão nova ao abrir o app; falha de rede é ignorada
   // (sem retry). Compartilha a query com Settings → About, onde há o botão manual.
@@ -159,13 +177,13 @@ function App() {
             sempre visíveis. */}
         <div className="grid grid-cols-[minmax(max-content,1fr)_minmax(0,2fr)_minmax(max-content,1fr)] items-center gap-3 px-3 py-3">
           <Tabs
-            value={section}
+            value={shownSection}
             onValueChange={(value) => selectSection(value as SectionKey)}
             className="min-w-0 justify-self-start"
           >
             <TooltipProvider>
               <TabsList className="h-9 gap-0.5 rounded-xl bg-muted/60 p-1 ring-1 ring-border/60">
-                {Object.entries(SECTIONS).map(([key, { label, icon: Icon }]) => (
+                {visibleSections.map(([key, { label, icon: Icon }]) => (
                   <Tooltip key={key}>
                     <TooltipTrigger asChild>
                       <TabsTrigger
@@ -173,7 +191,7 @@ function App() {
                         data-testid={`nav-${key}`}
                         className={
                           "gap-1.5 rounded-lg px-2.5 min-[1900px]:px-3" +
-                          (section === key
+                          (shownSection === key
                             ? " bg-primary/15 text-primary dark:bg-primary/15 dark:text-primary"
                             : "")
                         }
@@ -239,7 +257,7 @@ function App() {
 
       <main className="px-4 py-6">
         <Tabs
-          value={section}
+          value={shownSection}
           onValueChange={(value) => selectSection(value as SectionKey)}
         >
           <TabsContent value="home">
@@ -272,6 +290,12 @@ function App() {
           <TabsContent value="alerts">
             <AlertsPanel />
           </TabsContent>
+
+          {walletViewerEnabled && (
+            <TabsContent value="wallets">
+              <WalletViewerPanel />
+            </TabsContent>
+          )}
         </Tabs>
       </main>
     </PendingNavContext.Provider>

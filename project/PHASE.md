@@ -3680,3 +3680,20 @@ de duplicata é ticker + data + tipo + quantidade + total.
 
 **Fora do escopo / pendente**: unificar a fila com `suggested_dividends` (a aba Pending já unifica a tela; recomendei não fazer, e o dono não pediu). ~~IA como origem da fila~~: descartado, a IA saiu do Anchor na Sessão 100 e o Warden é a única interface de IA (ver `ROADMAP.md`).
 *(CDB, extrato do Inter, porquinho como conta corrente, conciliação da Liquidação e o IR do AUPO11 estão feitos; ver as entregas 4 a 13.)* *(A dúvida "o resgate do CDB na Movimentação é bruto ou líquido?" está resolvida desde a Sessão 142: é **bruto**; com IOF e IR de 22,5%, 19 de 23 resgates de 2025 fecham a até R$ 0,01.)*
+
+### Fase 36 — Visualizador de wallets (ADR 0002, Sessão 340)
+
+**Objetivo**: ver o saldo de wallets sem tocar na carteira de investimentos. Módulo opcional e isolado, só leitura. Decisão e alternativas no `adr/0002-visualizador-de-wallets.md`.
+
+- [~] 36.1 — **PR 1, tracer bullet** (um endereço, só leitura, **sem hardware**, só ETH nativo; Ethereum e Base). CI do PR #122 verde em 2026-11-13 (`gate`, Rust: 1150 testes e 0 falhas, Frontend e E2E de 18 specs), a mesclar. O 1º CI do PR falhou no E2E: `settings.e2e.mjs` confere a lista exata de seções de Configurações e não conhecia "Wallet viewer"; corrigido no spec (`796f466`). No mesmo run, o teste das abas do menu passou, o que mostra a aba "Wallets" ausente com o módulo desligado.
+  - Banco: `wallet_viewer_settings` (liga/desliga, vem **desligado**) e `wallet_viewer_address`, sem nenhuma FK (migration `m20261120_100000_create_wallet_viewer`).
+  - `domain/wallet_address.rs`: endereço `0x` + 40 hex, checksum EIP-55 quando há letras misturadas, devolve a forma com checksum. Nome ENS fica de fora.
+  - `wallet_viewer/rpc.rs`: `eth_getBalance` por JSON-RPC público, saldo em `U256` (nunca `f64`); cada rede tem 2 RPCs em ordem (Ethereum: `ethereum-rpc.publicnode.com`, `eth.drpc.org`; Base: `mainnet.base.org`, `base-rpc.publicnode.com`), medidos em 2026-11-13. Sem chave de API.
+  - `wallet_viewer/store.rs` e `commands/wallet_viewer.rs`: comandos finos. Desligado, os que escrevem ou vão à rede recusam; a leitura local continua (desligar não apaga os endereços).
+  - Tela: aba "Wallets" só com o módulo ligado, seção "Wallet viewer" em Configurações, saldo só ao clicar em "Refresh balances" (cada consulta revela o endereço ao provedor de RPC).
+  - **Guarda do ADR** (`wallet_viewer/tests.rs`): falha se uma tabela `wallet_viewer_*` declarar FK, ou se o código do módulo citar uma tabela de investimento ou termo de assinatura.
+  - **Provado quebrando de propósito (CI, branch descartada)**: FK para `workspace`, `"transactions"` e `sign_transaction` no módulo, checksum nunca checado, módulo ligado por padrão, duplicado aceito, saldo +1 wei: 7 das 8 quebras derrubaram testes (2 falhas na rodada 1, 10 na rodada 2). A troca de `!= 40` por `< 40` **sobreviveu**, por ser equivalente: o `Address::from_str` seguinte já recusa o endereço longo.
+  - Efeito conhecido: o backup do Workspace é genérico e **inclui** as tabelas `wallet_viewer_*` (os endereços vão no arquivo de backup).
+- [ ] 36.2 — **PR 2**: Ledger e Trezor (endereço e chave pública, sem assinar). Antes, avaliar `hidapi` e `trezor-client` (`padrao/dependencias-novas.md`) e pedir aprovação do dono. O `ledger.rs` e o `trezor.rs` do TruthID servem de referência, não são importados (têm código de assinar).
+- [ ] 36.3 — **PR 3**: Bitcoin (chave pública estendida, indexador, outro app na Ledger).
+- **Não verificado no PR 1**: o app rodando (tela e E2E), o saldo contra um explorador de blocos, limite de taxa dos RPCs sob uso prolongado.
