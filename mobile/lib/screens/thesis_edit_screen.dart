@@ -14,7 +14,7 @@ import '../services/thesis_attachment_repository.dart';
 import '../services/thesis_repository.dart';
 
 /// Escolhe um arquivo no aparelho; devolve o caminho, ou `null` se o usuário cancelou.
-Future<String?> _pickFileWithPlatform() async => (await FilePicker.platform.pickFiles())?.files.single.path;
+Future<String?> _pickFileWithPlatform() async => (await FilePicker.pickFile())?.path;
 
 /// Abre o arquivo no app padrão do sistema; devolve a mensagem de erro, ou `null` se abriu.
 Future<String?> _openFileWithPlatform(String path) async {
