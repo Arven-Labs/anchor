@@ -38,4 +38,5 @@
 - O passo "Tag igual à versão do app" roda e passa num runner.
 - Depois de publicar, `releases/latest/download/latest.json` responde 200 e os URLs do `.AppImage`, `.app.tar.gz` e `.msi` respondem 200.
 - O campo `notes` do `latest.json` sai vazio: o app não mostra texto de novidades.
-- Ainda **não provado**: a atualização de uma versão instalada para a seguinte (0.1.0 → 0.1.1). Anote o resultado aqui depois do primeiro ciclo.
+- **Primeiro ciclo de atualização (Sessão 339), Linux:** com a `v0.1.1` publicada (run 43349793206), o dono abriu o `.AppImage` da 0.1.0 e a atualização funcionou até reiniciar na 0.1.1 (relato dele; o assistente não viu a tela). Só o Linux foi testado; Windows e macOS seguem sem prova de ponta a ponta.
+- O `.AppImage` atualizado continua com o nome da versão antiga: o updater substitui o arquivo no lugar.

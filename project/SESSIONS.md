@@ -5313,4 +5313,12 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Fase 2, tag `v0.1.0`** (run 43343721100): 3 `build` e `apk` verdes; rascunho com os pacotes, os `.sig`, `anchor-v0.1.0.apk` (60 MB, chave de debug) e `latest.json` (`version` 0.1.0, 9 entradas de plataforma, todas com assinatura; `notes` vazio). O passo "Tag igual à versão do app" rodou num runner e passou. Depois de publicada: `releases/latest/download/latest.json` responde 200 com `version` 0.1.0, e os URLs do `.AppImage`, `.app.tar.gz` e `.msi` respondem 200.
 - **Feito neste PR**: `desktop` 0.1.0 → 0.1.1 em `tauri.conf.json`, `Cargo.toml`/`Cargo.lock`, `package.json`/`package-lock.json`. CI do PR (run 43346875299): `rust / test`, `e2e`, `frontend`, `gate` e `guard` verdes; `contracts` e `mobile` pulados.
 - **Não verificado**: instalar a 0.1.0 e ver "sem atualização"; o ciclo real (o 0.1.0 instalado oferecer a 0.1.1, baixar, conferir a assinatura e reiniciar), que depende de você; a verificação criptográfica completa dos `.sig`; a atualização no Windows e no macOS; assinatura de código do SO; macOS Intel; o `.rpm`, `.deb` e `.dmg` (não se atualizam sozinhos).
-- **Em aberto do P9**: tag `v0.1.1`, revisar o rascunho, publicar (você) e testar a atualização na sua máquina.
+- **Em aberto do P9**: tag `v0.1.1`, revisar o rascunho, publicar (você) e testar a atualização na sua máquina. (Feito na Sessão 339.)
+
+## Sessão 339 — P9: `v0.1.1` publicada e updater provado no Linux
+- **Pedido**: tag `v0.1.1` e publicação (feitas pelo dono, no terminal, depois do aviso de que são passos sem volta), "abre pra mim" e "abre o app 0.1.0", depois "funcionou tudo certo".
+- **Tag `v0.1.1`** (run 43349793206): 3 `build` e `apk` verdes; rascunho com 7 pacotes (`.AppImage`, `.deb`, `.rpm`, `.msi`, `-setup.exe`, `.dmg`, `.app.tar.gz`), os `.sig` e `latest.json` `version` 0.1.1 com 9 plataformas, todas com assinatura. Antes de publicar o endpoint ainda devolvia 0.1.0; depois, 0.1.1 e os URLs do `.AppImage`, `.app.tar.gz` e `.msi` respondem 200.
+- **Teste**: baixei o `.AppImage` da `v0.1.0` para `~/Downloads/anchor-0.1.0/` e abri (processo `anchor` subiu, log sem erro). O dono usou a checagem de atualização: **funcionou tudo certo** (relato dele; não vi a tela e o arquivo não foi inspecionado depois, só que o `.AppImage` foi regravado ~1 min depois do download).
+- **CI da `main`** (`6382152`, depois do #117): Desktop E2E, Frontend, Rust e Private Files verdes.
+- **Não verificado**: a verificação criptográfica completa dos `.sig`; a atualização no Windows e no macOS; macOS Intel; assinatura de código do SO; `notes` do `latest.json` está vazio (o app não mostra novidades).
+- **P9**: marcado ✅ Resolvida (Linux).
