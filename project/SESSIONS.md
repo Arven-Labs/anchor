@@ -5288,5 +5288,12 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Medido antes**: no Google Maven existem AGP 9.3.0 a 9.5.1; a doc do AGP 9.3 exige Gradle 9.5.0 (já o nosso). Escolhi 9.3.1, o mínimo que o aviso pede.
 - **Feito**: `mobile/android/settings.gradle.kts`: AGP 9.1.1 → 9.3.1 (commit `e3e6c42`) e Kotlin 2.3.20 → 2.4.20 (commit `a7c3849`).
 - **Prova** (`workflow_dispatch` do `CI Mobile` na branch, porque o `apk` não roda no PR): só o AGP (run 43330174224): `apk` e `test` verdes, aviso do AGP some, **aviso do Kotlin 2.4.10 continua**. Com os dois (run 43331183058): `apk` e `test` verdes, "Built app-release.apk (60.5MB)", nenhum "Flutter support … soon dropped".
-- **Sobrou**: aviso de `file_picker` (aplica o KGP); bump 10.3.10 → 13.3.3 é 3 majors, deixei para avaliar o changelog. `language_selector_test` (P12d) fica para o PR seguinte.
+- **Sobrou**: aviso de `file_picker` (aplica o KGP); bump 10.3.10 → 13.3.3 é 3 majors, deixei para avaliar o changelog. `language_selector_test` (P12d) fica para o PR seguinte (Sessão 336).
 - **Não verificado**: o APK num aparelho; o `build.yml` de release (só roda em tag, usa o mesmo `settings.gradle.kts`); o `mobile / test` do PR depois do commit de docs.
+
+## Sessão 336 — P12d: `language_selector_test` espera o efeito real (PR #115)
+- **Pedido**: "de sim" ao PR 2 do plano da Sessão 335.
+- **Feito**: `choose(tester, key, shows:, saved:)` toca, espera o texto novo (`waitFor` de `test/support/settle.dart`) e a preferência gravada (sonda `repository.load`, até 200 voltas), depois `pump(300 ms)`; 4 testes ajustados. `pumpApp` e o `settleUntil` local da Início intactos. Só teste.
+- **CI** (commit `b014e1d`, run 43333339500): `analyze` limpo, 3 tentativas verdes. Não medi a duração do teste antes e depois (a expectativa de poupar ~5 s por `choose` não foi medida).
+- **Não verificado**: que o teste era instável (nunca vi falhar; era só espera por tempo fixo); nada rodou local (ADR 0009).
+- **Em aberto do P12**: aviso do `file_picker` (bump de 3 majors), (b) exclusão do `app_localizations.dart` até o gerador do Flutter usar `material_ui`.
