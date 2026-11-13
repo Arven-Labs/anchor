@@ -27,6 +27,7 @@ mod pin_content_cipher;
 mod storage;
 mod sync_registry;
 mod sync_snapshot_cipher;
+mod wallet_viewer;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
