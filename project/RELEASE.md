@@ -30,6 +30,12 @@
 ## O que este runbook NÃO prova
 - A **instalação e o reinício reais** do app: o E2E (Sessão 322) prova baixar e verificar a assinatura contra um servidor local e o ensaio sem tag prova gerar os pacotes assinados, mas ninguém ainda instalou uma versão publicada por cima de uma antiga. Faça o primeiro ciclo com uma versão de teste e anote o resultado aqui.
 - A **verificação criptográfica completa** dos `.sig` gerados no CI (conferi só que o ID da chave nos `.sig` bate com a `pubkey`).
-- O `latest.json` real servido pelo GitHub, o macOS Intel (a matriz só tem `aarch64`) e assinatura de código do SO (Apple/Microsoft: o aviso "desenvolvedor desconhecido" continua).
-- O **rascunho com tag** (passo 4: pacotes, `.sig` e `latest.json` anexados) ainda não rodou: o ensaio sem tag não cria release. Que o `tauri-action` gera e sobe o `latest.json` vem da documentação dele (`uploadUpdaterJson`, padrão `true`), não de uma execução. Confira o rascunho de verdade na primeira tag.
-- O passo "Tag igual à versão do app" só roda em tag; foi testado fora do runner (a mesma lógica em bash e `node`), não num runner.
+- O macOS Intel (a matriz só tem `aarch64`) e assinatura de código do SO (Apple/Microsoft: o aviso "desenvolvedor desconhecido" continua).
+- A atualização no Windows e no macOS: só a máquina do dono (Linux) é testada de ponta a ponta.
+
+## O que a primeira release (`v0.1.0`, Sessão 338) provou
+- O rascunho com tag existe com os pacotes, os `.sig`, o APK e o `latest.json` (`version` 0.1.0, 9 entradas de plataforma, todas com assinatura; o `tauri-action` gera e anexa o `latest.json`). Run 43343721100.
+- O passo "Tag igual à versão do app" roda e passa num runner.
+- Depois de publicar, `releases/latest/download/latest.json` responde 200 e os URLs do `.AppImage`, `.app.tar.gz` e `.msi` respondem 200.
+- O campo `notes` do `latest.json` sai vazio: o app não mostra texto de novidades.
+- Ainda **não provado**: a atualização de uma versão instalada para a seguinte (0.1.0 → 0.1.1). Anote o resultado aqui depois do primeiro ciclo.
