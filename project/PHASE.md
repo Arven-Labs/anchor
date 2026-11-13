@@ -3685,7 +3685,7 @@ de duplicata é ticker + data + tipo + quantidade + total.
 
 **Objetivo**: ver o saldo de wallets sem tocar na carteira de investimentos. Módulo opcional e isolado, só leitura. Decisão e alternativas no `adr/0002-visualizador-de-wallets.md`.
 
-- [~] 36.1 — **PR 1, tracer bullet** (um endereço, só leitura, **sem hardware**, só ETH nativo; Ethereum e Base). CI verde em 2026-11-13 (Rust: 1150 testes, 0 falhas; Frontend verde), a mesclar.
+- [~] 36.1 — **PR 1, tracer bullet** (um endereço, só leitura, **sem hardware**, só ETH nativo; Ethereum e Base). CI do PR #122 verde em 2026-11-13 (`gate`, Rust: 1150 testes e 0 falhas, Frontend e E2E de 18 specs), a mesclar. O 1º CI do PR falhou no E2E: `settings.e2e.mjs` confere a lista exata de seções de Configurações e não conhecia "Wallet viewer"; corrigido no spec (`796f466`). No mesmo run, o teste das abas do menu passou, o que mostra a aba "Wallets" ausente com o módulo desligado.
   - Banco: `wallet_viewer_settings` (liga/desliga, vem **desligado**) e `wallet_viewer_address`, sem nenhuma FK (migration `m20261120_100000_create_wallet_viewer`).
   - `domain/wallet_address.rs`: endereço `0x` + 40 hex, checksum EIP-55 quando há letras misturadas, devolve a forma com checksum. Nome ENS fica de fora.
   - `wallet_viewer/rpc.rs`: `eth_getBalance` por JSON-RPC público, saldo em `U256` (nunca `f64`); cada rede tem 2 RPCs em ordem (Ethereum: `ethereum-rpc.publicnode.com`, `eth.drpc.org`; Base: `mainnet.base.org`, `base-rpc.publicnode.com`), medidos em 2026-11-13. Sem chave de API.
