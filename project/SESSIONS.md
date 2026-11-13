@@ -5297,3 +5297,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI** (commit `b014e1d`, run 43333339500): `analyze` limpo, 3 tentativas verdes. Não medi a duração do teste antes e depois (a expectativa de poupar ~5 s por `choose` não foi medida).
 - **Não verificado**: que o teste era instável (nunca vi falhar; era só espera por tempo fixo); nada rodou local (ADR 0009).
 - **Em aberto do P12**: aviso do `file_picker` (bump de 3 majors), (b) exclusão do `app_localizations.dart` até o gerador do Flutter usar `material_ui`.
+
+## Sessão 337 — P12: `file_picker` 13.3.3 (PR #116)
+- **Pedido**: "1" (bump do `file_picker`) entre as três frentes oferecidas; plano aprovado em plan mode (§4, major de dependência).
+- **Medido antes**: changelog do pub.dev (11.0 API estática e AGP 9; 12.0.0-beta.4 sem KGP; 13.0 remove `withData`) e o código baixado do pacote: `file_picker` 13.3.3 é federado, o Android está em `android_file_picker` 2.1.x, que só aplica o KGP com AGP < 9 ou `android.builtInKotlin=false`; o Android copia o arquivo para o cache, então `PlatformFile.path` segue válido.
+- **Feito** (commit `8b8190c`): `pubspec.yaml` `^10.3.6` → `^13.3.3`; `pickFiles()` → `pickFile()` em `thesis_edit_screen` e `manual_asset_details_screen`; importar CSV usa `readAsBytes()` em vez de `withData`; exportar CSV (`transaction_history_screen`, `foreign_tax_screen`) usa `FilePicker.saveFile` com `Uint8List` e `mimeType: 'text/csv'`. No lock, `win32` 5.15 → 6.4 (vem do `windows_file_picker`); o `test_api` que o `pub get` local rebaixou para 0.7.12 (Flutter local 3.47.4, o CI usa 3.50.0) foi devolvido a 0.7.14 à mão.
+- **CI**: `flutter analyze` local limpo. `workflow_dispatch` do `CI Mobile` na branch (run 43337018198): `apk` e `test` verdes, "Built app-release.apk (60.2MB)", sem avisos de KGP/Flutter no log. `mobile / test` do PR (run 43337020444) verde.
+- **Não verificado**: seleção e salvamento de arquivo num aparelho; importar/exportar CSV não têm teste; o `build.yml` de release (só roda em tag); o `GeneratedPluginRegistrant.swift` do macOS foi regenerado pelo `pub get` (`file_picker_darwin`) e não foi exercido.
+- **Em aberto do P12**: (b) exclusão do `app_localizations.dart` até o gerador do Flutter usar `material_ui`; (c) Flutter fixado deliberadamente.
