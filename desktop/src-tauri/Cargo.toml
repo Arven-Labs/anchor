@@ -1,6 +1,6 @@
 [package]
 name = "anchor"
-version = "0.1.0"
+version = "0.1.1"
 description = "Anchor — personal stock/crypto valuation tracker"
 authors = ["masterlxz"]
 edition = "2021"
