@@ -16,11 +16,43 @@ import '../models/portfolio_transaction.dart';
 import '../services/portfolio_repository.dart';
 import 'add_transaction_screen.dart';
 
+/// Escolhe um CSV no aparelho; devolve os bytes, ou `null` se o usuário cancelou.
+Future<Uint8List?> _pickCsvWithPlatform() async {
+  final picked = await FilePicker.pickFile(
+    type: FileType.custom,
+    allowedExtensions: const ['csv'],
+  );
+  return picked?.readAsBytes();
+}
+
+/// Abre o diálogo de salvar; devolve onde salvou, ou `null` se o usuário cancelou.
+Future<String?> _saveCsvWithPlatform({
+  required String dialogTitle,
+  required String fileName,
+  required Uint8List bytes,
+}) => FilePicker.saveFile(
+  dialogTitle: dialogTitle,
+  fileName: fileName,
+  mimeType: 'text/csv',
+  bytes: bytes,
+);
+
 /// Somente leitura — `aporte`/`retirada`/`provento` não aparecem em nenhuma
 /// posição calculada (ver `PortfolioRepository.computePositions`), então
 /// sem esta tela ficariam gravados no banco sem lugar nenhum pra aparecer.
 class TransactionHistoryScreen extends StatefulWidget {
-  const TransactionHistoryScreen({super.key});
+  /// Escolher o CSV a importar; o padrão usa o `file_picker` (os testes injetam o seu).
+  final Future<Uint8List?> Function()? pickCsv;
+
+  /// Salvar o CSV exportado; o padrão usa o `file_picker` (os testes injetam o seu).
+  final Future<String?> Function({
+    required String dialogTitle,
+    required String fileName,
+    required Uint8List bytes,
+  })?
+  saveCsv;
+
+  const TransactionHistoryScreen({super.key, this.pickCsv, this.saveCsv});
 
   @override
   State<TransactionHistoryScreen> createState() =>
@@ -82,10 +114,9 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       _transactions,
     );
     try {
-      final saved = await FilePicker.saveFile(
+      final saved = await (widget.saveCsv ?? _saveCsvWithPlatform)(
         dialogTitle: l.txhExportDialogTitle,
         fileName: 'anchor-transactions-$day.csv',
-        mimeType: 'text/csv',
         bytes: Uint8List.fromList(utf8.encode(result.csv)),
       );
       if (saved == null) return;
@@ -108,12 +139,8 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final l = AppLocalizations.of(context);
     try {
-      final picked = await FilePicker.pickFile(
-        type: FileType.custom,
-        allowedExtensions: const ['csv'],
-      );
-      if (picked == null) return;
-      final bytes = await picked.readAsBytes();
+      final bytes = await (widget.pickCsv ?? _pickCsvWithPlatform)();
+      if (bytes == null) return;
 
       final plan = planTransactionsImport(
         parseTransactionsCsv(utf8.decode(bytes, allowMalformed: true)),
