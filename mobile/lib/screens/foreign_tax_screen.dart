@@ -18,10 +18,32 @@ import '../services/bcb_ptax_service.dart';
 import '../services/portfolio_repository.dart';
 import '../services/yahoo_quote_service.dart';
 
+/// Abre o diálogo de salvar; devolve onde salvou, ou `null` se o usuário cancelou.
+typedef SaveCsv =
+    Future<Uri?> Function({
+      required String dialogTitle,
+      required String fileName,
+      required Uint8List bytes,
+    });
+
+Future<Uri?> _saveCsvWithPlatform({
+  required String dialogTitle,
+  required String fileName,
+  required Uint8List bytes,
+}) => FilePicker.saveFile(
+  dialogTitle: dialogTitle,
+  fileName: fileName,
+  mimeType: 'text/csv',
+  bytes: bytes,
+);
+
 /// IR de ativos no exterior ano a ano (ver `assessForeignTax`). Somente
 /// leitura: a apuração é anual, não há DARF para marcar como pago.
 class ForeignTaxScreen extends StatefulWidget {
-  const ForeignTaxScreen({super.key});
+  /// Salvar o CSV do informe; o padrão usa o `file_picker` (os testes injetam o seu).
+  final SaveCsv? saveCsv;
+
+  const ForeignTaxScreen({super.key, this.saveCsv});
 
   @override
   State<ForeignTaxScreen> createState() => _ForeignTaxScreenState();
@@ -188,6 +210,7 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
                     holdings: _holdings,
                     custodiaLabels: _custodiaLabels,
                     onEditFicha: _editFicha,
+                    saveCsv: widget.saveCsv ?? _saveCsvWithPlatform,
                   ),
               ],
             ),
@@ -201,11 +224,13 @@ class _HoldingsCard extends StatefulWidget {
   final List<ForeignHolding> holdings;
   final Map<int, String> custodiaLabels;
   final Future<void> Function(ForeignHolding holding) onEditFicha;
+  final SaveCsv saveCsv;
 
   const _HoldingsCard({
     required this.holdings,
     required this.custodiaLabels,
     required this.onEditFicha,
+    required this.saveCsv,
   });
 
   @override
@@ -221,10 +246,9 @@ class _HoldingsCardState extends State<_HoldingsCard> {
     final l = AppLocalizations.of(context);
     final day = DateTime.now().toIso8601String().substring(0, 10);
     try {
-      final saved = await FilePicker.saveFile(
+      final saved = await widget.saveCsv(
         dialogTitle: l.foreignCsvDialogTitle,
         fileName: 'anchor-foreign-holdings-$day.csv',
-        mimeType: 'text/csv',
         bytes: Uint8List.fromList(
           utf8.encode(
             foreignHoldingsCsv(widget.holdings, widget.custodiaLabels),
