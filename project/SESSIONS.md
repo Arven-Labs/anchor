@@ -5380,3 +5380,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Registrado** no `PENDING.md` (P12): o gatilho do (b) agora é o #194500 mesclado e numa stable. Nenhum código mudou.
 - **Início da sessão**: `main` limpa, sem PR aberto, 0 alertas do Dependabot, disco sem alerta; `git pull` trouxe #123 a #127 (wallets, só desktop).
 - **Não verificado**: se o #194500 também elimina a exclusão do `analysis_options.yaml`; se há trabalho no PR fora do GitHub; o app num aparelho (resto do P12).
+
+## Sessão 346 — `calamine` 0.37 → 0.38 (RUSTSEC-2026-0436)
+- **Por quê**: o aviso (pânico e OOM no leitor CFB/OLE2, `.xls`/`.xlsb`) é alcançável: `read_xlsx_rows` lê planilha do usuário e o seletor aceita `.xls`. Achado nº 1 da pesquisa de dependências de 2026-11-13. Plano aprovado em plan mode.
+- **Medido**: 0.38.0 (2026-11-02), MIT, MSRV 1.88, 0 avisos no OSV; o toolchain do CI é `stable`. O `Cargo.lock` mudou só no `calamine` (versão e checksum, via `cargo update -p calamine`), sem transitivas.
+- **Testes primeiro**: 2 novos em `portfolio_io.rs` (OLE2 truncado e arquivo vazio viram `InvalidInput`). Run 43619417379 no 0.37: 1231 passaram, 0 falharam, **os 2 já passavam**: são caracterização e não reproduzem o aviso (o OOM exige arquivo sob medida e pode derrubar o runner).
+- **PR #129**: CI verde (Rust 1231 e 0 falhas, E2E, `gate`, `guard`).
+- **Quebra proposital** (branch `ci/quebra-calamine`, só com `Edit`, já apagada): formato da data `%d/%m/%Y` → `%Y/%m/%d`; run 43620314672, 1 falha (`read_xlsx_rows_reads_text_numbers_bool_and_date`), revertida.
+- **Não verificado**: a planilha real da B3 (só roda com `ANCHOR_B3_SAMPLE`, que o CI não tem); importar um `.xls` real no app; não há `cargo audit` no CI, então o fim do aviso está provado pela versão no `Cargo.lock` e não por uma auditoria rodada.
