@@ -2,9 +2,19 @@
 //! dos endereços dela. Função pura: entra texto, sai a chave validada ou `InvalidAddress`. O
 //! visualizador de wallets (ADR 0002) só lê; nada aqui aceita ou guarda chave privada.
 
+use bitcoin::bip32::{ChildNumber, Xpub};
+use bitcoin::secp256k1::Secp256k1;
+use bitcoin::{Address, CompressedPublicKey, Network};
 use serde::Serialize;
 
 use crate::error::AppError;
+
+/// Bytes de versão do BIP32 (mainnet) e do SLIP-132 para `zpub`.
+const XPUB_VERSION: [u8; 4] = [0x04, 0x88, 0xB2, 0x1E];
+const ZPUB_VERSION: [u8; 4] = [0x04, 0xB2, 0x47, 0x46];
+/// Tamanho da chave estendida serializada (sem o checksum).
+const EXTENDED_KEY_LEN: usize = 78;
+const MAX_TEXT_LEN: usize = 120;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -33,15 +43,63 @@ pub struct ParsedXpub {
 /// Aceita só xpub ou zpub de mainnet, com checksum válido, 78 bytes e ponto na curva. Recusa
 /// chave privada (`xprv`, `zprv`), testnet, `ypub` e qualquer outra coisa. A mensagem de erro
 /// nunca repete o texto digitado (pode ser uma chave privada colada por engano).
-pub fn parse_xpub(_input: &str) -> Result<ParsedXpub, AppError> {
-    todo!("Fase 36.4a")
+pub fn parse_xpub(input: &str) -> Result<ParsedXpub, AppError> {
+    let text = input.trim();
+    let invalid = |why: &str| AppError::InvalidAddress(format!("not a valid xpub or zpub: {why}"));
+
+    // Uma xpub em base58check tem 111 ou 112 caracteres; o teto evita decodificar texto enorme
+    // (a decodificação base58 é quadrática).
+    if text.is_empty() || text.len() > MAX_TEXT_LEN {
+        return Err(invalid("expected an xpub or zpub"));
+    }
+    let mut bytes =
+        bitcoin::base58::decode_check(text).map_err(|_| invalid("bad characters or checksum"))?;
+    if bytes.len() != EXTENDED_KEY_LEN {
+        return Err(invalid("wrong length"));
+    }
+
+    let version = [bytes[0], bytes[1], bytes[2], bytes[3]];
+    let kind = if version == XPUB_VERSION {
+        XpubKind::Legacy
+    } else if version == ZPUB_VERSION {
+        XpubKind::NativeSegwit
+    } else {
+        return Err(invalid("only mainnet xpub and zpub are supported (not ypub, testnet or private keys)"));
+    };
+
+    // A crate só conhece a versão `xpub`: a zpub é a mesma chave com outros 4 bytes de versão.
+    bytes[..4].copy_from_slice(&XPUB_VERSION);
+    let key = Xpub::decode(&bytes).map_err(|_| invalid("not a valid public key"))?;
+    Ok(ParsedXpub { canonical: text.to_string(), kind, key })
+}
+
+/// Satoshis como texto decimal exato em BTC (8 casas, sinal só se negativo). Inteiros, nunca `f64`.
+pub fn format_btc(satoshis: i128) -> String {
+    let sign = if satoshis < 0 { "-" } else { "" };
+    let abs = satoshis.unsigned_abs();
+    format!("{sign}{}.{:08}", abs / 100_000_000, abs % 100_000_000)
 }
 
 impl ParsedXpub {
     /// Endereço `m/<cadeia>/<índice>` a partir da chave da conta. Índice endurecido (>= 2^31) não
     /// existe em derivação pública e vira erro.
-    pub fn address(&self, _chain: Chain, _index: u32) -> Result<String, AppError> {
-        todo!("Fase 36.4a")
+    pub fn address(&self, chain: Chain, index: u32) -> Result<String, AppError> {
+        let cannot = |_| AppError::InvalidAddress("cannot derive that address index".to_string());
+        let chain_number = match chain {
+            Chain::Receive => 0,
+            Chain::Change => 1,
+        };
+        let path = [
+            ChildNumber::from_normal_idx(chain_number).map_err(cannot)?,
+            ChildNumber::from_normal_idx(index).map_err(cannot)?,
+        ];
+        let child = self.key.derive_pub(&Secp256k1::verification_only(), &path).map_err(cannot)?;
+        let public_key = CompressedPublicKey(child.public_key);
+        let address = match self.kind {
+            XpubKind::Legacy => Address::p2pkh(public_key, Network::Bitcoin),
+            XpubKind::NativeSegwit => Address::p2wpkh(&public_key, Network::Bitcoin),
+        };
+        Ok(address.to_string())
     }
 }
 
@@ -158,6 +216,17 @@ mod tests {
         ] {
             assert!(is_invalid(parse_xpub(text)), "{}", &text[..text.len().min(20)]);
         }
+    }
+
+    #[test]
+    fn satoshis_are_shown_as_exact_btc_with_eight_decimals() {
+        assert_eq!(format_btc(0), "0.00000000");
+        assert_eq!(format_btc(1), "0.00000001");
+        assert_eq!(format_btc(18_231_475), "0.18231475");
+        assert_eq!(format_btc(123_456_789), "1.23456789");
+        assert_eq!(format_btc(2_100_000_000_000_000), "21000000.00000000");
+        assert_eq!(format_btc(-50), "-0.00000050");
+        assert_eq!(format_btc(i128::from(u64::MAX)), "184467440737.09551615");
     }
 
     #[test]

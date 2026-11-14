@@ -3,10 +3,11 @@
 //! com payload real); a varredura do gap limit roda sobre uma fronteira (`AddressSource`) que os
 //! testes trocam por um falso; a chamada de rede fica numa função fina, só testada ao vivo.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::domain::bitcoin_xpub::ParsedXpub;
+use crate::domain::bitcoin_xpub::{Chain, ParsedXpub};
 use crate::error::AppError;
+use crate::finance_core::http::{get_text, DEFAULT_TIMEOUT};
 
 /// Endereços consecutivos sem nenhum uso, por cadeia, que encerram a varredura (convenção BIP44).
 pub const GAP_LIMIT: u32 = 20;
@@ -25,13 +26,60 @@ pub struct AddressStats {
 }
 
 /// Lê a resposta de `/address/<endereço>` do Esplora. Valores em satoshis, inteiros, nunca `f64`.
-pub fn parse_address_response(_body: &str) -> Result<AddressStats, AppError> {
-    todo!("Fase 36.4a")
+pub fn parse_address_response(body: &str) -> Result<AddressStats, AppError> {
+    let response: Response = serde_json::from_str(body)?;
+    let confirmed_sat = response
+        .chain_stats
+        .funded_txo_sum
+        .checked_sub(response.chain_stats.spent_txo_sum)
+        .ok_or_else(|| AppError::Rpc("the provider reports more spent than funded".to_string()))?;
+    let out_of_range = || AppError::Rpc("the pending amount is out of range".to_string());
+    let pending_funded = i64::try_from(response.mempool_stats.funded_txo_sum).map_err(|_| out_of_range())?;
+    let pending_spent = i64::try_from(response.mempool_stats.spent_txo_sum).map_err(|_| out_of_range())?;
+    let pending_sat = pending_funded.checked_sub(pending_spent).ok_or_else(out_of_range)?;
+    let tx_count = response.chain_stats.tx_count.saturating_add(response.mempool_stats.tx_count);
+    Ok(AddressStats { confirmed_sat, pending_sat, tx_count })
+}
+
+#[derive(Deserialize)]
+struct Response {
+    chain_stats: Counters,
+    mempool_stats: Counters,
+}
+
+#[derive(Deserialize)]
+struct Counters {
+    funded_txo_sum: u64,
+    spent_txo_sum: u64,
+    tx_count: u64,
 }
 
 /// Fronteira de I/O da varredura: o real consulta o Esplora, o falso dos testes responde de um mapa.
 pub trait AddressSource {
     async fn stats(&self, address: &str) -> Result<AddressStats, AppError>;
+}
+
+/// APIs Esplora públicas, em ordem de preferência. Medidas em 2026-11-14: as duas devolvem o
+/// mesmo JSON em `/address/<endereço>`, sem chave de API.
+const ENDPOINTS: &[(&str, &str)] =
+    &[("mempool.space", "https://mempool.space/api"), ("blockstream.info", "https://blockstream.info/api")];
+
+/// O Esplora de verdade. Tenta cada API em ordem e devolve a primeira que responde; se todas
+/// falharem, o erro da última. Só testado ao vivo, como o RPC do Ethereum.
+pub struct EsploraSource;
+
+impl AddressSource for EsploraSource {
+    async fn stats(&self, address: &str) -> Result<AddressStats, AppError> {
+        let mut last_error = AppError::ProviderUnavailable("no Esplora endpoint configured".to_string());
+        for (name, base) in ENDPOINTS {
+            let url = format!("{base}/address/{address}");
+            match get_text(name, &url, DEFAULT_TIMEOUT).await.and_then(|body| parse_address_response(&body)) {
+                Ok(stats) => return Ok(stats),
+                Err(error) => last_error = error,
+            }
+        }
+        Err(last_error)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -49,8 +97,37 @@ pub struct BitcoinBalance {
 
 /// Varre recebimento e troco até `GAP_LIMIT` endereços seguidos sem uso (ou o teto) e soma. Um
 /// erro de qualquer consulta aborta tudo: nunca devolve saldo parcial como se fosse completo.
-pub async fn scan_balance<S: AddressSource>(_xpub: &ParsedXpub, _source: &S) -> Result<BitcoinBalance, AppError> {
-    todo!("Fase 36.4a")
+pub async fn scan_balance<S: AddressSource>(xpub: &ParsedXpub, source: &S) -> Result<BitcoinBalance, AppError> {
+    let overflow = || AppError::Rpc("the total balance does not fit in 64 bits".to_string());
+    let mut total = BitcoinBalance {
+        confirmed_sat: 0,
+        pending_sat: 0,
+        used_addresses: 0,
+        scanned_addresses: 0,
+        truncated: false,
+    };
+    for chain in [Chain::Receive, Chain::Change] {
+        let mut index = 0;
+        let mut unused_in_a_row = 0;
+        while unused_in_a_row < GAP_LIMIT {
+            if index >= MAX_ADDRESSES_PER_CHAIN {
+                total.truncated = true;
+                break;
+            }
+            let stats = source.stats(&xpub.address(chain, index)?).await?;
+            total.scanned_addresses += 1;
+            total.confirmed_sat = total.confirmed_sat.checked_add(stats.confirmed_sat).ok_or_else(overflow)?;
+            total.pending_sat = total.pending_sat.checked_add(stats.pending_sat).ok_or_else(overflow)?;
+            if stats.tx_count > 0 {
+                total.used_addresses += 1;
+                unused_in_a_row = 0;
+            } else {
+                unused_in_a_row += 1;
+            }
+            index += 1;
+        }
+    }
+    Ok(total)
 }
 
 #[cfg(test)]
@@ -59,7 +136,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::domain::bitcoin_xpub::{parse_xpub, Chain};
+    use crate::domain::bitcoin_xpub::parse_xpub;
 
     // Respostas reais do mempool.space medidas em 2026-11-14 (o blockstream.info devolve o mesmo JSON).
     // Endereço com saldo:

@@ -3,9 +3,9 @@
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::Serialize;
 
-use crate::domain::bitcoin_xpub::XpubKind;
+use crate::domain::bitcoin_xpub::{parse_xpub, XpubKind};
 use crate::domain::wallet_address::parse_address;
-use crate::entity::{wallet_viewer_address, wallet_viewer_settings};
+use crate::entity::{wallet_viewer_address, wallet_viewer_settings, wallet_viewer_xpub};
 use crate::error::AppError;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -106,15 +106,44 @@ pub struct WalletXpub {
 }
 
 /// Valida a chave (`parse_xpub`), recusa duplicada e grava. Com o módulo desligado recusa antes.
-pub async fn add_xpub(_db: &DatabaseConnection, _xpub: &str, _label: Option<&str>) -> Result<WalletXpub, AppError> {
-    todo!("Fase 36.4a")
+pub async fn add_xpub(db: &DatabaseConnection, xpub: &str, label: Option<&str>) -> Result<WalletXpub, AppError> {
+    require_enabled(db).await?;
+    let parsed = parse_xpub(xpub)?;
+    let duplicate = wallet_viewer_xpub::Entity::find()
+        .filter(wallet_viewer_xpub::Column::Xpub.eq(parsed.canonical.as_str()))
+        .one(db)
+        .await?;
+    if duplicate.is_some() {
+        return Err(AppError::InvalidInput("this extended public key was already added".to_string()));
+    }
+    let label = label.map(str::trim).filter(|label| !label.is_empty()).map(str::to_string);
+    let saved = wallet_viewer_xpub::ActiveModel {
+        xpub: Set(parsed.canonical),
+        label: Set(label),
+        created_at: Set(now()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await?;
+    xpub_from_row(saved)
 }
 
-/// Leitura local: continua permitida com o módulo desligado.
-pub async fn list_xpubs(_db: &DatabaseConnection) -> Result<Vec<WalletXpub>, AppError> {
-    todo!("Fase 36.4a")
+/// Leitura local: continua permitida com o módulo desligado. O tipo sai da própria chave, não de
+/// uma coluna, para nunca contradizê-la.
+pub async fn list_xpubs(db: &DatabaseConnection) -> Result<Vec<WalletXpub>, AppError> {
+    let rows = wallet_viewer_xpub::Entity::find().order_by_asc(wallet_viewer_xpub::Column::Id).all(db).await?;
+    rows.into_iter().map(xpub_from_row).collect()
 }
 
-pub async fn remove_xpub(_db: &DatabaseConnection, _id: i32) -> Result<(), AppError> {
-    todo!("Fase 36.4a")
+pub async fn remove_xpub(db: &DatabaseConnection, id: i32) -> Result<(), AppError> {
+    let result = wallet_viewer_xpub::Entity::delete_by_id(id).exec(db).await?;
+    if result.rows_affected == 0 {
+        return Err(AppError::NotFound(format!("wallet xpub {id}")));
+    }
+    Ok(())
+}
+
+fn xpub_from_row(row: wallet_viewer_xpub::Model) -> Result<WalletXpub, AppError> {
+    let kind = parse_xpub(&row.xpub)?.kind;
+    Ok(WalletXpub { id: row.id, xpub: row.xpub, kind, label: row.label, created_at: row.created_at })
 }

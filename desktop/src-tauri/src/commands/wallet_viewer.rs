@@ -4,11 +4,13 @@ use alloy_primitives::utils::format_ether;
 use sea_orm::DatabaseConnection;
 use serde::Serialize;
 
+use crate::domain::bitcoin_xpub::{format_btc, parse_xpub};
 use crate::error::AppError;
+use crate::wallet_viewer::esplora::{self, EsploraSource};
 use crate::wallet_viewer::ledger;
 use crate::wallet_viewer::rpc::{self, Network};
 use crate::wallet_viewer::trezor;
-use crate::wallet_viewer::store::{self, WalletAddress};
+use crate::wallet_viewer::store::{self, WalletAddress, WalletXpub};
 
 #[derive(Serialize)]
 pub struct WalletViewerSettingsView {
@@ -104,6 +106,79 @@ pub async fn wallet_viewer_read_trezor_address(
     account: u32,
 ) -> Result<String, AppError> {
     trezor::read_address_if_enabled(db.inner(), account, trezor::READ_LIMIT, trezor::read_address_from_device).await
+}
+
+#[tauri::command]
+pub async fn wallet_viewer_list_xpubs(db: tauri::State<'_, DatabaseConnection>) -> Result<Vec<WalletXpub>, AppError> {
+    store::list_xpubs(db.inner()).await
+}
+
+#[tauri::command]
+pub async fn wallet_viewer_add_xpub(
+    db: tauri::State<'_, DatabaseConnection>,
+    xpub: String,
+    label: Option<String>,
+) -> Result<WalletXpub, AppError> {
+    store::add_xpub(db.inner(), &xpub, label.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn wallet_viewer_remove_xpub(db: tauri::State<'_, DatabaseConnection>, id: i32) -> Result<(), AppError> {
+    store::remove_xpub(db.inner(), id).await
+}
+
+/// Saldo de uma chave estendida de Bitcoin. Falha de uma chave não derruba as outras: vem em `error`.
+#[derive(Serialize)]
+pub struct XpubBalance {
+    #[serde(flatten)]
+    pub wallet: WalletXpub,
+    /// BTC confirmados, texto decimal exato com 8 casas.
+    pub confirmed_btc: Option<String>,
+    /// Variação ainda no mempool, em BTC (pode ser negativa).
+    pub pending_btc: Option<String>,
+    pub used_addresses: Option<u32>,
+    pub scanned_addresses: Option<u32>,
+    /// `true` se a varredura bateu no teto sem fechar o gap: o saldo pode estar subestimado.
+    pub truncated: bool,
+    pub error: Option<String>,
+}
+
+/// Varre cada chave no Esplora, endereço a endereço (a chave nunca sai da máquina). Só roda ao
+/// clicar em "Refresh": cada consulta revela um endereço derivado ao provedor.
+#[tauri::command]
+pub async fn wallet_viewer_get_bitcoin_balances(
+    db: tauri::State<'_, DatabaseConnection>,
+) -> Result<Vec<XpubBalance>, AppError> {
+    let db = db.inner();
+    store::require_enabled(db).await?;
+    let mut result = Vec::new();
+    for wallet in store::list_xpubs(db).await? {
+        let scan = match parse_xpub(&wallet.xpub) {
+            Ok(parsed) => esplora::scan_balance(&parsed, &EsploraSource).await,
+            Err(error) => Err(error),
+        };
+        result.push(match scan {
+            Ok(balance) => XpubBalance {
+                confirmed_btc: Some(format_btc(i128::from(balance.confirmed_sat))),
+                pending_btc: Some(format_btc(i128::from(balance.pending_sat))),
+                used_addresses: Some(balance.used_addresses),
+                scanned_addresses: Some(balance.scanned_addresses),
+                truncated: balance.truncated,
+                error: None,
+                wallet,
+            },
+            Err(error) => XpubBalance {
+                confirmed_btc: None,
+                pending_btc: None,
+                used_addresses: None,
+                scanned_addresses: None,
+                truncated: false,
+                error: Some(error.to_string()),
+                wallet,
+            },
+        });
+    }
+    Ok(result)
 }
 
 async fn read_balance(network: &Network, address: &str) -> NetworkBalance {
