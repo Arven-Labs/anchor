@@ -2,7 +2,6 @@ import { useState, type FormEvent } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import * as XLSX from "xlsx";
 import type { AppError } from "../types";
 import type { Asset, AssetAttachment, AssetValuation } from "./types";
 import Field from "../components/Field";
@@ -75,7 +74,7 @@ function formatPct(value: number): string {
 // (escritura/ITBI/IPTU pro imóvel, contrato/cap table pra empresa),
 // reaproveitando exatamente o mecanismo de preview em disco já validado pra
 // Teses (Fase 10.5, `ThesisSection.tsx`): imagem/PDF via `convertFileSrc`,
-// planilha via `fetch` + SheetJS. `empresa_nao_listada` ganha um bloco extra
+// planilha lida no backend (`read_asset_attachment_spreadsheet`). `empresa_nao_listada` ganha um bloco extra
 // no topo (participação societária) que as outras classes não têm.
 function ManualAssetDetails({ asset }: { asset: Asset }) {
   const isEmpresaNaoListada = asset.asset_class === "empresa_nao_listada";
@@ -99,7 +98,7 @@ function ManualAssetDetails({ asset }: { asset: Asset }) {
   );
   const [viewingAttachmentId, setViewingAttachmentId] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [spreadsheetRows, setSpreadsheetRows] = useState<unknown[][] | null>(null);
+  const [spreadsheetRows, setSpreadsheetRows] = useState<string[][] | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
@@ -217,20 +216,21 @@ function ManualAssetDetails({ asset }: { asset: Asset }) {
     setSpreadsheetRows(null);
     setPreviewUrl(null);
     try {
-      const path = await invoke<string>("get_asset_attachment_path", {
-        attachmentId: attachment.id,
-      });
-      const url = convertFileSrc(path);
       if (attachmentKind(attachment) === "spreadsheet") {
-        const buffer = await fetch(url).then((r) => r.arrayBuffer());
-        const workbook = XLSX.read(buffer, { type: "array" });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        setSpreadsheetRows(XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 }));
+        setSpreadsheetRows(
+          await invoke<string[][]>("read_asset_attachment_spreadsheet", {
+            attachmentId: attachment.id,
+          }),
+        );
       } else {
-        setPreviewUrl(url);
+        const path = await invoke<string>("get_asset_attachment_path", {
+          attachmentId: attachment.id,
+        });
+        setPreviewUrl(convertFileSrc(path));
       }
     } catch (err) {
-      setPreviewError(err instanceof Error ? err.message : "Error loading preview.");
+      // O erro do invoke é um `AppError` (objeto com `message`), não um `Error`.
+      setPreviewError((err as { message?: string })?.message ?? "Error loading preview.");
     }
   }
 

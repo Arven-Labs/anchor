@@ -299,13 +299,15 @@ pub fn run() {
             commands::thesis::add_thesis_attachment,
             commands::thesis::delete_thesis_attachment,
             commands::thesis::get_thesis_attachment_path,
+            commands::thesis::read_thesis_attachment_spreadsheet,
             commands::property::list_asset_valuations,
             commands::property::add_asset_valuation,
             commands::property::delete_asset_valuation,
             commands::property::list_asset_attachments,
             commands::property::add_asset_attachment,
             commands::property::delete_asset_attachment,
-            commands::property::get_asset_attachment_path
+            commands::property::get_asset_attachment_path,
+            commands::property::read_asset_attachment_spreadsheet
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

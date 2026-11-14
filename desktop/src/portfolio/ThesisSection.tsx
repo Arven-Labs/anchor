@@ -2,7 +2,6 @@ import { useState, type FormEvent } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import * as XLSX from "xlsx";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AppError } from "../types";
@@ -80,7 +79,7 @@ function attachmentKind(attachment: ThesisAttachment): "image" | "pdf" | "spread
 // Visualização é sempre dentro do próprio app, sem abrir programa externo
 // (pedido explícito do dono do projeto): imagem/PDF via `convertFileSrc` +
 // `<img>`/`<iframe>` (o WebView já sabe renderizar os dois nativamente),
-// planilha via `fetch` sobre a mesma URL + SheetJS, desenhada como tabela.
+// planilha lida no backend (`read_thesis_attachment_spreadsheet`), desenhada como tabela.
 function ThesisSection({ workspaceId }: { workspaceId: number }) {
   const [openThesisId, setOpenThesisId] = useState<number | "new" | null>(null);
   const [formTitle, setFormTitle] = useState("");
@@ -95,7 +94,7 @@ function ThesisSection({ workspaceId }: { workspaceId: number }) {
   );
   const [viewingAttachmentId, setViewingAttachmentId] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [spreadsheetRows, setSpreadsheetRows] = useState<unknown[][] | null>(null);
+  const [spreadsheetRows, setSpreadsheetRows] = useState<string[][] | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
@@ -254,20 +253,21 @@ function ThesisSection({ workspaceId }: { workspaceId: number }) {
     setSpreadsheetRows(null);
     setPreviewUrl(null);
     try {
-      const path = await invoke<string>("get_thesis_attachment_path", {
-        attachmentId: attachment.id,
-      });
-      const url = convertFileSrc(path);
       if (attachmentKind(attachment) === "spreadsheet") {
-        const buffer = await fetch(url).then((r) => r.arrayBuffer());
-        const workbook = XLSX.read(buffer, { type: "array" });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        setSpreadsheetRows(XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 }));
+        setSpreadsheetRows(
+          await invoke<string[][]>("read_thesis_attachment_spreadsheet", {
+            attachmentId: attachment.id,
+          }),
+        );
       } else {
-        setPreviewUrl(url);
+        const path = await invoke<string>("get_thesis_attachment_path", {
+          attachmentId: attachment.id,
+        });
+        setPreviewUrl(convertFileSrc(path));
       }
     } catch (err) {
-      setPreviewError(err instanceof Error ? err.message : "Error loading preview.");
+      // O erro do invoke é um `AppError` (objeto com `message`), não um `Error`.
+      setPreviewError((err as { message?: string })?.message ?? "Error loading preview.");
     }
   }
 

@@ -653,8 +653,51 @@ fn read_spreadsheet_preview_with(
     max_bytes: u64,
     max_rows: usize,
 ) -> Result<Vec<Vec<String>>, AppError> {
-    let _ = (path, content_type, max_bytes, max_rows);
-    todo!()
+    let is_csv = match content_type {
+        Some("text/csv") => true,
+        Some("application/vnd.ms-excel")
+        | Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") => false,
+        other => {
+            return Err(AppError::InvalidInput(format!("anexo sem prévia de planilha (tipo {other:?})")));
+        }
+    };
+    let size = std::fs::metadata(path)
+        .map_err(|e| AppError::InvalidInput(format!("anexo ilegível: {e}")))?
+        .len();
+    if size > max_bytes {
+        return Err(AppError::InvalidInput(format!(
+            "arquivo grande demais para a prévia ({size} bytes, teto {max_bytes})"
+        )));
+    }
+    let mut rows = if is_csv { read_csv_rows(path, max_rows)? } else { read_xlsx_rows(path)? };
+    rows.truncate(max_rows);
+    Ok(rows)
+}
+
+/// CSV de anexo como texto: sem cabeçalho, linhas de tamanho variável, separador `,`, `;` ou tab
+/// pelo que mais aparece na primeira linha (CSV brasileiro costuma usar `;`). Bytes fora de UTF-8
+/// viram U+FFFD em vez de recusar o arquivo.
+fn read_csv_rows(path: &str, max_rows: usize) -> Result<Vec<Vec<String>>, AppError> {
+    let bytes = std::fs::read(path).map_err(|e| AppError::InvalidInput(format!("anexo ilegível: {e}")))?;
+    let first_line = bytes.split(|b| *b == b'\n').next().unwrap_or_default();
+    // `max_by_key` devolve o último empate: a vírgula ganha quando nada aparece.
+    let delimiter = [b';', b'\t', b',']
+        .into_iter()
+        .max_by_key(|d| first_line.iter().filter(|b| *b == d).count())
+        .unwrap_or(b',');
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .delimiter(delimiter)
+        .from_reader(bytes.as_slice());
+    reader
+        .byte_records()
+        .take(max_rows)
+        .map(|record| {
+            let record = record.map_err(|e| AppError::InvalidInput(format!("CSV ilegível: {e}")))?;
+            Ok(record.iter().map(|cell| String::from_utf8_lossy(cell).into_owned()).collect())
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
