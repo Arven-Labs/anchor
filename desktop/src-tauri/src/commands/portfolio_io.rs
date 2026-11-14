@@ -636,6 +636,27 @@ pub fn read_xlsx_rows(path: &str) -> Result<Vec<Vec<String>>, AppError> {
     Ok(range.rows().map(|row| row.iter().map(&text).collect()).collect())
 }
 
+/// Teto de tamanho do arquivo lido para a prévia de anexo (bytes).
+const PREVIEW_MAX_BYTES: u64 = 20 * 1024 * 1024;
+/// Teto de linhas devolvidas na prévia de anexo.
+const PREVIEW_MAX_ROWS: usize = 1000;
+
+/// Lê um anexo de planilha (CSV, xls ou xlsx) como texto, para a prévia da tela.
+/// O tipo vem do `content_type` gravado no anexo, não da extensão do arquivo.
+pub fn read_spreadsheet_preview(path: &str, content_type: Option<&str>) -> Result<Vec<Vec<String>>, AppError> {
+    read_spreadsheet_preview_with(path, content_type, PREVIEW_MAX_BYTES, PREVIEW_MAX_ROWS)
+}
+
+fn read_spreadsheet_preview_with(
+    path: &str,
+    content_type: Option<&str>,
+    max_bytes: u64,
+    max_rows: usize,
+) -> Result<Vec<Vec<String>>, AppError> {
+    let _ = (path, content_type, max_bytes, max_rows);
+    todo!()
+}
+
 // ---------------------------------------------------------------------------
 // Prévia
 // ---------------------------------------------------------------------------
@@ -1806,5 +1827,103 @@ mod tests {
         let result = read_xlsx_rows(path.to_str().unwrap());
         std::fs::remove_file(&path).ok();
         assert!(matches!(result, Err(AppError::InvalidInput(m)) if m.contains("planilha ilegível")));
+    }
+
+    // --- Prévia de anexo de planilha (substitui o `xlsx` do npm) -----------------------------
+
+    const CT_CSV: Option<&str> = Some("text/csv");
+    const CT_XLS: Option<&str> = Some("application/vnd.ms-excel");
+    const CT_XLSX: Option<&str> = Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+    /// Grava `bytes` num arquivo temporário com a extensão dada, roda `f` e apaga o arquivo.
+    fn with_temp_file<T>(ext: &str, bytes: &[u8], f: impl FnOnce(&str) -> T) -> T {
+        let path = std::env::temp_dir().join(format!(
+            "anchor_preview_{}_{}.{ext}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::write(&path, bytes).unwrap();
+        let out = f(path.to_str().unwrap());
+        std::fs::remove_file(&path).ok();
+        out
+    }
+
+    fn rows(cells: &[&[&str]]) -> Vec<Vec<String>> {
+        cells.iter().map(|r| r.iter().map(|c| c.to_string()).collect()).collect()
+    }
+
+    #[test]
+    fn preview_csv_keeps_ragged_rows_accents_and_quoted_commas() {
+        let csv = "ativo,valor\n\"ação, B\",1\nso uma coluna\n";
+        let got = with_temp_file("csv", csv.as_bytes(), |p| read_spreadsheet_preview(p, CT_CSV)).unwrap();
+        assert_eq!(got, rows(&[&["ativo", "valor"], &["ação, B", "1"], &["so uma coluna"]]));
+    }
+
+    #[test]
+    fn preview_csv_detects_a_semicolon_separator() {
+        let csv = "ativo;valor\nPETR4;12,5\n";
+        let got = with_temp_file("csv", csv.as_bytes(), |p| read_spreadsheet_preview(p, CT_CSV)).unwrap();
+        assert_eq!(got, rows(&[&["ativo", "valor"], &["PETR4", "12,5"]]));
+    }
+
+    #[test]
+    fn preview_csv_empty_file_is_an_empty_table() {
+        let got = with_temp_file("csv", b"", |p| read_spreadsheet_preview(p, CT_CSV)).unwrap();
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn preview_xlsx_reads_the_first_sheet_as_text() {
+        let sheet = concat!(
+            r#"<row r="1"><c r="A1" t="inlineStr"><is><t>PETR4</t></is></c><c r="B1"><v>100</v></c>"#,
+            r#"<c r="C1" s="1"><v>45292</v></c></row>"#,
+        );
+        let bytes = minimal_xlsx(sheet);
+        let got = with_temp_file("xlsx", &bytes, |p| read_spreadsheet_preview(p, CT_XLSX)).unwrap();
+        assert_eq!(got, rows(&[&["PETR4", "100", "01/01/2024"]]));
+    }
+
+    #[test]
+    fn preview_xls_content_type_is_read_as_a_workbook_not_csv() {
+        let got = with_temp_file("xls", b"isto nao e uma planilha", |p| read_spreadsheet_preview(p, CT_XLS));
+        assert!(matches!(got, Err(AppError::InvalidInput(m)) if m.contains("planilha ilegível")));
+    }
+
+    #[test]
+    fn preview_rejects_an_unknown_or_missing_content_type() {
+        for ct in [None, Some("application/pdf"), Some("image/png")] {
+            let got = with_temp_file("csv", b"a,b\n", |p| read_spreadsheet_preview(p, ct));
+            assert!(matches!(got, Err(AppError::InvalidInput(_))), "content_type {ct:?} devia ser recusado");
+        }
+    }
+
+    #[test]
+    fn preview_rejects_a_missing_file() {
+        let got = read_spreadsheet_preview("/nao/existe/anchor.csv", CT_CSV);
+        assert!(matches!(got, Err(AppError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn preview_rejects_a_file_above_the_size_cap() {
+        let got = with_temp_file("csv", b"a,b\n1,2\n", |p| read_spreadsheet_preview_with(p, CT_CSV, 4, 1000));
+        assert!(matches!(got, Err(AppError::InvalidInput(m)) if m.contains("grande")));
+    }
+
+    #[test]
+    fn preview_truncates_rows_above_the_row_cap() {
+        let csv = "1\n2\n3\n4\n5\n";
+        let got = with_temp_file("csv", csv.as_bytes(), |p| read_spreadsheet_preview_with(p, CT_CSV, 1024, 3)).unwrap();
+        assert_eq!(got, rows(&[&["1"], &["2"], &["3"]]));
+    }
+
+    #[test]
+    fn preview_row_cap_also_applies_to_workbooks() {
+        let sheet = concat!(
+            r#"<row r="1"><c r="A1"><v>1</v></c></row><row r="2"><c r="A2"><v>2</v></c></row>"#,
+            r#"<row r="3"><c r="A3"><v>3</v></c></row>"#,
+        );
+        let bytes = minimal_xlsx(sheet);
+        let got = with_temp_file("xlsx", &bytes, |p| read_spreadsheet_preview_with(p, CT_XLSX, 1_000_000, 2)).unwrap();
+        assert_eq!(got, rows(&[&["1"], &["2"]]));
     }
 }
