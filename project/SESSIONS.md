@@ -5342,5 +5342,5 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Achado fora do plano**: a Ledger expõe mais de uma interface HID (uma é FIDO), e o TruthID abre a primeira que acha. Aqui o filtro é usage page `0xffa0` ou interface 0, o mesmo do transporte oficial, com teste.
 - **Testes primeiro**: run 43535884700, 25 falharam (todos os novos, por `todo!()`), 1150 passaram. **PR #123**: o 1º CI falhou no E2E novo (não abria a seção "Wallet viewer" antes de ligar o módulo; 18 de 19 specs passaram); corrigi o spec, e o CI do PR ficou verde no `76d05a9` (Rust 1175 e 0 falhas, Frontend, E2E de 19 specs, `gate`, `guard`).
 - **Quebra proposital** (branch `ci/quebra-ledger`, já apagada, editada só com `Edit`, run 43537628950): 4 quebras, 5 testes falharam, cada quebra derrubou o seu (sequência, 0x6e00, chave pública, `INS_SIGN_TX` pelo guarda).
-- **Build para o teste com o aparelho**: `build.yml` por `workflow_dispatch` na branch (run 43538089685), sem release.
-- **Não verificado**: a Ledger real; os status words que não são 0x9000/0x6e00/0x6d00 contra o aparelho; o filtro "interface 0 sem usage page"; o build no Windows e no macOS até o run acima terminar.
+- **Build para o teste com o aparelho**: `build.yml` por `workflow_dispatch` na branch (run 43538089685, commit `76d05a9`), sem release: Linux, Windows e macOS verdes (o `hidapi` compila nos 3), artefatos `bundles-*`.
+- **Não verificado**: a Ledger real; os status words que não são 0x9000/0x6e00/0x6d00 contra o aparelho; o filtro "interface 0 sem usage page".

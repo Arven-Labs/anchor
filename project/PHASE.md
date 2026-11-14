@@ -3701,7 +3701,8 @@ de duplicata é ticker + data + tipo + quantidade + total.
   - Teste-guarda: `ethereum_sign`, `sign_tx`, `ins_sign` e `personal_message` entraram nos termos proibidos.
   - **Testes primeiro**: run 43535884700 (funções em `todo!()`): 25 falharam (todos os novos), 1150 passaram. CI do PR verde no `76d05a9` (run 43536921845): Rust 1175 testes e 0 falhas, Frontend, E2E de 19 specs (o novo prova "No Ledger found" sem dispositivo e 0 endereços gravados), `gate`, `guard`. O 1º CI do PR falhou no spec novo (não abria a seção "Wallet viewer" antes de clicar em ligar); corrigido no spec.
   - **Quebra proposital** (branch descartada, run 43537628950, 5 falhas): sem conferir a sequência; 0x6e00 como Locked; sem conferir a chave pública; constante `INS_SIGN_TX` no `ledger.rs`. As 4 derrubaram testes.
-  - **Não verificado**: a Ledger real; os status words 0x6e01, 0x6511, 0x5515 e 0x6982 (vêm da documentação, não do aparelho); o filtro "interface 0 sem usage page"; o build no Windows e no macOS.
+  - Build dos 3 SO por `workflow_dispatch` (run 43538089685): verde, o `hidapi` compila no Linux, no Windows e no macOS.
+  - **Não verificado**: a Ledger real; os status words 0x6e01, 0x6511, 0x5515 e 0x6982 (vêm da documentação, não do aparelho); o filtro "interface 0 sem usage page".
 - [ ] 36.3 — **PR 3, Trezor**: endereço pelo `trezor-client` (CC0, da própria Trezor), só a feature `ethereum`. A crate **tem** funções de assinar (`ethereum_sign_*`); o dono aceitou em 2026-11-13 com o guarda reforçado (já feito no 36.2) e um adendo no ADR 0002 a escrever nesse PR. Avaliação completa da crate antes (`padrao/dependencias-novas.md`).
 - [ ] 36.4 — **PR 4**: Bitcoin (chave pública estendida, indexador, outro app na Ledger).
 - **Não verificado no PR 1**: o app rodando (tela e E2E), o saldo contra um explorador de blocos, limite de taxa dos RPCs sob uso prolongado.
