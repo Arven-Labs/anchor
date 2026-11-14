@@ -1781,4 +1781,30 @@ mod tests {
         std::fs::remove_file(&path).ok();
         assert!(matches!(result, Err(AppError::InvalidInput(m)) if m.contains("planilha ilegível")));
     }
+
+    /// `.xls` passa pelo leitor CFB/OLE2 do calamine (RUSTSEC-2026-0436: pânico e OOM em arquivo
+    /// malformado). Um arquivo só com a assinatura OLE2 e lixo (cabeçalho truncado) tem de virar
+    /// erro tratado, não pânico. Não reproduz o aviso (o OOM exige um arquivo sob medida e
+    /// derrubaria o runner): a correção é provada pela versão no `Cargo.lock`.
+    #[test]
+    fn read_xlsx_rows_rejects_a_truncated_ole2_file_without_panicking() {
+        const OLE2_SIGNATURE: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+        let mut bytes = OLE2_SIGNATURE.to_vec();
+        bytes.extend_from_slice(&[0xFF; 100]);
+        let path = std::env::temp_dir().join(format!("anchor_truncated_ole2_{}.xls", std::process::id()));
+        std::fs::write(&path, &bytes).unwrap();
+        let result = std::panic::catch_unwind(|| read_xlsx_rows(path.to_str().unwrap()));
+        std::fs::remove_file(&path).ok();
+        let result = result.expect("a leitura não pode entrar em pânico");
+        assert!(matches!(result, Err(AppError::InvalidInput(m)) if m.contains("planilha ilegível")));
+    }
+
+    #[test]
+    fn read_xlsx_rows_rejects_an_empty_file() {
+        let path = std::env::temp_dir().join(format!("anchor_empty_{}.xlsx", std::process::id()));
+        std::fs::write(&path, b"").unwrap();
+        let result = read_xlsx_rows(path.to_str().unwrap());
+        std::fs::remove_file(&path).ok();
+        assert!(matches!(result, Err(AppError::InvalidInput(m)) if m.contains("planilha ilegível")));
+    }
 }
