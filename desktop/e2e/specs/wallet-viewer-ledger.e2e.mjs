@@ -33,4 +33,20 @@ describe("Anchor — visualizador de wallets, Ledger", () => {
     expect(await $('[data-testid="ledger-address"]').isExisting()).toBe(false);
     expect(sql("SELECT COUNT(*) FROM wallet_viewer_address")).toBe("0");
   });
+
+  // Fase 36.3 — o mesmo para o Trezor: o botão chega ao trezor-client de verdade (libusb), sem
+  // aparelho no runner, e nada é cadastrado. Continua na aba Wallets do teste anterior.
+  it("sem Trezor plugado, ler o endereço avisa e não cadastra nada", async () => {
+    await clickCentered(byId("trezor-read"));
+    await byId("trezor-error").waitForDisplayed({ timeout: 30_000 });
+    await waitForText(
+      byId("trezor-error"),
+      (text) => text.includes("No Trezor found"),
+      "sem aparelho, a tela deveria dizer que não achou o Trezor",
+    );
+    await snap("wallet-viewer-trezor--sem-dispositivo");
+
+    expect(await $('[data-testid="trezor-address"]').isExisting()).toBe(false);
+    expect(sql("SELECT COUNT(*) FROM wallet_viewer_address")).toBe("0");
+  });
 });

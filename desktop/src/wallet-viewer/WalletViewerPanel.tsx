@@ -66,11 +66,21 @@ function AddressRow({
   );
 }
 
-// Fase 36.2 — lê o endereço de uma conta da Ledger (USB, app Ethereum aberto) e só grava depois
-// que o usuário confere e clica em "Add". Nada é assinado: o Rust só sabe pedir o endereço.
+// Fases 36.2 e 36.3 — lê o endereço de uma conta da Ledger (USB, app Ethereum aberto) ou do Trezor
+// (USB; PIN e passphrase no aparelho) e só grava depois que o usuário confere e clica em "Add".
+// Nada é assinado: o Rust só sabe pedir o endereço. Os `data-testid` levam o nome do aparelho.
 const MAX_ACCOUNT = 2147483647;
 
-function LedgerImport() {
+type Device = "ledger" | "trezor";
+
+const DEVICES: Record<Device, { name: string; command: string }> = {
+  ledger: { name: "Ledger", command: "wallet_viewer_read_ledger_address" },
+  trezor: { name: "Trezor", command: "wallet_viewer_read_trezor_address" },
+};
+
+type ReadRequest = { device: Device; account: number };
+
+function HardwareWalletImport() {
   const queryClient = useQueryClient();
   const [account, setAccount] = useState("0");
   const [label, setLabel] = useState("");
@@ -78,9 +88,9 @@ function LedgerImport() {
   const trimmed = account.trim();
   const validAccount = /^\d+$/.test(trimmed) && Number(trimmed) <= MAX_ACCOUNT;
 
-  const readMutation = useMutation<string, AppError, number>({
-    mutationFn: (index) => invoke("wallet_viewer_read_ledger_address", { account: index }),
-    onSuccess: (_address, index) => setLabel(`Ledger · account ${index}`),
+  const readMutation = useMutation<string, AppError, ReadRequest>({
+    mutationFn: ({ device, account: index }) => invoke(DEVICES[device].command, { account: index }),
+    onSuccess: (_address, { device, account: index }) => setLabel(`${DEVICES[device].name} · account ${index}`),
   });
 
   const addMutation = useMutation<WalletAddress, AppError, { address: string; label: string }>({
@@ -97,21 +107,24 @@ function LedgerImport() {
   });
 
   const readAddress = readMutation.data;
+  const lastDevice = readMutation.variables?.device;
+
+  const read = (device: Device) => {
+    addMutation.reset();
+    readMutation.mutate({ device, account: Number(trimmed) });
+  };
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border p-4" data-testid="ledger-import">
-      <h4 className="text-sm font-semibold">Read from a Ledger</h4>
+    <div className="flex flex-col gap-3 rounded-md border p-4" data-testid="hardware-import">
+      <h4 className="text-sm font-semibold">Read from a hardware wallet</h4>
       <p className="text-xs text-muted-foreground">
-        Plug in the Ledger, unlock it and open the Ethereum app. Only the address of the account is
-        read (path m/44'/60'/account'/0/0, as in Ledger Live); nothing is signed.
+        Plug in the device and unlock it. On a Ledger, open the Ethereum app; on a Trezor, enter the
+        PIN and passphrase on the device if it asks. Only the address of the account is read (path
+        m/44'/60'/account'/0/0, as in Ledger Live and Trezor Suite); nothing is signed.
       </p>
       <form
-        className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end"
-        onSubmit={(event) => {
-          event.preventDefault();
-          addMutation.reset();
-          readMutation.mutate(Number(trimmed));
-        }}
+        className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end"
+        onSubmit={(event) => event.preventDefault()}
       >
         <Field label="Account">
           <Input
@@ -119,20 +132,29 @@ function LedgerImport() {
             onChange={(e) => setAccount(e.currentTarget.value)}
             inputMode="numeric"
             autoComplete="off"
-            data-testid="ledger-account"
+            data-testid="hardware-account"
           />
         </Field>
-        <Button type="submit" variant="outline" disabled={!validAccount || readMutation.isPending} data-testid="ledger-read">
-          {readMutation.isPending ? "Reading..." : "Read from Ledger"}
-        </Button>
+        {(Object.keys(DEVICES) as Device[]).map((device) => (
+          <Button
+            key={device}
+            type="button"
+            variant="outline"
+            disabled={!validAccount || readMutation.isPending}
+            onClick={() => read(device)}
+            data-testid={`${device}-read`}
+          >
+            {readMutation.isPending && lastDevice === device ? "Reading..." : `Read from ${DEVICES[device].name}`}
+          </Button>
+        ))}
       </form>
       {!validAccount && <p className="text-sm text-red-600">The account must be a whole number from 0 to {MAX_ACCOUNT}.</p>}
-      {readMutation.isError && (
-        <p className="text-sm text-red-600" data-testid="ledger-error">
+      {readMutation.isError && lastDevice && (
+        <p className="text-sm text-red-600" data-testid={`${lastDevice}-error`}>
           {readMutation.error.message}
         </p>
       )}
-      {readAddress && (
+      {readAddress && lastDevice && (
         <form
           className="grid gap-3 sm:grid-cols-[2fr_1fr_auto] sm:items-end"
           onSubmit={(event) => {
@@ -140,15 +162,15 @@ function LedgerImport() {
             addMutation.mutate({ address: readAddress, label });
           }}
         >
-          <Field label="Address read from the Ledger">
-            <p className="break-all font-mono text-xs" data-testid="ledger-address">
+          <Field label={`Address read from the ${DEVICES[lastDevice].name}`}>
+            <p className="break-all font-mono text-xs" data-testid={`${lastDevice}-address`}>
               {readAddress}
             </p>
           </Field>
           <Field label="Label (optional)">
             <Input value={label} onChange={(e) => setLabel(e.currentTarget.value)} autoComplete="off" />
           </Field>
-          <Button type="submit" disabled={addMutation.isPending} data-testid="ledger-add">
+          <Button type="submit" disabled={addMutation.isPending} data-testid={`${lastDevice}-add`}>
             {addMutation.isPending ? "Adding..." : "Add"}
           </Button>
         </form>
@@ -228,7 +250,7 @@ function WalletViewerPanel() {
         </form>
         {addMutation.isError && <p className="text-sm text-red-600">{addMutation.error.message}</p>}
 
-        <LedgerImport />
+        <HardwareWalletImport />
 
         {removeMutation.isError && <p className="text-sm text-red-600">{removeMutation.error.message}</p>}
 
