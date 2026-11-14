@@ -1,18 +1,25 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
+import 'package:anchor_mobile/domain/foreign_holdings_csv.dart';
 import 'package:anchor_mobile/domain/foreign_tax.dart';
 import 'package:anchor_mobile/domain/ptax_series.dart';
 import 'package:anchor_mobile/domain/tax_format.dart';
 import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/l10n/foreign_tax_labels.dart' as labels;
+import 'package:anchor_mobile/models/asset.dart';
+import 'package:anchor_mobile/models/portfolio_transaction.dart';
 import 'package:anchor_mobile/screens/foreign_tax_screen.dart';
+import 'package:anchor_mobile/services/portfolio_repository.dart';
 
 import 'support/localized_app.dart';
+import 'support/settle.dart' show waitFor;
 
 // Textos do IR de exterior (ADR 0001). O português é o texto que o app já mostrava; o inglês
 // usa R$ com separadores en, data MM/DD/YYYY e quantidade com ponto decimal.
@@ -335,6 +342,112 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Nenhuma'), findsNothing);
+    });
+
+    // Exportar o informe de Bens e Direitos: o seletor de arquivos é injetado. O ativo é do
+    // exterior mas em BRL, então a tela não pede câmbio (só moeda != BRL vai à rede).
+    group('exportar o informe de bens', () {
+      final repository = PortfolioRepository();
+
+      Future<void> seedHolding(WidgetTester tester) async {
+        await tester.runAsync(() async {
+          final id = await repository.insertAsset(
+            Asset(
+              ticker: 'AAPL',
+              name: 'Apple',
+              assetClass: AssetClass.acaoInternacional,
+              currency: 'BRL',
+              createdAt: DateTime(2024, 1, 1),
+            ),
+          );
+          await repository.insertTransaction(
+            PortfolioTransaction(
+              assetId: id,
+              type: TransactionType.compra,
+              quantity: 10,
+              unitPrice: 100,
+              totalValue: 1000,
+              date: DateTime(2024, 3, 10),
+              createdAt: DateTime(2024, 3, 10),
+            ),
+          );
+        });
+      }
+
+      /// Monta a tela com um `saveCsv` falso e devolve os nomes de arquivo pedidos.
+      Future<List<String>> pumpWithSave(
+        WidgetTester tester,
+        Future<Uri?> Function(String fileName, Uint8List bytes) saveCsv,
+      ) async {
+        final names = <String>[];
+        tester.view.physicalSize = const Size(900, 3000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.runAsync(AppDatabase.instance);
+        await tester.pumpWidget(
+          localizedApp(
+            ForeignTaxScreen(
+              saveCsv: ({required dialogTitle, required fileName, required bytes}) {
+                names.add(fileName);
+                return saveCsv(fileName, bytes);
+              },
+            ),
+          ),
+        );
+        await waitFor(tester, find.text(pt.foreignExportCsv), 'botão Exportar CSV');
+        return names;
+      }
+
+      testWidgets('F1: salva com o nome do dia e o CSV do informe, e avisa quantas linhas', (tester) async {
+        await seedHolding(tester);
+        Uint8List? saved;
+        final names = await pumpWithSave(tester, (name, bytes) async {
+          saved = bytes;
+          return Uri.file('/fake/$name');
+        });
+
+        await tester.tap(find.text(pt.foreignExportCsv));
+
+        final day = DateTime.now().toIso8601String().substring(0, 10);
+        await waitFor(tester, find.textContaining(' linhas salvas.'), 'aviso de linhas salvas');
+        expect(names, ['anchor-foreign-holdings-$day.csv']);
+        final lines = utf8.decode(saved!).trimRight().split('\n');
+        expect(lines.first, foreignHoldingsCsvHeader.join(','));
+        expect(lines.skip(1), isNotEmpty);
+        expect(lines[1], startsWith('2024,AAPL,Apple,,,BRL,10,1000.00,'));
+        expect(find.text(pt.foreignCsvSaved(lines.length - 1)), findsOneWidget);
+      });
+
+      testWidgets('F2: cancelar o diálogo de salvar não mostra aviso nenhum', (tester) async {
+        await seedHolding(tester);
+        final names = await pumpWithSave(tester, (_, _) async => null);
+
+        await tester.tap(find.text(pt.foreignExportCsv));
+        await waitFor(tester, find.byType(Scaffold), 'tela ainda montada');
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+        await tester.pump();
+
+        expect(names, hasLength(1));
+        expect(find.byType(SnackBar), findsNothing);
+      });
+
+      testWidgets('F3: falha ao salvar mostra a mensagem de erro', (tester) async {
+        await seedHolding(tester);
+        await pumpWithSave(tester, (_, _) async => throw StateError('disco cheio'));
+
+        await tester.tap(find.text(pt.foreignExportCsv));
+
+        await waitFor(
+          tester,
+          find.text(pt.foreignCsvFailed('Bad state: disco cheio')),
+          'aviso de falha ao salvar',
+        );
+      });
+
+      testWidgets('F4: sem posição no exterior não há botão de exportar', (tester) async {
+        await pumpScreen(tester, 'pt');
+        expect(find.text(pt.foreignExportCsv), findsNothing);
+      });
     });
   });
 }
