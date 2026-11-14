@@ -5353,3 +5353,5 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Quebras** (branch `ci/quebra-trezor`, editada só com `Edit` e apagada no fim): run 43542188224 com 4 quebras (9 falhas, cada uma derrubou o seu); a troca de ActionCancelled ficou mascarada pela quebra do pedido extra e foi rodada isolada (run 43543980291: 1 falha, `device_failures_are_classified`). Para isso, a branch descartável recebeu `reset --hard` e `push -f`; ela é só minha e foi apagada.
 - **Build dos 3 SO** (run 43542110263): verde.
 - **Não verificado**: o Trezor real; o Trezor One; a thread presa de verdade.
+- **Merge**: PR #124 mesclado pelo dono (`5930d53`); o CI da `main` passou nos 4 workflows (Rust, Frontend, E2E, Private Files).
+- **Validação em aparelho**: o dono baixou o AppImage (run 43542110263), mas não tem os aparelhos agora: terá a Ledger depois e **não tem Trezor**. O 36.2 segue `[~]`; o 36.3 foi fechado no código sem validação. Pendência P14 no `PENDING.md`, com o roteiro de teste e o cuidado de abrir com `ANCHOR_DB_PATH` (banco descartável), porque a build tem a migration do visualizador que a v0.1.1 instalada não tem.
