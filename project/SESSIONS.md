@@ -5405,3 +5405,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI** (`CI Mobile`, `workflow_dispatch`, SHA `8b38036`, run 43636165955): `test` e `apk` verdes, 1517 passaram, 2 puladas.
 - **Quebras** (branch `ci/quebra-csv`, só com `Edit`, run 43637425367): 3 quebras, 3 falhas, cada uma pega por um teste: sem o cancelar do exportar (X2), sem o cancelar do seletor (I2), importar mesmo com a prévia recusada (I3). As duas primeiras tentativas barraram no `analyze` (variável sem uso), não nos testes; ajustei as mutações para compilar.
 - **Não verificado**: o `file_picker` real num aparelho (permissões, o que o Android devolve); o export do informe do exterior (`foreign_tax_screen.dart`) segue sem teste.
+
+## Sessão 349 — P12: teste do export do informe de bens do exterior (mobile)
+- **Decisão do dono** (plan mode): mesmo padrão da Sessão 348, injetar só o seletor de arquivo. Os serviços de câmbio (`YahooQuoteService`, `BcbPtaxService`) não precisam de injeção para este teste: `_load` só pede câmbio para moeda diferente de BRL, e um ativo do exterior em BRL tem posição sem rede.
+- **Feito**: `saveCsv` opcional em `ForeignTaxScreen`, repassado ao `_HoldingsCard` (typedef público `SaveCsv`, padrão = `file_picker`); 4 testes novos em `foreign_tax_screen_test.dart` (F1 nome e bytes e contagem de linhas, F2 cancelar, F3 falha, F4 sem posição não há botão).
+- **Testes primeiro**: run 43642747974, `flutter analyze` falhou só por `saveCsv` indefinido.
+- **CI** (`CI Mobile`, `workflow_dispatch`, SHA `ca6d87f`, run 43643314898): `test` e `apk` verdes.
+- **Quebras** (branch `ci/quebra-foreign-csv`, só com `Edit`, run 43643890451): 2 quebras, 2 falhas, cada uma pega: contagem fixa em 0 (F1) e sem o cancelar (F2). As mutações compilam (`saved == Uri()` no lugar do `null`), lição da Sessão 348.
+- **Não verificado**: o `file_picker` real num aparelho; a tela com câmbio USD (o teste usa ativo em BRL); `_saveCsvWithPlatform` está duplicado entre `transaction_history_screen.dart` e `foreign_tax_screen.dart` (extrair seria refatoração à parte); a branch `ci/quebra-foreign-csv` continua no remoto à espera da sua confirmação.
