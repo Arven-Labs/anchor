@@ -5344,3 +5344,12 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Quebra proposital** (branch `ci/quebra-ledger`, já apagada, editada só com `Edit`, run 43537628950): 4 quebras, 5 testes falharam, cada quebra derrubou o seu (sequência, 0x6e00, chave pública, `INS_SIGN_TX` pelo guarda).
 - **Build para o teste com o aparelho**: `build.yml` por `workflow_dispatch` na branch (run 43538089685, commit `76d05a9`), sem release: Linux, Windows e macOS verdes (o `hidapi` compila nos 3), artefatos `bundles-*`.
 - **Não verificado**: a Ledger real; os status words que não são 0x9000/0x6e00/0x6d00 contra o aparelho; o filtro "interface 0 sem usage page".
+- **Merge**: PR #123 mesclado pelo dono (`71d505c`, 2026-11-14 01:19 UTC) **antes** do teste com o aparelho; o 36.2 segue `[~]` até esse teste. O comando de merge que passei falhou no `git -C anchor` (o shell já estava dentro de `anchor/`); terminei a limpeza à mão (branch local apagada depois de conferir o diff vazio com a `main`, `fetch --prune`).
+
+## Sessão 342 — Visualizador de wallets, PR 3: Trezor (Fase 36.3)
+- **Decisões do dono** (plan mode): o aparelho é Model T, Safe 3 ou Safe 5 (PIN no aparelho), então não há tela de PIN do Trezor One; o `trezor-client` foi aceito mesmo sabendo assinar, com o adendo ao ADR 0002.
+- **Lido na fonte do `trezor-client` 0.1.6** (baixada no scratchpad): o `find_devices` faz um ping UDP ao emulador (evitado: busca só por USB); o transporte USB lê com timeout 0, que no libusb é infinito (daí a trava que recusa e o teto de 120 s); o pedido de passphrase é respondido "no aparelho"; o `libusb1-sys` compila a cópia que vem junto se não achar a do sistema; o trait `Transport` é público, o que permitiu o aparelho falso.
+- **Testes primeiro**: run 43541144127, 15 falharam e 1175 passaram. **PR #124** verde de primeira (`42b6115`, Rust 1190 e 0 falhas, E2E com o caso do Trezor).
+- **Quebras** (branch `ci/quebra-trezor`, editada só com `Edit` e apagada no fim): run 43542188224 com 4 quebras (9 falhas, cada uma derrubou o seu); a troca de ActionCancelled ficou mascarada pela quebra do pedido extra e foi rodada isolada (run 43543980291: 1 falha, `device_failures_are_classified`). Para isso, a branch descartável recebeu `reset --hard` e `push -f`; ela é só minha e foi apagada.
+- **Build dos 3 SO** (run 43542110263): verde.
+- **Não verificado**: o Trezor real; o Trezor One; a thread presa de verdade.
