@@ -60,7 +60,31 @@ pub enum TrezorReadError {
 
 impl TrezorReadError {
     pub fn user_message(&self) -> String {
-        todo!()
+        match self {
+            TrezorReadError::NotConnected => "No Trezor found. Plug it in and unlock it.".to_string(),
+            TrezorReadError::MultipleDevices => "More than one Trezor is plugged in. Leave only one.".to_string(),
+            TrezorReadError::AccessDenied => "Access to the Trezor was denied. Close Trezor Suite; on Linux, \
+                 install Trezor's udev rules."
+                .to_string(),
+            TrezorReadError::Locked => "The Trezor is locked. Enter the PIN on the device (a Trezor One must be \
+                 unlocked in Trezor Suite first)."
+                .to_string(),
+            TrezorReadError::NotInitialized => {
+                "This Trezor has no wallet yet. Set it up in Trezor Suite first.".to_string()
+            }
+            TrezorReadError::Cancelled => "The request was cancelled on the Trezor.".to_string(),
+            TrezorReadError::Busy => "Another Trezor read is still waiting for the device. Confirm on the \
+                 Trezor, or unplug it and try again."
+                .to_string(),
+            TrezorReadError::Timeout => "The Trezor did not answer in time. Confirm on the device, or unplug \
+                 it and try again."
+                .to_string(),
+            TrezorReadError::InvalidAccount => {
+                "The account number must be between 0 and 2147483647.".to_string()
+            }
+            TrezorReadError::Malformed => "The Trezor returned an address that is not valid.".to_string(),
+            TrezorReadError::Other(message) => format!("Trezor error: {message}"),
+        }
     }
 }
 
@@ -72,27 +96,58 @@ impl From<TrezorReadError> for AppError {
 
 /// Caminho `m/44'/60'/conta'/0/0` (o do Trezor Suite para Ethereum), no formato `address_n`.
 pub fn derivation_path(account: u32) -> Result<Vec<u32>, TrezorReadError> {
-    let _ = (account, HARDENED);
-    todo!()
+    if account >= HARDENED {
+        return Err(TrezorReadError::InvalidAccount);
+    }
+    Ok(vec![44 | HARDENED, 60 | HARDENED, account | HARDENED, 0, 0])
 }
 
 /// Escolhe o aparelho entre os encontrados no USB: ignora os que estão em modo bootloader;
 /// precisa sobrar exatamente um. Devolve o índice na lista.
 pub fn pick_device(models: &[Model]) -> Result<usize, TrezorReadError> {
-    let _ = models;
-    todo!()
+    let mut usable = models.iter().enumerate().filter(|(_, model)| **model != Model::TrezorBootloader);
+    let (index, _) = usable.next().ok_or(TrezorReadError::NotConnected)?;
+    if usable.next().is_some() {
+        return Err(TrezorReadError::MultipleDevices);
+    }
+    Ok(index)
 }
 
 /// Traduz o erro do `trezor-client` para o que a tela precisa dizer.
 pub fn classify(error: &ClientError) -> TrezorReadError {
-    let _ = (error, FailureType::Failure_ActionCancelled);
-    todo!()
+    match error {
+        ClientError::NoDeviceFound => TrezorReadError::NotConnected,
+        ClientError::DeviceNotUnique => TrezorReadError::MultipleDevices,
+        // A crate devolve `UnsupportedNetwork` quando o aparelho pede a matriz de PIN no
+        // computador (Trezor One), que ela não trata (`client/common.rs`, `handle_interaction`).
+        ClientError::UnsupportedNetwork | ClientError::UnexpectedInteractionRequest(_) => TrezorReadError::Locked,
+        ClientError::FailureResponse(failure) => match failure.code() {
+            FailureType::Failure_ActionCancelled => TrezorReadError::Cancelled,
+            FailureType::Failure_PinInvalid | FailureType::Failure_PinExpected | FailureType::Failure_PinCancelled => {
+                TrezorReadError::Locked
+            }
+            FailureType::Failure_NotInitialized => TrezorReadError::NotInitialized,
+            other => TrezorReadError::Other(format!("{other:?}: {}", failure.message())),
+        },
+        ClientError::TransportConnect(inner) => {
+            let text = inner.to_string().to_lowercase();
+            if text.contains("access") || text.contains("permission") || text.contains("denied") || text.contains("busy")
+            {
+                TrezorReadError::AccessDenied
+            } else {
+                TrezorReadError::Other(inner.to_string())
+            }
+        }
+        other => TrezorReadError::Other(other.to_string()),
+    }
 }
 
 /// Troca completa com um aparelho já conectado: inicia a sessão e pede o endereço.
 pub fn read_address(trezor: &mut Trezor, account: u32) -> Result<String, TrezorReadError> {
-    let _ = (trezor, account, parse_address);
-    todo!()
+    let path = derivation_path(account)?;
+    trezor.init_device(None).map_err(|error| classify(&error))?;
+    let address = trezor.ethereum_get_address(path).map_err(|error| classify(&error))?;
+    parse_address(&address).map_err(|_| TrezorReadError::Malformed)
 }
 
 /// Roda `read` com a trava; se ela estiver ocupada, recusa na hora com `Busy`.
@@ -100,15 +155,29 @@ pub fn exclusive<T>(
     lock: &Mutex<()>,
     read: impl FnOnce() -> Result<T, TrezorReadError>,
 ) -> Result<T, TrezorReadError> {
-    let _ = (lock, read, TryLockError::<()>::WouldBlock);
-    todo!()
+    let _guard = match lock.try_lock() {
+        Ok(guard) => guard,
+        // Uma leitura anterior entrou em pânico: o `()` guardado não tem estado a corromper.
+        Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+        Err(TryLockError::WouldBlock) => return Err(TrezorReadError::Busy),
+    };
+    read()
 }
 
 /// Acha o Trezor no USB (sem procurar o emulador por UDP), conecta e lê o endereço.
 /// Bloqueante: chamar fora do runtime async.
 pub fn read_address_from_device(account: u32) -> Result<String, TrezorReadError> {
-    let _ = (account, &DEVICE_LOCK, WebUsbTransport::find_devices);
-    todo!()
+    // Conta inválida não precisa nem abrir o USB.
+    derivation_path(account)?;
+    exclusive(&DEVICE_LOCK, || {
+        let devices =
+            WebUsbTransport::find_devices(false).map_err(|error| classify(&ClientError::TransportConnect(error)))?;
+        let models: Vec<Model> = devices.iter().map(|device| device.model).collect();
+        let index = pick_device(&models)?;
+        let device = devices.into_iter().nth(index).ok_or(TrezorReadError::NotConnected)?;
+        let mut trezor = device.connect().map_err(|error| classify(&error))?;
+        read_address(&mut trezor, account)
+    })
 }
 
 /// Porta de entrada do comando: com o módulo desligado recusa **antes** de tocar no USB;
@@ -122,8 +191,14 @@ pub async fn read_address_if_enabled<F>(
 where
     F: FnOnce(u32) -> Result<String, TrezorReadError> + Send + 'static,
 {
-    let _ = (db, account, limit, read, store::require_enabled);
-    todo!()
+    store::require_enabled(db).await?;
+    let task = tokio::task::spawn_blocking(move || read(account));
+    match tokio::time::timeout(limit, task).await {
+        // A thread pode continuar presa no USB; a trava faz a próxima leitura recusar com `Busy`.
+        Err(_) => Err(TrezorReadError::Timeout.into()),
+        Ok(Err(error)) => Err(AppError::Device(format!("The Trezor read was interrupted: {error}"))),
+        Ok(Ok(result)) => result.map_err(AppError::from),
+    }
 }
 
 #[cfg(test)]
