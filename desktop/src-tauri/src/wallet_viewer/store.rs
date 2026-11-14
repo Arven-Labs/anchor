@@ -3,6 +3,7 @@
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::Serialize;
 
+use crate::domain::bitcoin_xpub::XpubKind;
 use crate::domain::wallet_address::parse_address;
 use crate::entity::{wallet_viewer_address, wallet_viewer_settings};
 use crate::error::AppError;
@@ -91,4 +92,29 @@ pub async fn remove_address(db: &DatabaseConnection, id: i32) -> Result<(), AppE
         return Err(AppError::NotFound(format!("wallet address {id}")));
     }
     Ok(())
+}
+
+/// Chave pública estendida de Bitcoin cadastrada (Fase 36.4a). Só a chave pública: nunca privada.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct WalletXpub {
+    pub id: i32,
+    /// A xpub/zpub como validada (sem espaços nas pontas).
+    pub xpub: String,
+    pub kind: XpubKind,
+    pub label: Option<String>,
+    pub created_at: String,
+}
+
+/// Valida a chave (`parse_xpub`), recusa duplicada e grava. Com o módulo desligado recusa antes.
+pub async fn add_xpub(_db: &DatabaseConnection, _xpub: &str, _label: Option<&str>) -> Result<WalletXpub, AppError> {
+    todo!("Fase 36.4a")
+}
+
+/// Leitura local: continua permitida com o módulo desligado.
+pub async fn list_xpubs(_db: &DatabaseConnection) -> Result<Vec<WalletXpub>, AppError> {
+    todo!("Fase 36.4a")
+}
+
+pub async fn remove_xpub(_db: &DatabaseConnection, _id: i32) -> Result<(), AppError> {
+    todo!("Fase 36.4a")
 }

@@ -29,3 +29,4 @@ pub mod transaction_ledger;
 pub mod twr;
 pub mod valuation_outcome;
 pub mod wallet_address;
+pub mod bitcoin_xpub;

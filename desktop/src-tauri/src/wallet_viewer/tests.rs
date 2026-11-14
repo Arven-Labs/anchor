@@ -5,7 +5,11 @@ use std::path::{Path, PathBuf};
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 
-use super::store::{add_address, is_enabled, list_addresses, remove_address, require_enabled, set_enabled};
+use super::store::{
+    add_address, add_xpub, is_enabled, list_addresses, list_xpubs, remove_address, remove_xpub, require_enabled,
+    set_enabled,
+};
+use crate::domain::bitcoin_xpub::XpubKind;
 use crate::error::AppError;
 use crate::test_support::memory_db;
 
@@ -102,6 +106,70 @@ async fn removing_deletes_it_and_removing_an_unknown_id_is_not_found() {
     assert!(matches!(remove_address(&db, saved.id).await, Err(AppError::NotFound(_))));
 }
 
+// ---------------------------------------------------------------- xpub de Bitcoin (Fase 36.4a)
+
+const ZPUB: &str = "zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs";
+const XPUB: &str = "xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdj";
+const XPRV: &str = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+
+#[tokio::test]
+async fn adding_an_xpub_while_disabled_is_refused_and_stores_nothing() {
+    let db = memory_db().await;
+    assert!(matches!(add_xpub(&db, ZPUB, None).await, Err(AppError::InvalidInput(_))));
+    assert!(list_xpubs(&db).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn an_xpub_is_stored_trimmed_with_its_kind_and_label() {
+    let db = enabled_db().await;
+    let zpub = add_xpub(&db, &format!("  {ZPUB}\n"), Some("  cold storage  ")).await.unwrap();
+    assert_eq!(zpub.xpub, ZPUB);
+    assert_eq!(zpub.kind, XpubKind::NativeSegwit);
+    assert_eq!(zpub.label.as_deref(), Some("cold storage"));
+    let xpub = add_xpub(&db, XPUB, Some("   ")).await.unwrap();
+    assert_eq!((xpub.kind, xpub.label), (XpubKind::Legacy, None));
+    assert_eq!(list_xpubs(&db).await.unwrap(), vec![zpub, xpub]);
+}
+
+#[tokio::test]
+async fn a_private_key_is_refused_and_stores_nothing() {
+    let db = enabled_db().await;
+    assert!(matches!(add_xpub(&db, XPRV, None).await, Err(AppError::InvalidAddress(_))));
+    assert!(list_xpubs(&db).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn an_invalid_xpub_is_refused_and_stores_nothing() {
+    let db = enabled_db().await;
+    assert!(matches!(add_xpub(&db, "zpub-nonsense", None).await, Err(AppError::InvalidAddress(_))));
+    assert!(list_xpubs(&db).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn the_same_xpub_twice_is_a_duplicate() {
+    let db = enabled_db().await;
+    add_xpub(&db, ZPUB, None).await.unwrap();
+    assert!(matches!(add_xpub(&db, &format!(" {ZPUB} "), None).await, Err(AppError::InvalidInput(_))));
+    assert_eq!(list_xpubs(&db).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn removing_an_xpub_deletes_it_and_an_unknown_id_is_not_found() {
+    let db = enabled_db().await;
+    let saved = add_xpub(&db, ZPUB, None).await.unwrap();
+    remove_xpub(&db, saved.id).await.unwrap();
+    assert!(list_xpubs(&db).await.unwrap().is_empty());
+    assert!(matches!(remove_xpub(&db, saved.id).await, Err(AppError::NotFound(_))));
+}
+
+#[tokio::test]
+async fn disabling_keeps_the_saved_xpubs() {
+    let db = enabled_db().await;
+    add_xpub(&db, ZPUB, None).await.unwrap();
+    set_enabled(&db, false).await.unwrap();
+    assert_eq!(list_xpubs(&db).await.unwrap().len(), 1);
+}
+
 // ---------------------------------------------------------------- guarda do ADR 0002
 
 async fn table_names(db: &DatabaseConnection) -> Vec<String> {
@@ -184,7 +252,7 @@ fn module_source_files() -> Vec<PathBuf> {
         // Este arquivo cita os termos proibidos de propósito.
         .filter(|path| path.file_name().is_some_and(|name| name != "tests.rs"))
         .collect();
-    for extra in ["domain/wallet_address.rs", "commands/wallet_viewer.rs"] {
+    for extra in ["domain/wallet_address.rs", "domain/bitcoin_xpub.rs", "commands/wallet_viewer.rs"] {
         let path = src.join(extra);
         if path.exists() {
             files.push(path);
