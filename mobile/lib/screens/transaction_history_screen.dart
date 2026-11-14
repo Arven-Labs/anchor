@@ -26,7 +26,7 @@ Future<Uint8List?> _pickCsvWithPlatform() async {
 }
 
 /// Abre o diálogo de salvar; devolve onde salvou, ou `null` se o usuário cancelou.
-Future<String?> _saveCsvWithPlatform({
+Future<Uri?> _saveCsvWithPlatform({
   required String dialogTitle,
   required String fileName,
   required Uint8List bytes,
@@ -45,7 +45,7 @@ class TransactionHistoryScreen extends StatefulWidget {
   final Future<Uint8List?> Function()? pickCsv;
 
   /// Salvar o CSV exportado; o padrão usa o `file_picker` (os testes injetam o seu).
-  final Future<String?> Function({
+  final Future<Uri?> Function({
     required String dialogTitle,
     required String fileName,
     required Uint8List bytes,

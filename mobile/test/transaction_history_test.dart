@@ -411,7 +411,7 @@ void main() {
     group('exportar CSV', () {
       Future<List<String>> exportWith(
         WidgetTester tester,
-        Future<String?> Function(String fileName, Uint8List bytes) saveCsv,
+        Future<Uri?> Function(String fileName, Uint8List bytes) saveCsv,
       ) async {
         final calls = <String>[];
         await pump(
@@ -434,7 +434,7 @@ void main() {
         Uint8List? saved;
         final calls = await exportWith(tester, (name, bytes) async {
           saved = bytes;
-          return '/fake/$name';
+          return Uri.file('/fake/$name');
         });
 
         final day = DateTime.now().toIso8601String().substring(0, 10);
