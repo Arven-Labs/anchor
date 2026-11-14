@@ -6,6 +6,7 @@
 
 pub mod ledger;
 pub mod rpc;
+pub mod trezor;
 pub mod store;
 
 #[cfg(test)]

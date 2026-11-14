@@ -153,6 +153,9 @@ const SIGNING_TERMS: &[&str] = &[
     "sign_tx",
     "ins_sign",
     "personal_message",
+    // Fase 36.3: os nomes das mensagens protobuf do Trezor (`EthereumSignTx`, `EthereumSignMessage`...).
+    "ethereumsign",
+    "signtx",
 ];
 
 /// Lista o que um código-fonte do módulo faz de proibido: tocar tabela de investimento ou assinar.
@@ -207,6 +210,8 @@ fn the_scanner_flags_investment_tables_and_signing_code_and_passes_clean_code() 
     assert!(!violations("trezor.ethereum_sign_tx(path)", &tables).is_empty());
     assert!(!violations("const INS_SIGN: u8 = 0x04;", &tables).is_empty());
     assert!(!violations("fn build_sign_tx_apdus() {}", &tables).is_empty());
+    assert!(!violations("MessageType::MessageType_EthereumSignTx", &tables).is_empty());
+    assert!(!violations("let req = protos::EthereumSignMessage::new();", &tables).is_empty());
     assert!(violations("fn parse_balance_response() {}", &tables).is_empty());
 }
 

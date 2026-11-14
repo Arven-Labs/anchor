@@ -55,6 +55,13 @@ alloy-primitives = "1.6.1"
 alloy-sol-types = "1.6.1"
 # Visualizador de wallets (ADR 0002, Fase 36.2): fala com a Ledger por USB HID, só para ler endereço.
 hidapi = "2.6"
+# Fase 36.3: o Trezor, só a feature `ethereum`. A crate tem funções de assinar; o Anchor nunca as
+# chama (ADR 0002, adendo; guarda em `wallet_viewer/tests.rs` e teste do transporte falso).
+trezor-client = { version = "0.1.6", default-features = false, features = ["ethereum"] }
+
+[dev-dependencies]
+# Só para montar respostas falsas do Trezor nos testes; a mesma 3.7.2 que o `trezor-client` fixa.
+protobuf = "3.7"
 
 # Menos informação de debug no dev: o target/ ocupava ~7 GB. Backtraces continuam
 # com arquivo/linha no nosso código; as dependências ficam sem debug info.

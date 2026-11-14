@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::error::AppError;
 use crate::wallet_viewer::ledger;
 use crate::wallet_viewer::rpc::{self, Network};
+use crate::wallet_viewer::trezor;
 use crate::wallet_viewer::store::{self, WalletAddress};
 
 #[derive(Serialize)]
@@ -93,6 +94,16 @@ pub async fn wallet_viewer_read_ledger_address(
     account: u32,
 ) -> Result<String, AppError> {
     ledger::read_address_if_enabled(db.inner(), account, ledger::read_address_from_device).await
+}
+
+/// Lê o endereço Ethereum de uma conta do Trezor plugado (Fase 36.3). PIN e passphrase, se
+/// pedidos, são digitados no aparelho. Não grava nada, como o da Ledger.
+#[tauri::command]
+pub async fn wallet_viewer_read_trezor_address(
+    db: tauri::State<'_, DatabaseConnection>,
+    account: u32,
+) -> Result<String, AppError> {
+    trezor::read_address_if_enabled(db.inner(), account, trezor::READ_LIMIT, trezor::read_address_from_device).await
 }
 
 async fn read_balance(network: &Network, address: &str) -> NetworkBalance {
