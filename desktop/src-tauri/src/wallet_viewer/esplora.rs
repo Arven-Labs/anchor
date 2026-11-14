@@ -357,4 +357,31 @@ mod tests {
         let source = FakeSource::new().with(Chain::Receive, 0, funded(u64::MAX)).with(Chain::Receive, 1, funded(1));
         assert!(scan(&source).await.is_err());
     }
+
+    // ------------------------------------------------------------ ao vivo (rede)
+    // `cargo test --lib -- --ignored wallet_viewer::esplora`. Vão aos dois Esplora públicos com a
+    // conta pública do vetor do BIP84 (mnemônico de teste; nada aqui é do dono). Só afirmam o que
+    // é estável: o saldo dessa conta muda. Não rodam no CI normal; servem para conferir de novo
+    // quando um provedor mudar o formato ou o limite de taxa (P15 no PENDING.md).
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_each_provider_answers_for_a_known_used_address() {
+        let used = address(Chain::Receive, 0);
+        for (name, base) in ENDPOINTS {
+            let body = get_text(name, &format!("{base}/address/{used}"), DEFAULT_TIMEOUT).await.unwrap();
+            let stats = parse_address_response(&body).unwrap();
+            assert!(stats.tx_count > 0, "{name}: the BIP84 receive-0 address has history");
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_scan_of_the_bip84_vector_account() {
+        let balance = scan_balance(&parse_xpub(ZPUB).unwrap(), &EsploraSource).await.unwrap();
+        assert!(!balance.truncated);
+        assert!(balance.scanned_addresses >= 2 * GAP_LIMIT, "{balance:?}");
+        // Recebimento 0 e 1 têm histórico (180 e 8 transações em 2026-11-14).
+        assert!(balance.used_addresses >= 2, "{balance:?}");
+    }
 }
