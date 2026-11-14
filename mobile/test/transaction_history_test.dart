@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
+import 'package:anchor_mobile/domain/transactions_csv.dart';
 import 'package:anchor_mobile/domain/transactions_csv_import.dart';
 import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/l10n/transaction_labels.dart';
@@ -15,6 +18,7 @@ import 'package:anchor_mobile/screens/transaction_history_screen.dart';
 import 'package:anchor_mobile/services/portfolio_repository.dart';
 
 import 'support/localized_app.dart';
+import 'support/settle.dart' show waitFor;
 
 // Histórico de transações e importação de CSV (ADR 0001). O português é o texto que a tela
 // já mostrava; o inglês é a tradução. Os problemas de importação viram código + argumentos.
@@ -401,6 +405,168 @@ void main() {
       expect(find.text('… and 2 more'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
       expect(find.text('Import'), findsOneWidget);
+    });
+
+    // Exportar e importar CSV: o seletor de arquivos é injetado (o plugin real não roda no teste).
+    group('exportar CSV', () {
+      Future<List<String>> exportWith(
+        WidgetTester tester,
+        Future<String?> Function(String fileName, Uint8List bytes) saveCsv,
+      ) async {
+        final calls = <String>[];
+        await pump(
+          tester,
+          TransactionHistoryScreen(
+            saveCsv: ({required dialogTitle, required fileName, required bytes}) {
+              calls.add(fileName);
+              return saveCsv(fileName, bytes);
+            },
+          ),
+          'pt',
+        );
+        await tester.tap(find.byTooltip(pt.txhExportTooltip));
+        await settle(tester);
+        return calls;
+      }
+
+      testWidgets('X1: salva com o nome do dia e os bytes do CSV, e avisa quantas linhas', (tester) async {
+        await seed(tester);
+        Uint8List? saved;
+        final calls = await exportWith(tester, (name, bytes) async {
+          saved = bytes;
+          return '/fake/$name';
+        });
+
+        final day = DateTime.now().toIso8601String().substring(0, 10);
+        expect(calls, ['anchor-transactions-$day.csv']);
+        final text = utf8.decode(saved!);
+        expect(text.split('\n').first, transactionsCsvHeader.join(','));
+        expect(text, contains('PETR4'));
+        expect(text, contains('AAPL'));
+        await waitFor(tester, find.text(pt.txhExported(3)), 'aviso de 3 linhas salvas');
+      });
+
+      testWidgets('X2: cancelar o diálogo de salvar não mostra aviso nenhum', (tester) async {
+        await seed(tester);
+        final calls = await exportWith(tester, (_, _) async => null);
+
+        expect(calls, hasLength(1));
+        expect(find.byType(SnackBar), findsNothing);
+      });
+
+      testWidgets('X3: falha ao salvar mostra a mensagem de erro', (tester) async {
+        await seed(tester);
+        await exportWith(tester, (_, _) async => throw StateError('disco cheio'));
+
+        await waitFor(
+          tester,
+          find.textContaining(pt.txhExportFailed('Bad state: disco cheio')),
+          'aviso de falha ao salvar',
+        );
+      });
+    });
+
+    group('importar CSV', () {
+      const twoRows = 'date,type,total_value\n2026-03-10,aporte,1000\n2026-03-11,aporte,500\n';
+
+      Future<void> importWith(WidgetTester tester, Future<Uint8List?> Function() pickCsv) async {
+        await pump(tester, TransactionHistoryScreen(pickCsv: pickCsv), 'pt');
+        await tester.tap(find.byTooltip(pt.txhImportTooltip));
+        await settle(tester);
+      }
+
+      Future<Uint8List?> Function() fileWith(String csv) =>
+          () async => Uint8List.fromList(utf8.encode(csv));
+
+      Future<int> storedCount(WidgetTester tester) async =>
+          (await tester.runAsync(repository.listAllTransactions))!.length;
+
+      testWidgets('I1: CSV válido, confirmado na prévia, grava as linhas e avisa', (tester) async {
+        await importWith(tester, fileWith(twoRows));
+        await waitFor(tester, find.text(pt.txhPreviewNewTransactions(2)), 'prévia com 2 novas');
+
+        await tester.tap(find.text(pt.txhImport));
+        await waitFor(tester, find.text(pt.txhImported(2)), 'aviso de 2 importadas');
+        expect(await storedCount(tester), 2);
+      });
+
+      testWidgets('I2: cancelar o seletor não muda nada nem avisa', (tester) async {
+        await importWith(tester, () async => null);
+
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(find.byType(SnackBar), findsNothing);
+        expect(await storedCount(tester), 0);
+      });
+
+      testWidgets('I3: recusar na prévia não grava nada', (tester) async {
+        await importWith(tester, fileWith(twoRows));
+        await waitFor(tester, find.text(pt.txhPreviewNewTransactions(2)), 'prévia com 2 novas');
+
+        await tester.tap(find.text(pt.txhCancel));
+        await settle(tester);
+
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(find.byType(SnackBar), findsNothing);
+        expect(await storedCount(tester), 0);
+      });
+
+      testWidgets('I4: importar o mesmo CSV de novo marca duplicadas e não duplica', (tester) async {
+        await importWith(tester, fileWith(twoRows));
+        await waitFor(tester, find.text(pt.txhPreviewNewTransactions(2)), 'prévia com 2 novas');
+        await tester.tap(find.text(pt.txhImport));
+        await waitFor(tester, find.text(pt.txhImported(2)), 'aviso de 2 importadas');
+
+        await tester.tap(find.byTooltip(pt.txhImportTooltip));
+        await waitFor(tester, find.text(pt.txhPreviewDuplicates(2)), 'prévia com 2 duplicadas');
+        expect(find.text(pt.txhPreviewNewTransactions(0)), findsOneWidget);
+        final import = tester.widget<FilledButton>(find.widgetWithText(FilledButton, pt.txhImport));
+        expect(import.onPressed, isNull);
+
+        await tester.tap(find.text(pt.txhCancel));
+        await settle(tester);
+        expect(await storedCount(tester), 2);
+      });
+
+      testWidgets('I5: arquivo sem a coluna obrigatória mostra o problema e não deixa importar', (tester) async {
+        await importWith(tester, fileWith('foo,bar\n1,2\n'));
+        await waitFor(tester, find.text(pt.txhPreviewIssues(1)), 'prévia com 1 problema');
+
+        final import = tester.widget<FilledButton>(find.widgetWithText(FilledButton, pt.txhImport));
+        expect(import.onPressed, isNull);
+        expect(await storedCount(tester), 0);
+      });
+
+      testWidgets('I6: bytes UTF-8 malformados não derrubam a tela', (tester) async {
+        await importWith(tester, () async => Uint8List.fromList([0xFF, 0xFE, 0x00, 0xC3]));
+        await waitFor(tester, find.byType(AlertDialog), 'prévia com o problema');
+
+        expect(find.byType(SnackBar), findsNothing);
+        expect(await storedCount(tester), 0);
+      });
+
+      testWidgets('I7: linha boa entra e linha ruim fica de fora', (tester) async {
+        await importWith(
+          tester,
+          fileWith('date,type,total_value\n2026-03-10,aporte,1000\n2026-03-11,xyz,5\n'),
+        );
+        await waitFor(tester, find.text(pt.txhPreviewNewTransactions(1)), 'prévia com 1 nova');
+        expect(find.text(pt.txhPreviewIssues(1)), findsOneWidget);
+
+        await tester.tap(find.text(pt.txhImport));
+        await waitFor(tester, find.text(pt.txhImported(1)), 'aviso de 1 importada');
+        expect(await storedCount(tester), 1);
+      });
+
+      testWidgets('I8: falha ao ler o arquivo mostra a mensagem de erro', (tester) async {
+        await importWith(tester, () async => throw StateError('sem permissão'));
+
+        await waitFor(
+          tester,
+          find.textContaining(pt.txhImportFailed('Bad state: sem permissão')),
+          'aviso de falha ao importar',
+        );
+        expect(await storedCount(tester), 0);
+      });
     });
   });
 }
