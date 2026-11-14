@@ -5388,3 +5388,12 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **PR #129**: CI verde (Rust 1231 e 0 falhas, E2E, `gate`, `guard`).
 - **Quebra proposital** (branch `ci/quebra-calamine`, só com `Edit`, já apagada): formato da data `%d/%m/%Y` → `%Y/%m/%d`; run 43620314672, 1 falha (`read_xlsx_rows_reads_text_numbers_bool_and_date`), revertida.
 - **Não verificado**: a planilha real da B3 (só roda com `ANCHOR_B3_SAMPLE`, que o CI não tem); importar um `.xls` real no app; não há `cargo audit` no CI, então o fim do aviso está provado pela versão no `Cargo.lock` e não por uma auditoria rodada.
+
+## Sessão 347 — P2: `xlsx` sai do npm, prévia de planilha vai para o Rust
+- **Decisão do dono** (plan mode, `AskUserQuestion`): das 3 opções (mover para o Rust, CDN da SheetJS, manter dispensado), escolheu mover para o Rust. O `xlsx` só servia à prévia de anexo (`ManualAssetDetails.tsx`, `ThesisSection.tsx`); os alertas #7 e #8 já estavam dispensados como `tolerable_risk` desde a Sessão 272.
+- **Feito**: `read_spreadsheet_preview` em `portfolio_io.rs` (CSV pelo crate `csv` com separador `,`/`;`/tab pela 1ª linha e UTF-8 tolerante; xls/xlsx por `read_xlsx_rows`; teto de 20 MB e 1000 linhas); 2 comandos por **id de anexo** (`read_asset_attachment_spreadsheet`, `read_thesis_attachment_spreadsheet`), reaproveitando `get_*_attachment_path`; as 2 telas usam `invoke`; `xlsx` e 8 transitivas fora do `package.json`/lock (`npm uninstall --package-lock-only`; o npm também marcou `@types/react-dom` como `devOptional`, metadado sem efeito). A tela passou a mostrar a mensagem do `AppError` (antes só `Error`).
+- **Testes primeiro**: run 43623648161, 10 novos falharam por `todo!()`, 1231 passaram. O 1º run (43623478593) nem compilou: meu helper `rows` colidia com um existente (era idêntico; removi o meu).
+- **PR #130**: CI verde (Rust 1241 e 0 falhas, `tsc`/build, E2E, `gate`, `guard`).
+- **Quebras** (branch `ci/quebra-preview`, só com `Edit`, já apagada, run 43624686086): 3 quebras, 4 falhas, cada uma pega (separador, teto de tamanho, `truncate` do workbook). O `truncate` é redundante para CSV (o leitor já usa `take`).
+- **Efeito visível**: datas de xlsx passam de número serial para `dd/mm/aaaa`.
+- **Não verificado**: abrir anexos `.xlsx`, `.xls` e `.csv` reais no app (não há teste de tela nem E2E da prévia); zip bomb; planilha cortada sem aviso na tela; o Dependabot (#7 e #8 já estavam dispensados, 0 abertos antes e depois, relido da API).
