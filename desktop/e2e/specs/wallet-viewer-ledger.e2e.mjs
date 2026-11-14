@@ -11,6 +11,8 @@ describe("Anchor — visualizador de wallets, Ledger", () => {
     // O módulo vem desligado: liga em Settings → Wallet viewer.
     await byId("open-settings").click();
     await byId("settings-back").waitForDisplayed({ timeout: 20_000 });
+    await byId("settings-section-Wallet viewer").click();
+    await byId("wallet-viewer-toggle").waitForDisplayed({ timeout: 20_000 });
     await clickCentered(byId("wallet-viewer-toggle"));
     await waitForText(byId("wallet-viewer-status"), (text) => text === "On", "o módulo deveria ligar");
     await byId("settings-back").click();
