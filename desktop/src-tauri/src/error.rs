@@ -51,6 +51,10 @@ pub enum AppError {
     /// (ou veio com assinatura ilegível). Nada foi instalado.
     #[error("update rejected: {0}")]
     UpdateRejected(String),
+    /// Fase 36.2 — falha ao falar com uma wallet de hardware (Ledger). A mensagem já vem
+    /// pronta para a tela (o que fazer: plugar, desbloquear, abrir o app Ethereum...).
+    #[error("{0}")]
+    Device(String),
 }
 
 impl AppError {
@@ -77,6 +81,7 @@ impl AppError {
             AppError::NoData(_) => "NO_DATA",
             AppError::ProviderUnavailable(_) => "PROVIDER_UNAVAILABLE",
             AppError::UpdateRejected(_) => "UPDATE_REJECTED",
+            AppError::Device(_) => "DEVICE_ERROR",
         }
     }
 }

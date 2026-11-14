@@ -135,8 +135,25 @@ async fn module_tables_have_no_foreign_keys_at_all() {
 }
 
 /// Termos que só existiriam em código de assinar ou de chave privada. Minúsculas.
-const SIGNING_TERMS: &[&str] =
-    &["private_key", "privatekey", "privkey", "mnemonic", "seed_phrase", "sign_transaction", "sign_message", "personal_sign", "eth_sign", "sendtransaction", "send_transaction"];
+/// Fase 36.2: `sign_tx`, `ins_sign` e `personal_message` cobrem os pedidos de assinar da Ledger;
+/// `ethereum_sign` cobre os métodos de assinar do `trezor-client` (PR do Trezor).
+const SIGNING_TERMS: &[&str] = &[
+    "private_key",
+    "privatekey",
+    "privkey",
+    "mnemonic",
+    "seed_phrase",
+    "sign_transaction",
+    "sign_message",
+    "personal_sign",
+    "eth_sign",
+    "sendtransaction",
+    "send_transaction",
+    "ethereum_sign",
+    "sign_tx",
+    "ins_sign",
+    "personal_message",
+];
 
 /// Lista o que um código-fonte do módulo faz de proibido: tocar tabela de investimento ou assinar.
 fn violations(source: &str, investment_tables: &[String]) -> Vec<String> {
@@ -187,6 +204,9 @@ fn the_scanner_flags_investment_tables_and_signing_code_and_passes_clean_code() 
     assert!(!violations("let sql = \"transactions\";", &tables).is_empty());
     assert!(!violations("fn sign_transaction() {}", &tables).is_empty());
     assert!(!violations("let k = PRIVATE_KEY;", &tables).is_empty());
+    assert!(!violations("trezor.ethereum_sign_tx(path)", &tables).is_empty());
+    assert!(!violations("const INS_SIGN: u8 = 0x04;", &tables).is_empty());
+    assert!(!violations("fn build_sign_tx_apdus() {}", &tables).is_empty());
     assert!(violations("fn parse_balance_response() {}", &tables).is_empty());
 }
 
