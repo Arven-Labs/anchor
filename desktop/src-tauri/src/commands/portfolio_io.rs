@@ -1848,10 +1848,6 @@ mod tests {
         out
     }
 
-    fn rows(cells: &[&[&str]]) -> Vec<Vec<String>> {
-        cells.iter().map(|r| r.iter().map(|c| c.to_string()).collect()).collect()
-    }
-
     #[test]
     fn preview_csv_keeps_ragged_rows_accents_and_quoted_commas() {
         let csv = "ativo,valor\n\"ação, B\",1\nso uma coluna\n";
