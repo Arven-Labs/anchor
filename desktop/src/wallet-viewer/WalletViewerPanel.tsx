@@ -66,6 +66,98 @@ function AddressRow({
   );
 }
 
+// Fase 36.2 — lê o endereço de uma conta da Ledger (USB, app Ethereum aberto) e só grava depois
+// que o usuário confere e clica em "Add". Nada é assinado: o Rust só sabe pedir o endereço.
+const MAX_ACCOUNT = 2147483647;
+
+function LedgerImport() {
+  const queryClient = useQueryClient();
+  const [account, setAccount] = useState("0");
+  const [label, setLabel] = useState("");
+
+  const trimmed = account.trim();
+  const validAccount = /^\d+$/.test(trimmed) && Number(trimmed) <= MAX_ACCOUNT;
+
+  const readMutation = useMutation<string, AppError, number>({
+    mutationFn: (index) => invoke("wallet_viewer_read_ledger_address", { account: index }),
+    onSuccess: (_address, index) => setLabel(`Ledger · account ${index}`),
+  });
+
+  const addMutation = useMutation<WalletAddress, AppError, { address: string; label: string }>({
+    mutationFn: (input) =>
+      invoke("wallet_viewer_add_address", {
+        address: input.address,
+        label: input.label.trim() === "" ? null : input.label,
+      }),
+    onSuccess: () => {
+      readMutation.reset();
+      setLabel("");
+      queryClient.invalidateQueries({ queryKey: WALLET_VIEWER_ADDRESSES_KEY });
+    },
+  });
+
+  const readAddress = readMutation.data;
+
+  return (
+    <div className="flex flex-col gap-3 rounded-md border p-4" data-testid="ledger-import">
+      <h4 className="text-sm font-semibold">Read from a Ledger</h4>
+      <p className="text-xs text-muted-foreground">
+        Plug in the Ledger, unlock it and open the Ethereum app. Only the address of the account is
+        read (path m/44'/60'/account'/0/0, as in Ledger Live); nothing is signed.
+      </p>
+      <form
+        className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end"
+        onSubmit={(event) => {
+          event.preventDefault();
+          addMutation.reset();
+          readMutation.mutate(Number(trimmed));
+        }}
+      >
+        <Field label="Account">
+          <Input
+            value={account}
+            onChange={(e) => setAccount(e.currentTarget.value)}
+            inputMode="numeric"
+            autoComplete="off"
+            data-testid="ledger-account"
+          />
+        </Field>
+        <Button type="submit" variant="outline" disabled={!validAccount || readMutation.isPending} data-testid="ledger-read">
+          {readMutation.isPending ? "Reading..." : "Read from Ledger"}
+        </Button>
+      </form>
+      {!validAccount && <p className="text-sm text-red-600">The account must be a whole number from 0 to {MAX_ACCOUNT}.</p>}
+      {readMutation.isError && (
+        <p className="text-sm text-red-600" data-testid="ledger-error">
+          {readMutation.error.message}
+        </p>
+      )}
+      {readAddress && (
+        <form
+          className="grid gap-3 sm:grid-cols-[2fr_1fr_auto] sm:items-end"
+          onSubmit={(event) => {
+            event.preventDefault();
+            addMutation.mutate({ address: readAddress, label });
+          }}
+        >
+          <Field label="Address read from the Ledger">
+            <p className="break-all font-mono text-xs" data-testid="ledger-address">
+              {readAddress}
+            </p>
+          </Field>
+          <Field label="Label (optional)">
+            <Input value={label} onChange={(e) => setLabel(e.currentTarget.value)} autoComplete="off" />
+          </Field>
+          <Button type="submit" disabled={addMutation.isPending} data-testid="ledger-add">
+            {addMutation.isPending ? "Adding..." : "Add"}
+          </Button>
+        </form>
+      )}
+      {addMutation.isError && <p className="text-sm text-red-600">{addMutation.error.message}</p>}
+    </div>
+  );
+}
+
 function WalletViewerPanel() {
   const queryClient = useQueryClient();
   const [address, setAddress] = useState("");
@@ -135,6 +227,9 @@ function WalletViewerPanel() {
           </Button>
         </form>
         {addMutation.isError && <p className="text-sm text-red-600">{addMutation.error.message}</p>}
+
+        <LedgerImport />
+
         {removeMutation.isError && <p className="text-sm text-red-600">{removeMutation.error.message}</p>}
 
         <div className="flex items-center gap-3">
