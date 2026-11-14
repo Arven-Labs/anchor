@@ -198,6 +198,22 @@ pub async fn get_asset_attachment_path(
     Ok(path.to_string_lossy().into_owned())
 }
 
+// Prévia de anexo de planilha (CSV, xls, xlsx), lida aqui e não no webview. O frontend manda só o
+// id do anexo: o caminho sai do banco, então o comando nunca abre um arquivo que não seja anexo.
+#[tauri::command]
+pub async fn read_asset_attachment_spreadsheet(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, DatabaseConnection>,
+    attachment_id: i32,
+) -> Result<Vec<Vec<String>>, AppError> {
+    let existing = asset_attachments::Entity::find_by_id(attachment_id)
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("asset attachment {attachment_id}")))?;
+    let path = get_asset_attachment_path(app, db, attachment_id).await?;
+    crate::commands::portfolio_io::read_spreadsheet_preview(&path, existing.content_type.as_deref())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

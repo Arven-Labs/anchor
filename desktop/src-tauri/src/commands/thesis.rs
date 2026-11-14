@@ -220,8 +220,8 @@ pub async fn delete_thesis_attachment(
 
 // Devolve o caminho absoluto do arquivo no disco — o frontend usa
 // `convertFileSrc` em cima disso pra montar a URL de preview (imagem/PDF
-// direto num `<img>`/`<iframe>`, planilha via `fetch` + SheetJS sobre a
-// mesma URL). Um único comando serve os 3 tipos de anexo.
+// direto num `<img>`/`<iframe>`; planilha vai por `read_thesis_attachment_spreadsheet`,
+// lida no backend).
 #[tauri::command]
 pub async fn get_thesis_attachment_path(
     app: tauri::AppHandle,
@@ -243,6 +243,22 @@ pub async fn get_thesis_attachment_path(
         })?;
 
     Ok(path.to_string_lossy().into_owned())
+}
+
+// Prévia de anexo de planilha (CSV, xls, xlsx), lida aqui e não no webview. O frontend manda só o
+// id do anexo: o caminho sai do banco, então o comando nunca abre um arquivo que não seja anexo.
+#[tauri::command]
+pub async fn read_thesis_attachment_spreadsheet(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, DatabaseConnection>,
+    attachment_id: i32,
+) -> Result<Vec<Vec<String>>, AppError> {
+    let existing = thesis_attachments::Entity::find_by_id(attachment_id)
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("thesis attachment {attachment_id}")))?;
+    let path = get_thesis_attachment_path(app, db, attachment_id).await?;
+    crate::commands::portfolio_io::read_spreadsheet_preview(&path, existing.content_type.as_deref())
 }
 
 #[cfg(test)]
