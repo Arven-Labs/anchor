@@ -5397,3 +5397,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Quebras** (branch `ci/quebra-preview`, só com `Edit`, já apagada, run 43624686086): 3 quebras, 4 falhas, cada uma pega (separador, teto de tamanho, `truncate` do workbook). O `truncate` é redundante para CSV (o leitor já usa `take`).
 - **Efeito visível**: datas de xlsx passam de número serial para `dd/mm/aaaa`.
 - **Não verificado**: abrir anexos `.xlsx`, `.xls` e `.csv` reais no app (não há teste de tela nem E2E da prévia); zip bomb; planilha cortada sem aviso na tela; o Dependabot (#7 e #8 já estavam dispensados, 0 abertos antes e depois, relido da API).
+
+## Sessão 348 — P12: testes de importar e exportar CSV do histórico (mobile)
+- **Decisão do dono** (plan mode): cobrir `TransactionHistoryScreen` com seletor injetado, sem mockar o plugin.
+- **Feito**: `pickCsv` e `saveCsv` opcionais no construtor, com o `file_picker` como padrão (`transaction_history_screen.dart`); 11 testes novos (X1 a X3 exportar, I1 a I8 importar) em `transaction_history_test.dart`.
+- **Testes primeiro**: run 43635149363, `flutter analyze` falhou só por `saveCsv` e `pickCsv` indefinidos. Depois, um erro meu: o `saveFile` do `file_picker` 13 devolve `Uri?`, não `String?` (run 43635820302 falhou no `analyze`); corrigido.
+- **CI** (`CI Mobile`, `workflow_dispatch`, SHA `8b38036`, run 43636165955): `test` e `apk` verdes, 1517 passaram, 2 puladas.
+- **Quebras** (branch `ci/quebra-csv`, só com `Edit`, run 43637425367): 3 quebras, 3 falhas, cada uma pega por um teste: sem o cancelar do exportar (X2), sem o cancelar do seletor (I2), importar mesmo com a prévia recusada (I3). As duas primeiras tentativas barraram no `analyze` (variável sem uso), não nos testes; ajustei as mutações para compilar.
+- **Não verificado**: o `file_picker` real num aparelho (permissões, o que o Android devolve); o export do informe do exterior (`foreign_tax_screen.dart`) segue sem teste.
