@@ -175,6 +175,7 @@ pub fn run() {
             commands::wallet_viewer::wallet_viewer_add_address,
             commands::wallet_viewer::wallet_viewer_remove_address,
             commands::wallet_viewer::wallet_viewer_get_balances,
+            commands::wallet_viewer::wallet_viewer_read_ledger_address,
             commands::backup::export_workspace_backup,
             commands::workspace_file::export_workspace_file,
             commands::workspace_file::import_workspace_file,

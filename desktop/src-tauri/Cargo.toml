@@ -53,6 +53,8 @@ hkdf = "0.12"
 ed25519-dalek = "2"
 alloy-primitives = "1.6.1"
 alloy-sol-types = "1.6.1"
+# Visualizador de wallets (ADR 0002, Fase 36.2): fala com a Ledger por USB HID, só para ler endereço.
+hidapi = "2.6"
 
 # Menos informação de debug no dev: o target/ ocupava ~7 GB. Backtraces continuam
 # com arquivo/linha no nosso código; as dependências ficam sem debug info.

@@ -5,6 +5,7 @@ use sea_orm::DatabaseConnection;
 use serde::Serialize;
 
 use crate::error::AppError;
+use crate::wallet_viewer::ledger;
 use crate::wallet_viewer::rpc::{self, Network};
 use crate::wallet_viewer::store::{self, WalletAddress};
 
@@ -82,6 +83,16 @@ pub async fn wallet_viewer_get_balances(
         result.push(AddressBalances { wallet, balances });
     }
     Ok(result)
+}
+
+/// Lê o endereço Ethereum de uma conta da Ledger plugada (Fase 36.2). Não grava nada:
+/// a tela mostra o endereço e o usuário confirma com `wallet_viewer_add_address`.
+#[tauri::command]
+pub async fn wallet_viewer_read_ledger_address(
+    db: tauri::State<'_, DatabaseConnection>,
+    account: u32,
+) -> Result<String, AppError> {
+    ledger::read_address_if_enabled(db.inner(), account, ledger::read_address_from_device).await
 }
 
 async fn read_balance(network: &Network, address: &str) -> NetworkBalance {

@@ -4,6 +4,7 @@
 //! - nenhuma chave estrangeira, consulta ou escrita para as tabelas de investimento;
 //! - nenhum código de assinar nem de chave privada.
 
+pub mod ledger;
 pub mod rpc;
 pub mod store;
 
