@@ -57,6 +57,7 @@ pub mod stock_technicals;
 pub mod storage_settings;
 pub mod wallet_viewer_address;
 pub mod wallet_viewer_settings;
+pub mod wallet_viewer_xpub;
 pub mod suggested_dividends;
 pub mod tax_payments;
 pub mod tax_rules;

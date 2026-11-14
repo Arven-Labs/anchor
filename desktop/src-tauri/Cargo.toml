@@ -58,6 +58,10 @@ hidapi = "2.6"
 # Fase 36.3: o Trezor, só a feature `ethereum`. A crate tem funções de assinar; o Anchor nunca as
 # chama (ADR 0002, adendo; guarda em `wallet_viewer/tests.rs` e teste do transporte falso).
 trezor-client = { version = "0.1.6", default-features = false, features = ["ethereum"] }
+# Fase 36.4a: Bitcoin só leitura. Deriva endereços de uma xpub/zpub (BIP32, P2PKH e P2WPKH); o Anchor
+# nunca guarda chave privada. Fixada em `=0.32.11` (linha 0.32.1x, MSRV baixo): a 0.32.10x sobe o MSRV
+# e a 0.33 só existe em beta.
+bitcoin = { version = "=0.32.11", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 # Só para montar respostas falsas do Trezor nos testes; a mesma 3.7.2 que o `trezor-client` fixa.

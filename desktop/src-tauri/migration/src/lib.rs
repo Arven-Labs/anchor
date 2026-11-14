@@ -111,6 +111,7 @@ mod m20261117_100000_seed_xrp_thresholds;
 mod m20261118_100000_seed_btc_onchain_extra_thresholds;
 mod m20261119_100000_seed_bnb_thresholds;
 mod m20261120_100000_create_wallet_viewer;
+mod m20261121_100000_create_wallet_viewer_xpub;
 
 pub struct Migrator;
 
@@ -229,6 +230,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261118_100000_seed_btc_onchain_extra_thresholds::Migration),
             Box::new(m20261119_100000_seed_bnb_thresholds::Migration),
             Box::new(m20261120_100000_create_wallet_viewer::Migration),
+            Box::new(m20261121_100000_create_wallet_viewer_xpub::Migration),
         ]
     }
 }

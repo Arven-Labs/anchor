@@ -42,3 +42,14 @@ Fatos lidos em 2026-11-13:
 - PIN e passphrase digitados no aparelho; a crate responde ao pedido de passphrase com "digite no aparelho", e o Anchor nunca os vê.
 
 **Consequências.** A superfície que *poderia* assinar está no binário, inerte. A proteção contra alguém passar a usá-la são os dois testes, e quem os desligar contradiz este ADR. O transporte USB da crate lê sem limite de tempo, então a leitura tem um teto do lado async e uma trava que recusa leituras simultâneas. O Trezor One com PIN (matriz digitada no computador) não é suportado; a tela pede para desbloquear no Trezor Suite antes, o que não foi testado. **Reverter:** apagar o `trezor.rs` e a dependência; a Ledger não depende dela.
+
+## Adendo (2026-11-14, Fase 36.4a): Bitcoin por chave pública estendida
+**Contexto.** O ADR previa "Bitcoin depois (chave pública estendida, indexador e outro app na Ledger)". O 36.4 foi dividido: o 36.4a faz a xpub e o indexador, sem hardware; o 36.4b (Ledger com o app Bitcoin) espera a validação da Ledger (P14).
+
+**Decisão** (dono, 2026-11-14).
+- **Indexador:** Esplora público (mempool.space, depois blockstream.info), consultado **endereço a endereço**. Os endereços são derivados localmente e só eles saem da máquina; a xpub nunca. Mesmo assim o provedor vê dezenas de endereços seus em sequência e consegue agrupá-los; a tela avisa. Só um nó próprio resolve isso, e ficou para depois.
+- **Derivação:** crate `bitcoin` `=0.32.11` (CC0, 2 donos no registro, 0 avisos no OSV em 2026-11-14), sem escrever BIP32, base58check nem bech32 à mão. A crate é grande e traz tipos de transação e PSBT (não conferi se há assinatura entre eles, e a ativação por feature não foi auditada); o Anchor só chama a decodificação de `Xpub`, a derivação pública e a formação de endereço. O guarda de texto cobre `domain/bitcoin_xpub.rs`, e `xprv`/`zprv` são recusadas por teste.
+- **Formatos:** `xpub` (legado) e `zpub` (SegWit nativo), só mainnet. `ypub`, testnet, taproot e multisig ficam fora.
+- **Gap limit** 20 por cadeia e teto de 200 endereços por cadeia; ao bater no teto, `truncated` avisa que o saldo pode estar subestimado.
+
+**Consequências.** Segundo `secp256k1` (0.29) no binário ao lado do 0.31 que já havia (não verificado se a `bitcoin` 0.33 resolveria isso). Se a pessoa tiver um buraco de mais de 20 endereços sem uso, o saldo aparece menor que o real. O backup do Workspace inclui a tabela `wallet_viewer_xpub`. **Reverter:** apagar `domain/bitcoin_xpub.rs`, `wallet_viewer/esplora.rs`, a migration, a entity, os comandos, a seção da tela e a dependência; nada depende deles.
