@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
 import Field from "../components/Field";
+import BitcoinXpubSection from "./BitcoinXpubSection";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -219,7 +220,8 @@ function WalletViewerPanel() {
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <p className="text-sm text-muted-foreground">
-          A read-only view of public addresses (Ethereum and Base, native ETH). It is separate from
+          A read-only view of public addresses (Ethereum and Base, native ETH) and Bitcoin public
+          keys (xpub and zpub). It is separate from
           your portfolio: nothing here is counted in positions, returns or taxes, and nothing is
           ever signed.
         </p>
@@ -251,6 +253,8 @@ function WalletViewerPanel() {
         {addMutation.isError && <p className="text-sm text-red-600">{addMutation.error.message}</p>}
 
         <HardwareWalletImport />
+
+        <BitcoinXpubSection />
 
         {removeMutation.isError && <p className="text-sm text-red-600">{removeMutation.error.message}</p>}
 
