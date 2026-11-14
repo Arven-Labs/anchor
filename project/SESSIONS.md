@@ -5372,3 +5372,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Ao vivo com o código de verdade**: dois testes `#[ignore]` novos em `wallet_viewer/esplora.rs`, rodados numa branch descartável (`ci/vivo-esplora`, só troca a linha do `cargo test` por `-- --ignored wallet_viewer::esplora`, run 43611569305, SHA conferido): 2 passaram e 0 falharam, ~160 s. Um prova cada provedor sozinho; o outro, a varredura completa pelo `EsploraSource`. A branch foi apagada; o workflow permanente não mudou.
 - **Achado de UX**: ~0,6 s por endereço, sequencial e sem progresso na tela: uma conta com histórico leva minutos. Registrado no P15; não corrigi (nenhum 429 justifica pausa ou troca de provedor).
 - **Não verificado**: a xpub do dono (resta no P15); o failover (nenhum provedor falhou); limite sob outro IP ou uso concorrente; `cargo audit`; tamanho do binário; build dos 3 SO. Os testes ao vivo não protegem contra mudança de formato, só deixam repetir a medida.
+
+## Sessão 345 — P12(b): o que falta para o `gen-l10n` usar o `material_ui`
+- **Pedido do dono**: seguir no P12. Combinado: sondar se um Flutter mais novo já gera com o `material_ui`.
+- **Medido (2026-11-14)**: a stable mais nova é a 3.50.0 (2026-11-11), a que o CI já usa; acima dela só o beta 3.51.0-0.1.pre (mesma data). Não há stable para sondar, então o run no CI foi descartado.
+- **Achado**: o `GlobalMaterialLocalizations` do `material_ui` existe ([flutter/packages#12119](https://github.com/flutter/packages/pull/12119), mesclado em 2026-07-15) e é o que o `app_delegates.dart` usa. O gerador do SDK em `master` ainda importa `flutter_localizations` e emite `GlobalMaterialLocalizations.delegate`; a issue [#191072](https://github.com/flutter/flutter/issues/191072) (P1) cobre isso e o PR [#194500](https://github.com/flutter/flutter/pull/194500) está aberto, em rascunho, sem review.
+- **Registrado** no `PENDING.md` (P12): o gatilho do (b) agora é o #194500 mesclado e numa stable. Nenhum código mudou.
+- **Início da sessão**: `main` limpa, sem PR aberto, 0 alertas do Dependabot, disco sem alerta; `git pull` trouxe #123 a #127 (wallets, só desktop).
+- **Não verificado**: se o #194500 também elimina a exclusão do `analysis_options.yaml`; se há trabalho no PR fora do GitHub; o app num aparelho (resto do P12).
