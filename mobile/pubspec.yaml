@@ -20,6 +20,9 @@ version: 1.0.0+1
 
 environment:
   sdk: ^3.12.2
+  # Versão fixada do Flutter: o CI (ci-mobile.yml e build.yml) lê daqui via `flutter-version-file`.
+  # Subir de versão é decisão deliberada (PENDING P12c): mude só esta linha.
+  flutter: 3.50.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
