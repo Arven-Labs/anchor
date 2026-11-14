@@ -127,7 +127,7 @@ async fn an_xpub_is_stored_trimmed_with_its_kind_and_label() {
     assert_eq!(zpub.kind, XpubKind::NativeSegwit);
     assert_eq!(zpub.label.as_deref(), Some("cold storage"));
     let xpub = add_xpub(&db, XPUB, Some("   ")).await.unwrap();
-    assert_eq!((xpub.kind, xpub.label), (XpubKind::Legacy, None));
+    assert_eq!((xpub.kind, xpub.label.as_deref()), (XpubKind::Legacy, None));
     assert_eq!(list_xpubs(&db).await.unwrap(), vec![zpub, xpub]);
 }
 
