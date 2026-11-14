@@ -74,7 +74,21 @@ pub enum LedgerError {
 
 impl LedgerError {
     pub fn user_message(&self) -> String {
-        todo!()
+        match self {
+            LedgerError::NotConnected => {
+                "No Ledger found. Plug it in, unlock it and open the Ethereum app.".to_string()
+            }
+            LedgerError::AccessDenied => "Access to the Ledger was denied. Close Ledger Live; on Linux, \
+                 install Ledger's udev rules."
+                .to_string(),
+            LedgerError::Locked => "The Ledger is locked. Unlock it with your PIN.".to_string(),
+            LedgerError::WrongApp => "Open the Ethereum app on the Ledger.".to_string(),
+            LedgerError::Timeout => "The Ledger did not answer in time.".to_string(),
+            LedgerError::Malformed(what) => format!("Unexpected answer from the Ledger: {what}."),
+            LedgerError::Status(status) => format!("The Ledger refused the request (status 0x{status:04x})."),
+            LedgerError::InvalidAccount => "The account number must be between 0 and 2147483647.".to_string(),
+            LedgerError::Hid(message) => format!("USB error while talking to the Ledger: {message}"),
+        }
     }
 }
 
@@ -103,59 +117,185 @@ impl HidLink for hidapi::HidDevice {
 }
 
 /// A interface HID que fala APDU (as outras são FIDO). Mesmo filtro do transporte oficial.
+/// Usage page 0 também vale: em alguns sistemas (Linux/hidraw) ela não é informada, e aí a
+/// interface de APDU é a de número 0.
 pub fn is_ledger_apdu_interface(vendor_id: u16, usage_page: u16, interface_number: i32) -> bool {
-    let _ = (vendor_id, usage_page, interface_number, APDU_USAGE_PAGE);
-    todo!()
+    vendor_id == LEDGER_VENDOR_ID && (usage_page == APDU_USAGE_PAGE || interface_number == 0)
 }
 
 /// Caminho `m/44'/60'/conta'/0/0` (o do Ledger Live) no formato do app Ethereum:
 /// 1 byte de profundidade + 4 bytes big-endian por componente.
 pub fn derivation_path(account: u32) -> Result<Vec<u8>, LedgerError> {
-    let _ = (account, HARDENED);
-    todo!()
+    if account >= HARDENED {
+        return Err(LedgerError::InvalidAccount);
+    }
+    let components = [44 | HARDENED, 60 | HARDENED, account | HARDENED, 0, 0];
+    let mut path = vec![components.len() as u8];
+    for component in components {
+        path.extend_from_slice(&component.to_be_bytes());
+    }
+    Ok(path)
 }
 
 /// O único APDU deste módulo: `GET_ADDRESS`, sem tela e sem chain code.
 pub fn get_address_apdu(account: u32) -> Result<Vec<u8>, LedgerError> {
-    let _ = (account, ETH_CLA, INS_GET_ADDRESS, P1_NO_DISPLAY, P2_NO_CHAIN_CODE);
-    todo!()
+    let path = derivation_path(account)?;
+    let mut apdu = vec![ETH_CLA, INS_GET_ADDRESS, P1_NO_DISPLAY, P2_NO_CHAIN_CODE, path.len() as u8];
+    apdu.extend_from_slice(&path);
+    Ok(apdu)
 }
 
 /// Fatia um APDU em relatórios HID de 65 bytes (report ID 0 + pacote de 64).
 pub fn frame_apdu(apdu: &[u8]) -> Vec<Vec<u8>> {
-    let _ = (apdu, HID_PACKET_SIZE, CHANNEL, TAG_APDU, FIRST_HEADER, NEXT_HEADER);
-    todo!()
+    let mut reports = Vec::new();
+    let mut offset = 0;
+    let mut sequence: u16 = 0;
+    while offset < apdu.len() || sequence == 0 {
+        // Byte 0: report ID (a Ledger não numera relatórios). O pacote começa no byte 1.
+        let mut report = vec![0u8; HID_PACKET_SIZE + 1];
+        report[1..3].copy_from_slice(&CHANNEL.to_be_bytes());
+        report[3] = TAG_APDU;
+        report[4..6].copy_from_slice(&sequence.to_be_bytes());
+        let header = if sequence == 0 {
+            report[6..8].copy_from_slice(&(apdu.len() as u16).to_be_bytes());
+            1 + FIRST_HEADER
+        } else {
+            1 + NEXT_HEADER
+        };
+        let take = (report.len() - header).min(apdu.len() - offset);
+        report[header..header + take].copy_from_slice(&apdu[offset..offset + take]);
+        reports.push(report);
+        offset += take;
+        sequence += 1;
+    }
+    reports
 }
 
 /// Lê e remonta a resposta, conferindo canal, tag e sequência de cada pacote.
 pub fn read_response(link: &dyn HidLink, timeout_ms: i32) -> Result<Vec<u8>, LedgerError> {
-    let _ = (link, timeout_ms);
-    todo!()
+    let mut data = Vec::new();
+    let mut expected_len = 0;
+    let mut sequence: u16 = 0;
+    loop {
+        let mut packet = [0u8; HID_PACKET_SIZE];
+        let read = link.read_timeout(&mut packet, timeout_ms)?;
+        if read == 0 {
+            return Err(LedgerError::Timeout);
+        }
+        let header = if sequence == 0 { FIRST_HEADER } else { NEXT_HEADER };
+        if read < header {
+            return Err(LedgerError::Malformed("packet shorter than its header"));
+        }
+        if u16::from_be_bytes([packet[0], packet[1]]) != CHANNEL {
+            return Err(LedgerError::Malformed("wrong channel"));
+        }
+        if packet[2] != TAG_APDU {
+            return Err(LedgerError::Malformed("wrong tag"));
+        }
+        if u16::from_be_bytes([packet[3], packet[4]]) != sequence {
+            return Err(LedgerError::Malformed("packet out of sequence"));
+        }
+        if sequence == 0 {
+            expected_len = usize::from(u16::from_be_bytes([packet[5], packet[6]]));
+            if expected_len < 2 {
+                return Err(LedgerError::Malformed("answer without a status word"));
+            }
+        }
+        let take = (read - header).min(expected_len - data.len());
+        data.extend_from_slice(&packet[header..header + take]);
+        if data.len() == expected_len {
+            return Ok(data);
+        }
+        sequence = sequence.checked_add(1).ok_or(LedgerError::Malformed("too many packets"))?;
+    }
 }
 
 /// Separa o status word: `0x9000` devolve os dados; os outros viram erro classificado.
+/// Códigos documentados publicamente pela Ledger (`@ledgerhq/errors`); não conferidos com aparelho.
 pub fn check_status(response: &[u8]) -> Result<Vec<u8>, LedgerError> {
-    let _ = response;
-    todo!()
+    let Some(split) = response.len().checked_sub(2) else {
+        return Err(LedgerError::Malformed("answer without a status word"));
+    };
+    let (data, status) = response.split_at(split);
+    match u16::from_be_bytes([status[0], status[1]]) {
+        0x9000 => Ok(data.to_vec()),
+        // Instrução ou classe desconhecida, ou app não aberto: está no menu ou em outro app.
+        0x6d00 | 0x6e00 | 0x6e01 | 0x6511 => Err(LedgerError::WrongApp),
+        0x5515 | 0x6982 => Err(LedgerError::Locked),
+        other => Err(LedgerError::Status(other)),
+    }
 }
 
 /// Lê a resposta do `GET_ADDRESS` e confere que o endereço é o da chave pública devolvida.
 /// Devolve o endereço com checksum EIP-55.
+///
+/// Formato (sem chain code): tamanho da chave (1) + chave não comprimida (65) +
+/// tamanho do endereço (1) + endereço em ASCII hex sem `0x` (40). Nada pode sobrar.
 pub fn parse_address_response(data: &[u8]) -> Result<String, LedgerError> {
-    let _ = (data, PUBLIC_KEY_LEN, ADDRESS_ASCII_LEN, Address::from_str("0x0"));
-    todo!()
+    let truncated = LedgerError::Malformed("truncated address answer");
+    let (&key_len, rest) = data.split_first().ok_or(truncated.clone())?;
+    if usize::from(key_len) != PUBLIC_KEY_LEN {
+        return Err(LedgerError::Malformed("public key is not uncompressed"));
+    }
+    let key = rest.get(..PUBLIC_KEY_LEN).ok_or(truncated.clone())?;
+    if key[0] != 0x04 {
+        return Err(LedgerError::Malformed("public key is not uncompressed"));
+    }
+    let rest = &rest[PUBLIC_KEY_LEN..];
+    let (&address_len, ascii) = rest.split_first().ok_or(truncated.clone())?;
+    if usize::from(address_len) != ADDRESS_ASCII_LEN {
+        return Err(LedgerError::Malformed("address has the wrong length"));
+    }
+    if ascii.len() < ADDRESS_ASCII_LEN {
+        return Err(truncated);
+    }
+    if ascii.len() > ADDRESS_ASCII_LEN {
+        return Err(LedgerError::Malformed("unexpected bytes after the address"));
+    }
+    if !ascii.iter().all(u8::is_ascii_hexdigit) {
+        return Err(LedgerError::Malformed("address is not hexadecimal"));
+    }
+    // Minúsculas: o checksum que a Ledger manda (ou não) é refeito a partir da chave.
+    let text = format!("0x{}", String::from_utf8_lossy(ascii).to_ascii_lowercase());
+    let reported = Address::from_str(&text).map_err(|_| LedgerError::Malformed("address is not hexadecimal"))?;
+    let derived = Address::from_raw_public_key(&key[1..]);
+    if reported != derived {
+        return Err(LedgerError::Malformed("address does not match the public key"));
+    }
+    Ok(derived.to_checksum(None))
 }
 
 /// Troca completa com um dispositivo já aberto: monta, envia, lê e interpreta.
 pub fn read_address(link: &dyn HidLink, account: u32) -> Result<String, LedgerError> {
-    let _ = (link, account);
-    todo!()
+    let apdu = get_address_apdu(account)?;
+    for report in frame_apdu(&apdu) {
+        link.write(&report)?;
+    }
+    let response = read_response(link, READ_TIMEOUT_MS)?;
+    let data = check_status(&response)?;
+    parse_address_response(&data)
 }
 
 /// Abre a Ledger plugada e lê o endereço da conta. Bloqueante: chamar fora do runtime async.
 pub fn read_address_from_device(account: u32) -> Result<String, LedgerError> {
-    let _ = (account, &DEVICE_LOCK, READ_TIMEOUT_MS);
-    todo!()
+    // Conta inválida não precisa nem abrir o USB.
+    derivation_path(account)?;
+    let _guard = DEVICE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let api = hidapi::HidApi::new().map_err(|error| LedgerError::Hid(error.to_string()))?;
+    let info = api
+        .device_list()
+        .find(|info| is_ledger_apdu_interface(info.vendor_id(), info.usage_page(), info.interface_number()))
+        .ok_or(LedgerError::NotConnected)?;
+    let device = api.open_path(info.path()).map_err(|error| {
+        let message = error.to_string();
+        let lower = message.to_lowercase();
+        if lower.contains("access") || lower.contains("permission") || lower.contains("denied") {
+            LedgerError::AccessDenied
+        } else {
+            LedgerError::Hid(message)
+        }
+    })?;
+    read_address(&device, account)
 }
 
 /// Porta de entrada do comando: com o módulo desligado recusa **antes** de tocar no USB;
@@ -164,8 +304,11 @@ pub async fn read_address_if_enabled<F>(db: &DatabaseConnection, account: u32, r
 where
     F: FnOnce(u32) -> Result<String, LedgerError> + Send + 'static,
 {
-    let _ = (db, account, read, store::require_enabled);
-    todo!()
+    store::require_enabled(db).await?;
+    tokio::task::spawn_blocking(move || read(account))
+        .await
+        .map_err(|error| AppError::Device(format!("The Ledger read was interrupted: {error}")))?
+        .map_err(AppError::from)
 }
 
 #[cfg(test)]
