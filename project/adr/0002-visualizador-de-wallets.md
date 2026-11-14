@@ -30,3 +30,15 @@ Fatos lidos em 2026-11-13:
 - Bitcoin é mais trabalho de dispositivo que Ethereum, e o código do TruthID não ajuda nele.
 - **Custo de reverter:** fácil a médio. Se o isolamento for real, remover o módulo é apagar código, tabelas próprias e a opção de configuração.
 - **Não verificado:** o comportamento da Ledger e do Trezor reais do dono; o `trezor-client` sem o Trezor Bridge; a saúde, a licença e o peso de `hidapi` e `trezor-client`.
+
+## Adendo (2026-11-13, Fase 36.3): o Trezor e uma dependência que sabe assinar
+**Contexto.** A garantia "o módulo não contém código de assinar" foi escrita pensando no nosso código. A Ledger (Fase 36.2) cumpre isso por inteiro: o transporte é nosso e só monta `GET_ADDRESS`. Para o Trezor, a escolha prática é o `trezor-client` (CC0, mantido pela própria Trezor), e a crate **contém** funções de assinar (`ethereum_sign_tx`, `ethereum_sign_message` e outras). Escrever o protocolo protobuf do Trezor nós mesmos seria código demais para manter.
+
+**Decisão** (dono, 2026-11-13). Aceitar o `trezor-client` 0.1.6 com a garantia reescrita: **o código do Anchor não chama nenhuma função de assinar**; a dependência pode tê-las. Ela entra com:
+- só a feature `ethereum`, sem `bitcoin`, `solana` e o resto;
+- busca do aparelho só por USB (`WebUsbTransport`), sem o ping UDP ao emulador que o `find_devices` da crate faz;
+- teste-guarda de texto com os nomes de assinar nas duas grafias (`ethereum_sign`, `sign_tx`, `ethereumsign`, `signtx`...);
+- **teste em execução**: um transporte falso registra cada mensagem que o Anchor manda ao aparelho, e o teste reprova qualquer mensagem fora de `Initialize`, `EthereumGetAddress`, `ButtonAck` e `PassphraseAck`;
+- PIN e passphrase digitados no aparelho; a crate responde ao pedido de passphrase com "digite no aparelho", e o Anchor nunca os vê.
+
+**Consequências.** A superfície que *poderia* assinar está no binário, inerte. A proteção contra alguém passar a usá-la são os dois testes, e quem os desligar contradiz este ADR. O transporte USB da crate lê sem limite de tempo, então a leitura tem um teto do lado async e uma trava que recusa leituras simultâneas. O Trezor One com PIN (matriz digitada no computador) não é suportado; a tela pede para desbloquear no Trezor Suite antes, o que não foi testado. **Reverter:** apagar o `trezor.rs` e a dependência; a Ledger não depende dela.
