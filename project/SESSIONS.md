@@ -5413,3 +5413,10 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **CI** (`CI Mobile`, `workflow_dispatch`, SHA `ca6d87f`, run 43643314898): `test` e `apk` verdes.
 - **Quebras** (branch `ci/quebra-foreign-csv`, só com `Edit`, run 43643890451): 2 quebras, 2 falhas, cada uma pega: contagem fixa em 0 (F1) e sem o cancelar (F2). As mutações compilam (`saved == Uri()` no lugar do `null`), lição da Sessão 348.
 - **Não verificado**: o `file_picker` real num aparelho; a tela com câmbio USD (o teste usa ativo em BRL); `_saveCsvWithPlatform` está duplicado entre `transaction_history_screen.dart` e `foreign_tax_screen.dart` (extrair seria refatoração à parte); a branch `ci/quebra-foreign-csv` continua no remoto à espera da sua confirmação.
+
+## Sessão 350 — P12(c): versão do Flutter num só lugar
+- **Decisão do dono** (§4, mudança em CI/deploy; plan mode): centralizar a versão que estava repetida em 3 lugares (`ci-mobile.yml` ×2 e `build.yml`).
+- **Feito**: `environment.flutter: 3.50.0` em `mobile/pubspec.yaml`; os 3 passos "Flutter" usam `flutter-version-file: mobile/pubspec.yaml` no lugar de `flutter-version: 3.50.0`. `channel: stable` e `cache: true` ficam. `grep flutter-version .github` não acha mais número fixo.
+- **CI** (`CI Mobile`, `workflow_dispatch`, SHA `4cada43`, run 43648826852): `test` e `apk` verdes; o log do passo "Flutter" mostra `stable-3.50.0` (a chave de cache é a mesma de antes).
+- **Quebra proposital** (branch `ci/quebra-flutter-versao`, só com `Edit`, run 43649256127): pubspec com `3.49.0`; o `flutter-action` falhou com "Unable to determine Flutter version for channel: stable version: 3.49.0", ou seja, a versão vem mesmo do pubspec. A falha é do action (3.49.0 não é uma stable que ele resolva), **não** de uma recusa de constraint pelo `pub`.
+- **Não verificado**: o job `apk` do `build.yml` (só em tag ou ensaio completo do desktop, que usa os secrets de assinatura; o passo é igual ao do `ci-mobile.yml`); que o `pub` recuse outro Flutter localmente (não há Flutter local); a branch `ci/quebra-flutter-versao` continua no remoto à espera da sua confirmação.
