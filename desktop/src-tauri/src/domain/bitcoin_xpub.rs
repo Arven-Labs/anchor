@@ -114,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    fn private_keys_are_rejected_and_never_echoed() {
+    fn secret_extended_keys_are_rejected_and_never_echoed() {
         for private in [XPRV, ZPRV] {
             match parse_xpub(private) {
                 Err(AppError::InvalidAddress(message)) => {
