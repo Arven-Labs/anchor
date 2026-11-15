@@ -204,6 +204,8 @@ void main() {
         '${dir.path}/anchor_mobile.db',
         version: 15,
         onCreate: (db, _) async {
+          // A migração da v27 mexe nesta tabela; o resto do schema antigo não importa aqui.
+          await db.execute('CREATE TABLE portfolio_transactions (id INTEGER PRIMARY KEY)');
           await db.execute('''
           CREATE TABLE custodias (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -829,6 +831,8 @@ void main() {
       '${dir.path}/anchor_mobile.db',
       version: 19,
       onCreate: (db, _) async {
+        // A migração da v27 mexe nesta tabela; o resto do schema antigo não importa aqui.
+        await db.execute('CREATE TABLE portfolio_transactions (id INTEGER PRIMARY KEY)');
         await db.execute('''CREATE TABLE bank_accounts (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           nome TEXT NOT NULL, titular TEXT NOT NULL,
@@ -874,6 +878,8 @@ void main() {
       '${dir.path}/anchor_mobile.db',
       version: 18,
       onCreate: (db, _) async {
+        // A migração da v27 mexe nesta tabela; o resto do schema antigo não importa aqui.
+        await db.execute('CREATE TABLE portfolio_transactions (id INTEGER PRIMARY KEY)');
         await db.execute('''CREATE TABLE bank_accounts (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           nome TEXT NOT NULL, titular TEXT NOT NULL,
@@ -916,6 +922,8 @@ void main() {
       '${dir.path}/anchor_mobile.db',
       version: 17,
       onCreate: (db, _) async {
+        // A migração da v27 mexe nesta tabela; o resto do schema antigo não importa aqui.
+        await db.execute('CREATE TABLE portfolio_transactions (id INTEGER PRIMARY KEY)');
         await db.execute('''CREATE TABLE bank_accounts (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           nome TEXT NOT NULL, titular TEXT NOT NULL,
@@ -962,6 +970,8 @@ void main() {
       '${dir.path}/anchor_mobile.db',
       version: 16,
       onCreate: (db, _) async {
+        // A migração da v27 mexe nesta tabela; o resto do schema antigo não importa aqui.
+        await db.execute('CREATE TABLE portfolio_transactions (id INTEGER PRIMARY KEY)');
         await db.execute('''CREATE TABLE bank_accounts (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           nome TEXT NOT NULL, titular TEXT NOT NULL,

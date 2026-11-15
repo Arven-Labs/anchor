@@ -331,7 +331,9 @@ void main() {
         ),
       );
       await tester.tap(find.text('abrir'));
-      await tester.pumpAndSettle();
+      // Sem `pumpAndSettle`: a tela mostra um indicador de progresso girando enquanto carrega.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
       await settle(tester);
 
       final field = find.widgetWithText(TextField, 'Câmbio (opcional)');
@@ -389,7 +391,9 @@ void main() {
         ),
       );
       await tester.tap(find.text('abrir'));
-      await tester.pumpAndSettle();
+      // Sem `pumpAndSettle`: a tela mostra um indicador de progresso girando enquanto carrega.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
       await settle(tester);
 
       await tester.enterText(find.widgetWithText(TextField, 'Câmbio (opcional)'), '');
