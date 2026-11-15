@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
@@ -16,7 +18,9 @@ import 'package:anchor_mobile/l10n/foreign_tax_labels.dart' as labels;
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/portfolio_transaction.dart';
 import 'package:anchor_mobile/screens/foreign_tax_screen.dart';
+import 'package:anchor_mobile/services/bcb_ptax_service.dart';
 import 'package:anchor_mobile/services/portfolio_repository.dart';
+import 'package:anchor_mobile/services/yahoo_quote_service.dart';
 
 import 'support/localized_app.dart';
 import 'support/settle.dart' show waitFor;
@@ -446,6 +450,152 @@ void main() {
 
       testWidgets('F4: sem posição no exterior não há botão de exportar', (tester) async {
         await pumpScreen(tester, 'pt');
+        expect(find.text(pt.foreignExportCsv), findsNothing);
+      });
+    });
+
+    // Ativo em USD: a tela busca câmbio. Os serviços recebem clientes falsos, então não há rede.
+    // A compra é numa segunda-feira (11/03/2024), dia útil, para a PTAX e o Yahoo a acharem.
+    group('câmbio em USD', () {
+      final repository = PortfolioRepository();
+      final purchaseDay = DateTime(2024, 3, 11);
+
+      Future<void> seedUsdHolding(WidgetTester tester) async {
+        await tester.runAsync(() async {
+          final id = await repository.insertAsset(
+            Asset(
+              ticker: 'AAPL',
+              name: 'Apple',
+              assetClass: AssetClass.acaoInternacional,
+              currency: 'USD',
+              createdAt: DateTime(2024, 1, 1),
+            ),
+          );
+          await repository.insertTransaction(
+            PortfolioTransaction(
+              assetId: id,
+              type: TransactionType.compra,
+              quantity: 10,
+              unitPrice: 100,
+              totalValue: 1000,
+              date: purchaseDay,
+              createdAt: purchaseDay,
+            ),
+          );
+        });
+      }
+
+      // PTAX com compra (4,99) e venda (5,00) diferentes: o custo tem de sair pela venda.
+      BcbPtaxService ptaxAnswering() => BcbPtaxService(
+        client: MockClient(
+          (_) async => http.Response(
+            '{"value":[{"cotacaoCompra":4.99,"cotacaoVenda":5.0,'
+            '"dataHoraCotacao":"2024-03-11 13:00:00.000"}]}',
+            200,
+          ),
+        ),
+      );
+
+      BcbPtaxService ptaxDown() => BcbPtaxService(client: MockClient((_) async => http.Response('', 500)));
+
+      YahooQuoteService yahooAnswering(double close) => YahooQuoteService(
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'chart': {
+                'result': [
+                  {
+                    'timestamp': [DateTime.utc(2024, 3, 11).millisecondsSinceEpoch ~/ 1000],
+                    'indicators': {
+                      'quote': [
+                        {
+                          'close': [close],
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+            200,
+          ),
+        ),
+      );
+
+      YahooQuoteService yahooDown() => YahooQuoteService(client: MockClient((_) async => http.Response('', 500)));
+
+      /// Monta a tela com os serviços dados e devolve o CSV salvo (nulo até exportar).
+      Future<Uint8List? Function()> pumpUsd(
+        WidgetTester tester, {
+        required BcbPtaxService bcb,
+        required YahooQuoteService yahoo,
+      }) async {
+        Uint8List? saved;
+        tester.view.physicalSize = const Size(900, 3000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.runAsync(AppDatabase.instance);
+        await tester.pumpWidget(
+          localizedApp(
+            ForeignTaxScreen(
+              bcb: bcb,
+              yahoo: yahoo,
+              saveCsv: ({required dialogTitle, required fileName, required bytes}) async {
+                saved = bytes;
+                return Uri.file('/fake/$fileName');
+              },
+            ),
+          ),
+        );
+        return () => saved;
+      }
+
+      List<String> csvLines(Uint8List bytes) => utf8.decode(bytes).trimRight().split('\n');
+
+      testWidgets('U1: com PTAX, o custo sai pela cotação de venda e não é aproximado', (tester) async {
+        await seedUsdHolding(tester);
+        final saved = await pumpUsd(tester, bcb: ptaxAnswering(), yahoo: yahooDown());
+        await waitFor(tester, find.text(pt.foreignExportCsv), 'botão Exportar CSV');
+
+        await tester.tap(find.text(pt.foreignExportCsv));
+        await waitFor(tester, find.textContaining(' linhas salvas.'), 'aviso de linhas salvas');
+
+        // 10 un. × US$ 100 × 5,00 (venda), nem 4,99 (compra).
+        expect(csvLines(saved()!)[1], '2024,AAPL,Apple,,,USD,10,5000.00,false,false,,,');
+        expect(
+          find.text(labels.foreignWarningText(pt, const ForeignTaxWarning.fxApproximate(year: 2024))),
+          findsNothing,
+        );
+        expect(find.text(pt.foreignFxUnavailableNote), findsNothing);
+      });
+
+      testWidgets('U2: sem PTAX, o câmbio de mercado serve e o informe fica marcado aproximado', (tester) async {
+        await seedUsdHolding(tester);
+        final saved = await pumpUsd(tester, bcb: ptaxDown(), yahoo: yahooAnswering(4));
+        await waitFor(tester, find.text(pt.foreignExportCsv), 'botão Exportar CSV');
+
+        await tester.tap(find.text(pt.foreignExportCsv));
+        await waitFor(tester, find.textContaining(' linhas salvas.'), 'aviso de linhas salvas');
+
+        expect(csvLines(saved()!)[1], '2024,AAPL,Apple,,,USD,10,4000.00,true,false,,,');
+        expect(
+          find.text(labels.foreignWarningText(pt, const ForeignTaxWarning.fxApproximate(year: 2024))),
+          findsOneWidget,
+        );
+        expect(find.text(pt.foreignFxUnavailableNote), findsNothing);
+      });
+
+      testWidgets('U3: sem PTAX nem mercado, avisa e não inventa posição', (tester) async {
+        await seedUsdHolding(tester);
+        await pumpUsd(tester, bcb: ptaxDown(), yahoo: yahooDown());
+
+        await waitFor(tester, find.text(pt.foreignFxUnavailableNote), 'aviso de câmbio indisponível');
+
+        expect(
+          find.text(labels.foreignWarningText(pt, const ForeignTaxWarning.fxMissing(year: 2024))),
+          findsOneWidget,
+        );
+        // A compra não foi convertida, então não há custo em reais para o informe.
         expect(find.text(pt.foreignExportCsv), findsNothing);
       });
     });
