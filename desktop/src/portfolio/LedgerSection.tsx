@@ -184,6 +184,8 @@ function LedgerSection({
       queryClient.invalidateQueries({ queryKey: ["funds-overview"] });
       setConfirmingDeleteId(null);
     },
+    // Fecha o "Confirm?" para o erro (venda ficaria descoberta) não deixar o botão armado.
+    onError: () => setConfirmingDeleteId(null),
   });
 
   function handleDeleteClick(id: number) {
@@ -338,6 +340,11 @@ function LedgerSection({
           <CardTitle>Transactions</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
+          {deleteMutation.isError && (
+            <p className="text-red-600" data-testid="ledger-delete-error">
+              {deleteMutation.error.message}
+            </p>
+          )}
           {groups.length === 0 && <p className="text-muted-foreground">No transactions yet.</p>}
           {groups.map((group) => {
             const isOpen = !collapsedGroups.has(group.key);
@@ -423,6 +430,7 @@ function LedgerSection({
                               <Button
                                 variant={isConfirming ? "destructive" : "outline"}
                                 size="sm"
+                                data-testid={`ledger-delete-${tx.id}`}
                                 onClick={() => handleDeleteClick(tx.id)}
                               >
                                 {isConfirming ? "Confirm?" : "Delete"}
