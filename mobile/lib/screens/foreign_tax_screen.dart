@@ -43,7 +43,11 @@ class ForeignTaxScreen extends StatefulWidget {
   /// Salvar o CSV do informe; o padrão usa o `file_picker` (os testes injetam o seu).
   final SaveCsv? saveCsv;
 
-  const ForeignTaxScreen({super.key, this.saveCsv});
+  /// Fontes de câmbio; o padrão vai à rede (os testes injetam serviços com cliente falso).
+  final BcbPtaxService? bcb;
+  final YahooQuoteService? yahoo;
+
+  const ForeignTaxScreen({super.key, this.saveCsv, this.bcb, this.yahoo});
 
   @override
   State<ForeignTaxScreen> createState() => _ForeignTaxScreenState();
@@ -51,8 +55,8 @@ class ForeignTaxScreen extends StatefulWidget {
 
 class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
   final _repository = PortfolioRepository();
-  final _yahoo = YahooQuoteService();
-  final _bcb = BcbPtaxService();
+  late final _yahoo = widget.yahoo ?? YahooQuoteService();
+  late final _bcb = widget.bcb ?? BcbPtaxService();
 
   bool _loading = true;
   bool _fxUnavailable = false;
