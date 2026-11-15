@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{Datelike, NaiveDate};
+use sea_orm::ActiveValue::Unchanged;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
     TransactionTrait,
@@ -322,30 +323,9 @@ pub async fn create_transaction_in<C: ConnectionTrait>(
     request: CreateTransactionRequest,
 ) -> Result<transactions::Model, AppError> {
     validate(&request)?;
-
-    let asset = match request.asset_id {
-        Some(asset_id) => Some(
-            assets::Entity::find_by_id(asset_id)
-                .one(db)
-                .await?
-                .ok_or_else(|| AppError::NotFound(format!("asset {asset_id}")))?,
-        ),
-        None => None,
-    };
-    // O câmbio digitado só é lido pelo IR de exterior; em ativo nacional ou cripto seria um dado que nada usa.
-    if request.fx_rate_override.is_some()
-        && asset.as_ref().map(|a| treatment(&a.asset_class, &a.ticker)) != Some(TaxTreatment::ForeignWarning)
-    {
-        return Err(AppError::InvalidGuard("fx_rate_override só vale para ativo do exterior".to_string()));
-    }
-    if request.transaction_type == COME_COTAS && asset.as_ref().map(|a| a.asset_class.as_str()) != Some(FUND_CLASS) {
-        return Err(AppError::InvalidGuard("come_cotas só vale para ativo da classe 'fundo'".to_string()));
-    }
+    ensure_asset_rules(db, &request).await?;
     if request.transaction_type == AMORTIZATION {
-        if asset.as_ref().map(|a| a.asset_class.as_str()) != Some(FUND_CLASS) {
-            return Err(AppError::InvalidGuard("amortizacao só vale para ativo da classe 'fundo'".to_string()));
-        }
-        ensure_amortization_fits(db, &request).await?;
+        ensure_amortization_fits(db, &request, None).await?;
     }
     if request.transaction_type == SELL || request.transaction_type == COME_COTAS {
         ensure_covered_sale(db, &request).await?;
@@ -382,7 +362,158 @@ pub async fn create_transaction_in<C: ConnectionTrait>(
     Ok(tx)
 }
 
+/// Regras que dependem da classe do ativo (criar e editar): o ativo existe, o câmbio digitado só vale em ativo do exterior,
+/// e come-cotas e amortização só valem em fundo.
+async fn ensure_asset_rules<C: ConnectionTrait>(db: &C, request: &CreateTransactionRequest) -> Result<(), AppError> {
+    let asset = match request.asset_id {
+        Some(asset_id) => Some(
+            assets::Entity::find_by_id(asset_id)
+                .one(db)
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("asset {asset_id}")))?,
+        ),
+        None => None,
+    };
+    // O câmbio digitado só é lido pelo IR de exterior; em ativo nacional ou cripto seria um dado que nada usa.
+    if request.fx_rate_override.is_some()
+        && asset.as_ref().map(|a| treatment(&a.asset_class, &a.ticker)) != Some(TaxTreatment::ForeignWarning)
+    {
+        return Err(AppError::InvalidGuard("fx_rate_override só vale para ativo do exterior".to_string()));
+    }
+    if request.transaction_type == COME_COTAS && asset.as_ref().map(|a| a.asset_class.as_str()) != Some(FUND_CLASS) {
+        return Err(AppError::InvalidGuard("come_cotas só vale para ativo da classe 'fundo'".to_string()));
+    }
+    if request.transaction_type == AMORTIZATION && asset.as_ref().map(|a| a.asset_class.as_str()) != Some(FUND_CLASS) {
+        return Err(AppError::InvalidGuard("amortizacao só vale para ativo da classe 'fundo'".to_string()));
+    }
+    Ok(())
+}
+
+/// Edição de uma transação da carteira (ADR 0004): o formulário manda o estado completo (todos os campos de
+/// `CreateTransactionRequest`) e o `id` da linha. A carteira não muda.
+#[derive(Deserialize)]
+pub struct UpdateTransactionRequest {
+    pub id: i32,
+    #[serde(flatten)]
+    pub transaction: CreateTransactionRequest,
+}
+
+#[tauri::command]
+pub async fn update_transaction(
+    db: tauri::State<'_, DatabaseConnection>,
+    request: UpdateTransactionRequest,
+) -> Result<transactions::Model, AppError> {
+    update_transaction_in(db.inner(), request).await
+}
+
+/// Valida e grava a edição. As regras são as do lançamento, mais duas: a perna de um swap cripto não edita (as duas pernas
+/// só se ligam por texto em `notes`: apague e refaça o swap) e a edição não pode piorar a cobertura de vendas do ativo
+/// (nem a do ativo antigo, se o ativo mudou). Histórico que já estava descoberto antes não bloqueia a edição.
+pub async fn update_transaction_in(
+    db: &DatabaseConnection,
+    request: UpdateTransactionRequest,
+) -> Result<transactions::Model, AppError> {
+    let UpdateTransactionRequest { id, transaction: request } = request;
+    let existing = transactions::Entity::find_by_id(id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("transaction {id}")))?;
+    if existing.notes.as_deref().is_some_and(|n| n.starts_with(SWAP_NOTE_PREFIX))
+        && [BUY, SELL].contains(&existing.transaction_type.as_str())
+    {
+        return Err(AppError::InvalidGuard(
+            "uma perna de swap cripto não se edita: apague o swap e refaça".to_string(),
+        ));
+    }
+    if request.portfolio_id != existing.portfolio_id {
+        return Err(AppError::InvalidGuard("a transação não muda de carteira".to_string()));
+    }
+
+    validate(&request)?;
+    ensure_asset_rules(db, &request).await?;
+    if request.transaction_type == AMORTIZATION {
+        ensure_amortization_fits(db, &request, Some(id)).await?;
+    }
+    ensure_edit_keeps_coverage(db, &existing, &request).await?;
+
+    let updated = transactions::ActiveModel {
+        id: Unchanged(existing.id),
+        asset_id: Set(request.asset_id),
+        custodia_id: Set(request.custodia_id),
+        transfer_to_custodia_id: Set(request.transfer_to_custodia_id),
+        transaction_type: Set(request.transaction_type),
+        payment_type: Set(request.payment_type),
+        quantity: Set(request.quantity),
+        unit_price: Set(request.unit_price),
+        total_value: Set(request.total_value),
+        fee: Set(request.fee),
+        foreign_tax_withheld: Set(request.foreign_tax_withheld),
+        foreign_tax_paid_on: Set(request.foreign_tax_paid_on),
+        fx_rate_override: Set(request.fx_rate_override),
+        loss_credit_used: Set(request.loss_credit_used),
+        transaction_date: Set(request.transaction_date),
+        notes: Set(request.notes),
+        fi_emissor: Set(request.fi_emissor),
+        fi_indexador: Set(request.fi_indexador),
+        fi_taxa_percentual: Set(request.fi_taxa_percentual),
+        fi_data_vencimento: Set(request.fi_data_vencimento),
+        fi_liquidez: Set(request.fi_liquidez),
+        ..Default::default()
+    }
+    .update(db)
+    .await?;
+    Ok(updated)
+}
+
+/// Recusa a edição que deixaria alguma venda sem cobertura, no ativo novo ou no antigo. Compara o histórico de hoje (com a
+/// linha como está) com o editado (sem a linha antiga e com a nova): só recusa o que a edição piora. A linha antiga não
+/// entra no "depois", senão contaria em dobro.
+async fn ensure_edit_keeps_coverage<C: ConnectionTrait>(
+    db: &C,
+    existing: &transactions::Model,
+    request: &CreateTransactionRequest,
+) -> Result<(), AppError> {
+    let mut edited = existing.clone();
+    edited.asset_id = request.asset_id;
+    edited.custodia_id = request.custodia_id;
+    edited.transfer_to_custodia_id = request.transfer_to_custodia_id;
+    edited.transaction_type = request.transaction_type.clone();
+    edited.quantity = request.quantity;
+    edited.unit_price = request.unit_price;
+    edited.total_value = request.total_value;
+    edited.fee = request.fee;
+    edited.transaction_date = request.transaction_date.clone();
+
+    let mut asset_ids: Vec<i32> = existing.asset_id.into_iter().collect();
+    if let Some(new_id) = request.asset_id.filter(|id| !asset_ids.contains(id)) {
+        asset_ids.push(new_id);
+    }
+    for asset_id in asset_ids {
+        let rows = transactions::Entity::find()
+            .filter(transactions::Column::PortfolioId.eq(existing.portfolio_id))
+            .filter(transactions::Column::AssetId.eq(asset_id))
+            .all(db)
+            .await?;
+        let uncovered = |refs: Vec<&transactions::Model>| -> Result<bool, AppError> {
+            Ok(cost_basis::replay(&cost_events(&refs)?, &cost_basis::native_rate).is_some_and(|s| s.uncovered_sale))
+        };
+        let before = uncovered(rows.iter().collect())?;
+        let mut after_rows: Vec<&transactions::Model> = rows.iter().filter(|t| t.id != existing.id).collect();
+        if edited.asset_id == Some(asset_id) {
+            after_rows.push(&edited);
+        }
+        if uncovered(after_rows)? && !before {
+            return Err(AppError::InvalidGuard(
+                "a edição deixaria uma venda acima da quantidade em carteira nessa data".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 const CRYPTO_CLASS: &str = "cripto";
+/// Início do `notes` das duas pernas de um swap cripto (ver `record_crypto_swap_in`).
+const SWAP_NOTE_PREFIX: &str = "Swap ";
 
 // Permuta cripto↔cripto: para a Receita é a alienação da moeda entregue pelo valor de mercado, então vira uma venda
 // (conta nas vendas do mês e gera ganho sobre o custo médio) e uma compra da moeda recebida pelo mesmo valor.
@@ -533,6 +664,7 @@ pub async fn suggest_crypto_swap_value_in(
 async fn ensure_amortization_fits<C: ConnectionTrait>(
     db: &C,
     request: &CreateTransactionRequest,
+    ignore_id: Option<i32>,
 ) -> Result<(), AppError> {
     let Some(asset_id) = request.asset_id else { return Ok(()) };
     let date = NaiveDate::parse_from_str(&request.transaction_date, "%Y-%m-%d")
@@ -542,8 +674,10 @@ async fn ensure_amortization_fits<C: ConnectionTrait>(
         .filter(transactions::Column::AssetId.eq(asset_id))
         .all(db)
         .await?;
+    // Na edição, a linha que está sendo editada não conta (senão contaria a antiga e a nova).
     let until_date: Vec<&transactions::Model> = existing
         .iter()
+        .filter(|t| Some(t.id) != ignore_id)
         .filter(|t| NaiveDate::parse_from_str(&t.transaction_date, "%Y-%m-%d").is_ok_and(|d| d <= date))
         .collect();
     let state = cost_basis::replay(&cost_events(&until_date)?, &cost_basis::native_rate)
@@ -639,6 +773,8 @@ pub struct TransactionView {
     pub unit_price: Option<f64>,
     pub total_value: f64,
     pub fee: Option<f64>,
+    /// Tipo de provento (`dividendo`, `jcp`...): o formulário de edição precisa dele para pré-preencher.
+    pub payment_type: Option<String>,
     pub foreign_tax_withheld: Option<f64>,
     pub foreign_tax_paid_on: Option<String>,
     pub fx_rate_override: Option<f64>,
@@ -756,6 +892,7 @@ pub async fn list_transactions_in(
             unit_price: tx.unit_price,
             total_value: tx.total_value,
             fee: tx.fee,
+            payment_type: tx.payment_type,
             foreign_tax_withheld: tx.foreign_tax_withheld,
             foreign_tax_paid_on: tx.foreign_tax_paid_on,
             fx_rate_override: tx.fx_rate_override,
