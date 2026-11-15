@@ -273,6 +273,133 @@ void main() {
       expect(find.text('Foreign tax withheld (USD, optional)'), findsOneWidget);
     });
 
+    // Câmbio digitado (P16): só em compra, venda e provento de ativo do exterior fora de BRL.
+    testWidgets('F1: compra de ativo em dólar mostra o câmbio, com a moeda no texto de ajuda', (tester) async {
+      await addAsset(tester, AssetClass.acaoInternacional, currency: 'USD');
+      await pump(tester, const AddTransactionScreen(), 'pt');
+
+      expect(find.text('Câmbio (opcional)'), findsOneWidget);
+      expect(find.textContaining('Reais por 1 USD'), findsOneWidget);
+    });
+
+    testWidgets('F2: ativo do exterior cadastrado em BRL não mostra o câmbio', (tester) async {
+      await addAsset(tester, AssetClass.acaoInternacional, currency: 'BRL');
+      await pump(tester, const AddTransactionScreen(), 'pt');
+      expect(find.text('Câmbio (opcional)'), findsNothing);
+    });
+
+    testWidgets('F3: aporte não mostra o câmbio mesmo com ativo em dólar', (tester) async {
+      await addAsset(tester, AssetClass.acaoInternacional, currency: 'USD');
+      await pump(tester, const AddTransactionScreen(), 'pt');
+      await chooseType(tester, 'Aporte');
+
+      expect(find.text('Câmbio (opcional)'), findsNothing);
+    });
+
+    testWidgets('F4: editar mostra a taxa gravada, recusa 0 e grava a nova (vírgula decimal)', (tester) async {
+      final assetId = await addAsset(tester, AssetClass.acaoInternacional, currency: 'USD');
+      final id = (await tester.runAsync(
+        () => repository.insertTransaction(
+          PortfolioTransaction(
+            assetId: assetId,
+            type: TransactionType.compra,
+            quantity: 10,
+            unitPrice: 100,
+            totalValue: 1000,
+            fxRateOverride: 5.5,
+            date: DateTime(2026, 3, 11),
+            createdAt: DateTime(2026, 3, 11),
+          ),
+        ),
+      ))!;
+      final tx = (await tester.runAsync(repository.listAllTransactions))!.singleWhere((t) => t.id == id);
+
+      tester.view.physicalSize = const Size(900, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.runAsync(AppDatabase.instance);
+      await tester.pumpWidget(
+        localizedApp(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<bool>(builder: (_) => AddTransactionScreen(transaction: tx)),
+              ),
+              child: const Text('abrir'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('abrir'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      final field = find.widgetWithText(TextField, 'Câmbio (opcional)');
+      expect(tester.widget<TextField>(field).controller!.text, '5.5');
+
+      await tester.enterText(field, '0');
+      await tester.pump();
+      expect(find.text('Informe um câmbio maior que zero.'), findsOneWidget);
+      await tester.tap(find.text('Salvar'));
+      await tester.pump();
+      var saved = (await tester.runAsync(repository.listAllTransactions))!.single;
+      expect(saved.fxRateOverride, 5.5, reason: 'o 0 não foi gravado');
+
+      await tester.enterText(field, '6,25');
+      await tester.pump();
+      expect(find.text('Informe um câmbio maior que zero.'), findsNothing);
+      await tester.tap(find.text('Salvar'));
+      await settle(tester);
+      saved = (await tester.runAsync(repository.listAllTransactions))!.single;
+      expect(saved.fxRateOverride, 6.25);
+    });
+
+    testWidgets('F5: apagar o texto do câmbio volta ao automático (nulo)', (tester) async {
+      final assetId = await addAsset(tester, AssetClass.acaoInternacional, currency: 'USD');
+      await tester.runAsync(
+        () => repository.insertTransaction(
+          PortfolioTransaction(
+            assetId: assetId,
+            type: TransactionType.compra,
+            quantity: 10,
+            unitPrice: 100,
+            totalValue: 1000,
+            fxRateOverride: 5.5,
+            date: DateTime(2026, 3, 11),
+            createdAt: DateTime(2026, 3, 11),
+          ),
+        ),
+      );
+      final tx = (await tester.runAsync(repository.listAllTransactions))!.single;
+
+      tester.view.physicalSize = const Size(900, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.runAsync(AppDatabase.instance);
+      await tester.pumpWidget(
+        localizedApp(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<bool>(builder: (_) => AddTransactionScreen(transaction: tx)),
+              ),
+              child: const Text('abrir'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('abrir'));
+      await tester.pumpAndSettle();
+      await settle(tester);
+
+      await tester.enterText(find.widgetWithText(TextField, 'Câmbio (opcional)'), '');
+      await tester.pump();
+      await tester.tap(find.text('Salvar'));
+      await settle(tester);
+
+      expect((await tester.runAsync(repository.listAllTransactions))!.single.fxRateOverride, isNull);
+    });
+
     testWidgets('en: transferência pede custódia de origem e de destino', (tester) async {
       await addAsset(tester, AssetClass.acaoBr);
       await pump(tester, const AddTransactionScreen(), 'en');

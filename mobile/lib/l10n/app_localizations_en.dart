@@ -2277,6 +2277,16 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String foreignRateManual(String rate) {
+    return 'Rate $rate (entered)';
+  }
+
+  @override
+  String foreignWarnFxManual(int year) {
+    return 'Operations or dividends of $year use an exchange rate you entered: check each rate.';
+  }
+
+  @override
   String foreignWarnCostUnknown(String ticker, String date) {
     return 'Sale of $ticker on $date exceeds the purchases entered: the gain counts only the part with known cost. Enter the missing purchases.';
   }
@@ -2642,6 +2652,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ptxFee => 'Fee (optional)';
 
   @override
+  String get ptxFxRate => 'Exchange rate (optional)';
+
+  @override
+  String ptxFxRateHelp(String currency) {
+    return 'Reais per 1 $currency. Empty = Central Bank PTAX; if entered, it replaces the PTAX for this transaction only.';
+  }
+
+  @override
+  String get ptxFxRateInvalid => 'Enter an exchange rate greater than zero.';
+
+  @override
   String ptxTotal(String value) {
     return 'Total: $value';
   }
@@ -2873,6 +2894,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String txhFee(String value) {
     return 'fee $value';
+  }
+
+  @override
+  String txhFxRate(String value) {
+    return 'entered rate $value';
   }
 
   @override

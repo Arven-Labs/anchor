@@ -111,6 +111,10 @@ class _ForeignTaxScreenState extends State<ForeignTaxScreen> {
     final firstDateOf = <String, DateTime>{};
     for (final t in transactions) {
       final currency = currencyById[t.assetId];
+      // Com câmbio digitado válido a transação não precisa de PTAX nem de mercado (vale também
+      // para o imposto retido dela), então não puxa a busca de rede por causa dela.
+      final typed = t.fxRateOverride;
+      if (typed != null && isUsableFxRate(typed)) continue;
       if (currency == null ||
           (t.type != TransactionType.compra &&
               t.type != TransactionType.venda &&

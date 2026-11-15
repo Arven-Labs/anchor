@@ -101,4 +101,28 @@ void main() {
     expect(PortfolioTransaction.fromMap(map).fee, isNull);
     expect(PortfolioTransaction.fromMap(map..remove('fee')).fee, isNull);
   });
+
+  test('o câmbio digitado vai e volta pelo mapa; sem ele lê como automático', () {
+    final typed = PortfolioTransaction(
+      id: 7,
+      assetId: 1,
+      type: TransactionType.compra,
+      quantity: 2,
+      unitPrice: 50,
+      totalValue: 100,
+      fxRateOverride: 5.5,
+      date: DateTime(2026, 2, 10),
+      createdAt: DateTime(2026, 2, 10),
+    );
+    final map = typed.toMap();
+
+    expect(map['fx_rate_override'], 5.5);
+    expect(PortfolioTransaction.fromMap(map).fxRateOverride, 5.5);
+    expect(
+      PortfolioTransaction.fromMap(map..remove('fx_rate_override')).fxRateOverride,
+      isNull,
+      reason: 'linha antiga sem a coluna lê como câmbio automático',
+    );
+    expect(tx().toMap()['fx_rate_override'], isNull);
+  });
 }

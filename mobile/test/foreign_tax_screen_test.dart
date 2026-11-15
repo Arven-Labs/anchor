@@ -285,6 +285,17 @@ void main() {
     expect(labels.foreignRateLabel(pt, 6, RateSource.market), 'Câmbio 6,0000 (mercado)');
     expect(labels.foreignRateLabel(en, 6.2086, RateSource.ptax), 'Rate 6.2086 (PTAX)');
     expect(labels.foreignRateLabel(en, 6, RateSource.market), 'Rate 6.0000 (market)');
+    expect(labels.foreignRateLabel(pt, 5.5, RateSource.manual), 'Câmbio 5,5000 (digitado)');
+    expect(labels.foreignRateLabel(en, 5.5, RateSource.manual), 'Rate 5.5000 (entered)');
+  });
+
+  test('o aviso de câmbio digitado fala do ano e de conferir a taxa, nos dois idiomas', () {
+    const warning = ForeignTaxWarning.fxManual(year: 2024);
+    final ptText = labels.foreignWarningText(pt, warning);
+    final enText = labels.foreignWarningText(en, warning);
+
+    expect(ptText, allOf(contains('2024'), contains('digitado')));
+    expect(enText, allOf(contains('2024'), contains('entered')));
   });
 
   test('a ficha do ativo em cada idioma', () {
@@ -460,7 +471,7 @@ void main() {
       final repository = PortfolioRepository();
       final purchaseDay = DateTime(2024, 3, 11);
 
-      Future<void> seedUsdHolding(WidgetTester tester) async {
+      Future<void> seedUsdHolding(WidgetTester tester, {double? fxRate}) async {
         await tester.runAsync(() async {
           final id = await repository.insertAsset(
             Asset(
@@ -478,6 +489,7 @@ void main() {
               quantity: 10,
               unitPrice: 100,
               totalValue: 1000,
+              fxRateOverride: fxRate,
               date: purchaseDay,
               createdAt: purchaseDay,
             ),
@@ -597,6 +609,47 @@ void main() {
         );
         // A compra não foi convertida, então não há custo em reais para o informe.
         expect(find.text(pt.foreignExportCsv), findsNothing);
+      });
+
+      testWidgets('U4: com câmbio digitado e PTAX e mercado fora, a tela usa a taxa e não avisa de falta', (tester) async {
+        await seedUsdHolding(tester, fxRate: 5.5);
+        final saved = await pumpUsd(tester, bcb: ptaxDown(), yahoo: yahooDown());
+        await waitFor(tester, find.text(pt.foreignExportCsv), 'botão Exportar CSV');
+
+        await tester.tap(find.text(pt.foreignExportCsv));
+        await waitFor(tester, find.textContaining(' linhas salvas.'), 'aviso de linhas salvas');
+
+        expect(csvLines(saved()!)[1], '2024,AAPL,Apple,,,USD,10,5500.00,true,false,,,');
+        expect(find.text(pt.foreignFxUnavailableNote), findsNothing);
+        expect(
+          find.text(labels.foreignWarningText(pt, const ForeignTaxWarning.fxMissing(year: 2024))),
+          findsNothing,
+        );
+        expect(
+          find.text(labels.foreignWarningText(pt, const ForeignTaxWarning.fxManual(year: 2024))),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('U5: com câmbio digitado a tela nem consulta a PTAX nem o mercado', (tester) async {
+        await seedUsdHolding(tester, fxRate: 5.5);
+        var calls = 0;
+        final counting = BcbPtaxService(
+          client: MockClient((_) async {
+            calls++;
+            return http.Response('', 500);
+          }),
+        );
+        final countingYahoo = YahooQuoteService(
+          client: MockClient((_) async {
+            calls++;
+            return http.Response('', 500);
+          }),
+        );
+        await pumpUsd(tester, bcb: counting, yahoo: countingYahoo);
+        await waitFor(tester, find.text(pt.foreignExportCsv), 'botão Exportar CSV');
+
+        expect(calls, 0);
       });
     });
   });

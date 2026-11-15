@@ -13,8 +13,9 @@ const ptaxMaxLookbackDays = 10;
 /// exterior, a compra.
 enum RateKind { sell, buy }
 
-/// De onde veio a taxa de uma conversão.
-enum RateSource { ptax, market }
+/// De onde veio a taxa de uma conversão: a PTAX, o câmbio de mercado (reserva) ou a taxa
+/// digitada pelo usuário na transação (`manual`).
+enum RateSource { ptax, market, manual }
 
 class PtaxQuote {
   final double buy;

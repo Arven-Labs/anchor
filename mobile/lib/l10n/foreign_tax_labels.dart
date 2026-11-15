@@ -16,6 +16,7 @@ String foreignRateLabel(AppLocalizations l, double rate, RateSource source) {
   return switch (source) {
     RateSource.ptax => l.foreignRatePtax(shown),
     RateSource.market => l.foreignRateMarket(shown),
+    RateSource.manual => l.foreignRateManual(shown),
   };
 }
 
@@ -37,6 +38,7 @@ String foreignWarningText(AppLocalizations l, ForeignTaxWarning warning) => swit
   ),
   ForeignTaxWarningKind.fxMissing => l.foreignWarnFxMissing(warning.year!),
   ForeignTaxWarningKind.fxApproximate => l.foreignWarnFxApproximate(warning.year!),
+  ForeignTaxWarningKind.fxManual => l.foreignWarnFxManual(warning.year!),
 };
 
 /// "Grupo 03 · Código 01 · País 249" com o que o usuário informou; vazio quando nenhum dos

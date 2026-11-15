@@ -312,6 +312,7 @@ class _TransactionTile extends StatelessWidget {
     final fee = transaction.fee;
     final withheld = transaction.foreignTaxWithheld;
     final lossCredit = transaction.lossCreditUsed;
+    final fxRate = transaction.fxRateOverride;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -326,6 +327,7 @@ class _TransactionTile extends StatelessWidget {
             money(transaction.totalValue),
             if (fee != null && fee > 0) l.txhFee(money(fee)),
             if (withheld != null && withheld > 0) '${l.txhWithheld(money(withheld))}$paidLabel',
+            if (fxRate != null) l.txhFxRate(formatFixed(fxRate, 4, locale: locale)),
             if (lossCredit != null) l.txhLossCreditUsed(money(lossCredit)),
           ].join(' · '),
         ),
