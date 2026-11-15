@@ -5491,3 +5491,12 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **PR 2 (branch `feat/amortization-keeps-fit`)**: a mesma guarda refaz o encaixe de cada amortização do ativo (`unfunded_amortizations`, `amortization_problem` extraída de `ensure_amortization_fits`); só recusa a amortização que **passa** a não caber. 3 testes novos. Antes: 1 falhou (run 43770237211, os 2 de "permitido" já passavam). Depois: `CI Desktop Rust` verde (run 43770464442). Quebra proposital (`!broken_before` → `broken_before`, run 43770656100): 2 falharam; branch apagada.
 - **Não verificado**: apagar ou editar num app real (só E2E e flow tests); o crédito/valor de um come-cotas já gravado não é revalidado (a cobertura de venda o protege, porque ele é uma venda para o motor de custo); build dos 3 SO.
 - **Limite que fica** (ADR 0004): editar linha importada muda a chave de deduplicação.
+
+## Sessão 359 — P15: varredura do Esplora em paralelo, medida e descartada
+- **Decisões do dono** (plan mode): acelerar com concorrência limitada, sem progresso na tela; depois da medição, só as duas cadeias em paralelo; depois do A/B, descartar e registrar.
+- **Medição prévia** (script Python no scratchpad, endereços públicos, 200 requisições por nível, conexão nova por requisição): mempool.space com 4 em voo: **2 respostas 429** (~6,3 req/s); blockstream.info com 4 e 8: 0 (14 req/s), com 16: 1 resposta 429 (~22 req/s). Sem cabeçalhos de limite.
+- **Implementado e testado no CI** (branch `feat/esplora-scan-concorrente`, apagada sem PR): `scan_balance` com `scan_chain` por cadeia e `futures::try_join!`. Testes: antes, só o de concorrência falhou (run 43772423947); depois, verde (43772746850); quebra proposital (cadeias em sequência) pega 1 teste (43773018058).
+- **Prova ao vivo, A/B no mesmo runner** (branch descartável, run 43775852886): conta do vetor BIP84, 83 endereços e 40 usados nas duas. **Sequencial 25,6 s; paralela 427 s.** Mesmo resultado, 17× mais lenta. Causa provável (não vista no log): 429 e espera do `Retry-After` no `get_text`. Ressalva: a paralela rodou depois da sequencial, ordem invertida não testada.
+- **Correções ao que eu tinha dito antes**: o ritmo sequencial é ~0,3 s por endereço (não 0,6), e a conta do vetor leva 25 s (não "minutos"); eu esperava que 2 consultas em voo ficassem abaixo do nível que deu 429 com 4, e não ficaram.
+- **Resultado**: nenhum código mudou no anchor. Só o registro no P15 do `PENDING.md`.
+- **Não verificado**: a ordem invertida; outro IP ou provedor; o log dos 429 (o teste ao vivo não os imprime).
