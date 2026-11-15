@@ -975,4 +975,33 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await byId("foreign-tax-table").scrollIntoView({ block: "center" });
     await snap("taxes-foreign-typed-rate");
   });
+
+  // Editar a taxa digitada pelo Ledger (ADR 0004) tem de refletir na apuração sem reabrir o app: a edição invalida o
+  // cache de `tax-assessment`. Compra de 2027 a 5,50 vira 6,00: custo R$ 6.000, ganho R$ 2.400, 15% = R$ 360,00.
+  it("a edição do câmbio digitado atualiza o imposto do exterior", async () => {
+    const meta = sql("SELECT id FROM assets WHERE ticker = 'META'");
+    const buyId = sql(`SELECT id FROM transactions WHERE asset_id = ${meta} AND transaction_type = 'compra'`);
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-ledger").click();
+    await byId(`ledger-edit-${buyId}`).waitForDisplayed({ timeout: 30_000 });
+    await byId(`ledger-edit-${buyId}`).click();
+
+    await byId("tx-fx-rate-override").waitForDisplayed({ timeout: 10_000 });
+    expect(await byId("tx-fx-rate-override").getValue()).toBe("5.5");
+    await byId("tx-fx-rate-override").setValue("6");
+    await byId("tx-submit").click();
+    await browser.waitUntil(() => Number(sql(`SELECT fx_rate_override FROM transactions WHERE id = ${buyId}`)) === 6, {
+      timeout: 20_000,
+      timeoutMsg: "a compra de META deveria ter sido editada para o câmbio 6",
+    });
+
+    await byId("portfolio-tab-taxes").click();
+    await waitForText(
+      byId("foreign-tax-due-2027"),
+      (text) => text.includes("360,00"),
+      "o imposto estimado de 2027, com o câmbio editado, deveria ser R$ 360,00",
+    );
+  });
 });

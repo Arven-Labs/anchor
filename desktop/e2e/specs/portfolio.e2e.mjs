@@ -78,4 +78,90 @@ describe("Anchor — carteira: compra, venda e recompra", () => {
     await waitForText(byId("position-qty-PETR4"), (text) => text === "200", "200 ações depois do desdobramento");
     await waitForText(byId("position-avg-PETR4"), (text) => text.includes("10.00"), "preço médio 20 / 2 = 10,00");
   });
+
+  // Editar transação (ADR 0004). A edição refaz o replay do ativo: só recusa o que piora a cobertura das vendas.
+  describe("editar transação pelo Ledger", () => {
+    // A coluna é REAL: o `sqlite3` imprime 90.0, então compara-se como número.
+    const qtyOf = (id) => Number(sql(`SELECT quantity FROM transactions WHERE id = ${id}`));
+
+    it("o Edit abre o formulário preenchido, salva na mesma linha e volta ao Ledger", async () => {
+      // Linhas novas num ativo próprio, para não mexer nas contas dos testes acima.
+      const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+      sql(
+        "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+          "VALUES ('ITUB4', 'Itau', 'acao_br', 'BRL', 'pais', 'BR', '2026-01-01T00:00:00Z')",
+      );
+      const itub = sql("SELECT id FROM assets WHERE ticker = 'ITUB4'");
+      const row = (type, quantity, price, date) =>
+        sql(
+          "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+            `VALUES (${portfolio}, ${itub}, '${type}', ${quantity}, ${price}, ${quantity * price}, 0, '${date}', '${date}T00:00:00Z')`,
+        );
+      row("compra", 100, 10, "2026-02-02");
+      row("venda", 80, 12, "2026-03-02");
+      const buyId = sql(`SELECT id FROM transactions WHERE asset_id = ${itub} AND transaction_type = 'compra'`);
+      const total = Number(sql("SELECT count(*) FROM transactions"));
+
+      await byId("portfolio-tab-ledger").click();
+      await byId(`ledger-edit-${buyId}`).waitForDisplayed({ timeout: 30_000 });
+      await byId(`ledger-edit-${buyId}`).click();
+
+      // abre a aba Transactions em modo edição, com os valores da linha
+      await byId("tx-edit-title").waitForDisplayed({ timeout: 10_000 });
+      expect(await byId("tx-quantity").getValue()).toBe("100");
+      expect(await byId("tx-unit-price").getValue()).toBe("10");
+
+      await byId("tx-quantity").setValue("90");
+      await byId("tx-submit").click();
+      await browser.waitUntil(() => qtyOf(buyId) === 90, {
+        timeout: 20_000,
+        timeoutMsg: "a compra deveria ter sido editada para 90 na mesma linha",
+      });
+      expect(Number(sql("SELECT count(*) FROM transactions"))).toBe(total);
+      // volta ao Ledger
+      await byId(`ledger-edit-${buyId}`).waitForDisplayed({ timeout: 10_000 });
+    });
+
+    it("recusa a edição que deixaria a venda sem cobertura e não muda nada", async () => {
+      const buyId = sql("SELECT id FROM transactions WHERE asset_id = (SELECT id FROM assets WHERE ticker = 'ITUB4') AND transaction_type = 'compra'");
+      await byId(`ledger-edit-${buyId}`).click();
+      await byId("tx-edit-title").waitForDisplayed({ timeout: 10_000 });
+      // a venda posterior é de 80: com 50 em carteira ela ficaria descoberta
+      await byId("tx-quantity").setValue("50");
+      await byId("tx-submit").click();
+
+      const error = byId("tx-error");
+      await error.waitForDisplayed({ timeout: 20_000 });
+      expect(await textOf(error)).toContain("quantidade em carteira");
+      expect(qtyOf(buyId)).toBe(90);
+
+      // Cancel volta ao Ledger sem gravar
+      await byId("tx-cancel").click();
+      await byId(`ledger-edit-${buyId}`).waitForDisplayed({ timeout: 10_000 });
+      expect(qtyOf(buyId)).toBe(90);
+    });
+
+    it("não oferece Edit nas pernas de um swap", async () => {
+      const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+      sql(
+        "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+          "VALUES ('BTC', 'Bitcoin', 'cripto', 'BRL', 'pais', 'BR', '2026-01-01T00:00:00Z')",
+      );
+      const btc = sql("SELECT id FROM assets WHERE ticker = 'BTC'");
+      const row = (type, notes) =>
+        sql(
+          "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, notes, transaction_date, created_at) " +
+            `VALUES (${portfolio}, ${btc}, '${type}', 1, 1000, 1000, 0, ${notes}, '2026-04-01', '2026-04-01T00:00:00Z')`,
+        );
+      row("compra", "'Swap ETH → BTC'");
+      row("compra", "NULL");
+      const swapLeg = sql(`SELECT id FROM transactions WHERE asset_id = ${btc} AND notes LIKE 'Swap %'`);
+      const plain = sql(`SELECT id FROM transactions WHERE asset_id = ${btc} AND notes IS NULL`);
+
+      await byId("portfolio-tab-positions").click();
+      await byId("portfolio-tab-ledger").click();
+      await byId(`ledger-edit-${plain}`).waitForDisplayed({ timeout: 30_000 });
+      expect(await byId(`ledger-edit-${swapLeg}`).isExisting()).toBe(false);
+    });
+  });
 });

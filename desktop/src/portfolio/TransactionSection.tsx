@@ -116,33 +116,47 @@ function needsPaymentType(type: TransactionType): boolean {
   return type === "provento";
 }
 
+// Número do banco como texto do campo; `null` (campo vazio) vira "".
+function fieldText(value: number | string | null | undefined): string {
+  return value === null || value === undefined ? "" : String(value);
+}
+
 function TransactionSection({
   workspaceId,
   portfolioId,
+  editing = null,
+  onDone,
 }: {
   workspaceId: number;
   portfolioId: number;
+  // Transação aberta para edição (ADR 0004); `null` = lançamento novo. Os estados abaixo começam dela: quem usa o
+  // componente troca a `key` ao mudar de linha, então não há `useEffect` espelhando a prop.
+  editing?: TransactionView | null;
+  // Chamado depois de salvar a edição e no Cancel (o painel limpa `editing` e volta ao Ledger).
+  onDone?: () => void;
 }) {
-  const [transactionType, setTransactionType] = useState<TransactionType>("compra");
-  const [paymentType, setPaymentType] = useState<PaymentType>("dividendo");
-  const [assetId, setAssetId] = useState("");
-  const [custodiaId, setCustodiaId] = useState("");
-  const [transferToCustodiaId, setTransferToCustodiaId] = useState("");
-  const [quantity, setQuantity] = useState("");
-  const [unitPrice, setUnitPrice] = useState("");
-  const [totalValue, setTotalValue] = useState("");
-  const [fee, setFee] = useState("");
-  const [foreignTaxWithheld, setForeignTaxWithheld] = useState("");
-  const [foreignTaxPaidOn, setForeignTaxPaidOn] = useState("");
-  const [fxRateOverride, setFxRateOverride] = useState("");
-  const [lossCreditUsed, setLossCreditUsed] = useState("");
-  const [transactionDate, setTransactionDate] = useState(todayIso());
-  const [notes, setNotes] = useState("");
-  const [fiEmissor, setFiEmissor] = useState("");
-  const [fiIndexador, setFiIndexador] = useState<string>(FI_INDEXADORES[0]);
-  const [fiTaxaPercentual, setFiTaxaPercentual] = useState("");
-  const [fiDataVencimento, setFiDataVencimento] = useState("");
-  const [fiLiquidez, setFiLiquidez] = useState<string>(FI_LIQUIDEZ_OPTIONS[0]);
+  const [transactionType, setTransactionType] = useState<TransactionType>(
+    (editing?.transaction_type as TransactionType | undefined) ?? "compra",
+  );
+  const [paymentType, setPaymentType] = useState<PaymentType>((editing?.payment_type as PaymentType | null) ?? "dividendo");
+  const [assetId, setAssetId] = useState(fieldText(editing?.asset_id));
+  const [custodiaId, setCustodiaId] = useState(fieldText(editing?.custodia_id));
+  const [transferToCustodiaId, setTransferToCustodiaId] = useState(fieldText(editing?.transfer_to_custodia_id));
+  const [quantity, setQuantity] = useState(fieldText(editing?.quantity));
+  const [unitPrice, setUnitPrice] = useState(fieldText(editing?.unit_price));
+  const [totalValue, setTotalValue] = useState(fieldText(editing?.total_value));
+  const [fee, setFee] = useState(fieldText(editing?.fee));
+  const [foreignTaxWithheld, setForeignTaxWithheld] = useState(fieldText(editing?.foreign_tax_withheld));
+  const [foreignTaxPaidOn, setForeignTaxPaidOn] = useState(fieldText(editing?.foreign_tax_paid_on));
+  const [fxRateOverride, setFxRateOverride] = useState(fieldText(editing?.fx_rate_override));
+  const [lossCreditUsed, setLossCreditUsed] = useState(fieldText(editing?.loss_credit_used));
+  const [transactionDate, setTransactionDate] = useState(editing?.transaction_date ?? todayIso());
+  const [notes, setNotes] = useState(fieldText(editing?.notes));
+  const [fiEmissor, setFiEmissor] = useState(fieldText(editing?.fi_emissor));
+  const [fiIndexador, setFiIndexador] = useState<string>(editing?.fi_indexador ?? FI_INDEXADORES[0]);
+  const [fiTaxaPercentual, setFiTaxaPercentual] = useState(fieldText(editing?.fi_taxa_percentual));
+  const [fiDataVencimento, setFiDataVencimento] = useState(fieldText(editing?.fi_data_vencimento));
+  const [fiLiquidez, setFiLiquidez] = useState<string>(editing?.fi_liquidez ?? FI_LIQUIDEZ_OPTIONS[0]);
 
   const queryClient = useQueryClient();
 
@@ -175,12 +189,23 @@ function TransactionSection({
   function invalidateAfterWrite() {
     queryClient.invalidateQueries({ queryKey: ["transactions", portfolioId] });
     queryClient.invalidateQueries({ queryKey: ["positions", portfolioId] });
+    // O imposto e os fundos leem as mesmas transações: sem isto mostrariam o valor de antes da gravação.
+    queryClient.invalidateQueries({ queryKey: ["tax-assessment"] });
+    queryClient.invalidateQueries({ queryKey: ["funds-overview"] });
   }
 
   const createMutation = useMutation<TransactionView, AppError, CreateTransactionRequest>({
-    mutationFn: (request) => invoke("create_transaction", { request }),
+    // Na edição o comando recebe o `id` e o estado completo do lançamento (ADR 0004).
+    mutationFn: (request) =>
+      editing === null
+        ? invoke("create_transaction", { request })
+        : invoke("update_transaction", { request: { id: editing.id, ...request } }),
     onSuccess: () => {
       invalidateAfterWrite();
+      if (editing !== null) {
+        onDone?.();
+        return;
+      }
       setQuantity("");
       setUnitPrice("");
       setTotalValue("");
@@ -246,7 +271,9 @@ function TransactionSection({
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>New transaction</CardTitle>
+          <CardTitle data-testid={editing === null ? undefined : "tx-edit-title"}>
+            {editing === null ? "New transaction" : "Edit transaction"}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -524,19 +551,32 @@ function TransactionSection({
               </p>
             )}
 
-            <Button
-              type="submit"
-              data-testid="tx-submit"
-              disabled={!canSubmit || createMutation.isPending}
-              className="w-fit"
-            >
-              {createMutation.isPending ? "Logging..." : "Log transaction"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="submit"
+                data-testid="tx-submit"
+                disabled={!canSubmit || createMutation.isPending}
+                className="w-fit"
+              >
+                {editing === null
+                  ? createMutation.isPending
+                    ? "Logging..."
+                    : "Log transaction"
+                  : createMutation.isPending
+                    ? "Saving..."
+                    : "Save changes"}
+              </Button>
+              {editing !== null && (
+                <Button type="button" variant="outline" data-testid="tx-cancel" className="w-fit" onClick={() => onDone?.()}>
+                  Cancel
+                </Button>
+              )}
+            </div>
           </form>
         </CardContent>
       </Card>
 
-      <CryptoSwapCard portfolioId={portfolioId} />
+      {editing === null && <CryptoSwapCard portfolioId={portfolioId} />}
     </div>
   );
 }

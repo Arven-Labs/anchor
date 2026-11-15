@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppError } from "../types";
-import type { Portfolio } from "./types";
+import type { Portfolio, TransactionView } from "./types";
 import SummarySection from "./SummarySection";
 import PositionsSection from "./PositionsSection";
 import LedgerSection from "./LedgerSection";
@@ -79,6 +79,8 @@ type RenamePortfolioRequest = {
 function PortfolioPanel({ workspaceId }: { workspaceId: number }) {
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<number | null>(null);
   const [section, setSection] = useState<PortfolioSection>("summary");
+  // Transação aberta para edição (botão Edit do Ledger); o formulário fica na aba Transactions.
+  const [editing, setEditing] = useState<TransactionView | null>(null);
   const [newPortfolioName, setNewPortfolioName] = useState("");
   const [showNewPortfolioForm, setShowNewPortfolioForm] = useState(false);
   const [renamingPortfolio, setRenamingPortfolio] = useState(false);
@@ -230,13 +232,29 @@ function PortfolioPanel({ workspaceId }: { workspaceId: number }) {
             <PositionsSection portfolioId={selectedPortfolioId} />
           </TabsContent>
           <TabsContent value="ledger">
-            <LedgerSection portfolioId={selectedPortfolioId} />
+            <LedgerSection
+              portfolioId={selectedPortfolioId}
+              onEdit={(transaction) => {
+                setEditing(transaction);
+                setSection("transactions");
+              }}
+            />
           </TabsContent>
           <TabsContent value="dividends_summary">
             <DividendsSummarySection portfolioId={selectedPortfolioId} />
           </TabsContent>
           <TabsContent value="transactions">
-            <TransactionSection workspaceId={workspaceId} portfolioId={selectedPortfolioId} />
+            {/* `key`: ao trocar de linha (ou sair da edição) o formulário é montado do zero, com os estados iniciais certos. */}
+            <TransactionSection
+              key={editing?.id ?? "new"}
+              workspaceId={workspaceId}
+              portfolioId={selectedPortfolioId}
+              editing={editing}
+              onDone={() => {
+                setEditing(null);
+                setSection("ledger");
+              }}
+            />
           </TabsContent>
           <TabsContent value="profitability">
             <ProfitabilitySection portfolioId={selectedPortfolioId} />

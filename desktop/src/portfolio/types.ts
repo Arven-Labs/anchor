@@ -316,6 +316,11 @@ export type TransactionView = {
   unit_price: number | null;
   total_value: number;
   fee: number | null;
+  // Tipo de provento (`dividendo`, `jcp`...); `null` nos outros tipos. O formulário de edição precisa dele.
+  payment_type: string | null;
+  // Imposto retido no exterior (na moeda do ativo) e o dia em que foi pago (AAAA-MM-DD); só em provento.
+  foreign_tax_withheld: number | null;
+  foreign_tax_paid_on: string | null;
   // Câmbio digitado pelo usuário (reais por 1 unidade da moeda do ativo); `null` = câmbio automático.
   fx_rate_override: number | null;
   loss_credit_used: number | null;
