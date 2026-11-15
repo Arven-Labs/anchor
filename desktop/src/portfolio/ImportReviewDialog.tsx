@@ -40,6 +40,8 @@ export type ProposedTransaction = {
   fund_term?: string | null;
   fund_structure?: string | null;
   fund_estoque_option?: string | null;
+  // Câmbio digitado (ADR 0003): vem da coluna `fx_rate_override` do CSV e volta intacto pelo `...p` ao confirmar.
+  fx_rate_override?: number | null;
 };
 
 export type PendingItem = {

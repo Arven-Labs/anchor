@@ -27,7 +27,7 @@ use crate::domain::tax::come_cotas::FundTerm;
 use crate::entity::{assets, custodia, fund_detail, import_pending, transactions};
 use crate::error::AppError;
 
-const CSV_HEADER: [&str; 16] = [
+const CSV_HEADER: [&str; 17] = [
     "date",
     "type",
     "ticker",
@@ -44,6 +44,7 @@ const CSV_HEADER: [&str; 16] = [
     "fund_term",
     "fund_structure",
     "fund_estoque_option",
+    "fx_rate_override",
 ];
 
 /// Classes que o importador sabe criar sozinho, com a moeda e a exposição padrão.
@@ -95,6 +96,11 @@ pub struct ProposedTransaction {
     pub fund_structure: Option<String>,
     #[serde(default)]
     pub fund_estoque_option: Option<String>,
+    /// Câmbio digitado pelo usuário (reais por 1 unidade da moeda do ativo; ADR 0003): vale no IR de exterior no lugar da
+    /// PTAX. Vazio = câmbio automático. A validação é a de `create_transaction_in` (só compra, venda e provento de ativo do
+    /// exterior, finita e maior que zero).
+    #[serde(default)]
+    pub fx_rate_override: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -246,6 +252,7 @@ fn build_row(line: usize, cell: &dyn Fn(&str) -> String) -> Result<ProposedTrans
         fund_term: non_empty(&cell("fund_term")).map(|v| v.to_lowercase()),
         fund_structure: non_empty(&cell("fund_structure")).map(|v| v.to_lowercase()),
         fund_estoque_option: non_empty(&cell("fund_estoque_option")).map(|v| v.to_lowercase()),
+        fx_rate_override: number("fx_rate_override")?,
     })
 }
 
@@ -272,6 +279,7 @@ pub fn export_transactions_csv_text(rows: &[ProposedTransaction]) -> Result<Stri
                 row.fund_term.as_deref().unwrap_or(""),
                 row.fund_structure.as_deref().unwrap_or(""),
                 row.fund_estoque_option.as_deref().unwrap_or(""),
+                num(row.fx_rate_override).as_str(),
             ])
             .map_err(csv_error)?;
     }
@@ -1013,7 +1021,7 @@ pub async fn commit_rows(
                     fee: p.fee,
                     foreign_tax_withheld: None,
                     foreign_tax_paid_on: None,
-                    fx_rate_override: None,
+                    fx_rate_override: p.fx_rate_override,
                     loss_credit_used: p.loss_credit_used,
                     transaction_date: p.transaction_date.clone(),
                     notes: p.notes.clone(),
@@ -1091,6 +1099,7 @@ pub async fn proposed_from_portfolio(
                 fund_term: detail.map(|d| d.term.clone()),
                 fund_structure: detail.map(|d| d.structure.clone()),
                 fund_estoque_option: detail.and_then(|d| d.estoque_option.clone()),
+                fx_rate_override: tx.fx_rate_override,
             }
         })
         .collect())
@@ -1640,14 +1649,18 @@ mod tests {
     /// duplicata compara o texto da data) e com o escape de aspas e quebra de linha preservado.
     #[test]
     fn a_csv_exported_by_the_mobile_app_parses_without_issues() {
-        let text = "date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,loss_credit_used,fund_term,fund_structure,fund_estoque_option\n\
-                    2026-03-10,compra,PETR4,acao_br,BRL,10,100,1000,1.5,\"Corretora \"\"A\"\", filial\",,\"linha 1\nlinha 2\",,,,\n\
-                    2026-03-11,aporte,,,,,,5000,,,,,,,,\n\
-                    2026-03-12,provento,HGLG11,fii,BRL,,,80,,,,,,,,\n\
-                    2026-03-13,come_cotas,FUNDO1,fundo,BRL,0.5,120,60,,,,,,,,\n";
+        let text = "date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,loss_credit_used,fund_term,fund_structure,fund_estoque_option,fx_rate_override\n\
+                    2026-03-10,compra,PETR4,acao_br,BRL,10,100,1000,1.5,\"Corretora \"\"A\"\", filial\",,\"linha 1\nlinha 2\",,,,,\n\
+                    2026-03-11,aporte,,,,,,5000,,,,,,,,,\n\
+                    2026-03-12,provento,HGLG11,fii,BRL,,,80,,,,,,,,,\n\
+                    2026-03-13,come_cotas,FUNDO1,fundo,BRL,0.5,120,60,,,,,,,,,\n\
+                    2026-03-14,compra,AAPL,acao_internacional,USD,10,100,1000,,,,,,,,,5.5\n";
         let parsed = parse_anchor_csv(text);
-        assert_eq!(parsed.len(), 4);
+        assert_eq!(parsed.len(), 5);
         assert!(parsed.iter().all(|row| row.is_ok()), "{parsed:?}");
+        // a 17ª coluna do celular chega como o câmbio digitado; vazia, como automático
+        assert_eq!(parsed[4].as_ref().unwrap().fx_rate_override, Some(5.5));
+        assert_eq!(parsed[0].as_ref().unwrap().fx_rate_override, None);
 
         let buy = parsed[0].as_ref().unwrap();
         assert_eq!(buy.transaction_date, "2026-03-10");
@@ -1656,6 +1669,58 @@ mod tests {
 
         let deposit = parsed[1].as_ref().unwrap();
         assert_eq!((deposit.ticker.as_str(), deposit.quantity, deposit.total_value), ("", None, 5000.0));
+    }
+
+    #[test]
+    fn c1_the_csv_header_has_17_columns_ending_in_the_typed_exchange_rate() {
+        let text = export_transactions_csv_text(&[]).unwrap();
+        assert_eq!(
+            text.trim_end(),
+            "date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,\
+             loss_credit_used,fund_term,fund_structure,fund_estoque_option,fx_rate_override"
+        );
+    }
+
+    #[test]
+    fn c2_the_typed_exchange_rate_round_trips_through_the_csv() {
+        let with_rate = |rate: Option<f64>| ProposedTransaction {
+            line: 1,
+            transaction_date: "2026-03-14".to_string(),
+            transaction_type: "compra".to_string(),
+            ticker: "AAPL".to_string(),
+            asset_class: Some("acao_internacional".to_string()),
+            currency: Some("USD".to_string()),
+            quantity: Some(10.0),
+            unit_price: Some(100.0),
+            total_value: 1000.0,
+            fx_rate_override: rate,
+            ..Default::default()
+        };
+        for rate in [None, Some(5.5), Some(5.123456)] {
+            let original = vec![with_rate(rate)];
+            let text = export_transactions_csv_text(&original).unwrap();
+            assert_eq!(text.lines().nth(1).unwrap().split(',').count(), 17, "{text}");
+            let parsed = parse_anchor_csv(&text);
+            assert_eq!(parsed[0].as_ref().unwrap(), &original[0], "taxa {rate:?}");
+        }
+        let text = export_transactions_csv_text(&[with_rate(Some(5.5))]).unwrap();
+        assert!(text.lines().nth(1).unwrap().ends_with(",5.5"), "{text}");
+    }
+
+    #[test]
+    fn c3_a_csv_of_16_columns_reads_with_the_automatic_rate() {
+        let old = "date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,loss_credit_used,fund_term,fund_structure,fund_estoque_option\n\
+                   2026-03-14,compra,AAPL,acao_internacional,USD,10,100,1000,,,,,,,,\n";
+        let row = parse_anchor_csv(old).remove(0).unwrap();
+        assert_eq!(row.fx_rate_override, None);
+    }
+
+    #[test]
+    fn c4_a_non_numeric_typed_rate_reports_the_line() {
+        let text = "date,type,total_value,fx_rate_override\n2026-01-05,compra,30,abc\n";
+        let issue = parse_anchor_csv(text).remove(0).unwrap_err();
+        assert_eq!(issue.line, 1);
+        assert!(issue.message.contains("abc"));
     }
 
     #[test]

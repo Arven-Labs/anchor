@@ -25,6 +25,10 @@ class ImportRow {
   final String? notes;
   final double? lossCreditUsed;
 
+  /// Câmbio digitado (coluna `fx_rate_override`; ADR 0003): vale no IR de exterior no lugar
+  /// da PTAX. `null` = câmbio automático, também em CSV de antes da coluna.
+  final double? fxRateOverride;
+
   const ImportRow({
     required this.line,
     required this.date,
@@ -39,6 +43,7 @@ class ImportRow {
     required this.custody,
     required this.notes,
     required this.lossCreditUsed,
+    this.fxRateOverride,
   });
 }
 
@@ -182,6 +187,7 @@ ParsedTransactionsCsv parseTransactionsCsv(String text) {
       'total_value',
       'fee',
       'loss_credit_used',
+      'fx_rate_override',
     ]) {
       final parsed = _parseNumber(cell(name));
       if (parsed.error) {
@@ -200,6 +206,18 @@ ParsedTransactionsCsv parseTransactionsCsv(String text) {
     final total = numbers['total_value'];
     if (total == null) {
       issues.add(ImportIssue(line, ImportIssueCode.totalEmpty));
+      continue;
+    }
+    // O câmbio digitado multiplica valores em reais da apuração: zero ou negativo é recusado
+    // aqui, na borda (o `_parseNumber` já recusa NaN, infinito e texto).
+    final fxRate = numbers['fx_rate_override'];
+    if (fxRate != null && fxRate <= 0) {
+      issues.add(
+        ImportIssue(line, ImportIssueCode.invalidNumber, {
+          'name': 'fx_rate_override',
+          'raw': cell('fx_rate_override'),
+        }),
+      );
       continue;
     }
 
@@ -228,6 +246,7 @@ ParsedTransactionsCsv parseTransactionsCsv(String text) {
         custody: cell('custody').isEmpty ? null : cell('custody'),
         notes: cell('notes').isEmpty ? null : cell('notes'),
         lossCreditUsed: numbers['loss_credit_used'],
+        fxRateOverride: fxRate,
       ),
     );
   }

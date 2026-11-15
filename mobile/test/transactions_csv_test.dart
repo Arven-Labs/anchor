@@ -37,6 +37,7 @@ void main() {
     double? unitPrice,
     double total = 1000,
     double? fee,
+    double? fxRate,
     int? custodiaId,
     int? transferTo,
     DateTime? date,
@@ -48,6 +49,7 @@ void main() {
     unitPrice: unitPrice,
     totalValue: total,
     fee: fee,
+    fxRateOverride: fxRate,
     custodiaId: custodiaId,
     transferToCustodiaId: transferTo,
     date: date ?? DateTime(2026, 3, 10, 14, 30),
@@ -58,9 +60,9 @@ void main() {
   const header =
       'date,type,ticker,asset_class,currency,quantity,unit_price,total_value,'
       'fee,custody,payment_type,notes,loss_credit_used,fund_term,'
-      'fund_structure,fund_estoque_option';
+      'fund_structure,fund_estoque_option,fx_rate_override';
 
-  test('o cabeçalho é idêntico ao CSV_HEADER do desktop (16 colunas)', () {
+  test('o cabeçalho é idêntico ao CSV_HEADER do desktop (17 colunas)', () {
     final result = transactionsCsv([], [], []);
 
     expect(result.csv, '$header\n');
@@ -86,9 +88,26 @@ void main() {
     // data sem hora: o desktop deduplica pelo texto da data
     expect(
       result.csv,
-      '$header\n2026-03-10,compra,PETR4,acao_br,BRL,10,100,1000,1.5,XP,,,,,,\n',
+      '$header\n2026-03-10,compra,PETR4,acao_br,BRL,10,100,1000,1.5,XP,,,,,,,\n',
     );
     expect(result.exported, 1);
+  });
+
+  test('X1: o câmbio digitado sai na 17ª coluna, sem zeros à direita; sem ele a coluna fica vazia', () {
+    final result = transactionsCsv(
+      [asset(1, 'AAPL', assetClass: AssetClass.acaoInternacional, currency: 'USD')],
+      [],
+      [
+        tx(assetId: 1, quantity: 10, unitPrice: 100, fxRate: 5.5),
+        tx(assetId: 1, quantity: 10, unitPrice: 100, date: DateTime(2026, 3, 11)),
+      ],
+    );
+
+    final lines = result.csv.trimRight().split('\n');
+    expect(lines[1], '2026-03-10,compra,AAPL,acao_internacional,USD,10,100,1000,,,,,,,,,5.5');
+    expect(lines[2], endsWith(',,,,,,,,'), reason: 'sem taxa digitada a 17ª coluna é vazia');
+    expect(lines[1].split(',').length, 17);
+    expect(lines[2].split(',').length, 17);
   });
 
   test('a custódia sai só com o nome da instituição, sem o titular do rótulo de tela', () {
@@ -109,8 +128,8 @@ void main() {
       tx(type: TransactionType.retirada, total: 200),
     ]);
 
-    expect(result.csv, contains('\n2026-03-10,aporte,,,,,,5000,,,,,,,,\n'));
-    expect(result.csv, contains('\n2026-03-10,retirada,,,,,,200,,,,,,,,\n'));
+    expect(result.csv, contains('\n2026-03-10,aporte,,,,,,5000,,,,,,,,,\n'));
+    expect(result.csv, contains('\n2026-03-10,retirada,,,,,,200,,,,,,,,,\n'));
     expect(result.exported, 2);
   });
 

@@ -16,6 +16,9 @@ const _header =
     'fee,custody,payment_type,notes,loss_credit_used,fund_term,'
     'fund_structure,fund_estoque_option';
 
+// O cabeçalho atual: o de antes mais a coluna do câmbio digitado (P17).
+const _header17 = '$_header,fx_rate_override';
+
 void main() {
   final created = DateTime(2026, 1, 1);
 
@@ -86,6 +89,45 @@ void main() {
       expect(row.fee, 4.9);
       expect(row.custody, 'XP');
       expect(row.notes, 'nota');
+    });
+
+    test('C1: lê o câmbio digitado da 17ª coluna; vazio ou ausente lê como automático', () {
+      final parsed = parseTransactionsCsv(
+        '$_header17\n'
+        '2026-03-10,compra,AAPL,acao_internacional,USD,10,100,1000,,,,,,,,,5.5\n'
+        '2026-03-11,compra,AAPL,acao_internacional,USD,10,100,1000,,,,,,,,,\n',
+      );
+
+      expect(parsed.issues, isEmpty);
+      expect(parsed.rows[0].fxRateOverride, 5.5);
+      expect(parsed.rows[1].fxRateOverride, isNull);
+    });
+
+    test('C2: um CSV de 16 colunas (de antes) entra com o câmbio automático', () {
+      final parsed = parseTransactionsCsv(
+        '$_header\n'
+        '2026-03-10,compra,AAPL,acao_internacional,USD,10,100,1000,,,,,,,,\n',
+      );
+
+      expect(parsed.issues, isEmpty);
+      expect(parsed.rows.single.fxRateOverride, isNull);
+    });
+
+    test('C3: câmbio zero, negativo, NaN, infinito ou texto recusa a linha com invalidNumber', () {
+      for (final bad in ['0', '-1', 'NaN', 'Infinity', 'abc']) {
+        final parsed = parseTransactionsCsv(
+          '$_header17\n'
+          '2026-03-10,compra,AAPL,acao_internacional,USD,10,100,1000,,,,,,,,,$bad\n'
+          '2026-03-11,compra,AAPL,acao_internacional,USD,10,100,1000,,,,,,,,,5.5\n',
+        );
+
+        expect(parsed.rows, hasLength(1), reason: bad);
+        expect(parsed.rows.single.fxRateOverride, 5.5, reason: bad);
+        final issue = parsed.issues.single;
+        expect(issue.line, 1, reason: bad);
+        expect(issue.code, ImportIssueCode.invalidNumber, reason: bad);
+        expect(issue.args['name'], 'fx_rate_override', reason: bad);
+      }
     });
 
     test('aceita data DD/MM/AAAA, número com vírgula e BOM', () {
@@ -332,6 +374,38 @@ void main() {
     });
   });
 
+  group('ida e volta do câmbio digitado', () {
+    test('C4: o que o mobile exporta com câmbio digitado, o mobile reimporta com a mesma taxa', () {
+      final assets = [
+        Asset(
+          id: 1,
+          ticker: 'AAPL',
+          name: 'AAPL',
+          assetClass: AssetClass.acaoInternacional,
+          currency: 'USD',
+          createdAt: created,
+        ),
+      ];
+      final original = [
+        PortfolioTransaction(
+          assetId: 1,
+          type: TransactionType.compra,
+          quantity: 10,
+          unitPrice: 100,
+          totalValue: 1000,
+          fxRateOverride: 5.5,
+          date: DateTime(2026, 3, 10),
+          createdAt: created,
+        ),
+      ];
+
+      final csv = transactionsCsv(assets, const [], original).csv;
+      final reimported = plan(csv);
+
+      expect(reimported.rows.single.fxRateOverride, 5.5);
+    });
+  });
+
   group('applyTransactionsImport', () {
     final repository = PortfolioRepository();
     late Directory dir;
@@ -379,6 +453,21 @@ void main() {
         transactions,
       ).single;
       expect(position.netQuantity, 60);
+    });
+
+    test('C5: grava o câmbio digitado na transação (e as outras ficam com o automático)', () async {
+      const withRate =
+          '$_header17\n'
+          '2026-03-10,compra,AAPL,acao_internacional,USD,10,100,1000,,,,,,,,,5.5\n'
+          '2026-03-11,compra,AAPL,acao_internacional,USD,5,100,500,,,,,,,,,\n';
+      final written = await repository.applyTransactionsImport(
+        await planAgainstDb(withRate),
+      );
+
+      expect(written, 2);
+      final saved = await repository.listAllTransactions();
+      expect(saved.firstWhere((t) => t.totalValue == 1000).fxRateOverride, 5.5);
+      expect(saved.firstWhere((t) => t.totalValue == 500).fxRateOverride, isNull);
     });
 
     test('reimportar o mesmo arquivo não grava nada', () async {
