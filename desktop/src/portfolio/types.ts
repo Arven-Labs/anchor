@@ -316,6 +316,8 @@ export type TransactionView = {
   unit_price: number | null;
   total_value: number;
   fee: number | null;
+  // Câmbio digitado pelo usuário (reais por 1 unidade da moeda do ativo); `null` = câmbio automático.
+  fx_rate_override: number | null;
   loss_credit_used: number | null;
   transaction_date: string;
   notes: string | null;
