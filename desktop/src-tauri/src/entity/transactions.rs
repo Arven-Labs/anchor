@@ -26,6 +26,9 @@ pub struct Model {
     pub foreign_tax_withheld: Option<f64>,
     /// Data (`AAAA-MM-DD`) em que o imposto retido no exterior foi pago; `None` = a data do provento.
     pub foreign_tax_paid_on: Option<String>,
+    /// Câmbio digitado pelo usuário (reais por 1 unidade da moeda do ativo); `None` = câmbio automático (PTAX, mercado).
+    #[sea_orm(column_type = "Double", nullable)]
+    pub fx_rate_override: Option<f64>,
     #[sea_orm(column_type = "Double", nullable)]
     pub loss_credit_used: Option<f64>,
     pub transaction_date: String,

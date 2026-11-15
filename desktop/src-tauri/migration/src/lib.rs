@@ -112,6 +112,7 @@ mod m20261118_100000_seed_btc_onchain_extra_thresholds;
 mod m20261119_100000_seed_bnb_thresholds;
 mod m20261120_100000_create_wallet_viewer;
 mod m20261121_100000_create_wallet_viewer_xpub;
+mod m20261122_100000_add_fx_rate_override_to_transactions;
 
 pub struct Migrator;
 
@@ -231,6 +232,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261119_100000_seed_bnb_thresholds::Migration),
             Box::new(m20261120_100000_create_wallet_viewer::Migration),
             Box::new(m20261121_100000_create_wallet_viewer_xpub::Migration),
+            Box::new(m20261122_100000_add_fx_rate_override_to_transactions::Migration),
         ]
     }
 }

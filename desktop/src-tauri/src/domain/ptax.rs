@@ -19,12 +19,14 @@ pub enum RateKind {
     Buy,
 }
 
-/// De onde veio a taxa de uma conversão.
+/// De onde veio a taxa de uma conversão: a PTAX, o câmbio de mercado (reserva) ou a taxa que o usuário digitou na
+/// transação (`Manual`, só no IR de exterior; ADR 0003).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RateSource {
     Ptax,
     Market,
+    Manual,
 }
 
 #[derive(Default, Debug)]

@@ -39,6 +39,9 @@ pub struct Trade {
     /// `transactions.total_value` (sem taxas).
     pub gross_value: f64,
     pub fee: f64,
+    /// Câmbio digitado pelo usuário nesta operação (reais por 1 unidade da moeda): só o IR de exterior o lê, no lugar da
+    /// PTAX e do mercado. `None` = câmbio automático.
+    pub fx_override: Option<f64>,
 }
 
 /// Resultado realizado de uma posição em opção **encerrada** (Fase 18). Opção
@@ -145,6 +148,9 @@ pub enum TaxWarning {
     ForeignFxMissing { year: i32 },
     /// Operação ou provento no exterior convertido pelo câmbio de mercado (a PTAX do dia faltava): o valor do ano é aproximado.
     ForeignFxApproximate { year: i32 },
+    /// Operação ou provento no exterior convertido pela taxa que o usuário digitou: o app não a confere, então o valor do
+    /// ano depende dela.
+    ForeignFxManual { year: i32 },
     /// Resultado de entidade controlada no exterior sem câmbio de 31/12 (nem PTAX nem de mercado): ficou de fora.
     OffshoreFxMissing { year: i32, entity: String },
     /// Resultado de entidade controlada no exterior convertido pelo câmbio de mercado (a PTAX de 31/12 faltava).
@@ -703,6 +709,7 @@ mod tests {
                 quantity,
                 gross_value: gross,
                 fee,
+                fx_override: None,
             });
             self
         }
