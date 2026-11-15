@@ -2693,7 +2693,7 @@ async fn the_fund_csv_round_trips_credit_and_fund_details_into_a_fresh_database(
     assert_eq!(detail.estoque_option.as_deref(), Some("opcao_8"));
 
     let exported = export_transactions_csv_text(&proposed_from_portfolio(&db, source.id).await.unwrap()).unwrap();
-    assert!(exported.starts_with("date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,loss_credit_used,fund_term,fund_structure,fund_estoque_option\n"));
+    assert!(exported.starts_with("date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,loss_credit_used,fund_term,fund_structure,fund_estoque_option,fx_rate_override\n"));
 
     let other = memory_db().await;
     let other_ws = workspace(&other, "Destino").await;
