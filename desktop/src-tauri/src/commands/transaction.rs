@@ -12,6 +12,7 @@ use crate::commands::currency::{
 };
 use crate::domain::cost_basis::{self, EventKind};
 use crate::domain::position_pricing::{self, PricingResult};
+use crate::domain::tax::classify::{treatment, TaxTreatment};
 use crate::domain::proventos::{
     PAYMENT_TYPE_ALUGUEL, PAYMENT_TYPE_DIVIDENDO, PAYMENT_TYPE_JSCP, PAYMENT_TYPE_REEMBOLSO,
 };
@@ -110,6 +111,10 @@ pub struct CreateTransactionRequest {
     /// Data (`AAAA-MM-DD`) em que esse imposto foi pago no exterior; o crédito usa a PTAX de compra dela (Lei 14.754,
     /// art. 15). Só em `provento` com `foreign_tax_withheld` maior que zero; ausente = a data do provento.
     pub foreign_tax_paid_on: Option<String>,
+    /// Câmbio digitado pelo usuário, em reais por 1 unidade da moeda do ativo (ADR 0003): vale no lugar da PTAX e do
+    /// câmbio de mercado no IR de exterior, só nesta transação e no imposto retido dela. Só em `compra`, `venda` e
+    /// `provento` de ativo do exterior; finito e maior que zero; ausente = câmbio automático.
+    pub fx_rate_override: Option<f64>,
     /// Crédito de prejuízo que a administradora usou no come-cotas, em BRL de rendimento abatido. Só em `come_cotas`;
     /// ausente = não informado, 0 = nenhum crédito foi usado.
     pub loss_credit_used: Option<f64>,
@@ -170,6 +175,14 @@ fn validate(request: &CreateTransactionRequest) -> Result<(), AppError> {
             return Err(AppError::InvalidGuard(
                 "foreign_tax_paid_on só vale para 'provento' com foreign_tax_withheld maior que zero".to_string(),
             ));
+        }
+    }
+    if let Some(rate) = request.fx_rate_override {
+        if !rate.is_finite() || rate <= 0.0 {
+            return Err(AppError::InvalidGuard("fx_rate_override deve ser um número finito maior que zero".to_string()));
+        }
+        if ![BUY, SELL, DIVIDEND].contains(&request.transaction_type.as_str()) {
+            return Err(AppError::InvalidGuard("fx_rate_override só vale para 'compra', 'venda' e 'provento'".to_string()));
         }
     }
     if let Some(used) = request.loss_credit_used {
@@ -319,6 +332,12 @@ pub async fn create_transaction_in<C: ConnectionTrait>(
         ),
         None => None,
     };
+    // O câmbio digitado só é lido pelo IR de exterior; em ativo nacional ou cripto seria um dado que nada usa.
+    if request.fx_rate_override.is_some()
+        && asset.as_ref().map(|a| treatment(&a.asset_class, &a.ticker)) != Some(TaxTreatment::ForeignWarning)
+    {
+        return Err(AppError::InvalidGuard("fx_rate_override só vale para ativo do exterior".to_string()));
+    }
     if request.transaction_type == COME_COTAS && asset.as_ref().map(|a| a.asset_class.as_str()) != Some(FUND_CLASS) {
         return Err(AppError::InvalidGuard("come_cotas só vale para ativo da classe 'fundo'".to_string()));
     }
@@ -345,6 +364,7 @@ pub async fn create_transaction_in<C: ConnectionTrait>(
         fee: Set(request.fee),
         foreign_tax_withheld: Set(request.foreign_tax_withheld),
         foreign_tax_paid_on: Set(request.foreign_tax_paid_on.clone()),
+        fx_rate_override: Set(request.fx_rate_override),
         loss_credit_used: Set(request.loss_credit_used),
         transaction_date: Set(request.transaction_date),
         notes: Set(request.notes),
@@ -444,6 +464,7 @@ pub async fn record_crypto_swap_in(
         fee,
         foreign_tax_withheld: None,
         foreign_tax_paid_on: None,
+        fx_rate_override: None,
         loss_credit_used: None,
         transaction_date: request.transaction_date.clone(),
         notes: Some(notes.clone()),
@@ -620,6 +641,7 @@ pub struct TransactionView {
     pub fee: Option<f64>,
     pub foreign_tax_withheld: Option<f64>,
     pub foreign_tax_paid_on: Option<String>,
+    pub fx_rate_override: Option<f64>,
     pub loss_credit_used: Option<f64>,
     pub transaction_date: String,
     pub notes: Option<String>,
@@ -736,6 +758,7 @@ pub async fn list_transactions_in(
             fee: tx.fee,
             foreign_tax_withheld: tx.foreign_tax_withheld,
             foreign_tax_paid_on: tx.foreign_tax_paid_on,
+            fx_rate_override: tx.fx_rate_override,
             loss_credit_used: tx.loss_credit_used,
             transaction_date: tx.transaction_date,
             notes: tx.notes,

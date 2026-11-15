@@ -124,8 +124,10 @@ type CryptoMonth = {
 };
 
 // Exterior (Lei 14.754/2023): apuração anual em reais, sem DARF mensal, então não há pagamento a marcar.
-// `fx_source`: a PTAX do Banco Central ou, de reserva, o câmbio de mercado.
-type FxSource = "ptax" | "market";
+// `fx_source`: a PTAX do Banco Central, o câmbio de mercado (reserva) ou a taxa que o usuário digitou na transação.
+type FxSource = "ptax" | "market" | "manual";
+
+const FX_SOURCE_LABEL: Record<FxSource, string> = { ptax: "PTAX", market: "market", manual: "typed" };
 
 type ForeignSale = {
   tx_id: number;
@@ -180,6 +182,7 @@ type TaxWarning =
   | { kind: "foreign_sales"; year: number }
   | { kind: "foreign_fx_missing"; year: number }
   | { kind: "foreign_fx_approximate"; year: number }
+  | { kind: "foreign_fx_manual"; year: number }
   | { kind: "offshore_fx_missing"; year: number; entity: string }
   | { kind: "offshore_fx_approximate"; year: number }
   | { kind: "offshore_year_open"; year: number }
@@ -263,6 +266,8 @@ function warningText(w: TaxWarning): string {
       return `Some foreign trades or dividends from ${w.year} have no exchange rate (neither PTAX nor market) for their date, so they were left out of the yearly foreign assessment. Collect the exchange-rate history and open this tab again.`;
     case "foreign_fx_approximate":
       return `Some foreign trades or dividends from ${w.year} were converted at the market exchange rate because the Central Bank's PTAX was not available for them (offline, a currency the PTAX does not quote, or a long gap), so that year's values are approximate.`;
+    case "foreign_fx_manual":
+      return `Some foreign trades or dividends from ${w.year} were converted at an exchange rate you typed, which Anchor does not check, so that year's values depend on it. Review the rate of each one.`;
     case "offshore_fx_missing":
       return `The ${w.year} result of ${w.entity} has no exchange rate (neither PTAX nor market) for 31/12, so it was left out of the controlled-entities assessment. Collect the exchange-rate history and open this tab again.`;
     case "offshore_fx_approximate":
@@ -900,7 +905,7 @@ function ForeignDetails({ year }: { year: ForeignYear }) {
                 <TableCell className="text-right">{s.quantity}</TableCell>
                 <TableCell className="text-right" data-testid={`foreign-sale-fx-${s.tx_id}`}>
                   {s.fx_rate.toFixed(4)}
-                  <span className="block text-xs text-muted-foreground">{s.fx_source === "ptax" ? "PTAX" : "market"}</span>
+                  <span className="block text-xs text-muted-foreground">{FX_SOURCE_LABEL[s.fx_source]}</span>
                 </TableCell>
                 <TableCell className="text-right">{formatBrl(s.sale_value)}</TableCell>
                 <TableCell className="text-right">{formatBrl(s.cost)}</TableCell>
@@ -928,7 +933,7 @@ function ForeignDetails({ year }: { year: ForeignYear }) {
                 <TableCell>{i.ticker}</TableCell>
                 <TableCell className="text-right">
                   {i.fx_rate.toFixed(4)}
-                  <span className="block text-xs text-muted-foreground">{i.fx_source === "ptax" ? "PTAX" : "market"}</span>
+                  <span className="block text-xs text-muted-foreground">{FX_SOURCE_LABEL[i.fx_source]}</span>
                 </TableCell>
                 <TableCell className="text-right">{formatBrl(i.gross)}</TableCell>
                 <TableCell className="text-right">{i.withheld > 0 ? formatBrl(i.withheld) : "—"}</TableCell>

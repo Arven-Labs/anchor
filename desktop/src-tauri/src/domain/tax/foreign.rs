@@ -123,6 +123,8 @@ pub struct ForeignDividend {
     /// Dia em que esse imposto foi pago no exterior; o crédito converte pela PTAX de compra dele (art. 15 da Lei 14.754).
     /// `None` = o dia do provento. O crédito entra no ano do provento de qualquer jeito.
     pub tax_paid_on: Option<NaiveDate>,
+    /// Câmbio digitado pelo usuário neste provento (vale também para o imposto retido); `None` = câmbio automático.
+    pub fx_override: Option<f64>,
 }
 
 /// Uma venda, com o custo médio em reais já baixado.
@@ -186,11 +188,25 @@ pub struct ForeignYear {
 
 /// BRL não converte nada (taxa 1, exata: conta como PTAX para não marcar o ano como aproximado).
 pub(super) fn convert(currency: &str, date: NaiveDate, kind: RateKind, rate: RateToBrl) -> Option<(f64, RateSource)> {
+    convert_with(currency, date, kind, rate, None)
+}
+
+/// `convert` com o câmbio digitado pelo usuário (`manual`, ADR 0003): vale antes da PTAX e do mercado, mas só se for finito e
+/// positivo (senão é ignorado) e nunca em BRL.
+fn convert_with(
+    currency: &str,
+    date: NaiveDate,
+    kind: RateKind,
+    rate: RateToBrl,
+    manual: Option<f64>,
+) -> Option<(f64, RateSource)> {
     if currency == "BRL" {
-        Some((1.0, RateSource::Ptax))
-    } else {
-        rate(currency, date, kind).filter(|(r, _)| r.is_finite() && *r > 0.0)
+        return Some((1.0, RateSource::Ptax));
     }
+    if let Some(typed) = manual.filter(|r| r.is_finite() && *r > 0.0) {
+        return Some((typed, RateSource::Manual));
+    }
+    rate(currency, date, kind).filter(|(r, _)| r.is_finite() && *r > 0.0)
 }
 
 /// Compra ou bonificação já convertida (`fx`): soma quantidade e custo em reais. Compartilhada pela apuração e pelo
@@ -371,13 +387,14 @@ pub fn foreign_holdings_with_updates(
                 by_custodia.values_mut().for_each(|q| *q *= t.quantity);
                 continue;
             }
-            let Some((fx, source)) = convert(&t.currency, t.date, RateKind::Sell, rate) else {
+            let Some((fx, source)) = convert_with(&t.currency, t.date, RateKind::Sell, rate, t.fx_override) else {
                 incomplete = true;
                 continue;
             };
             match t.side {
                 Side::Buy | Side::Bonus => {
-                    approximate |= source == RateSource::Market;
+                    // Câmbio de mercado ou digitado: o custo não vem da PTAX, então é aproximado.
+                    approximate |= source != RateSource::Ptax;
                     apply_acquisition(&mut pos, t, fx);
                     *by_custodia.entry(t.custodia_id).or_insert(0.0) += t.quantity;
                 }
@@ -423,6 +440,7 @@ pub fn assess_foreign_with_updates(
     let mut warnings = Vec::new();
     let mut fx_missing_years: BTreeSet<i32> = BTreeSet::new();
     let mut fx_approximate_years: BTreeSet<i32> = BTreeSet::new();
+    let mut fx_manual_years: BTreeSet<i32> = BTreeSet::new();
     // Cada atualização é aplicada uma vez: ao chegar o primeiro fato depois de 31/12/2023 do ativo, ou no fim.
     let mut settled: HashSet<i32> = HashSet::new();
     let update_of = |asset_id: i32| updates.iter().find(|u| u.asset_id == asset_id);
@@ -446,12 +464,15 @@ pub fn assess_foreign_with_updates(
             pos.quantity *= t.quantity;
             continue;
         }
-        let Some((fx, fx_source)) = convert(&t.currency, t.date, RateKind::Sell, rate) else {
+        let Some((fx, fx_source)) = convert_with(&t.currency, t.date, RateKind::Sell, rate, t.fx_override) else {
             fx_missing_years.insert(t.date.year());
             continue;
         };
         if fx_source == RateSource::Market {
             fx_approximate_years.insert(t.date.year());
+        }
+        if fx_source == RateSource::Manual {
+            fx_manual_years.insert(t.date.year());
         }
         match t.side {
             Side::Buy | Side::Bonus => apply_acquisition(pos, t, fx),
@@ -495,15 +516,22 @@ pub fn assess_foreign_with_updates(
 
     let mut dividends_by_year: BTreeMap<i32, Vec<ForeignDividendItem>> = BTreeMap::new();
     for dividend in dividends.iter().filter(|d| d.date.year() >= FIRST_YEAR) {
-        let Some((fx, fx_source)) = convert(&dividend.currency, dividend.date, RateKind::Sell, rate) else {
+        let Some((fx, fx_source)) =
+            convert_with(&dividend.currency, dividend.date, RateKind::Sell, rate, dividend.fx_override)
+        else {
             fx_missing_years.insert(dividend.date.year());
             continue;
         };
+        if fx_source == RateSource::Manual {
+            fx_manual_years.insert(dividend.date.year());
+        }
         // O imposto retido usa a cotação para compra do dia do pagamento (o do provento, se não foi informado); sem
-        // cotação nenhuma, a de venda do dia do provento (já convertida acima).
+        // cotação nenhuma, a de venda do dia do provento (já convertida acima). A taxa digitada vale também para ele: o
+        // usuário informa uma só por transação.
         let tax_date = dividend.tax_paid_on.unwrap_or(dividend.date);
         let (withheld_fx, withheld_source) =
-            convert(&dividend.currency, tax_date, RateKind::Buy, rate).unwrap_or((fx, fx_source));
+            convert_with(&dividend.currency, tax_date, RateKind::Buy, rate, dividend.fx_override)
+                .unwrap_or((fx, fx_source));
         if fx_source == RateSource::Market || (dividend.withheld > 0.0 && withheld_source == RateSource::Market) {
             fx_approximate_years.insert(dividend.date.year());
         }
@@ -572,6 +600,9 @@ pub fn assess_foreign_with_updates(
     for year in fx_approximate_years {
         warnings.push(TaxWarning::ForeignFxApproximate { year });
     }
+    for year in fx_manual_years {
+        warnings.push(TaxWarning::ForeignFxManual { year });
+    }
     for year in fx_missing_years {
         warnings.push(TaxWarning::ForeignFxMissing { year });
     }
@@ -605,6 +636,7 @@ mod tests {
             quantity,
             gross_value: gross,
             fee,
+            fx_override: None,
         }
     }
 
@@ -618,7 +650,14 @@ mod tests {
             gross_value: gross,
             withheld,
             tax_paid_on: None,
+            fx_override: None,
         }
+    }
+
+    /// A mesma operação com o câmbio digitado pelo usuário.
+    fn typed(mut t: Trade, rate: f64) -> Trade {
+        t.fx_override = Some(rate);
+        t
     }
 
     /// PTAX do dólar por ano (igual para compra e venda): 5 em 2024, 6 em 2025, 4 em 2026; sem cotação para o resto.
@@ -1277,5 +1316,133 @@ mod tests {
         let list = foreign_holdings_with_updates(&trades, &[], &[update(1, 200.0)], &rate_without_2023, 2023);
         let h = at(&list, 2023, 1).unwrap();
         assert!(close(h.cost_brl, 400.0) && h.incomplete, "{h:?}");
+    }
+
+    // Câmbio digitado pelo usuário (P17, ADR 0003): vale no lugar da PTAX e do mercado, só naquela operação.
+    fn no_rate(_: &str, _: NaiveDate, _: RateKind) -> Option<(f64, RateSource)> {
+        None
+    }
+
+    fn manual_years(warnings: &[TaxWarning]) -> Vec<i32> {
+        warnings
+            .iter()
+            .filter_map(|w| match w {
+                TaxWarning::ForeignFxManual { year } => Some(*year),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn x1_a_purchase_with_a_typed_rate_costs_at_that_rate_and_not_at_the_ptax() {
+        // compra US$ 1.000 a R$ 5,50 digitado (PTAX de 2024: 5,00); venda a R$ 6 de PTAX (2025)
+        let (years, warnings) = run(
+            &[
+                typed(trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0), 5.5),
+                trade(2, 1, "2025-03-01", Side::Sell, 10.0, 1_200.0, 0.0),
+            ],
+            &[],
+        );
+        let sale = &years[0].sales[0];
+        assert!(close(sale.cost, 5_500.0) && close(sale.gain, 1_700.0), "{sale:?}");
+        assert_eq!(sale.fx_source, RateSource::Ptax);
+        assert_eq!(manual_years(&warnings), vec![2024]);
+    }
+
+    #[test]
+    fn x2_typed_rates_need_no_ptax_and_leave_no_missing_rate_warning() {
+        let (years, warnings) = assess_foreign(
+            &[
+                typed(trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0), 5.5),
+                typed(trade(2, 1, "2025-03-01", Side::Sell, 10.0, 1_200.0, 0.0), 6.0),
+            ],
+            &[],
+            &test_rule_set(),
+            &no_rate,
+        )
+        .unwrap();
+        let sale = &years[0].sales[0];
+        assert!(close(sale.cost, 5_500.0) && close(sale.fx_rate, 6.0), "{sale:?}");
+        assert_eq!(sale.fx_source, RateSource::Manual);
+        assert!(!warnings.iter().any(|w| matches!(w, TaxWarning::ForeignFxMissing { .. })), "{warnings:?}");
+        assert_eq!(manual_years(&warnings), vec![2024, 2025]);
+    }
+
+    #[test]
+    fn x3_a_typed_rate_only_on_the_sale_leaves_the_purchase_cost_alone() {
+        let (years, _) = run(
+            &[
+                trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0),
+                typed(trade(2, 1, "2025-03-01", Side::Sell, 10.0, 1_200.0, 0.0), 7.0),
+            ],
+            &[],
+        );
+        let sale = &years[0].sales[0];
+        assert!(close(sale.cost, 5_000.0) && close(sale.sale_value, 8_400.0) && close(sale.gain, 3_400.0), "{sale:?}");
+        assert_eq!(sale.fx_source, RateSource::Manual);
+    }
+
+    #[test]
+    fn x4_a_zero_negative_or_non_finite_typed_rate_is_ignored_and_the_ptax_applies() {
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let (years, warnings) = run(
+                &[
+                    typed(trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0), bad),
+                    trade(2, 1, "2025-03-01", Side::Sell, 10.0, 1_200.0, 0.0),
+                ],
+                &[],
+            );
+            assert!(close(years[0].sales[0].cost, 5_000.0), "{bad}: {:?}", years[0].sales[0]);
+            assert!(warnings.is_empty(), "{bad}: {warnings:?}");
+        }
+    }
+
+    #[test]
+    fn x5_a_typed_rate_on_a_brl_asset_is_ignored() {
+        let in_brl = |mut t: Trade| {
+            t.currency = "BRL".to_string();
+            t
+        };
+        let (years, warnings) = assess_foreign(
+            &[
+                typed(in_brl(trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0)), 9.0),
+                in_brl(trade(2, 1, "2025-03-01", Side::Sell, 10.0, 1_200.0, 0.0)),
+            ],
+            &[],
+            &test_rule_set(),
+            &no_rate,
+        )
+        .unwrap();
+        assert!(close(years[0].sales[0].cost, 1_000.0) && close(years[0].capital_gain, 200.0), "{:?}", years[0]);
+        assert!(manual_years(&warnings).is_empty());
+    }
+
+    #[test]
+    fn x6_the_dividend_and_its_withholding_convert_at_the_typed_rate() {
+        // US$ 100 bruto e US$ 10 retido, pago em outro dia: ainda assim a taxa é a digitada
+        let mut div = dividend(1, "2025-06-15", 100.0, 10.0);
+        div.tax_paid_on = Some(d("2025-06-10"));
+        div.fx_override = Some(5.5);
+        let (years, warnings) = assess_foreign(&[], &[div], &test_rule_set(), &yearly_rate).unwrap();
+        let item = &years[0].dividend_items[0];
+        assert!(close(item.gross, 550.0) && close(item.withheld, 55.0), "{item:?}");
+        assert!(close(item.fx_rate, 5.5) && item.fx_source == RateSource::Manual);
+        assert_eq!(manual_years(&warnings), vec![2025]);
+    }
+
+    #[test]
+    fn x7_the_holdings_cost_uses_the_typed_rate_and_is_marked_approximate() {
+        let trades = [typed(trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0), 5.5)];
+        let list = foreign_holdings(&trades, &[], &yearly_rate, 2024);
+        let h = at(&list, 2024, 1).unwrap();
+        assert!(close(h.cost_brl, 5_500.0) && h.fx_approximate && !h.incomplete, "{h:?}");
+    }
+
+    #[test]
+    fn x8_the_holdings_with_a_typed_rate_and_no_ptax_nor_market_have_the_position_and_cost() {
+        let trades = [typed(trade(1, 1, "2024-03-01", Side::Buy, 10.0, 1_000.0, 0.0), 5.5)];
+        let list = foreign_holdings(&trades, &[], &no_rate, 2024);
+        let h = at(&list, 2024, 1).unwrap();
+        assert!(close(h.cost_brl, 5_500.0) && !h.incomplete, "{h:?}");
     }
 }

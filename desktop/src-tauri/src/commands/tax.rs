@@ -135,6 +135,7 @@ async fn load_raw_trades(db: &DatabaseConnection, workspace_id: i32) -> Result<V
             },
             gross_value: tx.total_value,
             fee: tx.fee.unwrap_or(0.0),
+            fx_override: tx.fx_rate_override,
         });
     }
 
@@ -546,6 +547,7 @@ mod ptax_span_tests {
             quantity: 1.0,
             gross_value: 100.0,
             fee: 0.0,
+            fx_override: None,
         }
     }
 
@@ -568,13 +570,21 @@ async fn refresh_ptax(db: &DatabaseConnection, workspace_id: i32, allow_network:
         // Sem converter a cripto em USD: a conversão usa a PTAX que este passo vai baixar.
         let trades = load_raw_trades(db, workspace_id).await?;
         let dividends = load_foreign_dividends(db, workspace_id).await?;
+        // Operação com câmbio digitado válido não precisa de PTAX (vale também para o imposto retido dela).
+        let typed = |rate: Option<f64>| rate.is_some_and(|r| r.is_finite() && r > 0.0);
         let facts = trades
             .iter()
+            .filter(|t| !typed(t.fx_override))
             .filter(|t| treatment(&t.asset_class, &t.ticker) == TaxTreatment::ForeignWarning || is_usd_crypto(t))
             .map(|t| (t.currency.clone(), t.date))
-            .chain(dividends.iter().map(|d| (d.currency.clone(), d.date)))
+            .chain(dividends.iter().filter(|d| !typed(d.fx_override)).map(|d| (d.currency.clone(), d.date)))
             // O dia em que o imposto foi pago no exterior também precisa de PTAX (pode cair fora do primeiro/último fato).
-            .chain(dividends.iter().filter_map(|d| d.tax_paid_on.map(|paid| (d.currency.clone(), paid))));
+            .chain(
+                dividends
+                    .iter()
+                    .filter(|d| !typed(d.fx_override))
+                    .filter_map(|d| d.tax_paid_on.map(|paid| (d.currency.clone(), paid))),
+            );
         // A atualização de 2023 (art. 14) converte pela PTAX de venda do último dia útil de dezembro de 2023 (10 dias antes
         // de 31/12, para o dia útil anterior quando 31/12 não tem cotação).
         let update_day = NaiveDate::from_ymd_opt(2023, 12, 31).expect("data válida");
@@ -681,6 +691,7 @@ async fn load_foreign_dividends(
             gross_value: tx.total_value,
             withheld: tx.foreign_tax_withheld.unwrap_or(0.0),
             tax_paid_on: tx.foreign_tax_paid_on.as_deref().map(parse_date).transpose()?,
+            fx_override: tx.fx_rate_override,
         });
     }
     Ok(dividends)
@@ -762,6 +773,7 @@ pub async fn simulate_tax_sale_in(
         quantity: request.quantity,
         gross_value: request.quantity * request.unit_price,
         fee,
+        fx_override: None,
     };
     let options = load_option_results(db, request.workspace_id).await?;
     assessment::simulate_sale_with_options(&trades, &options, &rules, sale)

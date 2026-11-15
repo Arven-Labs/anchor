@@ -2310,6 +2310,7 @@ fn tx_request(
         fee: (fee > 0.0).then_some(fee),
         foreign_tax_withheld: None,
         foreign_tax_paid_on: None,
+        fx_rate_override: None,
         loss_credit_used: None,
         transaction_date: date.to_string(),
         notes: None,
@@ -6610,4 +6611,104 @@ async fn the_adjusted_close_is_overwritten_on_each_run_because_old_adjustments_c
     let petr = |d: &str| rows.iter().find(|r| r.ticker == "PETR4" && r.price_date == d).unwrap();
     assert!(close(petr("2026-01-05").adj_close_price, 8.8) && close(petr("2026-01-06").adj_close_price, 9.3));
     assert!(close(rows.iter().find(|r| r.ticker == "VALE3").unwrap().adj_close_price, 50.0));
+}
+
+// ---------------------------------------------------------------------------
+// Câmbio digitado pelo usuário no IR de exterior (P17, ADR 0003)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_typed_exchange_rate_is_refused_unless_it_is_positive_finite_and_on_a_foreign_buy_sell_or_dividend() {
+    use crate::commands::transaction::{create_transaction_in, list_transactions_in};
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Cambio").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    let petr = asset_in(&db, "PETR4", "acao_br", "BRL").await;
+    let typed = |asset_id: i32, kind: &str, rate: f64| {
+        let mut request = tx_request(pf.id, asset_id, kind, 10.0, 100.0, "2025-01-10", 0.0);
+        request.fx_rate_override = Some(rate);
+        request
+    };
+
+    // taxa 0, negativa, NaN ou infinita: recusada
+    for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        let result = create_transaction_in(&db, typed(aapl.id, "compra", bad)).await;
+        assert!(matches!(result, Err(AppError::InvalidGuard(_))), "{bad}: {result:?}");
+    }
+    // ativo nacional: recusado (o mesmo lançamento sem a taxa é aceito, então a recusa é da taxa)
+    let result = create_transaction_in(&db, typed(petr.id, "compra", 5.5)).await;
+    assert!(matches!(result, Err(AppError::InvalidGuard(_))), "{result:?}");
+    // tipo que não converte câmbio (aporte, sem ativo): recusado com a taxa, aceito sem ela
+    let deposit = |rate: Option<f64>| {
+        let mut request = tx_request(pf.id, aapl.id, "aporte", 1.0, 100.0, "2025-01-10", 0.0);
+        request.asset_id = None;
+        request.quantity = None;
+        request.unit_price = None;
+        request.fx_rate_override = rate;
+        request
+    };
+    let result = create_transaction_in(&db, deposit(Some(5.5))).await;
+    assert!(matches!(result, Err(AppError::InvalidGuard(_))), "{result:?}");
+    assert!(list_transactions_in(&db, pf.id).await.unwrap().is_empty(), "nada foi gravado");
+    create_transaction_in(&db, tx_request(pf.id, petr.id, "compra", 10.0, 100.0, "2025-01-10", 0.0)).await.unwrap();
+    create_transaction_in(&db, deposit(None)).await.unwrap();
+    assert_eq!(list_transactions_in(&db, pf.id).await.unwrap().len(), 2);
+    for tx in list_transactions_in(&db, pf.id).await.unwrap() {
+        assert_eq!(tx.fx_rate_override, None);
+    }
+
+    // compra, venda e provento de ativo do exterior aceitam; o ativo do exterior em BRL também (a conversão vale 1)
+    let in_brl = asset_in(&db, "REIT1", "reit", "BRL").await;
+    for (asset_id, kind) in [(aapl.id, "compra"), (aapl.id, "provento"), (in_brl.id, "compra")] {
+        create_transaction_in(&db, typed(asset_id, kind, 5.5)).await.unwrap();
+    }
+    let listed = list_transactions_in(&db, pf.id).await.unwrap();
+    assert_eq!(listed.iter().filter(|t| t.fx_rate_override == Some(5.5)).count(), 3);
+}
+
+#[tokio::test]
+async fn a_typed_exchange_rate_decides_the_foreign_assessment() {
+    use crate::domain::ptax::RateSource;
+    use crate::domain::tax::assessment::TaxWarning;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Digitado").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    // A PTAX de venda do dia da compra é 5,00 e a da venda 6,00; o usuário digita 5,50 só na compra.
+    seed_ptax(&db, "USD", "2025-01-10", 4.99, 5.0).await;
+    seed_ptax(&db, "USD", "2025-06-10", 5.99, 6.0).await;
+    let mut purchase = tx_request(pf.id, aapl.id, "compra", 10.0, 100.0, "2025-01-10", 0.0);
+    purchase.fx_rate_override = Some(5.5);
+    add(&db, purchase).await;
+    trade(&db, pf.id, aapl.id, "venda", 10.0, 1200.0, "2025-06-10").await;
+
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    let y = &assessment.foreign_years[0];
+    // custo 1.000 × 5,50 = 5.500 (não 5.000); venda 1.200 × 6 = 7.200; ganho 1.700
+    assert!(close(y.capital_gain, 1700.0), "{y:?}");
+    assert_eq!(y.sales[0].fx_source, RateSource::Ptax);
+    assert!(assessment.warnings.iter().any(|w| matches!(w, TaxWarning::ForeignFxManual { year: 2025 })));
+    assert!(!assessment.warnings.iter().any(|w| matches!(w, TaxWarning::ForeignFxApproximate { .. })));
+}
+
+#[tokio::test]
+async fn the_holdings_report_with_a_typed_rate_has_the_typed_cost_and_is_approximate() {
+    use crate::commands::tax::foreign_holdings_in;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Informe digitado").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    seed_ptax(&db, "USD", "2024-03-15", 4.99, 5.0).await;
+    let mut purchase = tx_request(pf.id, aapl.id, "compra", 10.0, 100.0, "2024-03-15", 0.0);
+    purchase.fx_rate_override = Some(5.5);
+    add(&db, purchase).await;
+
+    let rows = foreign_holdings_in(&db, ws.id).await.unwrap();
+    let h = &rows.iter().find(|r| r.holding.year == 2024).unwrap().holding;
+    assert!(close(h.cost_brl, 5500.0) && h.fx_approximate && !h.incomplete, "{h:?}");
 }

@@ -230,6 +230,7 @@ mod tests {
             quantity,
             gross_value: gross,
             fee: 0.0,
+            fx_override: None,
         }
     }
 
