@@ -513,14 +513,22 @@ async fn ensure_history_not_worse<C: ConnectionTrait>(
     let uncovered = |refs: Vec<&transactions::Model>| -> Result<bool, AppError> {
         Ok(cost_basis::replay(&cost_events(&refs)?, &cost_basis::native_rate).is_some_and(|s| s.uncovered_sale))
     };
-    let before = uncovered(rows.iter().collect())?;
+    let before_rows: Vec<&transactions::Model> = rows.iter().collect();
+    let before = uncovered(before_rows.clone())?;
     let mut after_rows: Vec<&transactions::Model> = rows.iter().filter(|t| t.id != existing.id).collect();
     if let Some(replacement) = replacement.filter(|r| r.asset_id == Some(asset_id)) {
         after_rows.push(replacement);
     }
-    if uncovered(after_rows)? && !before {
+    if !before && uncovered(after_rows.clone())? {
         return Err(AppError::InvalidGuard(format!(
             "{action} deixaria uma venda acima da quantidade em carteira nessa data"
+        )));
+    }
+    // Uma amortização que já não cabia antes não bloqueia; só a que passa a não caber por causa da mudança.
+    let broken_before = unfunded_amortizations(&before_rows)?;
+    if unfunded_amortizations(&after_rows)?.iter().any(|id| !broken_before.contains(id)) {
+        return Err(AppError::InvalidGuard(format!(
+            "{action} deixaria uma amortização sem cotas ou acima do valor da posição nessa data"
         )));
     }
     Ok(())
@@ -689,25 +697,53 @@ async fn ensure_amortization_fits<C: ConnectionTrait>(
         .filter(transactions::Column::AssetId.eq(asset_id))
         .all(db)
         .await?;
-    // Na edição, a linha que está sendo editada não conta (senão contaria a antiga e a nova).
-    let until_date: Vec<&transactions::Model> = existing
+    let rows: Vec<&transactions::Model> = existing.iter().collect();
+    match amortization_problem(&rows, date, request.unit_price, request.total_value, ignore_id)? {
+        Some(message) => Err(AppError::InvalidGuard(message)),
+        None => Ok(()),
+    }
+}
+
+/// A conta pura do encaixe: `None` se a amortização cabe no histórico até a data, `Some(motivo)` se não. A linha
+/// `ignore_id` (a própria amortização, na edição ou na revalidação) não conta, senão contaria em dobro.
+fn amortization_problem(
+    rows: &[&transactions::Model],
+    date: NaiveDate,
+    unit_price: Option<f64>,
+    total_value: f64,
+    ignore_id: Option<i32>,
+) -> Result<Option<String>, AppError> {
+    let until_date: Vec<&transactions::Model> = rows
         .iter()
+        .copied()
         .filter(|t| Some(t.id) != ignore_id)
         .filter(|t| NaiveDate::parse_from_str(&t.transaction_date, "%Y-%m-%d").is_ok_and(|d| d <= date))
         .collect();
     let state = cost_basis::replay(&cost_events(&until_date)?, &cost_basis::native_rate)
         .ok_or_else(|| AppError::InvalidGuard("não foi possível apurar a posição do fundo".to_string()))?;
     if state.quantity <= cost_basis::EPS {
-        return Err(AppError::InvalidGuard("a amortização precisa de cotas em carteira nessa data".to_string()));
+        return Ok(Some("a amortização precisa de cotas em carteira nessa data".to_string()));
     }
-    let position_value = state.quantity * request.unit_price.unwrap_or(0.0);
-    if request.total_value > position_value + 0.011_f64.max(position_value * 0.001) {
-        return Err(AppError::InvalidGuard(format!(
-            "o valor amortizado ({:.2}) passa do valor da posição nessa data ({position_value:.2})",
-            request.total_value
+    let position_value = state.quantity * unit_price.unwrap_or(0.0);
+    if total_value > position_value + 0.011_f64.max(position_value * 0.001) {
+        return Ok(Some(format!(
+            "o valor amortizado ({total_value:.2}) passa do valor da posição nessa data ({position_value:.2})"
         )));
     }
-    Ok(())
+    Ok(None)
+}
+
+/// Ids das amortizações de `rows` que não cabem no histórico de `rows`.
+fn unfunded_amortizations(rows: &[&transactions::Model]) -> Result<Vec<i32>, AppError> {
+    let mut broken = Vec::new();
+    for row in rows.iter().filter(|t| t.transaction_type == AMORTIZATION) {
+        let date = NaiveDate::parse_from_str(&row.transaction_date, "%Y-%m-%d")
+            .map_err(|_| AppError::InvalidGuard(format!("data de transação inválida: '{}'", row.transaction_date)))?;
+        if amortization_problem(rows, date, row.unit_price, row.total_value, Some(row.id))?.is_some() {
+            broken.push(row.id);
+        }
+    }
+    Ok(broken)
 }
 
 /// Recusa a venda que deixaria o ativo com saldo negativo em algum ponto do
