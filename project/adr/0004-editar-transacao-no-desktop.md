@@ -27,7 +27,7 @@ Fatos lidos em 2026-11-15:
 
 ## Consequências
 - Editar uma compra, data, quantidade ou ativo muda posição, custo médio e IR. O replay protege a **cobertura de vendas**; não julga se o valor faz sentido econômico.
-- **Assimetria que fica:** `delete_transaction` continua sem conferir cobertura, então apagar uma compra deixa o histórico descoberto, e a edição seguinte não é bloqueada por isso (regra do "antes").
+- **Atualização (2026-11-15, Sessão 358):** `delete_transaction` passou a usar a mesma guarda (`ensure_history_not_worse`, compartilhada com a edição): apagar uma linha que deixaria venda sem cobertura é recusado ("só o que piora"). Para apagar uma compra de que uma venda depende, apague a venda antes. Isso fecha a assimetria que existia entre editar e apagar. Um histórico que já estava descoberto continua sem bloquear o delete de outra linha.
 - **Não revalida** uma amortização ou um come-cotas **posterior** que dependa da compra editada: o replay de edição só vê venda descoberta, e o encaixe da amortização só roda na linha editada.
 - **Linha importada:** editar muda a chave de deduplicação; reimportar o arquivo original pode recriá-la.
 - O desktop e o mobile passam a ter a mesma capacidade, mas regras diferentes: o desktop confere o histórico, o mobile não.
