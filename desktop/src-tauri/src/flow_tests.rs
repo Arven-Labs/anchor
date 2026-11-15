@@ -6788,3 +6788,167 @@ async fn exporting_the_portfolio_carries_the_typed_rate() {
     assert!(lines[1].ends_with(",5.5"), "{}", lines[1]);
     assert!(lines[2].ends_with(",") && lines[2].split(',').count() == 17, "{}", lines[2]);
 }
+
+// ---------------------------------------------------------------------------
+// Editar transação (update_transaction)
+// ---------------------------------------------------------------------------
+
+async fn create(
+    db: &sea_orm::DatabaseConnection,
+    request: crate::commands::transaction::CreateTransactionRequest,
+) -> crate::entity::transactions::Model {
+    crate::commands::transaction::create_transaction_in(db, request).await.expect("create transaction")
+}
+
+async fn edit(
+    db: &sea_orm::DatabaseConnection,
+    id: i32,
+    transaction: crate::commands::transaction::CreateTransactionRequest,
+) -> Result<crate::entity::transactions::Model, crate::error::AppError> {
+    crate::commands::transaction::update_transaction_in(
+        db,
+        crate::commands::transaction::UpdateTransactionRequest { id, transaction },
+    )
+    .await
+}
+
+#[tokio::test]
+async fn editing_a_purchase_with_no_later_sale_updates_it_and_keeps_its_origin() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Editar").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    let original = create(&db, tx_request(pf.id, petr.id, "compra", 100.0, 10.0, "2026-01-05", 0.0)).await;
+
+    let mut changed = tx_request(pf.id, petr.id, "compra", 80.0, 12.5, "2026-01-06", 1.0);
+    changed.notes = Some("corrigida".to_string());
+    let saved = edit(&db, original.id, changed).await.unwrap();
+
+    assert_eq!(saved.id, original.id);
+    assert_eq!((saved.portfolio_id, saved.created_at.as_str()), (original.portfolio_id, original.created_at.as_str()));
+    assert_eq!((saved.quantity, saved.unit_price, saved.transaction_date.as_str()), (Some(80.0), Some(12.5), "2026-01-06"));
+    assert_eq!((saved.fee, saved.notes.as_deref()), (Some(1.0), Some("corrigida")));
+    let positions = crate::commands::transaction::compute_positions(&db, pf.id).await.unwrap();
+    assert!(close(positions[0].quantity, 80.0));
+    assert_eq!(crate::entity::transactions::Entity::find().all(&db).await.unwrap().len(), 1, "editou, não duplicou");
+}
+
+#[tokio::test]
+async fn an_edit_that_would_leave_a_later_sale_uncovered_is_refused_and_changes_nothing() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Editar cobertura").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    let vale = asset(&db, "VALE3", "acao_br").await;
+    let buy = create(&db, tx_request(pf.id, petr.id, "compra", 100.0, 10.0, "2026-01-05", 0.0)).await;
+    let sell = create(&db, tx_request(pf.id, petr.id, "venda", 80.0, 12.0, "2026-03-01", 0.0)).await;
+
+    // quantidade menor que a venda posterior; data da compra depois da venda; compra que passa a ser de outro ativo
+    assert!(edit(&db, buy.id, tx_request(pf.id, petr.id, "compra", 50.0, 10.0, "2026-01-05", 0.0)).await.is_err());
+    assert!(edit(&db, buy.id, tx_request(pf.id, petr.id, "compra", 100.0, 10.0, "2026-04-01", 0.0)).await.is_err());
+    assert!(edit(&db, buy.id, tx_request(pf.id, vale.id, "compra", 100.0, 10.0, "2026-01-05", 0.0)).await.is_err());
+    // venda maior que o saldo; venda antes da compra
+    assert!(edit(&db, sell.id, tx_request(pf.id, petr.id, "venda", 120.0, 12.0, "2026-03-01", 0.0)).await.is_err());
+    assert!(edit(&db, sell.id, tx_request(pf.id, petr.id, "venda", 80.0, 12.0, "2026-01-01", 0.0)).await.is_err());
+
+    let rows = crate::entity::transactions::Entity::find().all(&db).await.unwrap();
+    let buy_now = rows.iter().find(|t| t.id == buy.id).unwrap();
+    let sell_now = rows.iter().find(|t| t.id == sell.id).unwrap();
+    assert_eq!((buy_now.quantity, buy_now.asset_id), (Some(100.0), Some(petr.id)));
+    assert_eq!((sell_now.quantity, sell_now.transaction_date.as_str()), (Some(80.0), "2026-03-01"));
+    // quantidade que ainda cobre a venda vale
+    assert!(edit(&db, buy.id, tx_request(pf.id, petr.id, "compra", 90.0, 10.0, "2026-01-05", 0.0)).await.is_ok());
+}
+
+#[tokio::test]
+async fn an_edit_does_not_count_the_old_row_twice_and_a_history_already_uncovered_does_not_block_it() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Editar historico").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    let buy = create(&db, tx_request(pf.id, petr.id, "compra", 100.0, 10.0, "2026-01-05", 0.0)).await;
+    let sell = create(&db, tx_request(pf.id, petr.id, "venda", 100.0, 12.0, "2026-03-01", 0.0)).await;
+
+    // trocar a venda por outra do saldo todo vale: se a linha antiga contasse, a venda nova ficaria descoberta
+    assert!(edit(&db, sell.id, tx_request(pf.id, petr.id, "venda", 100.0, 13.0, "2026-03-02", 0.0)).await.is_ok());
+
+    // apagar a compra deixa o histórico descoberto (o delete não confere); editar só o preço da venda não piora e vale
+    crate::entity::transactions::Entity::delete_by_id(buy.id).exec(&db).await.unwrap();
+    assert!(edit(&db, sell.id, tx_request(pf.id, petr.id, "venda", 100.0, 14.0, "2026-03-02", 0.0)).await.is_ok());
+}
+
+#[tokio::test]
+async fn editing_the_typed_exchange_rate_follows_the_create_rules() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Editar cambio").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    let buy = create(&db, tx_request(pf.id, aapl.id, "compra", 10.0, 100.0, "2026-03-10", 0.0)).await;
+
+    let with_rate = |asset_id: i32, rate: f64| {
+        let mut request = tx_request(pf.id, asset_id, "compra", 10.0, 100.0, "2026-03-10", 0.0);
+        request.fx_rate_override = Some(rate);
+        request
+    };
+    let saved = edit(&db, buy.id, with_rate(aapl.id, 5.5)).await.unwrap();
+    assert_eq!(saved.fx_rate_override, Some(5.5));
+    // taxa inválida e troca para ativo nacional com a taxa: recusadas, a taxa gravada fica
+    assert!(edit(&db, buy.id, with_rate(aapl.id, 0.0)).await.is_err());
+    assert!(edit(&db, buy.id, with_rate(petr.id, 5.5)).await.is_err());
+    let now = crate::entity::transactions::Entity::find_by_id(buy.id).one(&db).await.unwrap().unwrap();
+    assert_eq!((now.asset_id, now.fx_rate_override), (Some(aapl.id), Some(5.5)));
+    // apagar a taxa (campo vazio) volta ao automático
+    let cleared = edit(&db, buy.id, tx_request(pf.id, aapl.id, "compra", 10.0, 100.0, "2026-03-10", 0.0)).await.unwrap();
+    assert_eq!(cleared.fx_rate_override, None);
+}
+
+#[tokio::test]
+async fn editing_refuses_a_swap_leg_an_unknown_id_a_move_between_portfolios_and_fund_only_types_on_other_assets() {
+    use crate::commands::transaction::record_crypto_swap_in;
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Editar recusas").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let other = portfolio(&db, ws.id, "Other").await;
+    let btc = asset(&db, "BTC", "cripto").await;
+    let eth = asset(&db, "ETH", "cripto").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    trade(&db, pf.id, btc.id, "compra", 1.0, 10000.0, "2026-01-02").await;
+    let swap = record_crypto_swap_in(&db, swap_request(pf.id, btc.id, eth.id, "2026-02-10", 1.0, 20.0, 40000.0)).await.unwrap();
+
+    // as duas pernas do swap: apagar e refazer
+    let result = edit(&db, swap.sale.id, tx_request(pf.id, btc.id, "venda", 1.0, 40000.0, "2026-02-10", 0.0)).await;
+    assert!(matches!(&result, Err(AppError::InvalidGuard(m)) if m.contains("swap")), "{result:?}");
+    let result = edit(&db, swap.purchase.id, tx_request(pf.id, eth.id, "compra", 20.0, 2000.0, "2026-02-10", 0.0)).await;
+    assert!(matches!(result, Err(AppError::InvalidGuard(_))));
+
+    // id que não existe
+    let result = edit(&db, 99_999, tx_request(pf.id, petr.id, "compra", 1.0, 10.0, "2026-01-05", 0.0)).await;
+    assert!(matches!(result, Err(AppError::NotFound(_))));
+
+    // mover para outra carteira não é edição
+    let buy = create(&db, tx_request(pf.id, petr.id, "compra", 10.0, 10.0, "2026-01-05", 0.0)).await;
+    assert!(edit(&db, buy.id, tx_request(other.id, petr.id, "compra", 10.0, 10.0, "2026-01-05", 0.0)).await.is_err());
+
+    // come-cotas e amortização em ativo que não é fundo
+    assert!(edit(&db, buy.id, tx_request(pf.id, petr.id, "come_cotas", 1.0, 10.0, "2026-01-05", 0.0)).await.is_err());
+    assert!(edit(&db, buy.id, amortization_request(pf.id, petr.id, 10.0, 10.0, "2026-01-05")).await.is_err());
+}
+
+#[tokio::test]
+async fn editing_an_amortization_keeps_the_fit_rule_without_counting_itself() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Editar amortizacao").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDOFIP", "fundo", "BRL").await;
+    create(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2026-01-05", 0.0)).await;
+    let amort = create(&db, amortization_request(pf.id, fund.id, 300.0, 12.0, "2026-03-01")).await;
+
+    // posição: 100 cotas × 12 = 1.200; 1.000 cabe, 1.300 não
+    assert!(edit(&db, amort.id, amortization_request(pf.id, fund.id, 1000.0, 12.0, "2026-03-01")).await.is_ok());
+    assert!(edit(&db, amort.id, amortization_request(pf.id, fund.id, 1300.0, 12.0, "2026-03-01")).await.is_err());
+    let now = crate::entity::transactions::Entity::find_by_id(amort.id).one(&db).await.unwrap().unwrap();
+    assert!(close(now.total_value, 1000.0));
+}

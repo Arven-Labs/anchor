@@ -223,6 +223,7 @@ pub fn run() {
             commands::transaction::create_transaction,
             commands::transaction::record_crypto_swap,
             commands::transaction::suggest_crypto_swap_value,
+            commands::transaction::update_transaction,
             commands::transaction::delete_transaction,
             commands::transaction::list_transactions,
             commands::transaction::get_portfolio_positions,
