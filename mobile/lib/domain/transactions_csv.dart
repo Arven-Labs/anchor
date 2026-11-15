@@ -1,4 +1,4 @@
-// CSV das transações com as mesmas 16 colunas do desktop (`CSV_HEADER` em
+// CSV das transações com as mesmas 17 colunas do desktop (`CSV_HEADER` em
 // `commands/portfolio_io.rs`), para o desktop importar pelo formato "Anchor CSV".
 // O ativo vai pelo ticker e a custódia pelo nome, nunca pelo id: os ids do celular
 // e do desktop são independentes e não casam. A data sai só como AAAA-MM-DD porque
@@ -29,6 +29,7 @@ const transactionsCsvHeader = [
   'fund_term',
   'fund_structure',
   'fund_estoque_option',
+  'fx_rate_override',
 ];
 
 const _exportedTypes = {
@@ -124,6 +125,7 @@ TransactionsCsv transactionsCsv(
         '', // fund_*: configuração do fundo só existe no desktop
         '',
         '',
+        _number(t.fxRateOverride), // câmbio digitado (ADR 0003); vazio = automático
       ].map(_field).join(','),
     );
   }

@@ -43,4 +43,9 @@ Fatos lidos em 2026-11-15:
 - **Diferença deliberada em relação ao mobile:** o backend **recusa** a taxa em tipo que não é compra, venda ou provento e em ativo que não é do exterior (`treatment == ForeignWarning`). O mobile só esconde o campo. Em ativo do exterior cadastrado em BRL a taxa é aceita e a conversão vale 1.
 - A tela de IR mostra a fonte "typed" e o aviso; o offshore (controladas) não usa taxa digitada e não mudou.
 
-**Continua em aberto (P17):** o formulário do desktop (PR 2) e a coluna 17 `fx_rate_override` no CSV de transações do mobile e do desktop (PR 3), com cada importador aceitando 16 e 17 colunas. Até lá, o mobile e o desktop divergem no CSV.
+**Feito depois (P17, PR 2 e 3):**
+- O formulário do desktop ganhou o campo "Exchange rate" (só na criação), mostrado em compra, venda e provento de ativo `acao_internacional`, `reit` ou `etf_us` fora de BRL; o backend continua sendo quem recusa.
+- O CSV de transações, nos dois lados, tem a **coluna 17 `fx_rate_override`** (no fim). O importador lê por nome e aceita CSV de 16 colunas (taxa vazia = automático). No desktop a taxa importada passa pela validação de `create_transaction_in`: taxa inválida, ativo nacional ou tipo errado falha **aquela linha** e, como o import é uma transação só, nada do arquivo é gravado. No mobile a taxa zero, negativa, NaN, infinita ou texto recusa a linha com `invalidNumber` e as outras entram.
+- **Limite aceito:** a chave de deduplicação do import (`ticker, data, tipo, quantidade, total`) não inclui a taxa; reimportar um CSV com a taxa sobre uma transação idêntica já gravada sem ela **pula a linha**, e a taxa não entra.
+- O CSV do informe de Bens e Direitos continua com 13 colunas (só `fx_approximate`).
+- O ADR deixa de ter pendência: o mobile e o desktop trocam a taxa nos dois sentidos.

@@ -2693,7 +2693,7 @@ async fn the_fund_csv_round_trips_credit_and_fund_details_into_a_fresh_database(
     assert_eq!(detail.estoque_option.as_deref(), Some("opcao_8"));
 
     let exported = export_transactions_csv_text(&proposed_from_portfolio(&db, source.id).await.unwrap()).unwrap();
-    assert!(exported.starts_with("date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,loss_credit_used,fund_term,fund_structure,fund_estoque_option\n"));
+    assert!(exported.starts_with("date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,loss_credit_used,fund_term,fund_structure,fund_estoque_option,fx_rate_override\n"));
 
     let other = memory_db().await;
     let other_ws = workspace(&other, "Destino").await;
@@ -6711,4 +6711,80 @@ async fn the_holdings_report_with_a_typed_rate_has_the_typed_cost_and_is_approxi
     let rows = foreign_holdings_in(&db, ws.id).await.unwrap();
     let h = &rows.iter().find(|r| r.holding.year == 2024).unwrap().holding;
     assert!(close(h.cost_brl, 5500.0) && h.fx_approximate && !h.incomplete, "{h:?}");
+}
+
+const FX_CSV_HEADER: &str = "date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,loss_credit_used,fund_term,fund_structure,fund_estoque_option,fx_rate_override";
+
+#[tokio::test]
+async fn importing_a_csv_with_a_typed_rate_saves_it_and_an_old_csv_still_imports() {
+    use crate::commands::portfolio_io::commit_rows;
+    use crate::commands::transaction::list_transactions_in;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Import cambio").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let text = format!(
+        "{FX_CSV_HEADER}\n\
+         2026-03-10,compra,AAPL,acao_internacional,USD,10,100,1000,,,,,,,,,5.5\n\
+         2026-03-11,compra,AAPL,acao_internacional,USD,5,100,500,,,,,,,,,\n"
+    );
+
+    let rows = preview_csv(&db, pf.id, &text).await;
+    let result = commit_rows(&db, pf.id, commit_items(&rows)).await.unwrap();
+    assert_eq!((result.created, result.errors.len()), (2, 0), "{:?}", result.errors);
+
+    let listed = list_transactions_in(&db, pf.id).await.unwrap();
+    assert_eq!(listed.iter().find(|t| close(t.total_value, 1000.0)).unwrap().fx_rate_override, Some(5.5));
+    assert_eq!(listed.iter().find(|t| close(t.total_value, 500.0)).unwrap().fx_rate_override, None);
+
+    // um CSV de 16 colunas (de antes) segue entrando, com o câmbio automático
+    let old = "date,type,ticker,asset_class,currency,quantity,unit_price,total_value,fee,custody,payment_type,notes,loss_credit_used,fund_term,fund_structure,fund_estoque_option\n\
+               2026-03-12,compra,AAPL,acao_internacional,USD,1,100,100,,,,,,,,\n";
+    let rows = preview_csv(&db, pf.id, old).await;
+    let result = commit_rows(&db, pf.id, commit_items(&rows)).await.unwrap();
+    assert_eq!(result.created, 1);
+}
+
+#[tokio::test]
+async fn a_csv_line_with_an_invalid_or_misplaced_typed_rate_fails_that_line_and_writes_nothing() {
+    use crate::commands::portfolio_io::commit_rows;
+    use crate::commands::transaction::list_transactions_in;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Import cambio invalido").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let bad_lines = [
+        "2026-03-10,compra,AAPL,acao_internacional,USD,10,100,1000,,,,,,,,,0",
+        "2026-03-10,compra,AAPL,acao_internacional,USD,10,100,1000,,,,,,,,,-1",
+        "2026-03-10,compra,PETR4,acao_br,BRL,10,100,1000,,,,,,,,,5.5",
+    ];
+    for line in bad_lines {
+        let rows = preview_csv(&db, pf.id, &format!("{FX_CSV_HEADER}\n{line}\n")).await;
+        let result = commit_rows(&db, pf.id, commit_items(&rows)).await.unwrap();
+        assert_eq!(result.created, 0, "{line}");
+        assert_eq!(result.errors.len(), 1, "{line}: {:?}", result.errors);
+        assert_eq!(result.errors[0].line, 1, "{line}");
+    }
+    assert!(list_transactions_in(&db, pf.id).await.unwrap().is_empty(), "nada foi gravado");
+}
+
+#[tokio::test]
+async fn exporting_the_portfolio_carries_the_typed_rate() {
+    use crate::commands::portfolio_io::{export_transactions_csv_text, proposed_from_portfolio};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Export cambio").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let aapl = asset_in(&db, "AAPL", "acao_internacional", "USD").await;
+    let mut typed = tx_request(pf.id, aapl.id, "compra", 10.0, 100.0, "2026-03-10", 0.0);
+    typed.fx_rate_override = Some(5.5);
+    add(&db, typed).await;
+    add(&db, tx_request(pf.id, aapl.id, "compra", 5.0, 100.0, "2026-03-11", 0.0)).await;
+
+    let text = export_transactions_csv_text(&proposed_from_portfolio(&db, pf.id).await.unwrap()).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 3);
+    assert!(lines[0].ends_with(",fx_rate_override"));
+    assert!(lines[1].ends_with(",5.5"), "{}", lines[1]);
+    assert!(lines[2].ends_with(",") && lines[2].split(',').count() == 17, "{}", lines[2]);
 }

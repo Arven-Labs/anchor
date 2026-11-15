@@ -686,21 +686,25 @@ class PortfolioRepository {
         if (custody != null && custodiaId == null) {
           throw StateError("custódia '$custody' não existe nem foi planejada");
         }
+        final transaction = PortfolioTransaction(
+          assetId: assetId,
+          type: row.type,
+          quantity: row.quantity,
+          unitPrice: row.unitPrice,
+          totalValue: row.totalValue,
+          fee: row.fee,
+          lossCreditUsed: row.lossCreditUsed,
+          fxRateOverride: row.fxRateOverride,
+          custodiaId: custodiaId,
+          date: row.date,
+          notes: row.notes,
+          createdAt: now,
+        );
+        // O parser já recusa a taxa inválida; isto garante o mesmo para um plano montado à mão.
+        _checkFxRateOverride(transaction);
         await txn.insert(
           'portfolio_transactions',
-          PortfolioTransaction(
-            assetId: assetId,
-            type: row.type,
-            quantity: row.quantity,
-            unitPrice: row.unitPrice,
-            totalValue: row.totalValue,
-            fee: row.fee,
-            lossCreditUsed: row.lossCreditUsed,
-            custodiaId: custodiaId,
-            date: row.date,
-            notes: row.notes,
-            createdAt: now,
-          ).toMap()..remove('id'),
+          transaction.toMap()..remove('id'),
         );
       }
       return plan.rows.length;
