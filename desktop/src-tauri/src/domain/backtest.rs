@@ -206,6 +206,7 @@ impl<'a> Ledger<'a> {
                     quantity: delta.abs(),
                     gross_value: gross,
                     fee: self.brokerage,
+                    fx_override: None,
                 });
             }
         }
