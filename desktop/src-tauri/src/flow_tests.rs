@@ -6954,6 +6954,61 @@ async fn editing_an_amortization_keeps_the_fit_rule_without_counting_itself() {
 }
 
 // ---------------------------------------------------------------------------
+// Editar e apagar não deixam uma amortização posterior sem cotas ou acima da posição
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn deleting_or_editing_a_purchase_cannot_leave_a_later_amortization_unfunded() {
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Amortizacao posterior").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDOFIP", "fundo", "BRL").await;
+    let buy = create(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2026-01-05", 0.0)).await;
+    create(&db, amortization_request(pf.id, fund.id, 300.0, 12.0, "2026-03-01")).await;
+
+    // apagar a única compra deixa a amortização sem cotas
+    let result = remove(&db, buy.id).await;
+    assert!(matches!(&result, Err(AppError::InvalidGuard(m)) if m.contains("amortiza")), "{result:?}");
+    // 20 cotas × 12 = 240 < 300; a data da compra depois da amortização também deixa sem cotas
+    assert!(edit(&db, buy.id, tx_request(pf.id, fund.id, "compra", 20.0, 10.0, "2026-01-05", 0.0)).await.is_err());
+    assert!(edit(&db, buy.id, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2026-04-01", 0.0)).await.is_err());
+    assert_eq!(row_count(&db).await, 2, "nada mudou");
+    // 40 cotas × 12 = 480 ≥ 300: a amortização ainda cabe
+    assert!(edit(&db, buy.id, tx_request(pf.id, fund.id, "compra", 40.0, 10.0, "2026-01-05", 0.0)).await.is_ok());
+}
+
+#[tokio::test]
+async fn deleting_a_purchase_is_allowed_when_another_one_still_funds_the_amortization() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Amortizacao coberta").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDOFIP", "fundo", "BRL").await;
+    let first = create(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2026-01-05", 0.0)).await;
+    create(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2026-02-01", 0.0)).await;
+    create(&db, amortization_request(pf.id, fund.id, 300.0, 12.0, "2026-03-01")).await;
+
+    assert!(remove(&db, first.id).await.is_ok());
+}
+
+#[tokio::test]
+async fn an_amortization_that_already_did_not_fit_does_not_block_other_changes() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Amortizacao ja invalida").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let fund = asset_in(&db, "FUNDOFIP", "fundo", "BRL").await;
+    let buy = create(&db, tx_request(pf.id, fund.id, "compra", 100.0, 10.0, "2026-01-05", 0.0)).await;
+    let amort = create(&db, amortization_request(pf.id, fund.id, 300.0, 12.0, "2026-03-01")).await;
+    let later = create(&db, tx_request(pf.id, fund.id, "compra", 5.0, 10.0, "2026-05-01", 0.0)).await;
+    // deixa a amortização sem cotas por fora do comando (banco que já vinha assim)
+    crate::entity::transactions::Entity::delete_by_id(buy.id).exec(&db).await.unwrap();
+
+    assert!(remove(&db, later.id).await.is_ok(), "não piora o que já estava inválido");
+    assert!(remove(&db, amort.id).await.is_ok(), "apagar a própria amortização nunca piora");
+}
+
+// ---------------------------------------------------------------------------
 // Apagar transação (delete_transaction): não piora a cobertura de vendas
 // ---------------------------------------------------------------------------
 
