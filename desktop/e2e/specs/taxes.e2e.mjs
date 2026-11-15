@@ -891,4 +891,88 @@ describe("Anchor — impostos: prejuízo a compensar e simulação de venda", ()
     await byId("foreign-tax-due-2024").scrollIntoView({ block: "center" });
     await snap("taxes-foreign-paid-on");
   });
+
+  // Câmbio digitado (ADR 0003, P17): o campo só aparece para ativo do exterior fora de BRL, o backend recusa taxa inválida e
+  // grava a válida. O desktop não edita transação, então o campo existe só no lançamento. A data fica a do dia (padrão do
+  // formulário): digitar `<input type="date">` depende da localidade do navegador, então a taxa gravada é conferida por SQL.
+  it("lança o câmbio digitado pelo formulário: só em ativo do exterior, recusa taxa inválida e grava a válida", async () => {
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('BBAS3', 'Banco do Brasil', 'acao_br', 'BRL', 'pais', 'BR', '2026-01-01T00:00:00Z')",
+    );
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('GOOGL', 'Alphabet', 'acao_internacional', 'USD', 'pais', 'US', '2026-01-01T00:00:00Z')",
+    );
+    const googl = sql("SELECT id FROM assets WHERE ticker = 'GOOGL'");
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-transactions").click();
+    await byId("tx-type").waitForDisplayed({ timeout: 30_000 });
+
+    // Ativo nacional: sem o campo.
+    await pickOption(byId("tx-asset"), "BBAS3 — Banco do Brasil");
+    await byId("tx-quantity").waitForDisplayed({ timeout: 10_000 });
+    expect(await byId("tx-fx-rate-override").isExisting()).toBe(false);
+
+    // Ativo do exterior em USD: com o campo.
+    await pickOption(byId("tx-asset"), "GOOGL — Alphabet");
+    await byId("tx-fx-rate-override").waitForDisplayed({ timeout: 10_000 });
+    await byId("tx-quantity").setValue("10");
+    await byId("tx-unit-price").setValue("100");
+
+    // Taxa 0: o backend recusa e nada é gravado.
+    await byId("tx-fx-rate-override").setValue("0");
+    await byId("tx-submit").click();
+    await byId("tx-error").waitForDisplayed({ timeout: 20_000 });
+    expect(Number(sql(`SELECT count(*) FROM transactions WHERE asset_id = ${googl}`))).toBe(0);
+
+    // Taxa 5,5: grava.
+    await byId("tx-fx-rate-override").setValue("5.5");
+    await byId("tx-submit").click();
+    await browser.waitUntil(() => sql(`SELECT fx_rate_override FROM transactions WHERE asset_id = ${googl}`) === "5.5", {
+      timeout: 20_000,
+      timeoutMsg: "a compra de GOOGL deveria ter sido gravada com o câmbio digitado 5,5",
+    });
+    await snap("taxes-foreign-fx-form");
+  });
+
+  // A apuração com o câmbio digitado nos dois lados (sem PTAX nem rede): custo de US$ 1.000 a 5,50 = R$ 5.500 e venda de
+  // US$ 1.400 a 6,00 = R$ 8.400, ganho de R$ 2.900 e 15% = R$ 435,00. O ano 2027 não colide com os outros testes deste arquivo.
+  it("mostra o câmbio digitado na apuração do exterior, com a fonte e o aviso", async () => {
+    const portfolio = sql("SELECT id FROM portfolio WHERE name = 'Main' ORDER BY id DESC LIMIT 1");
+    sql(
+      "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
+        "VALUES ('META', 'Meta', 'acao_internacional', 'USD', 'pais', 'US', '2026-01-01T00:00:00Z')",
+    );
+    const meta = sql("SELECT id FROM assets WHERE ticker = 'META'");
+    const row = (type, quantity, total, rate, date) =>
+      sql(
+        "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, fx_rate_override, transaction_date, created_at) " +
+          `VALUES (${portfolio}, ${meta}, '${type}', ${quantity}, ${total / quantity}, ${total}, 0, ${rate}, '${date}', '${date}T00:00:00Z')`,
+      );
+    row("compra", 10, 1000, 5.5, "2027-03-10");
+    row("venda", 10, 1400, 6, "2027-09-10");
+    const saleId = sql("SELECT id FROM transactions WHERE asset_id = " + meta + " AND transaction_type = 'venda'");
+
+    await byId("nav-home").click();
+    await byId("nav-portfolio").click();
+    await byId("portfolio-tab-taxes").click();
+
+    await waitForText(
+      byId("foreign-tax-due-2027"),
+      (text) => text.includes("435,00"),
+      "o imposto estimado do exterior em 2027, pelo câmbio digitado, deveria ser R$ 435,00",
+    );
+    await byId("foreign-details-2027").click();
+    await waitForText(
+      byId(`foreign-sale-fx-${saleId}`),
+      (text) => text.includes("6.0000") && text.includes("typed"),
+      "a venda deveria mostrar o dólar de 6,0000 como digitado",
+    );
+    await $("//p[contains(., 'exchange rate you typed')]").waitForDisplayed({ timeout: 10_000 });
+    await byId("foreign-tax-table").scrollIntoView({ block: "center" });
+    await snap("taxes-foreign-typed-rate");
+  });
 });

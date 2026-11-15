@@ -16,6 +16,9 @@ import {
   type TransactionType,
   type TransactionView,
 } from "./types";
+
+// Classes que o IR de exterior converte para reais (espelha `treatment` em `classify.rs`): só nelas o câmbio digitado vale.
+const FOREIGN_TAX_CLASSES = ["acao_internacional", "reit", "etf_us"];
 import Field from "../components/Field";
 import CryptoSwapCard from "./CryptoSwapCard";
 import { Input } from "@/components/ui/input";
@@ -48,6 +51,9 @@ type CreateTransactionRequest = {
   foreign_tax_withheld: number | null;
   // Dia em que esse imposto foi pago no exterior (AAAA-MM-DD); o crédito usa a PTAX de compra dele. Vazio = o dia do provento.
   foreign_tax_paid_on: string | null;
+  // Câmbio digitado (reais por 1 unidade da moeda do ativo): vale no lugar da PTAX só nesta transação (ADR 0003). Só em
+  // compra, venda e provento de ativo do exterior; vazio = câmbio automático.
+  fx_rate_override: number | null;
   // Só em come_cotas: rendimento, em BRL, que o crédito de prejuízo cobriu nesse desconto (vazio = não informado).
   loss_credit_used: number | null;
   transaction_date: string;
@@ -128,6 +134,7 @@ function TransactionSection({
   const [fee, setFee] = useState("");
   const [foreignTaxWithheld, setForeignTaxWithheld] = useState("");
   const [foreignTaxPaidOn, setForeignTaxPaidOn] = useState("");
+  const [fxRateOverride, setFxRateOverride] = useState("");
   const [lossCreditUsed, setLossCreditUsed] = useState("");
   const [transactionDate, setTransactionDate] = useState(todayIso());
   const [notes, setNotes] = useState("");
@@ -157,6 +164,13 @@ function TransactionSection({
   // Imposto retido lá fora só faz sentido num provento de ativo que paga em outra moeda.
   const showForeignWithholding =
     transactionType === "provento" && selectedAsset !== undefined && selectedAsset.currency !== "BRL";
+  // Câmbio digitado: compra, venda ou provento de ativo do exterior em outra moeda que não o real. A lista de classes espelha o
+  // `treatment` do backend (`classify.rs`), que é quem recusa o campo em ativo nacional.
+  const showFxRate =
+    (transactionType === "compra" || transactionType === "venda" || transactionType === "provento") &&
+    selectedAsset !== undefined &&
+    (FOREIGN_TAX_CLASSES as string[]).includes(selectedAsset.asset_class) &&
+    selectedAsset.currency !== "BRL";
 
   function invalidateAfterWrite() {
     queryClient.invalidateQueries({ queryKey: ["transactions", portfolioId] });
@@ -173,6 +187,7 @@ function TransactionSection({
       setFee("");
       setForeignTaxWithheld("");
       setForeignTaxPaidOn("");
+      setFxRateOverride("");
       setLossCreditUsed("");
       setNotes("");
       setFiTaxaPercentual("");
@@ -201,6 +216,7 @@ function TransactionSection({
       // A data só vale com retenção maior que zero (o backend recusa sem ela).
       foreign_tax_paid_on:
         showForeignWithholding && Number(foreignTaxWithheld) > 0 && foreignTaxPaidOn !== "" ? foreignTaxPaidOn : null,
+      fx_rate_override: showFxRate && fxRateOverride !== "" ? Number(fxRateOverride) : null,
       loss_credit_used: transactionType === "come_cotas" && lossCreditUsed !== "" ? Number(lossCreditUsed) : null,
       transaction_date: transactionDate,
       notes: notes.trim() === "" ? null : notes,
@@ -365,6 +381,21 @@ function TransactionSection({
                     value={foreignTaxPaidOn}
                     onChange={(e) => setForeignTaxPaidOn(e.currentTarget.value)}
                   />
+                </Field>
+              )}
+              {showFxRate && (
+                <Field label={`Exchange rate (BRL per 1 ${selectedAsset?.currency}, optional)`}>
+                  <Input
+                    type="number"
+                    step="any"
+                    data-testid="tx-fx-rate-override"
+                    value={fxRateOverride}
+                    onChange={(e) => setFxRateOverride(e.currentTarget.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Empty = Central Bank PTAX. If typed, it replaces the PTAX for this transaction only (and its withheld
+                    tax); Anchor does not check it.
+                  </p>
                 </Field>
               )}
               {transactionType === "come_cotas" && (
