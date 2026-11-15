@@ -32,3 +32,15 @@ Fatos lidos em 2026-11-15:
 - Migrações de teste com fixtures mínimas quebram quando uma migração nova altera uma tabela que a fixture não criou (aconteceu em 8 fixtures da v15 a v25).
 - **Custo de reverter:** médio. Tirar o campo e a precedência é simples, mas o sqflite não volta de versão: a coluna fica no banco (inofensiva se ninguém a ler).
 - **Não verificado:** o formulário num aparelho real; a exibição no histórico (sem teste); se a taxa digitada deve ter limite máximo (hoje só finita e positiva).
+
+## Adendo (2026-11-15, P17 parte 1): o desktop
+**Decisões do dono.** No desktop a taxa entra **só na criação** (não existe `update_transaction`; para corrigir, apaga e lança de novo); o formulário é o PR 2 e a coluna 17 do CSV de transações, nos dois lados, o PR 3.
+
+**Feito no desktop (backend e exibição):**
+- Coluna `fx_rate_override REAL` em `transactions` (migration `m20261122`), carregada em `Trade` e `ForeignDividend`, e `RateSource::Manual` (serializa `"manual"`).
+- A precedência é a do mobile, em `convert_with` (`domain/tax/foreign.rs`): BRL vale 1, depois a taxa digitada (finita e > 0), depois PTAX e mercado. `convert` continua igual e o offshore não muda.
+- O aviso novo é `TaxWarning::ForeignFxManual { year }`; o informe de Bens e Direitos marca `fx_approximate` quando a compra não vem da PTAX; `refresh_ptax` não busca PTAX para a operação coberta pela taxa.
+- **Diferença deliberada em relação ao mobile:** o backend **recusa** a taxa em tipo que não é compra, venda ou provento e em ativo que não é do exterior (`treatment == ForeignWarning`). O mobile só esconde o campo. Em ativo do exterior cadastrado em BRL a taxa é aceita e a conversão vale 1.
+- A tela de IR mostra a fonte "typed" e o aviso; o offshore (controladas) não usa taxa digitada e não mudou.
+
+**Continua em aberto (P17):** o formulário do desktop (PR 2) e a coluna 17 `fx_rate_override` no CSV de transações do mobile e do desktop (PR 3), com cada importador aceitando 16 e 17 colunas. Até lá, o mobile e o desktop divergem no CSV.
