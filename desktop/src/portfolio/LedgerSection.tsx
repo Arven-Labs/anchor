@@ -143,7 +143,20 @@ function OrderTypeBadge({ type }: { type: string }) {
   return <Badge variant="secondary">{label}</Badge>;
 }
 
-function LedgerSection({ portfolioId }: { portfolioId: number }) {
+// As duas pernas de um swap cripto só se ligam pelo texto de `notes` ("Swap A → B"): o backend recusa editá-las, então a
+// tela nem oferece o botão (apague o swap e refaça).
+function isSwapLeg(tx: TransactionView): boolean {
+  return (tx.transaction_type === "compra" || tx.transaction_type === "venda") && (tx.notes ?? "").startsWith("Swap ");
+}
+
+function LedgerSection({
+  portfolioId,
+  onEdit,
+}: {
+  portfolioId: number;
+  // Leva a transação ao formulário em modo edição (aba Transactions).
+  onEdit: (transaction: TransactionView) => void;
+}) {
   const [period, setPeriod] = useState<PeriodKey>("12m");
   const [assetClassFilter, setAssetClassFilter] = useState<string>("all");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -166,6 +179,9 @@ function LedgerSection({ portfolioId }: { portfolioId: number }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions", portfolioId] });
       queryClient.invalidateQueries({ queryKey: ["positions", portfolioId] });
+      // O imposto e os fundos leem as mesmas transações: sem isto mostrariam o valor de antes da exclusão.
+      queryClient.invalidateQueries({ queryKey: ["tax-assessment"] });
+      queryClient.invalidateQueries({ queryKey: ["funds-overview"] });
       setConfirmingDeleteId(null);
     },
   });
@@ -393,7 +409,17 @@ function LedgerSection({ portfolioId }: { portfolioId: number }) {
                             <TableCell>
                               <Badge variant="outline">Manual</Badge>
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="flex gap-2">
+                              {!isSwapLeg(tx) && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  data-testid={`ledger-edit-${tx.id}`}
+                                  onClick={() => onEdit(tx)}
+                                >
+                                  Edit
+                                </Button>
+                              )}
                               <Button
                                 variant={isConfirming ? "destructive" : "outline"}
                                 size="sm"
