@@ -100,6 +100,12 @@ class PortfolioTransaction {
   /// do provento. O crédito entra no ano do provento de qualquer jeito.
   final DateTime? foreignTaxPaidOn;
 
+  /// Câmbio digitado pelo usuário, em BRL por unidade da moeda do ativo — só em compra, venda
+  /// ou provento de ativo do exterior fora de BRL. Vale no lugar da PTAX e do câmbio de mercado
+  /// para esta transação (e para o imposto retido dela); `null` = câmbio automático. O
+  /// repositório recusa valor que não seja finito e positivo.
+  final double? fxRateOverride;
+
   /// Crédito de prejuízo que a administradora usou no come-cotas, em BRL de rendimento
   /// abatido — só em `come_cotas`. `null` = não informado; 0 = nenhum crédito usado.
   final double? lossCreditUsed;
@@ -133,6 +139,7 @@ class PortfolioTransaction {
     this.fee,
     this.foreignTaxWithheld,
     this.foreignTaxPaidOn,
+    this.fxRateOverride,
     this.lossCreditUsed,
     this.custodiaId,
     this.transferToCustodiaId,
@@ -157,6 +164,7 @@ class PortfolioTransaction {
       'fee': fee,
       'foreign_tax_withheld': foreignTaxWithheld,
       'foreign_tax_paid_on': foreignTaxPaidOn?.toIso8601String(),
+      'fx_rate_override': fxRateOverride,
       'loss_credit_used': lossCreditUsed,
       'custodia_id': custodiaId,
       'transfer_to_custodia_id': transferToCustodiaId,
@@ -184,6 +192,7 @@ class PortfolioTransaction {
       foreignTaxPaidOn: map['foreign_tax_paid_on'] != null
           ? DateTime.parse(map['foreign_tax_paid_on'] as String)
           : null,
+      fxRateOverride: map['fx_rate_override'] as double?,
       lossCreditUsed: map['loss_credit_used'] as double?,
       custodiaId: map['custodia_id'] as int?,
       transferToCustodiaId: map['transfer_to_custodia_id'] as int?,

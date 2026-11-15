@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../domain/foreign_tax.dart' show foreignAssetClasses, isUsableFxRate;
 import '../domain/fund_tax.dart' show amortizationProblem;
 import '../domain/number_locale.dart' show formatFixed;
 import '../domain/tax_format.dart' show formatDay;
@@ -26,6 +27,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   final _totalValueController = TextEditingController();
   final _feeController = TextEditingController();
   final _withheldController = TextEditingController();
+  final _fxRateController = TextEditingController();
   final _lossCreditController = TextEditingController();
   final _fiEmissorController = TextEditingController();
   final _fiTaxaController = TextEditingController();
@@ -79,6 +81,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         _feeController.text = tx.fee?.toString() ?? '';
         _withheldController.text = tx.foreignTaxWithheld?.toString() ?? '';
         _foreignTaxPaidOn = tx.foreignTaxPaidOn;
+        _fxRateController.text = tx.fxRateOverride?.toString() ?? '';
         _lossCreditController.text = tx.lossCreditUsed?.toString() ?? '';
         _fiEmissorController.text = tx.fiEmissor ?? '';
         _fiIndexador = tx.fiIndexador ?? fiIndexadores.first;
@@ -143,6 +146,27 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       _type == TransactionType.provento &&
       _selectedAsset != null &&
       _selectedAsset!.currency != 'BRL';
+
+  /// Câmbio digitado: compra, venda ou provento de ativo do exterior em outra moeda que não o
+  /// real (o IR de exterior converte esses fatos; ver `foreign_tax.dart`).
+  bool get _showFxRate =>
+      (_type == TransactionType.compra ||
+          _type == TransactionType.venda ||
+          _type == TransactionType.provento) &&
+      _selectedAsset != null &&
+      foreignAssetClasses.contains(_selectedAsset!.assetClass) &&
+      _selectedAsset!.currency != 'BRL';
+
+  /// O texto do câmbio como número, ou `null` se vazio ou inválido (ver [_fxRateInvalid]).
+  double? get _fxRateValue =>
+      double.tryParse(_fxRateController.text.trim().replaceAll(',', '.'));
+
+  /// Preenchido mas que não é finito e positivo: bloqueia o salvar e mostra o erro no campo.
+  bool get _fxRateInvalid {
+    if (_fxRateController.text.trim().isEmpty) return false;
+    final value = _fxRateValue;
+    return value == null || !isUsableFxRate(value);
+  }
 
   /// Crédito de prejuízo que a administradora usou no come-cotas: só nesse tipo.
   bool get _showLossCreditUsed => _type == TransactionType.comeCotas;
@@ -231,6 +255,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       }
     }
 
+    // Câmbio digitado só onde o campo aparece; vazio = automático, inválido bloqueia.
+    if (_showFxRate && _fxRateInvalid) return;
+    final fxRateOverride = _showFxRate ? _fxRateValue : null;
+
     // Crédito de prejuízo usado só no come-cotas; vazio = não informado, 0 = nenhum
     // crédito usado, negativo ou inválido bloqueia.
     final lossCreditText = _lossCreditController.text.trim().replaceAll(',', '.');
@@ -280,6 +308,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       fee: fee,
       foreignTaxWithheld: foreignTaxWithheld,
       foreignTaxPaidOn: (foreignTaxWithheld ?? 0) > 0 ? _foreignTaxPaidOn : null,
+      fxRateOverride: fxRateOverride,
       lossCreditUsed: lossCreditUsed,
       custodiaId: _custodia?.id,
       transferToCustodiaId: _type.needsTransferDestination
@@ -316,6 +345,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     _totalValueController.dispose();
     _feeController.dispose();
     _withheldController.dispose();
+    _fxRateController.dispose();
     _lossCreditController.dispose();
     _fiEmissorController.dispose();
     _fiTaxaController.dispose();
@@ -519,6 +549,22 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   ),
                   const SizedBox(height: 16),
                 ],
+              ],
+              if (_showFxRate) ...[
+                TextField(
+                  controller: _fxRateController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    labelText: l.ptxFxRate,
+                    helperText: l.ptxFxRateHelp(_selectedAsset?.currency ?? ''),
+                    helperMaxLines: 3,
+                    errorText: _fxRateInvalid ? l.ptxFxRateInvalid : null,
+                  ),
+                ),
+                const SizedBox(height: 16),
               ],
               if (_showLossCreditUsed) ...[
                 TextField(

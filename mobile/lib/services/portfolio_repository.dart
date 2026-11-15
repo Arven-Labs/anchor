@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import '../data/db.dart';
 import '../domain/cvm_inf_diario.dart' show formatCnpj, normalizeCnpj;
 import '../domain/dirpf.dart';
+import '../domain/foreign_tax.dart' show isUsableFxRate;
 import '../domain/fund_compensation.dart' show collapseAdministrator;
 import '../domain/transactions_csv_import.dart';
 import '../models/asset.dart';
@@ -605,6 +606,7 @@ class PortfolioRepository {
   }
 
   Future<int> insertTransaction(PortfolioTransaction transaction) async {
+    _checkFxRateOverride(transaction);
     final db = await AppDatabase.instance();
     final map = transaction.toMap()..remove('id');
     return db.insert('portfolio_transactions', map);
@@ -615,6 +617,7 @@ class PortfolioRepository {
   Future<void> insertTransactions(
     List<PortfolioTransaction> transactions,
   ) async {
+    transactions.forEach(_checkFxRateOverride);
     final db = await AppDatabase.instance();
     await db.transaction((txn) async {
       for (final transaction in transactions) {
@@ -738,7 +741,17 @@ class PortfolioRepository {
     ];
   }
 
+  /// Recusa o câmbio digitado que não seja finito e positivo: ele multiplica valores em reais
+  /// da apuração do imposto, então 0, negativo, NaN ou infinito não pode ser gravado.
+  static void _checkFxRateOverride(PortfolioTransaction transaction) {
+    final rate = transaction.fxRateOverride;
+    if (rate != null && !isUsableFxRate(rate)) {
+      throw FormatException('The exchange rate must be a finite number greater than zero', '$rate');
+    }
+  }
+
   Future<void> updateTransaction(PortfolioTransaction transaction) async {
+    _checkFxRateOverride(transaction);
     final db = await AppDatabase.instance();
     await db.update(
       'portfolio_transactions',

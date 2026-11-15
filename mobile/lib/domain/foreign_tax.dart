@@ -164,6 +164,10 @@ enum ForeignTaxWarningKind {
   /// Operação ou provento do ano (`year`) convertido pelo câmbio de mercado
   /// porque a PTAX faltava: o valor do ano é aproximado.
   fxApproximate,
+
+  /// Operação ou provento do ano (`year`) convertido pela taxa que o usuário digitou: o app
+  /// não a confere, então o valor do ano depende dela.
+  fxManual,
 }
 
 class ForeignTaxWarning {
@@ -187,7 +191,15 @@ class ForeignTaxWarning {
     : kind = ForeignTaxWarningKind.fxApproximate,
       ticker = null,
       date = null;
+
+  const ForeignTaxWarning.fxManual({required int this.year})
+    : kind = ForeignTaxWarningKind.fxManual,
+      ticker = null,
+      date = null;
 }
+
+/// O câmbio digitado só vale se for finito e positivo.
+bool isUsableFxRate(double rate) => rate.isFinite && rate > 0;
 
 class ForeignTaxAssessment {
   final List<ForeignYear> years;
@@ -198,15 +210,18 @@ class ForeignTaxAssessment {
 
 /// Câmbio para BRL do dia e de onde veio: 1 para BRL (exato, conta como PTAX
 /// para não marcar o ano como aproximado); a PTAX da moeda em `ptax` quando
-/// houver; senão a série de mercado em `fx`; `null` sem nenhuma das duas.
+/// houver; senão a série de mercado em `fx`; `null` sem nenhuma das duas. A taxa digitada
+/// pelo usuário (`manual`, só se for válida) vale antes de todas, menos em BRL.
 (double, RateSource)? _rateToBrl(
   String currency,
   DateTime date,
   RateKind kind,
   Map<String, PtaxSeries> ptax,
-  Map<String, FxHistory> fx,
-) {
+  Map<String, FxHistory> fx, {
+  double? manual,
+}) {
   if (currency == 'BRL') return (1.0, RateSource.ptax);
+  if (manual != null && isUsableFxRate(manual)) return (manual, RateSource.manual);
   final official = ptax[currency]?.rate(date, kind);
   if (official != null) return (official, RateSource.ptax);
   final market = fx[currency]?.rateOn(date);
@@ -408,6 +423,7 @@ List<ForeignHolding> foreignHoldings(
         RateKind.sell,
         ptax,
         fx,
+        manual: tx.fxRateOverride,
       );
       if (converted == null) {
         incomplete = true;
@@ -416,7 +432,8 @@ List<ForeignHolding> foreignHoldings(
       final (rate, source) = converted;
       final quantity = tx.quantity ?? 0;
       if (tx.type == TransactionType.compra) {
-        if (source == RateSource.market) approximate = true;
+        // Câmbio de mercado ou digitado: o custo não vem da PTAX, então é aproximado.
+        if (source != RateSource.ptax) approximate = true;
         position.add(quantity, (tx.totalValue + (tx.fee ?? 0)) * rate);
         byCustodia[tx.custodiaId] = (byCustodia[tx.custodiaId] ?? 0) + quantity;
       } else {
@@ -454,6 +471,7 @@ ForeignTaxAssessment assessForeignTax(
   final warnings = <ForeignTaxWarning>[];
   final fxMissingYears = <int>{};
   final fxApproximateYears = <int>{};
+  final fxManualYears = <int>{};
   final foreignById = {
     for (final asset in assets)
       if (foreignAssetClasses.contains(asset.assetClass) && asset.id != null)
@@ -501,6 +519,7 @@ ForeignTaxAssessment assessForeignTax(
       RateKind.sell,
       ptax,
       fx,
+      manual: tx.fxRateOverride,
     );
     if (converted == null) {
       fxMissingYears.add(tx.date.year);
@@ -508,6 +527,7 @@ ForeignTaxAssessment assessForeignTax(
     }
     final (rate, source) = converted;
     if (source == RateSource.market) fxApproximateYears.add(tx.date.year);
+    if (source == RateSource.manual) fxManualYears.add(tx.date.year);
     final quantity = tx.quantity ?? 0;
     final position = positions.putIfAbsent(id, CostPosition.new);
     if (tx.type == TransactionType.compra) {
@@ -556,18 +576,28 @@ ForeignTaxAssessment assessForeignTax(
       RateKind.sell,
       ptax,
       fx,
+      manual: tx.fxRateOverride,
     );
     if (converted == null) {
       fxMissingYears.add(tx.date.year);
       continue;
     }
     final (rate, source) = converted;
+    if (source == RateSource.manual) fxManualYears.add(tx.date.year);
     // O imposto retido usa a cotação para compra do dia do pagamento (o do provento, se
     // não foi informado); sem cotação nenhuma, a de venda do dia do provento. O crédito
-    // entra no ano do provento de qualquer jeito.
+    // entra no ano do provento de qualquer jeito. A taxa digitada vale também para ele: o
+    // usuário informa uma só por transação.
     final taxDate = tx.foreignTaxPaidOn ?? tx.date;
     final (withheldRate, withheldSource) =
-        _rateToBrl(asset.currency, taxDate, RateKind.buy, ptax, fx) ??
+        _rateToBrl(
+          asset.currency,
+          taxDate,
+          RateKind.buy,
+          ptax,
+          fx,
+          manual: tx.fxRateOverride,
+        ) ??
         converted;
     if (source == RateSource.market ||
         ((tx.foreignTaxWithheld ?? 0) > 0 &&
@@ -648,6 +678,9 @@ ForeignTaxAssessment assessForeignTax(
 
   for (final year in fxApproximateYears.toList()..sort()) {
     warnings.add(ForeignTaxWarning.fxApproximate(year: year));
+  }
+  for (final year in fxManualYears.toList()..sort()) {
+    warnings.add(ForeignTaxWarning.fxManual(year: year));
   }
   for (final year in fxMissingYears.toList()..sort()) {
     warnings.add(ForeignTaxWarning.fxMissing(year: year));

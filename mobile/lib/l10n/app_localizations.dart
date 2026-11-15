@@ -3682,6 +3682,18 @@ abstract class AppLocalizations {
   /// **'Rate {rate} (market)'**
   String foreignRateMarket(String rate);
 
+  /// No description provided for @foreignRateManual.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate {rate} (entered)'**
+  String foreignRateManual(String rate);
+
+  /// No description provided for @foreignWarnFxManual.
+  ///
+  /// In en, this message translates to:
+  /// **'Operations or dividends of {year} use an exchange rate you entered: check each rate.'**
+  String foreignWarnFxManual(int year);
+
   /// No description provided for @foreignWarnCostUnknown.
   ///
   /// In en, this message translates to:
@@ -4228,6 +4240,24 @@ abstract class AppLocalizations {
   /// **'Fee (optional)'**
   String get ptxFee;
 
+  /// No description provided for @ptxFxRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Exchange rate (optional)'**
+  String get ptxFxRate;
+
+  /// No description provided for @ptxFxRateHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Reais per 1 {currency}. Empty = Central Bank PTAX; if entered, it replaces the PTAX for this transaction only.'**
+  String ptxFxRateHelp(String currency);
+
+  /// No description provided for @ptxFxRateInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an exchange rate greater than zero.'**
+  String get ptxFxRateInvalid;
+
   /// No description provided for @ptxTotal.
   ///
   /// In en, this message translates to:
@@ -4593,6 +4623,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'fee {value}'**
   String txhFee(String value);
+
+  /// No description provided for @txhFxRate.
+  ///
+  /// In en, this message translates to:
+  /// **'entered rate {value}'**
+  String txhFxRate(String value);
 
   /// No description provided for @txhWithheld.
   ///

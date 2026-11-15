@@ -33,6 +33,7 @@ void main() {
     double? fee,
     double? withheld,
     String? paidOn,
+    double? fxRate,
   }) => PortfolioTransaction(
     id: ++nextId,
     assetId: assetId,
@@ -43,16 +44,23 @@ void main() {
     fee: fee,
     foreignTaxWithheld: withheld,
     foreignTaxPaidOn: paidOn == null ? null : DateTime.parse(paidOn),
+    fxRateOverride: fxRate,
     date: DateTime.parse(date),
     createdAt: DateTime(2024, 1, 1),
   );
 
-  PortfolioTransaction buy(int asset, String date, double quantity, double gross, {double? fee}) =>
-      tx(asset, date, TransactionType.compra, quantity, gross, fee: fee);
-  PortfolioTransaction sell(int asset, String date, double quantity, double gross, {double? fee}) =>
-      tx(asset, date, TransactionType.venda, quantity, gross, fee: fee);
-  PortfolioTransaction dividend(int asset, String date, double gross, {double? withheld, String? paidOn}) =>
-      tx(asset, date, TransactionType.provento, 1, gross, withheld: withheld, paidOn: paidOn);
+  PortfolioTransaction buy(int asset, String date, double quantity, double gross, {double? fee, double? fxRate}) =>
+      tx(asset, date, TransactionType.compra, quantity, gross, fee: fee, fxRate: fxRate);
+  PortfolioTransaction sell(int asset, String date, double quantity, double gross, {double? fee, double? fxRate}) =>
+      tx(asset, date, TransactionType.venda, quantity, gross, fee: fee, fxRate: fxRate);
+  PortfolioTransaction dividend(
+    int asset,
+    String date,
+    double gross, {
+    double? withheld,
+    String? paidOn,
+    double? fxRate,
+  }) => tx(asset, date, TransactionType.provento, 1, gross, withheld: withheld, paidOn: paidOn, fxRate: fxRate);
 
   // PTAX do dólar a R$ 5 em 2024, R$ 6 em 2025 e R$ 4 em 2026, com um ponto
   // por mês e dia 15 (um fato mais de 10 dias depois do último ponto, ou antes
@@ -493,5 +501,118 @@ void main() {
     expect(aapl.costBrl, near(5000));
     expect((aapl.dirpfGroup, aapl.dirpfCode, aapl.dirpfCountry), ('03', '01', '249'));
     expect((msft.dirpfGroup, msft.dirpfCode, msft.dirpfCountry), (null, null, null));
+  });
+
+  // Câmbio digitado pelo usuário (P16): vale no lugar da PTAX e do mercado, só naquele fato.
+  group('câmbio digitado', () {
+    List<int> manualYears(ForeignTaxAssessment r) => [
+      for (final w in r.warnings)
+        if (w.kind == ForeignTaxWarningKind.fxManual) w.year!,
+    ];
+
+    test('X1: a compra com taxa digitada custa pela taxa, não pela PTAX', () {
+      // compra US$ 1.000 a R$ 5,50 digitado (PTAX do mês: 5,00); venda a R$ 6 de PTAX
+      final result = run([
+        buy(1, '2024-03-15', 10, 1000, fxRate: 5.5),
+        sell(1, '2025-03-15', 10, 1200),
+      ]);
+      final sale = result.years.single.sales.single;
+
+      expect(sale.cost, near(5500));
+      expect(sale.gain, near(1700));
+      expect(sale.fxSource, RateSource.ptax);
+      expect(manualYears(result), [2024]);
+    });
+
+    test('X2: com taxa digitada e sem PTAX nem mercado, não há aviso de ano sem câmbio', () {
+      final result = run(
+        [
+          buy(1, '2024-03-15', 10, 1000, fxRate: 5.5),
+          sell(1, '2025-03-15', 10, 1200, fxRate: 6),
+        ],
+        ptax: {},
+      );
+      final sale = result.years.single.sales.single;
+
+      expect(sale.cost, near(5500));
+      expect(sale.fxRate, 6);
+      expect(sale.fxSource, RateSource.manual);
+      expect(result.warnings.where((w) => w.kind == ForeignTaxWarningKind.fxMissing), isEmpty);
+      expect(manualYears(result), [2024, 2025]);
+    });
+
+    test('X3: a taxa digitada só na venda não mexe no custo da compra', () {
+      final sale = run([
+        buy(1, '2024-03-15', 10, 1000),
+        sell(1, '2025-03-15', 10, 1200, fxRate: 7),
+      ]).years.single.sales.single;
+
+      expect(sale.cost, near(5000));
+      expect(sale.saleValue, near(8400));
+      expect(sale.gain, near(3400));
+      expect(sale.fxSource, RateSource.manual);
+    });
+
+    test('X4: taxa zero, negativa, NaN ou infinita é ignorada e vale a PTAX', () {
+      for (final bad in [0.0, -1.0, double.nan, double.infinity]) {
+        final result = run([
+          buy(1, '2024-03-15', 10, 1000, fxRate: bad),
+          sell(1, '2025-03-15', 10, 1200),
+        ]);
+
+        expect(result.years.single.sales.single.cost, near(5000), reason: '$bad');
+        expect(result.warnings, isEmpty, reason: '$bad');
+      }
+    });
+
+    test('X5: ativo em BRL ignora a taxa digitada (vale 1)', () {
+      final result = run(
+        [
+          buy(3, '2024-03-15', 10, 1000, fxRate: 9),
+          sell(3, '2025-03-15', 10, 1200),
+        ],
+        withAssets: [stock(3, 'EXTR', currency: 'BRL')],
+      );
+
+      expect(result.years.single.sales.single.cost, near(1000));
+      expect(result.years.single.capitalGain, near(200));
+      expect(manualYears(result), isEmpty);
+    });
+
+    test('X6: o provento e o imposto retido convertem pela taxa digitada', () {
+      // US$ 100 bruto e US$ 15 retido, pago em outro dia: ainda assim a taxa é a digitada
+      final item = run([
+        dividend(1, '2025-06-15', 100, withheld: 15, paidOn: '2025-06-10', fxRate: 5.5),
+      ]).years.single.dividendItems.single;
+
+      expect(item.gross, near(550));
+      expect(item.withheld, near(82.5));
+      expect(item.fxRate, 5.5);
+      expect(item.fxSource, RateSource.manual);
+    });
+
+    test('X7: o informe usa a taxa digitada no custo e marca como aproximado', () {
+      final holding = foreignHoldings(
+        assets,
+        [buy(1, '2024-03-15', 10, 1000, fxRate: 5.5)],
+        ptax: {'USD': yearlyPtax()},
+        throughYear: 2024,
+      ).single;
+
+      expect(holding.costBrl, near(5500));
+      expect(holding.fxApproximate, isTrue);
+      expect(holding.incomplete, isFalse);
+    });
+
+    test('X8: o informe com taxa digitada e sem PTAX nem mercado tem posição e custo', () {
+      final holding = foreignHoldings(
+        assets,
+        [buy(1, '2024-03-15', 10, 1000, fxRate: 5.5)],
+        throughYear: 2024,
+      ).single;
+
+      expect(holding.costBrl, near(5500));
+      expect(holding.incomplete, isFalse);
+    });
   });
 }

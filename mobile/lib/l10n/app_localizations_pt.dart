@@ -2276,6 +2276,16 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String foreignRateManual(String rate) {
+    return 'Câmbio $rate (digitado)';
+  }
+
+  @override
+  String foreignWarnFxManual(int year) {
+    return 'Operações ou proventos de $year usam câmbio digitado por você: confira a taxa de cada um.';
+  }
+
+  @override
   String foreignWarnCostUnknown(String ticker, String date) {
     return 'Venda de $ticker em $date maior que as compras lançadas: o ganho considera só a parte com custo conhecido. Lance as compras que faltam.';
   }
@@ -2640,6 +2650,17 @@ class AppLocalizationsPt extends AppLocalizations {
   String get ptxFee => 'Taxa (opcional)';
 
   @override
+  String get ptxFxRate => 'Câmbio (opcional)';
+
+  @override
+  String ptxFxRateHelp(String currency) {
+    return 'Reais por 1 $currency. Vazio = PTAX do Banco Central; digitado, vale no lugar dela só nesta transação.';
+  }
+
+  @override
+  String get ptxFxRateInvalid => 'Informe um câmbio maior que zero.';
+
+  @override
   String ptxTotal(String value) {
     return 'Total: $value';
   }
@@ -2873,6 +2894,11 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String txhFee(String value) {
     return 'taxa $value';
+  }
+
+  @override
+  String txhFxRate(String value) {
+    return 'câmbio digitado $value';
   }
 
   @override

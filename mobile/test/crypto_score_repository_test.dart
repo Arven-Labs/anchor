@@ -94,6 +94,8 @@ void main() {
         '${dir.path}/anchor_mobile.db',
         version: 20,
         onCreate: (db, _) async {
+          // A migração da v27 mexe nesta tabela; o resto do schema antigo não importa aqui.
+          await db.execute('CREATE TABLE portfolio_transactions (id INTEGER PRIMARY KEY)');
           await db.execute('''
             CREATE TABLE assets (
               id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,

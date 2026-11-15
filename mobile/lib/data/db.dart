@@ -74,7 +74,7 @@ class AppDatabase {
     final path = join(await getDatabasesPath(), 'anchor_mobile.db');
     return openDatabase(
       path,
-      version: 26,
+      version: 27,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE assets (
@@ -123,7 +123,8 @@ class AppDatabase {
             fee REAL,
             foreign_tax_withheld REAL,
             loss_credit_used REAL,
-            foreign_tax_paid_on TEXT
+            foreign_tax_paid_on TEXT,
+            fx_rate_override REAL
           )
         ''');
         await db.execute('''
@@ -371,6 +372,13 @@ class AppDatabase {
         }
         if (oldVersion < 26) {
           await _createThesisAttachmentTables(db);
+        }
+        if (oldVersion < 27) {
+          // Câmbio digitado pelo usuário no IR de exterior (BRL por unidade da moeda); nulo =
+          // o câmbio automático (PTAX, com o de mercado de reserva).
+          await db.execute(
+            'ALTER TABLE portfolio_transactions ADD COLUMN fx_rate_override REAL',
+          );
         }
       },
     );
