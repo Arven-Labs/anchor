@@ -163,5 +163,31 @@ describe("Anchor — carteira: compra, venda e recompra", () => {
       await byId(`ledger-edit-${plain}`).waitForDisplayed({ timeout: 30_000 });
       expect(await byId(`ledger-edit-${swapLeg}`).isExisting()).toBe(false);
     });
+
+    it("recusa apagar a compra de que a venda depende e deixa apagar a venda e depois a compra", async () => {
+      const itub = sql("SELECT id FROM assets WHERE ticker = 'ITUB4'");
+      const idOf = (type) => sql(`SELECT id FROM transactions WHERE asset_id = ${itub} AND transaction_type = '${type}'`);
+      const buyId = idOf("compra");
+      const sellId = idOf("venda");
+      const exists = (id) => Number(sql(`SELECT count(*) FROM transactions WHERE id = ${id}`)) === 1;
+
+      await byId("portfolio-tab-positions").click();
+      await byId("portfolio-tab-ledger").click();
+      await byId(`ledger-delete-${buyId}`).waitForDisplayed({ timeout: 30_000 });
+      await byId(`ledger-delete-${buyId}`).click(); // arma o "Confirm?"
+      await byId(`ledger-delete-${buyId}`).click(); // confirma
+      const error = byId("ledger-delete-error");
+      await error.waitForDisplayed({ timeout: 20_000 });
+      expect(await textOf(error)).toContain("quantidade em carteira");
+      expect(exists(buyId)).toBe(true);
+
+      // a venda sai (nunca piora) e, sem ela, a compra também
+      await byId(`ledger-delete-${sellId}`).click();
+      await byId(`ledger-delete-${sellId}`).click();
+      await browser.waitUntil(() => !exists(sellId), { timeout: 20_000, timeoutMsg: "a venda deveria ter sido apagada" });
+      await byId(`ledger-delete-${buyId}`).click();
+      await byId(`ledger-delete-${buyId}`).click();
+      await browser.waitUntil(() => !exists(buyId), { timeout: 20_000, timeoutMsg: "a compra deveria ter sido apagada" });
+    });
   });
 });

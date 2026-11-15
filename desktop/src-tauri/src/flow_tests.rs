@@ -6952,3 +6952,92 @@ async fn editing_an_amortization_keeps_the_fit_rule_without_counting_itself() {
     let now = crate::entity::transactions::Entity::find_by_id(amort.id).one(&db).await.unwrap().unwrap();
     assert!(close(now.total_value, 1000.0));
 }
+
+// ---------------------------------------------------------------------------
+// Apagar transação (delete_transaction): não piora a cobertura de vendas
+// ---------------------------------------------------------------------------
+
+async fn remove(db: &sea_orm::DatabaseConnection, id: i32) -> Result<(), crate::error::AppError> {
+    crate::commands::transaction::delete_transaction_in(db, id).await
+}
+
+async fn row_count(db: &sea_orm::DatabaseConnection) -> usize {
+    crate::entity::transactions::Entity::find().all(db).await.unwrap().len()
+}
+
+#[tokio::test]
+async fn deleting_a_purchase_that_a_later_sale_depends_on_is_refused_and_changes_nothing() {
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Apagar cobertura").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    let buy = create(&db, tx_request(pf.id, petr.id, "compra", 10.0, 10.0, "2026-01-05", 0.0)).await;
+    create(&db, tx_request(pf.id, petr.id, "venda", 10.0, 12.0, "2026-03-01", 0.0)).await;
+
+    let result = remove(&db, buy.id).await;
+    assert!(matches!(&result, Err(AppError::InvalidGuard(m)) if m.contains("venda")), "{result:?}");
+    assert_eq!(row_count(&db).await, 2, "nada foi apagado");
+}
+
+#[tokio::test]
+async fn deleting_is_allowed_when_the_sale_stays_covered_or_when_the_sale_itself_goes() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Apagar permitido").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    let first = create(&db, tx_request(pf.id, petr.id, "compra", 10.0, 10.0, "2026-01-05", 0.0)).await;
+    create(&db, tx_request(pf.id, petr.id, "compra", 10.0, 11.0, "2026-02-01", 0.0)).await;
+    let sell = create(&db, tx_request(pf.id, petr.id, "venda", 10.0, 12.0, "2026-03-01", 0.0)).await;
+
+    // a 2ª compra (anterior à venda) ainda cobre as 10 cotas vendidas
+    assert!(remove(&db, first.id).await.is_ok());
+    // apagar a venda nunca piora
+    assert!(remove(&db, sell.id).await.is_ok());
+    assert_eq!(row_count(&db).await, 1);
+}
+
+#[tokio::test]
+async fn a_history_that_was_already_uncovered_does_not_block_deleting_another_row() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Apagar historico").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let petr = asset(&db, "PETR4", "acao_br").await;
+    let buy = create(&db, tx_request(pf.id, petr.id, "compra", 10.0, 10.0, "2026-01-05", 0.0)).await;
+    create(&db, tx_request(pf.id, petr.id, "venda", 10.0, 12.0, "2026-03-01", 0.0)).await;
+    let later = create(&db, tx_request(pf.id, petr.id, "compra", 5.0, 13.0, "2026-04-01", 0.0)).await;
+    // deixa o histórico descoberto por fora do comando (como um banco que já vinha assim)
+    crate::entity::transactions::Entity::delete_by_id(buy.id).exec(&db).await.unwrap();
+
+    assert!(remove(&db, later.id).await.is_ok(), "apagar a compra de depois não piora o que já estava descoberto");
+}
+
+#[tokio::test]
+async fn deleting_an_unknown_id_is_not_found() {
+    let db = memory_db().await;
+    let result = remove(&db, 99_999).await;
+    assert!(matches!(result, Err(crate::error::AppError::NotFound(_))), "{result:?}");
+}
+
+#[tokio::test]
+async fn deleting_a_swap_leg_follows_the_same_rule_per_asset() {
+    use crate::commands::transaction::record_crypto_swap_in;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Apagar swap").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let btc = asset(&db, "BTC", "cripto").await;
+    let eth = asset(&db, "ETH", "cripto").await;
+    trade(&db, pf.id, btc.id, "compra", 1.0, 10000.0, "2026-01-02").await;
+    let swap = record_crypto_swap_in(&db, swap_request(pf.id, btc.id, eth.id, "2026-02-10", 1.0, 20.0, 40000.0)).await.unwrap();
+    let eth_sale = create(&db, tx_request(pf.id, eth.id, "venda", 10.0, 2000.0, "2026-03-01", 0.0)).await;
+
+    // a compra de ETH do swap cobre a venda de ETH de março: não sai
+    assert!(remove(&db, swap.purchase.id).await.is_err());
+    // com a venda de ETH fora, as duas pernas saem, venda do BTC primeiro e depois a compra de ETH
+    assert!(remove(&db, eth_sale.id).await.is_ok());
+    assert!(remove(&db, swap.sale.id).await.is_ok());
+    assert!(remove(&db, swap.purchase.id).await.is_ok());
+    assert_eq!(row_count(&db).await, 1, "sobrou só a compra de BTC");
+}

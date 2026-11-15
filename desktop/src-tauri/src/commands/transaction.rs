@@ -489,24 +489,39 @@ async fn ensure_edit_keeps_coverage<C: ConnectionTrait>(
         asset_ids.push(new_id);
     }
     for asset_id in asset_ids {
-        let rows = transactions::Entity::find()
-            .filter(transactions::Column::PortfolioId.eq(existing.portfolio_id))
-            .filter(transactions::Column::AssetId.eq(asset_id))
-            .all(db)
-            .await?;
-        let uncovered = |refs: Vec<&transactions::Model>| -> Result<bool, AppError> {
-            Ok(cost_basis::replay(&cost_events(&refs)?, &cost_basis::native_rate).is_some_and(|s| s.uncovered_sale))
-        };
-        let before = uncovered(rows.iter().collect())?;
-        let mut after_rows: Vec<&transactions::Model> = rows.iter().filter(|t| t.id != existing.id).collect();
-        if edited.asset_id == Some(asset_id) {
-            after_rows.push(&edited);
-        }
-        if uncovered(after_rows)? && !before {
-            return Err(AppError::InvalidGuard(
-                "a edição deixaria uma venda acima da quantidade em carteira nessa data".to_string(),
-            ));
-        }
+        ensure_history_not_worse(db, existing, asset_id, Some(&edited), "a edição").await?;
+    }
+    Ok(())
+}
+
+/// Recusa a mudança que piora a cobertura de vendas do ativo: compara o histórico de hoje com o de depois, em que a linha
+/// `existing` sai e, se houver, `replacement` entra no lugar (edição). Sem `replacement` é o delete. Só recusa o que a
+/// mudança piora: histórico que já estava descoberto antes não bloqueia. A linha antiga não entra no "depois", senão
+/// contaria em dobro.
+async fn ensure_history_not_worse<C: ConnectionTrait>(
+    db: &C,
+    existing: &transactions::Model,
+    asset_id: i32,
+    replacement: Option<&transactions::Model>,
+    action: &str,
+) -> Result<(), AppError> {
+    let rows = transactions::Entity::find()
+        .filter(transactions::Column::PortfolioId.eq(existing.portfolio_id))
+        .filter(transactions::Column::AssetId.eq(asset_id))
+        .all(db)
+        .await?;
+    let uncovered = |refs: Vec<&transactions::Model>| -> Result<bool, AppError> {
+        Ok(cost_basis::replay(&cost_events(&refs)?, &cost_basis::native_rate).is_some_and(|s| s.uncovered_sale))
+    };
+    let before = uncovered(rows.iter().collect())?;
+    let mut after_rows: Vec<&transactions::Model> = rows.iter().filter(|t| t.id != existing.id).collect();
+    if let Some(replacement) = replacement.filter(|r| r.asset_id == Some(asset_id)) {
+        after_rows.push(replacement);
+    }
+    if uncovered(after_rows)? && !before {
+        return Err(AppError::InvalidGuard(format!(
+            "{action} deixaria uma venda acima da quantidade em carteira nessa data"
+        )));
     }
     Ok(())
 }
@@ -740,9 +755,18 @@ pub async fn delete_transaction(
     db: tauri::State<'_, DatabaseConnection>,
     transaction_id: i32,
 ) -> Result<(), AppError> {
-    transactions::Entity::delete_by_id(transaction_id)
-        .exec(db.inner())
-        .await?;
+    delete_transaction_in(db.inner(), transaction_id).await
+}
+
+pub async fn delete_transaction_in(db: &DatabaseConnection, transaction_id: i32) -> Result<(), AppError> {
+    let existing = transactions::Entity::find_by_id(transaction_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("transaction {transaction_id}")))?;
+    if let Some(asset_id) = existing.asset_id {
+        ensure_history_not_worse(db, &existing, asset_id, None, "apagar essa transação").await?;
+    }
+    transactions::Entity::delete_by_id(existing.id).exec(db).await?;
 
     Ok(())
 }
