@@ -740,9 +740,15 @@ pub async fn delete_transaction(
     db: tauri::State<'_, DatabaseConnection>,
     transaction_id: i32,
 ) -> Result<(), AppError> {
-    transactions::Entity::delete_by_id(transaction_id)
-        .exec(db.inner())
-        .await?;
+    delete_transaction_in(db.inner(), transaction_id).await
+}
+
+pub async fn delete_transaction_in(db: &DatabaseConnection, transaction_id: i32) -> Result<(), AppError> {
+    let existing = transactions::Entity::find_by_id(transaction_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("transaction {transaction_id}")))?;
+    transactions::Entity::delete_by_id(existing.id).exec(db).await?;
 
     Ok(())
 }
