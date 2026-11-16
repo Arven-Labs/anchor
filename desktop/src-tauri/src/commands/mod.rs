@@ -42,6 +42,7 @@ pub mod rates;
 pub mod reit;
 pub mod rim;
 pub mod rnav;
+pub mod screener;
 pub mod stock_notes;
 pub mod storage_settings;
 pub mod sync_registry;
