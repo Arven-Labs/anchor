@@ -771,8 +771,8 @@ class PortfolioRepository {
       if (current.isNotEmpty) {
         final oldAssetId = current.first['asset_id'] as int?;
         final assetIds = <int>{
-          if (oldAssetId != null) oldAssetId,
-          if (transaction.assetId != null) transaction.assetId!,
+          ?oldAssetId,
+          ?transaction.assetId,
         };
         for (final assetId in assetIds) {
           await _ensureHistoryNotWorse(
