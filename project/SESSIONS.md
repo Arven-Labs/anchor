@@ -5520,4 +5520,12 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Testes** (`coverage_guard_test.dart`): R10, R11, R11b, R12, R12b, R13, R14, R14b, R14c, R15 e S3; R8 passou a semear direto no banco. Antes da guarda (run 43868756197): falharam R10, R12, R13, R14c e S3, e os de "permitido" já passavam. Depois da guarda, 1º run (43869587514): falharam 6 testes de fixtures antigas (um come-cotas sem compra em `transaction_history_test` e `fund_quota_sync_test`), corrigidas. Depois: `CI Mobile` verde no SHA `3f193eb` (run 43870359115, `apk` e `test`).
 - **Quebra proposital** (branch `ci/quebra-guarda-insert`, só com `Edit`, SHA `88dc837`): a guarda pula o 1º lançamento do lote. Run 43871123880: falharam R10, R12 e S3; branch apagada. R13 e R14c não pegaram essa quebra em particular.
 - **Não verificado**: no aparelho; a tela de lançamento (S2) e a da permuta (S4) não têm teste de tela, só a regra no repositório e o `analyze`; a mensagem do import não diz qual linha falhou; concorrência.
-- **Em aberto**: amortização posterior no mobile.
+- **Em aberto**: amortização posterior no mobile (feita na Sessão 363).
+
+## Sessão 363 — Guarda de histórico no mobile, PR 3: amortização
+- **Decisões** (plan mode): reaproveitar `amortizationProblem`; `HistoryCoverageException` ganha o motivo (`HistoryProblem`) em vez de uma classe nova; amortização **nova** que não cabe também é recusada (protege o import).
+- **Feito** (branch `feat/mobile-amortization-keeps-fit`): `unfundedAmortizations` (`fund_tax.dart`), `worsensAmortizations` (`coverage.dart`), `_ensureHistoryNotWorse` confere as duas regras; `historyGuardText` escolhe o texto (nas telas de lançamento, histórico, permuta); chave nova `ptxAmortWorsens` (pt e en, arquivos gerados escritos à mão).
+- **Testes** (`coverage_guard_test.dart`): U1 a U3, W3 a W5 (puros), A1 a A8 (repositório) e S5 (tela). Antes da guarda (run 43878290797): falharam A1, A2, A3, A6, A7 e S5; os puros, A4, A5 e A8 já passavam. Depois: `CI Mobile` verde (run 43879104084, SHA `08c1981`, `test` e `apk`), sem fixture velha quebrada.
+- **Quebras propositais** (duas branches `ci/quebra-amort-a` e `-b`, só com `Edit`): (a) linha nova sem id deixa de contar (SHA `70846a8`, run 43879968103): falharam W5, A6 e A7; (b) a regra "só o que piora" deixa de comparar com o antes (SHA `8a8d276`, run 43879980099): falharam W4 e A5. Branches apagadas.
+- **Não verificado**: no aparelho; qual amortização quebrou (a mensagem não diz); a tela de lançamento e a de permuta só têm a regra provada no repositório; mesma data com ids diferentes é comparada por data, não por id, como o `amortizationProblem`; o `flutter gen-l10n` (arquivos gerados à mão).
+- **Em aberto**: nada da guarda de histórico no mobile.
