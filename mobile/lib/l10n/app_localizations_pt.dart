@@ -2754,6 +2754,10 @@ class AppLocalizationsPt extends AppLocalizations {
       'Essa mudança deixaria uma venda acima da quantidade em carteira nessa data. Apague ou ajuste a venda antes.';
 
   @override
+  String get ptxCoverageSaleExceeds =>
+      'Essa venda passa da quantidade em carteira nessa data. Nada foi gravado.';
+
+  @override
   String get ptxAmortNoShares =>
       'A amortização precisa de cotas em carteira nessa data.';
 

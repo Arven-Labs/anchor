@@ -971,6 +971,7 @@
   "ptxIdxOther": "Other",
 
   "ptxCoverageWorsens": "This change would leave a sale above the quantity held on that date. Remove or adjust the sale first.",
+  "ptxCoverageSaleExceeds": "This sale is above the quantity held on that date. Nothing was saved.",
   "ptxAmortNoShares": "An amortization needs fund quotas in the portfolio on that date.",
   "ptxAmortExceeds": "The amortized amount ({amount}) exceeds the position value on that date ({position}).",
   "@ptxAmortExceeds": {"placeholders": {"amount": {"type": "String"}, "position": {"type": "String"}}},
