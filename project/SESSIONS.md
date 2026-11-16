@@ -5560,3 +5560,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Decisão**: C, aprovada no plano. O Edit do Ledger (P18) já corrige a taxa. Reabrir se surgir um fluxo real de reimportar CSV para trazer taxas.
 - **Em aberto**: o CSV do informe de Bens e Direitos segue com 13 colunas (só `fx_approximate`).
 - **Observação de processo**: as branches `feat/*fx*` que apareciam em `git branch -r` eram refs velhos no cache local; `git fetch --prune` as removeu, o remoto já estava limpo.
+
+## Sessão 368 — P17: o limite "CSV do informe com 13 colunas" fica
+- **Pedido do dono**: seguir em código; escolheu o CSV do informe de Bens e Direitos. Antes, reli as pendências (P12, P14, P15, P19 são 🟡, nenhuma é código feito hoje). Plan mode, sem mudar código.
+- **Lido**: `commands/tax.rs:444-488` e `foreign_holdings_csv.dart`. O CSV é só exportação, nada o importa. O câmbio digitado já marca a posição como aproximada (`foreign.rs:397`, teste `x7_...`; mobile `foreign_tax.dart:436`), e a tela tem o aviso `ForeignFxManual`. A lacuna real era só distinguir "mercado" de "digitado" no arquivo.
+- **Opções**: (A) coluna 14 `fx_source` com campo novo em `ForeignHolding`, 2 exports e 2 UIs; (B) não mudar.
+- **Decisão**: B, aprovada no plano. Reabrir se o informe passar a ser consumido por outra ferramenta ou por um contador que precise da distinção.
+- **Em aberto**: nenhum limite do câmbio (P16/P17) resta. Pendências 🟡 só bloqueadas: P12(b), P14, P15, P19.
+- **Não verificado**: não rodei os testes; a leitura do `foreign.rs:397` e do `foreign_tax.dart:436` é de código, não de execução.
