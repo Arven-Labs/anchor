@@ -5489,7 +5489,7 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Decisões do dono** (plan mode): o delete **recusa** o que piora (sem `force` nem aviso); a amortização posterior vai em PR separado.
 - **PR 1, #142 (mesclado)**: `ensure_edit_keeps_coverage` virou `ensure_history_not_worse`, usada pela edição e pelo novo `delete_transaction_in`; o Ledger mostra o erro (`ledger-delete-error`). 5 testes Rust e 1 E2E. Antes da guarda: 2 de recusa falharam (run 43766916350). Quebra proposital (`&& !before` → `&& before`, run 43767869233): 5 falharam. CI Rust, Frontend e E2E verdes.
 - **PR 2 (branch `feat/amortization-keeps-fit`)**: a mesma guarda refaz o encaixe de cada amortização do ativo (`unfunded_amortizations`, `amortization_problem` extraída de `ensure_amortization_fits`); só recusa a amortização que **passa** a não caber. 3 testes novos. Antes: 1 falhou (run 43770237211, os 2 de "permitido" já passavam). Depois: `CI Desktop Rust` verde (run 43770464442). Quebra proposital (`!broken_before` → `broken_before`, run 43770656100): 2 falharam; branch apagada.
-- **Não verificado**: apagar ou editar num app real (só E2E e flow tests); o crédito/valor de um come-cotas já gravado não é revalidado (a cobertura de venda o protege, porque ele é uma venda para o motor de custo); build dos 3 SO.
+- **Não verificado**: apagar ou editar num app real (só E2E e flow tests); build dos 3 SO. (Corrigido na Sessão 360: o come-cotas não tem nada derivado gravado para revalidar, ver o ADR 0004.)
 - **Limite que fica** (ADR 0004): editar linha importada muda a chave de deduplicação.
 
 ## Sessão 359 — P15: varredura do Esplora em paralelo, medida e descartada
@@ -5500,3 +5500,9 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Correções ao que eu tinha dito antes**: o ritmo sequencial é ~0,3 s por endereço (não 0,6), e a conta do vetor leva 25 s (não "minutos"); eu esperava que 2 consultas em voo ficassem abaixo do nível que deu 429 com 4, e não ficaram.
 - **Resultado**: nenhum código mudou no anchor. Só o registro no P15 do `PENDING.md`.
 - **Não verificado**: a ordem invertida; outro IP ou provedor; o log dos 429 (o teste ao vivo não os imprime).
+
+## Sessão 360 — ADR 0004: o "limite" do come-cotas não existe
+- **Pergunta do dono**: o crédito do come-cotas já gravado não é revalidado ao editar uma compra anterior. Isso é um risco?
+- **Leitura** (sem mudar código): `estimate_fund` (`domain/tax/fund_redemption.rs`) recalcula `cc_paid` e `cc_gain` a cada leitura a partir de `quantity`, `unit_price` e dos lotes; nada derivado é gravado. O `loss_credit_used` é dado de entrada (nota da administradora) e é limitado a `min(taxed_gain.max(0))` na leitura, então uma edição que reduza o ganho o corta sozinha. `cost_events` zera o `value` do come-cotas.
+- **Resultado**: a frase do ADR 0004 (Sessão 358) estava errada e foi corrigida; só docs.
+- **Não verificado**: `fund_compensation` (compensação de crédito entre fundos) não foi lida; sem teste novo, porque nada mudou no código.
