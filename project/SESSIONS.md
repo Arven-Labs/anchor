@@ -5552,3 +5552,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Medido** (código das crates em `~/.cargo/registry`, 2026-11-16): `sea-orm` 1.1.20 `sqlx-sqlite` → `sqlx/sqlite` → `sqlx-sqlite/bundled` → `libsqlite3-sys/bundled`. O `cc` do `Cargo.lock` (opcional, só `bundled` o ativa) corrobora; `pkg-config`/`vcpkg` são ativados pelo próprio `sqlx-sqlite`, então não indicam SQLite do sistema. Corrige a dúvida da Sessão 365: o lock não registra features, mas as dependências opcionais ativas aparecem nele.
 - **Efeito**: o SQLite afetado vai embutido no binário em todas as plataformas; a exposição segue a do P19 (só `.db` com `-wal` forjado, que o app não abre de fora). Decisão de aceitar o risco inalterada.
 - **Não verificado**: o `cargo tree` em si.
+
+## Sessão 367 — P17: o limite "dedup do import ignora a taxa" fica
+- **Pedido do dono**: seguir no câmbio editável (P16/P17). Ao reler o `PENDING.md`, P16, P17 e P18 já estavam resolvidos; restavam só os limites do P17. Plan mode, sem mudar código.
+- **Lido**: chave de dedup (ticker, data, tipo, quantidade×1e6, total×100) em `portfolio_io.rs:733-760, 821-835` e `transactions_csv_import.dart:259-345, 383-395`.
+- **Opções**: (A) taxa na chave, descartada (reimportar criaria lançamento em dobro); (B) preencher a taxa quando a gravada é vazia, exigiria estado novo de import nos dois lados; (C) não mudar código.
+- **Decisão**: C, aprovada no plano. O Edit do Ledger (P18) já corrige a taxa. Reabrir se surgir um fluxo real de reimportar CSV para trazer taxas.
+- **Em aberto**: o CSV do informe de Bens e Direitos segue com 13 colunas (só `fx_approximate`).
+- **Observação de processo**: as branches `feat/*fx*` que apareciam em `git branch -r` eram refs velhos no cache local; `git fetch --prune` as removeu, o remoto já estava limpo.
