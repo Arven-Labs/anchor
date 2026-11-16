@@ -86,14 +86,9 @@ void main() {
       );
     });
 
-    test('D6: a venda descoberta não deixa saldo negativo para a compra seguinte', () {
-      // vende 5 sem nada (descoberta); a compra de 5 depois cobre só a venda de 5 que vem a seguir
+    test('D6: uma venda antes de qualquer compra é descoberta, mesmo que uma compra venha depois', () {
       expect(
-        hasUncoveredSale([
-          tx(TransactionType.venda, 5, 1, id: 1),
-          tx(TransactionType.compra, 5, 2, id: 2),
-          tx(TransactionType.venda, 5, 3, id: 3),
-        ]),
+        hasUncoveredSale([tx(TransactionType.venda, 5, 1, id: 1), tx(TransactionType.compra, 5, 2, id: 2)]),
         isTrue,
       );
     });

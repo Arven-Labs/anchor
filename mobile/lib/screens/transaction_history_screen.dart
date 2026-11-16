@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../domain/coverage.dart' show HistoryCoverageException;
 import '../domain/transactions_csv.dart';
 import '../domain/number_locale.dart' show formatFixed;
 import '../domain/tax_format.dart' show formatDay, formatHoldingQuantity;
@@ -98,7 +99,15 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
   }
 
   Future<void> _delete(int id) async {
-    await _repository.deleteTransaction(id);
+    try {
+      await _repository.deleteTransaction(id);
+    } on HistoryCoverageException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).ptxCoverageWorsens)),
+      );
+      return;
+    }
     await _load();
   }
 
