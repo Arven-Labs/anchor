@@ -5546,3 +5546,9 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Correção a uma leitura do agente**: ele inferiu "sem `bundled`" porque o lock lista só `cc`, `pkg-config` e `vcpkg`; o lock não registra features, então isso não prova nada. Pelo metadado do crates.io, `sea-orm` 1.1.20 liga `sqlx/sqlite`, que liga `sqlx-sqlite/bundled`. Segue como hipótese, sem `cargo tree`.
 - **Não verificado**: o `cargo tree` do desktop; o `main` do sqlx só foi lido.
 - **Em aberto**: o relatório do workspace (`docs/pesquisa/dependencias/anchor.md`, linhas 13 e 125) ainda diz que o aviso "exige subir `sea-orm`/`sqlx`"; corrigir fica a seu critério, em PR do workspace.
+
+## Sessão 366 — P19: `libsqlite3-sys` entra com `bundled` (verificado)
+- **Pedido do dono**: fechar o "não verificado" do P19. Só leitura, sem mudar código.
+- **Medido** (código das crates em `~/.cargo/registry`, 2026-11-16): `sea-orm` 1.1.20 `sqlx-sqlite` → `sqlx/sqlite` → `sqlx-sqlite/bundled` → `libsqlite3-sys/bundled`. O `cc` do `Cargo.lock` (opcional, só `bundled` o ativa) corrobora; `pkg-config`/`vcpkg` são ativados pelo próprio `sqlx-sqlite`, então não indicam SQLite do sistema. Corrige a dúvida da Sessão 365: o lock não registra features, mas as dependências opcionais ativas aparecem nele.
+- **Efeito**: o SQLite afetado vai embutido no binário em todas as plataformas; a exposição segue a do P19 (só `.db` com `-wal` forjado, que o app não abre de fora). Decisão de aceitar o risco inalterada.
+- **Não verificado**: o `cargo tree` em si.
