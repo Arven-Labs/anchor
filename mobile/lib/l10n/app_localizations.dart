@@ -4414,6 +4414,12 @@ abstract class AppLocalizations {
   /// **'Other'**
   String get ptxIdxOther;
 
+  /// No description provided for @ptxCoverageWorsens.
+  ///
+  /// In en, this message translates to:
+  /// **'This change would leave a sale above the quantity held on that date. Remove or adjust the sale first.'**
+  String get ptxCoverageWorsens;
+
   /// No description provided for @ptxAmortNoShares.
   ///
   /// In en, this message translates to:
