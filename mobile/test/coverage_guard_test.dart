@@ -8,6 +8,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/coverage.dart';
+import 'package:anchor_mobile/domain/fund_tax.dart' show unfundedAmortizations;
 import 'package:anchor_mobile/domain/transactions_csv_import.dart';
 import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/models/asset.dart';
@@ -34,6 +35,17 @@ PortfolioTransaction tx(
   quantity: quantity,
   unitPrice: 10,
   totalValue: quantity * 10,
+  date: DateTime(2026, 3, day, 15, 30),
+  createdAt: DateTime(2026, 3, day),
+);
+
+// Amortização de fundo: cota do dia 10,00 e [value] recebido (não mexe nas cotas).
+PortfolioTransaction amort(int day, double value, {int? id, int? assetId = 1}) => PortfolioTransaction(
+  id: id,
+  assetId: assetId,
+  type: TransactionType.amortizacao,
+  unitPrice: 10,
+  totalValue: value,
   date: DateTime(2026, 3, day, 15, 30),
   createdAt: DateTime(2026, 3, day),
 );
@@ -141,6 +153,51 @@ void main() {
         ),
         isFalse,
       );
+    });
+  });
+
+  group('amortizações: a conta pura', () {
+    test('U1: compra 10 a 10,00 e amortização de 100 no dia seguinte cabe; de 101 não', () {
+      final buy = tx(TransactionType.compra, 10, 1, id: 1);
+      expect(unfundedAmortizations([buy, amort(2, 100, id: 2)]), isEmpty);
+      expect(unfundedAmortizations([buy, amort(2, 101, id: 2)]).map((t) => t.id), [2]);
+    });
+
+    test('U2: amortização sem nenhuma cota na data não cabe', () {
+      expect(unfundedAmortizations([amort(2, 10, id: 2)]).map((t) => t.id), [2]);
+      expect(
+        unfundedAmortizations([tx(TransactionType.compra, 10, 3, id: 1), amort(2, 10, id: 2)]).map((t) => t.id),
+        [2],
+        reason: 'a compra é depois da amortização',
+      );
+    });
+
+    test('U3: venda anterior que tira as cotas quebra a amortização', () {
+      final history = [
+        tx(TransactionType.compra, 10, 1, id: 1),
+        tx(TransactionType.venda, 10, 2, id: 2),
+        amort(3, 10, id: 3),
+      ];
+      expect(unfundedAmortizations(history).map((t) => t.id), [3]);
+    });
+
+    test('W3: tirar as cotas de uma amortização que cabia piora', () {
+      final buy = tx(TransactionType.compra, 10, 1, id: 1);
+      final before = [buy, amort(2, 50, id: 2)];
+      expect(worsensAmortizations(before: before, after: [amort(2, 50, id: 2)]), isTrue);
+      expect(worsensAmortizations(before: before, after: before), isFalse);
+    });
+
+    test('W4: amortização que já não cabia antes não bloqueia nada', () {
+      final before = [amort(2, 50, id: 2)];
+      final after = [amort(2, 50, id: 2), tx(TransactionType.compra, 1, 5, id: 3)];
+      expect(worsensAmortizations(before: before, after: after), isFalse);
+    });
+
+    test('W5: amortização nova (sem id) que não cabe piora', () {
+      final buy = tx(TransactionType.compra, 10, 1, id: 1);
+      expect(worsensAmortizations(before: [buy], after: [buy, amort(2, 500)]), isTrue);
+      expect(worsensAmortizations(before: [buy], after: [buy, amort(2, 50)]), isFalse);
     });
   });
 
@@ -432,6 +489,130 @@ void main() {
 
       expect(await all(), hasLength(2));
     });
+
+    // Amortização de fundo (PR 3): a mudança não pode deixar uma amortização sem cotas.
+    Matcher amortizationRefused() =>
+        throwsA(isA<HistoryCoverageException>().having((e) => e.problem, 'problem', HistoryProblem.amortizationUnfunded));
+
+    Future<int> addAmort(int assetId, int day, double value) =>
+        repository.insertTransaction(amort(day, value, assetId: assetId));
+
+    test('A1: apagar a compra de que a amortização depende é recusado', () async {
+      final fund = await addAsset('FUNDO');
+      final buy = await add(fund, TransactionType.compra, 10, 1);
+      await addAmort(fund, 2, 50);
+
+      await expectLater(repository.deleteTransaction(buy), amortizationRefused());
+
+      expect(await all(), hasLength(2));
+    });
+
+    test('A2: editar a compra para menos cotas do que o valor amortizado exige é recusado', () async {
+      final fund = await addAsset('FUNDO');
+      final buy = await add(fund, TransactionType.compra, 10, 1);
+      await addAmort(fund, 2, 50);
+
+      await expectLater(
+        repository.updateTransaction(tx(TransactionType.compra, 4, 1, id: buy, assetId: fund)),
+        amortizationRefused(),
+      );
+
+      expect((await all()).firstWhere((t) => t.id == buy).quantity, 10);
+    });
+
+    test('A3: lançar uma venda anterior que tira as cotas da amortização é recusado', () async {
+      final fund = await addAsset('FUNDO');
+      await add(fund, TransactionType.compra, 10, 1);
+      await addAmort(fund, 3, 50);
+
+      await expectLater(add(fund, TransactionType.venda, 10, 2), amortizationRefused());
+
+      expect(await all(), hasLength(2));
+    });
+
+    test('A4: apagar a própria amortização vale, e depois a compra também', () async {
+      final fund = await addAsset('FUNDO');
+      final buy = await add(fund, TransactionType.compra, 10, 1);
+      final am = await addAmort(fund, 2, 50);
+
+      await repository.deleteTransaction(am);
+      await repository.deleteTransaction(buy);
+
+      expect(await all(), isEmpty);
+    });
+
+    test('A5: amortização que já não cabia não bloqueia apagar outra linha', () async {
+      final fund = await addAsset('FUNDO');
+      await seed(amort(1, 50, assetId: fund)); // sem cotas desde o início
+      final later = await add(fund, TransactionType.compra, 5, 5);
+
+      await repository.deleteTransaction(later);
+
+      expect(await all(), hasLength(1));
+    });
+
+    test('A6: lançar uma amortização que não cabe é recusado', () async {
+      final fund = await addAsset('FUNDO');
+      await add(fund, TransactionType.compra, 10, 1);
+
+      await expectLater(addAmort(fund, 2, 500), amortizationRefused());
+
+      expect(await all(), hasLength(1));
+    });
+
+    ImportRow amortRow(String ticker, int day, double value) => ImportRow(
+      line: day,
+      date: DateTime(2026, 3, day),
+      type: TransactionType.amortizacao,
+      ticker: ticker,
+      assetClass: AssetClass.fundo,
+      currency: 'BRL',
+      quantity: null,
+      unitPrice: 10,
+      totalValue: value,
+      fee: null,
+      custody: null,
+      notes: null,
+      lossCreditUsed: null,
+    );
+
+    test('A7: import de amortização sem cotas reverte tudo', () async {
+      await addAsset('FUNDO');
+
+      await expectLater(
+        repository.applyTransactionsImport(planOf([amortRow('FUNDO', 2, 50)])),
+        amortizationRefused(),
+      );
+
+      expect(await all(), isEmpty);
+    });
+
+    test('A8: import de compra e amortização que cabe vale', () async {
+      await addAsset('FUNDO');
+
+      final written = await repository.applyTransactionsImport(
+        planOf([
+          ImportRow(
+            line: 1,
+            date: DateTime(2026, 3, 1),
+            type: TransactionType.compra,
+            ticker: 'FUNDO',
+            assetClass: AssetClass.fundo,
+            currency: 'BRL',
+            quantity: 10,
+            unitPrice: 10,
+            totalValue: 100,
+            fee: null,
+            custody: null,
+            notes: null,
+            lossCreditUsed: null,
+          ),
+          amortRow('FUNDO', 2, 50),
+        ]),
+      );
+
+      expect(written, 2);
+    });
   });
 
   group('a tela de histórico', () {
@@ -516,6 +697,36 @@ void main() {
       expect(find.text(pt.ptxCoverageSaleExceeds), findsOneWidget);
       final saved = await tester.runAsync(() => repository.listAllTransactions());
       expect(saved, hasLength(1));
+    });
+
+    testWidgets('S5: apagar a compra de que a amortização depende mostra o aviso e a linha continua', (tester) async {
+      tester.view.physicalSize = const Size(900, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.runAsync(() async {
+        final fund = await repository.insertAsset(
+          Asset(
+            ticker: 'FUNDO',
+            name: 'Fundo Teste',
+            assetClass: AssetClass.fundo,
+            currency: 'BRL',
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        );
+        await repository.insertTransaction(tx(TransactionType.compra, 10, 1, assetId: fund));
+        await repository.insertTransaction(amort(2, 50, assetId: fund));
+      });
+      await tester.pumpWidget(localizedApp(const TransactionHistoryScreen()));
+      await settle(tester);
+
+      final buyRow = find.widgetWithText(ListTile, 'Compra — FUNDO');
+      expect(buyRow, findsOneWidget);
+      await tester.tap(find.descendant(of: buyRow, matching: find.byIcon(Icons.delete_outline)));
+      await settle(tester);
+
+      expect(find.text(pt.ptxAmortWorsens), findsOneWidget);
+      final saved = await tester.runAsync(() => repository.listAllTransactions());
+      expect(saved, hasLength(2));
     });
   });
 }

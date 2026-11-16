@@ -101,10 +101,10 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
   Future<void> _delete(int id) async {
     try {
       await _repository.deleteTransaction(id);
-    } on HistoryCoverageException {
+    } on HistoryCoverageException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context).ptxCoverageWorsens)),
+        SnackBar(content: Text(historyGuardText(AppLocalizations.of(context), e, entry: false))),
       );
       return;
     }
@@ -169,9 +169,9 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       messenger.showSnackBar(
         SnackBar(content: Text(l.txhImported(written))),
       );
-    } on HistoryCoverageException {
+    } on HistoryCoverageException catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text(l.ptxCoverageSaleExceeds)),
+        SnackBar(content: Text(historyGuardText(l, e, entry: true))),
       );
     } catch (e) {
       messenger.showSnackBar(

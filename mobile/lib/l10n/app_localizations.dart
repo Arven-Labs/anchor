@@ -4426,6 +4426,12 @@ abstract class AppLocalizations {
   /// **'This sale is above the quantity held on that date. Nothing was saved.'**
   String get ptxCoverageSaleExceeds;
 
+  /// No description provided for @ptxAmortWorsens.
+  ///
+  /// In en, this message translates to:
+  /// **'This change would leave an amortization without quotas in the portfolio or above the position value. Adjust or remove the amortization first.'**
+  String get ptxAmortWorsens;
+
   /// No description provided for @ptxAmortNoShares.
   ///
   /// In en, this message translates to:

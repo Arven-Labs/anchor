@@ -8,13 +8,26 @@
 
 import '../models/portfolio_transaction.dart';
 import 'cost_basis.dart';
+import 'fund_tax.dart' show unfundedAmortizations;
 
 /// A mudança deixaria uma venda acima da quantidade em carteira na data dela.
 class HistoryCoverageException implements Exception {
-  const HistoryCoverageException();
+  /// O que a mudança estragaria: a tela escolhe o texto por aqui.
+  final HistoryProblem problem;
+
+  const HistoryCoverageException([this.problem = HistoryProblem.saleUncovered]);
 
   @override
-  String toString() => 'HistoryCoverageException: the change would leave a sale uncovered';
+  String toString() => 'HistoryCoverageException: the change would leave $problem';
+}
+
+/// O motivo da recusa da guarda de histórico (ADR 0004).
+enum HistoryProblem {
+  /// Uma venda (ou come-cotas) passaria da quantidade em carteira.
+  saleUncovered,
+
+  /// Uma amortização de fundo deixaria de caber (sem cotas na data, ou acima da posição).
+  amortizationUnfunded,
 }
 
 /// Lançamento ainda sem id (o que está sendo criado) ordena depois de todos do mesmo dia.
@@ -62,3 +75,16 @@ bool worsensCoverage({
   required Iterable<PortfolioTransaction> before,
   required Iterable<PortfolioTransaction> after,
 }) => !hasUncoveredSale(before) && hasUncoveredSale(after);
+
+/// A mudança piora as amortizações: o histórico de depois tem uma amortização que não cabe e
+/// que não estava quebrada antes. Amortização que já não cabia antes não bloqueia nada. A
+/// linha sem id (a que está sendo criada) quebrada conta como piora.
+bool worsensAmortizations({
+  required Iterable<PortfolioTransaction> before,
+  required Iterable<PortfolioTransaction> after,
+}) {
+  final brokenBefore = {
+    for (final tx in unfundedAmortizations(before)) ?tx.id,
+  };
+  return unfundedAmortizations(after).any((tx) => tx.id == null || !brokenBefore.contains(tx.id));
+}

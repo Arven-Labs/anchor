@@ -2758,6 +2758,10 @@ class AppLocalizationsPt extends AppLocalizations {
       'Essa venda passa da quantidade em carteira nessa data. Nada foi gravado.';
 
   @override
+  String get ptxAmortWorsens =>
+      'Essa mudança deixaria uma amortização sem cotas em carteira ou acima do valor da posição. Ajuste ou apague a amortização antes.';
+
+  @override
   String get ptxAmortNoShares =>
       'A amortização precisa de cotas em carteira nessa data.';
 

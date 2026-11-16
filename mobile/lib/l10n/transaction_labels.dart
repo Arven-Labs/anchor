@@ -1,3 +1,4 @@
+import '../domain/coverage.dart' show HistoryCoverageException, HistoryProblem;
 import '../domain/fund_tax.dart';
 import '../domain/number_locale.dart';
 import '../domain/transactions_csv_import.dart' show ImportIssue, ImportIssueCode;
@@ -55,6 +56,14 @@ String importIssueText(AppLocalizations l, ImportIssue issue) {
     ImportIssueCode.unitPriceRequired => l.importIssueUnitPriceRequired(args['type'] ?? ''),
   };
 }
+
+/// A frase da recusa da guarda de histórico (ADR 0004). [entry] é `true` ao lançar, permutar ou
+/// importar (a venda é nova), e `false` ao editar ou apagar (a mudança mexe no que já existe).
+String historyGuardText(AppLocalizations l, HistoryCoverageException e, {required bool entry}) =>
+    switch (e.problem) {
+      HistoryProblem.saleUncovered => entry ? l.ptxCoverageSaleExceeds : l.ptxCoverageWorsens,
+      HistoryProblem.amortizationUnfunded => l.ptxAmortWorsens,
+    };
 
 /// A frase de uma amortização que não cabe no histórico do fundo.
 String amortizationProblemText(AppLocalizations l, AmortizationProblem problem) =>

@@ -2758,6 +2758,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'This sale is above the quantity held on that date. Nothing was saved.';
 
   @override
+  String get ptxAmortWorsens =>
+      'This change would leave an amortization without quotas in the portfolio or above the position value. Adjust or remove the amortization first.';
+
+  @override
   String get ptxAmortNoShares =>
       'An amortization needs fund quotas in the portfolio on that date.';
 
