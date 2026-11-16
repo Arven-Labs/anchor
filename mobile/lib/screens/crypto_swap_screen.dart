@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../domain/coverage.dart' show HistoryCoverageException;
 import '../domain/tax_format.dart' show formatDay;
 import '../l10n/app_localizations.dart';
 import '../l10n/crypto_tax_labels.dart';
@@ -141,7 +142,16 @@ class _CryptoSwapScreenState extends State<CryptoSwapScreen> {
       _saving = true;
       _error = null;
     });
-    await _repository.insertTransactions([swap.sale, swap.purchase]);
+    try {
+      await _repository.insertTransactions([swap.sale, swap.purchase]);
+    } on HistoryCoverageException {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = l.ptxCoverageSaleExceeds;
+      });
+      return;
+    }
     if (mounted) Navigator.of(context).pop(true);
   }
 

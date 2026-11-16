@@ -607,21 +607,28 @@ class PortfolioRepository {
     await db.delete('custodias', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// Grava o lançamento, mas recusa (`HistoryCoverageException`) o que deixaria uma venda acima
+  /// da quantidade em carteira na data dela (ADR 0004).
   Future<int> insertTransaction(PortfolioTransaction transaction) async {
     _checkFxRateOverride(transaction);
     final db = await AppDatabase.instance();
     final map = transaction.toMap()..remove('id');
-    return db.insert('portfolio_transactions', map);
+    return db.transaction((txn) async {
+      await _ensureAddedKeepCoverage(txn, [transaction]);
+      return txn.insert('portfolio_transactions', map);
+    });
   }
 
   /// Grava várias transações numa só transação do banco: ou entram todas ou
-  /// nenhuma (a permuta de cripto grava uma venda e uma compra juntas).
+  /// nenhuma (a permuta de cripto grava uma venda e uma compra juntas). Recusa
+  /// (`HistoryCoverageException`) o lote que deixaria uma venda sem cobertura.
   Future<void> insertTransactions(
     List<PortfolioTransaction> transactions,
   ) async {
     transactions.forEach(_checkFxRateOverride);
     final db = await AppDatabase.instance();
     await db.transaction((txn) async {
+      await _ensureAddedKeepCoverage(txn, transactions);
       for (final transaction in transactions) {
         await txn.insert(
           'portfolio_transactions',
@@ -673,6 +680,7 @@ class PortfolioRepository {
         );
       }
 
+      final added = <PortfolioTransaction>[];
       for (final row in plan.rows) {
         int? assetId;
         if (row.type.needsAsset) {
@@ -704,6 +712,12 @@ class PortfolioRepository {
         );
         // O parser já recusa a taxa inválida; isto garante o mesmo para um plano montado à mão.
         _checkFxRateOverride(transaction);
+        added.add(transaction);
+      }
+      // Confere o lote inteiro contra o banco ainda sem ele, para valer o saldo final por data
+      // e não a ordem do arquivo; a exceção desfaz tudo, inclusive os ativos novos (ADR 0004).
+      await _ensureAddedKeepCoverage(txn, added);
+      for (final transaction in added) {
         await txn.insert(
           'portfolio_transactions',
           transaction.toMap()..remove('id'),
@@ -812,6 +826,20 @@ class PortfolioRepository {
     });
   }
 
+  /// Confere, por ativo, o histórico gravado mais as linhas novas (ainda não gravadas), na
+  /// ordem em que vieram. Chamar antes de inserir.
+  static Future<void> _ensureAddedKeepCoverage(
+    DatabaseExecutor executor,
+    List<PortfolioTransaction> added,
+  ) async {
+    final assetIds = <int>{
+      for (final tx in added) ?tx.assetId,
+    };
+    for (final assetId in assetIds) {
+      await _ensureHistoryNotWorse(executor, assetId: assetId, removedId: null, added: added);
+    }
+  }
+
   /// Compara o histórico do ativo de hoje com o de depois da mudança (a linha `removedId` sai e,
   /// se houver, `replacement` entra no lugar) e recusa só o que piora a cobertura de vendas.
   static Future<void> _ensureHistoryNotWorse(
@@ -819,6 +847,7 @@ class PortfolioRepository {
     required int assetId,
     required int? removedId,
     PortfolioTransaction? replacement,
+    List<PortfolioTransaction> added = const [],
   }) async {
     final rows = await executor.query(
       'portfolio_transactions',
@@ -830,6 +859,8 @@ class PortfolioRepository {
       for (final tx in before)
         if (tx.id != removedId) tx,
       if (replacement != null && replacement.assetId == assetId) replacement,
+      for (final tx in added)
+        if (tx.assetId == assetId) tx,
     ];
     if (worsensCoverage(before: before, after: after)) {
       throw const HistoryCoverageException();

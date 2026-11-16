@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +8,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/coverage.dart';
+import 'package:anchor_mobile/domain/transactions_csv_import.dart';
 import 'package:anchor_mobile/l10n/app_localizations.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/portfolio_transaction.dart';
@@ -171,6 +174,12 @@ void main() {
 
     Future<List<PortfolioTransaction>> all() => repository.listAllTransactions();
 
+    // Grava direto no banco, sem a guarda: para montar um histórico que já estava descoberto.
+    Future<void> seed(PortfolioTransaction transaction) async {
+      final db = await AppDatabase.instance();
+      await db.insert('portfolio_transactions', transaction.toMap()..remove('id'));
+    }
+
     test('R1: apagar a compra de que a venda depende é recusado e nada é apagado', () async {
       final petr = await addAsset('PETR4');
       final buy = await add(petr, TransactionType.compra, 10, 1);
@@ -254,7 +263,7 @@ void main() {
 
     test('R8: histórico que já estava descoberto não bloqueia apagar outra linha', () async {
       final petr = await addAsset('PETR4');
-      await add(petr, TransactionType.venda, 10, 1); // descoberta desde o início
+      await seed(tx(TransactionType.venda, 10, 1, assetId: petr)); // descoberta desde o início
       final later = await add(petr, TransactionType.compra, 5, 3);
 
       await repository.deleteTransaction(later);
@@ -265,6 +274,163 @@ void main() {
     test('R9: apagar id que não existe não falha', () async {
       await repository.deleteTransaction(999);
       expect(await all(), isEmpty);
+    });
+
+    // Lançar, permutar e importar (PR 2): a mesma regra, agora na entrada.
+    test('R10: lançar uma venda acima do saldo é recusado e nada é gravado', () async {
+      final petr = await addAsset('PETR4');
+      await add(petr, TransactionType.compra, 10, 1);
+
+      await expectLater(
+        add(petr, TransactionType.venda, 11, 2),
+        throwsA(isA<HistoryCoverageException>()),
+      );
+
+      expect(await all(), hasLength(1));
+    });
+
+    test('R11: lançar venda dentro do saldo vale, inclusive no mesmo dia da compra', () async {
+      final petr = await addAsset('PETR4');
+      await add(petr, TransactionType.compra, 10, 1);
+      await add(petr, TransactionType.venda, 4, 1);
+      await add(petr, TransactionType.venda, 6, 2);
+
+      expect(await all(), hasLength(3));
+    });
+
+    test('R11b: lançar uma compra datada antes de uma venda já gravada vale (cobre)', () async {
+      final petr = await addAsset('PETR4');
+      await seed(tx(TransactionType.venda, 10, 5, assetId: petr)); // descoberta
+      await add(petr, TransactionType.compra, 10, 1);
+
+      expect(await all(), hasLength(2));
+    });
+
+    test('R12: permuta com a venda descoberta recusa e não grava nenhuma das duas pernas', () async {
+      final petr = await addAsset('PETR4');
+      final vale = await addAsset('VALE3');
+      await add(petr, TransactionType.compra, 5, 1);
+
+      await expectLater(
+        repository.insertTransactions([
+          tx(TransactionType.venda, 6, 2, assetId: petr),
+          tx(TransactionType.compra, 6, 2, assetId: vale),
+        ]),
+        throwsA(isA<HistoryCoverageException>()),
+      );
+
+      expect(await all(), hasLength(1));
+    });
+
+    test('R12b: permuta coberta grava as duas pernas', () async {
+      final petr = await addAsset('PETR4');
+      final vale = await addAsset('VALE3');
+      await add(petr, TransactionType.compra, 5, 1);
+
+      await repository.insertTransactions([
+        tx(TransactionType.venda, 5, 2, assetId: petr),
+        tx(TransactionType.compra, 5, 2, assetId: vale),
+      ]);
+
+      expect(await all(), hasLength(3));
+    });
+
+    ImportRow row(String ticker, TransactionType type, double quantity, int day) => ImportRow(
+      line: day,
+      date: DateTime(2026, 3, day),
+      type: type,
+      ticker: ticker,
+      assetClass: AssetClass.acaoBr,
+      currency: 'BRL',
+      quantity: quantity,
+      unitPrice: 10,
+      totalValue: quantity * 10,
+      fee: null,
+      custody: null,
+      notes: null,
+      lossCreditUsed: null,
+    );
+
+    ImportPlan planOf(List<ImportRow> rows, {List<NewAssetPlan> newAssets = const []}) => ImportPlan(
+      rows: rows,
+      duplicates: 0,
+      skipped: 0,
+      issues: const [],
+      newAssets: newAssets,
+      newCustodias: const [],
+    );
+
+    test('R13: import com venda descoberta reverte tudo, inclusive o ativo novo', () async {
+      final petr = await addAsset('PETR4');
+      await add(petr, TransactionType.compra, 10, 1);
+
+      await expectLater(
+        repository.applyTransactionsImport(
+          planOf(
+            [
+              row('NOVO3', TransactionType.compra, 5, 1),
+              row('PETR4', TransactionType.venda, 11, 2),
+            ],
+            newAssets: const [NewAssetPlan(ticker: 'NOVO3', assetClass: AssetClass.acaoBr, currency: 'BRL')],
+          ),
+        ),
+        throwsA(isA<HistoryCoverageException>()),
+      );
+
+      expect(await all(), hasLength(1));
+      expect((await repository.listAssets()).map((a) => a.ticker), ['PETR4']);
+    });
+
+    test('R14: import em que a venda vem antes da compra no arquivo, mas a data cobre, vale', () async {
+      await addAsset('PETR4');
+
+      final written = await repository.applyTransactionsImport(
+        planOf([
+          row('PETR4', TransactionType.venda, 10, 2),
+          row('PETR4', TransactionType.compra, 10, 1),
+        ]),
+      );
+
+      expect(written, 2);
+      expect(await all(), hasLength(2));
+    });
+
+    test('R14b: import com compra e venda no mesmo dia vale na ordem do arquivo', () async {
+      await addAsset('PETR4');
+
+      await repository.applyTransactionsImport(
+        planOf([
+          row('PETR4', TransactionType.compra, 10, 3),
+          row('PETR4', TransactionType.venda, 10, 3),
+        ]),
+      );
+
+      expect(await all(), hasLength(2));
+    });
+
+    test('R14c: import com venda e compra no mesmo dia, nessa ordem, é recusado', () async {
+      await addAsset('PETR4');
+
+      await expectLater(
+        repository.applyTransactionsImport(
+          planOf([
+            row('PETR4', TransactionType.venda, 10, 3),
+            row('PETR4', TransactionType.compra, 10, 3),
+          ]),
+        ),
+        throwsA(isA<HistoryCoverageException>()),
+      );
+
+      expect(await all(), isEmpty);
+    });
+
+    test('R15: histórico já descoberto não bloqueia lançar uma compra', () async {
+      final petr = await addAsset('PETR4');
+      await seed(tx(TransactionType.venda, 10, 1, assetId: petr));
+
+      await add(petr, TransactionType.compra, 3, 2);
+
+      expect(await all(), hasLength(2));
     });
   });
 
@@ -317,6 +483,39 @@ void main() {
       expect(find.text('Compra — PETR4'), findsOneWidget);
       final saved = await tester.runAsync(() => repository.listAllTransactions());
       expect(saved, hasLength(2));
+    });
+
+    testWidgets('S3: importar um CSV com venda acima do saldo mostra o aviso e não grava nada', (tester) async {
+      tester.view.physicalSize = const Size(900, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.runAsync(() async {
+        final petr = await repository.insertAsset(
+          Asset(
+            ticker: 'PETR4',
+            name: 'Petrobras',
+            assetClass: AssetClass.acaoBr,
+            currency: 'BRL',
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        );
+        await repository.insertTransaction(tx(TransactionType.compra, 10, 1, assetId: petr));
+      });
+      const csv = 'date,type,ticker,asset_class,currency,quantity,unit_price,total_value\n'
+          '2026-03-02,venda,PETR4,acao_br,BRL,11,10,110\n';
+      await tester.pumpWidget(
+        localizedApp(TransactionHistoryScreen(pickCsv: () async => Uint8List.fromList(utf8.encode(csv)))),
+      );
+      await settle(tester);
+
+      await tester.tap(find.byTooltip(pt.txhImportTooltip));
+      await settle(tester);
+      await tester.tap(find.text(pt.txhImport));
+      await settle(tester);
+
+      expect(find.text(pt.ptxCoverageSaleExceeds), findsOneWidget);
+      final saved = await tester.runAsync(() => repository.listAllTransactions());
+      expect(saved, hasLength(1));
     });
   });
 }

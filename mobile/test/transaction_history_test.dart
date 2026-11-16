@@ -282,7 +282,11 @@ void main() {
             createdAt: DateTime(2026, 5, 20),
           ),
         );
-        await repository.insertTransaction(
+        // Direto no banco: a guarda de cobertura recusaria um come-cotas sem compra, e aqui o
+        // teste só confere como a tela mostra a linha.
+        final db = await AppDatabase.instance();
+        await db.insert(
+          'portfolio_transactions',
           PortfolioTransaction(
             assetId: fund,
             type: TransactionType.comeCotas,
@@ -292,7 +296,7 @@ void main() {
             lossCreditUsed: 2.5,
             date: DateTime(2026, 5, 31),
             createdAt: DateTime(2026, 5, 31),
-          ),
+          ).toMap()..remove('id'),
         );
       });
     }

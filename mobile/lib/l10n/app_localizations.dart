@@ -4420,6 +4420,12 @@ abstract class AppLocalizations {
   /// **'This change would leave a sale above the quantity held on that date. Remove or adjust the sale first.'**
   String get ptxCoverageWorsens;
 
+  /// No description provided for @ptxCoverageSaleExceeds.
+  ///
+  /// In en, this message translates to:
+  /// **'This sale is above the quantity held on that date. Nothing was saved.'**
+  String get ptxCoverageSaleExceeds;
+
   /// No description provided for @ptxAmortNoShares.
   ///
   /// In en, this message translates to:

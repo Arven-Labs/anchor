@@ -31,9 +31,15 @@ int _byDayThenId(PortfolioTransaction a, PortfolioTransaction b) {
 /// Ordena por dia e, no mesmo dia, pelo id, como o desktop. A posição nunca fica negativa
 /// (a venda descoberta baixa só o que havia), igual a `CostPosition.take`.
 bool hasUncoveredSale(Iterable<PortfolioTransaction> transactions) {
-  final ordered = transactions.toList()..sort(_byDayThenId);
+  // Desempate pela posição de entrada (o `List.sort` do Dart não é estável): linhas novas, sem
+  // id, no mesmo dia, valem na ordem em que vieram (a ordem do arquivo no import).
+  final indexed = transactions.toList().asMap().entries.toList()
+    ..sort((a, b) {
+      final byDayThenId = _byDayThenId(a.value, b.value);
+      return byDayThenId != 0 ? byDayThenId : a.key.compareTo(b.key);
+    });
   var held = 0.0;
-  for (final tx in ordered) {
+  for (final tx in indexed.map((e) => e.value)) {
     final quantity = tx.quantity ?? 0;
     switch (tx.type) {
       case TransactionType.compra:
