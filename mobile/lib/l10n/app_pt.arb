@@ -759,6 +759,7 @@
   "ptxIdxFixed": "Prefixado",
   "ptxIdxOther": "Outro",
 
+  "ptxCoverageWorsens": "Essa mudança deixaria uma venda acima da quantidade em carteira nessa data. Apague ou ajuste a venda antes.",
   "ptxAmortNoShares": "A amortização precisa de cotas em carteira nessa data.",
   "ptxAmortExceeds": "O valor amortizado ({amount}) passa do valor da posição nessa data ({position}).",
 

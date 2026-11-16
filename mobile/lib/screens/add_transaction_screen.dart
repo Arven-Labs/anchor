@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../domain/coverage.dart' show HistoryCoverageException;
 import '../domain/foreign_tax.dart' show foreignAssetClasses, isUsableFxRate;
 import '../domain/fund_tax.dart' show amortizationProblem;
 import '../domain/number_locale.dart' show formatFixed;
@@ -330,7 +331,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     );
 
     if (_editing) {
-      await _repository.updateTransaction(transaction);
+      try {
+        await _repository.updateTransaction(transaction);
+      } on HistoryCoverageException {
+        if (!mounted) return;
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).ptxCoverageWorsens)),
+        );
+        return;
+      }
     } else {
       await _repository.insertTransaction(transaction);
     }

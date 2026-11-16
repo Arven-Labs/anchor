@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart' show DatabaseExecutor;
 
 import '../data/db.dart';
+import '../domain/coverage.dart';
 import '../domain/cvm_inf_diario.dart' show formatCnpj, normalizeCnpj;
 import '../domain/dirpf.dart';
 import '../domain/foreign_tax.dart' show isUsableFxRate;
@@ -754,20 +756,84 @@ class PortfolioRepository {
     }
   }
 
+  /// Grava a edição, mas recusa (`HistoryCoverageException`) a que deixaria uma venda acima da
+  /// quantidade em carteira, no ativo novo ou no antigo se o ativo mudou (ADR 0004).
   Future<void> updateTransaction(PortfolioTransaction transaction) async {
     _checkFxRateOverride(transaction);
     final db = await AppDatabase.instance();
-    await db.update(
-      'portfolio_transactions',
-      transaction.toMap()..remove('id'),
-      where: 'id = ?',
-      whereArgs: [transaction.id],
-    );
+    await db.transaction((txn) async {
+      final current = await txn.query(
+        'portfolio_transactions',
+        columns: ['asset_id'],
+        where: 'id = ?',
+        whereArgs: [transaction.id],
+      );
+      if (current.isNotEmpty) {
+        final oldAssetId = current.first['asset_id'] as int?;
+        final assetIds = <int>{
+          ?oldAssetId,
+          ?transaction.assetId,
+        };
+        for (final assetId in assetIds) {
+          await _ensureHistoryNotWorse(
+            txn,
+            assetId: assetId,
+            removedId: transaction.id,
+            replacement: transaction,
+          );
+        }
+      }
+      await txn.update(
+        'portfolio_transactions',
+        transaction.toMap()..remove('id'),
+        where: 'id = ?',
+        whereArgs: [transaction.id],
+      );
+    });
   }
 
+  /// Apaga a transação, mas recusa (`HistoryCoverageException`) a exclusão que deixaria uma
+  /// venda acima da quantidade em carteira (ADR 0004). Para apagar uma compra de que uma venda
+  /// depende, apague a venda antes.
   Future<void> deleteTransaction(int id) async {
     final db = await AppDatabase.instance();
-    await db.delete('portfolio_transactions', where: 'id = ?', whereArgs: [id]);
+    await db.transaction((txn) async {
+      final current = await txn.query(
+        'portfolio_transactions',
+        columns: ['asset_id'],
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      final assetId = current.isEmpty ? null : current.first['asset_id'] as int?;
+      if (assetId != null) {
+        await _ensureHistoryNotWorse(txn, assetId: assetId, removedId: id);
+      }
+      await txn.delete('portfolio_transactions', where: 'id = ?', whereArgs: [id]);
+    });
+  }
+
+  /// Compara o histórico do ativo de hoje com o de depois da mudança (a linha `removedId` sai e,
+  /// se houver, `replacement` entra no lugar) e recusa só o que piora a cobertura de vendas.
+  static Future<void> _ensureHistoryNotWorse(
+    DatabaseExecutor executor, {
+    required int assetId,
+    required int? removedId,
+    PortfolioTransaction? replacement,
+  }) async {
+    final rows = await executor.query(
+      'portfolio_transactions',
+      where: 'asset_id = ?',
+      whereArgs: [assetId],
+    );
+    final before = _decodeTransactions(rows);
+    final after = [
+      for (final tx in before)
+        if (tx.id != removedId) tx,
+      if (replacement != null && replacement.assetId == assetId) replacement,
+    ];
+    if (worsensCoverage(before: before, after: after)) {
+      throw const HistoryCoverageException();
+    }
   }
 
   Future<List<Position>> getPositions() async {

@@ -2750,6 +2750,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ptxIdxOther => 'Other';
 
   @override
+  String get ptxCoverageWorsens =>
+      'This change would leave a sale above the quantity held on that date. Remove or adjust the sale first.';
+
+  @override
   String get ptxAmortNoShares =>
       'An amortization needs fund quotas in the portfolio on that date.';
 
