@@ -195,6 +195,28 @@ AmortizationProblem? amortizationProblem(
   return null;
 }
 
+/// As amortizações do histórico que não cabem nele (sem cotas na data, ou valor acima da
+/// posição), conferida cada uma contra as demais linhas. Espelho de `unfunded_amortizations`
+/// do desktop (`commands/transaction.rs`).
+List<PortfolioTransaction> unfundedAmortizations(
+  Iterable<PortfolioTransaction> assetTxs,
+) {
+  final all = assetTxs.toList();
+  return [
+    for (final tx in all)
+      if (tx.type == TransactionType.amortizacao &&
+          amortizationProblem(
+                all,
+                date: tx.date,
+                quotaValue: tx.unitPrice ?? 0,
+                amount: tx.totalValue,
+                ignoreId: tx.id,
+              ) !=
+              null)
+        tx,
+  ];
+}
+
 int _byDateThenId(PortfolioTransaction a, PortfolioTransaction b) {
   final byDate = a.date.compareTo(b.date);
   return byDate != 0 ? byDate : (a.id ?? 0).compareTo(b.id ?? 0);

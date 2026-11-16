@@ -761,6 +761,7 @@
 
   "ptxCoverageWorsens": "Essa mudança deixaria uma venda acima da quantidade em carteira nessa data. Apague ou ajuste a venda antes.",
   "ptxCoverageSaleExceeds": "Essa venda passa da quantidade em carteira nessa data. Nada foi gravado.",
+  "ptxAmortWorsens": "Essa mudança deixaria uma amortização sem cotas em carteira ou acima do valor da posição. Ajuste ou apague a amortização antes.",
   "ptxAmortNoShares": "A amortização precisa de cotas em carteira nessa data.",
   "ptxAmortExceeds": "O valor amortizado ({amount}) passa do valor da posição nessa data ({position}).",
 
