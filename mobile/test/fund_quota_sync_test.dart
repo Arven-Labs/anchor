@@ -553,6 +553,18 @@ void main() {
 
     test('uma instalação nova já nasce com a coluna', () async {
       final id = await addFund(term: FundTerm.longTerm);
+      // O come-cotas baixa cotas, então precisa de uma compra antes (guarda de cobertura).
+      await repository.insertTransaction(
+        PortfolioTransaction(
+          assetId: id,
+          type: TransactionType.compra,
+          quantity: 5,
+          unitPrice: 12,
+          totalValue: 60,
+          date: d('2025-11-01'),
+          createdAt: d('2025-11-01'),
+        ),
+      );
       await repository.insertTransaction(
         PortfolioTransaction(
           assetId: id,
@@ -565,7 +577,8 @@ void main() {
           createdAt: d('2025-12-01'),
         ),
       );
-      expect((await repository.listAllTransactions()).single.lossCreditUsed, 7.5);
+      final saved = await repository.listAllTransactions();
+      expect(saved.singleWhere((t) => t.type == TransactionType.comeCotas).lossCreditUsed, 7.5);
     });
   });
 
