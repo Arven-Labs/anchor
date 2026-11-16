@@ -333,22 +333,22 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     if (_editing) {
       try {
         await _repository.updateTransaction(transaction);
-      } on HistoryCoverageException {
+      } on HistoryCoverageException catch (e) {
         if (!mounted) return;
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context).ptxCoverageWorsens)),
+          SnackBar(content: Text(historyGuardText(AppLocalizations.of(context), e, entry: false))),
         );
         return;
       }
     } else {
       try {
         await _repository.insertTransaction(transaction);
-      } on HistoryCoverageException {
+      } on HistoryCoverageException catch (e) {
         if (!mounted) return;
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context).ptxCoverageSaleExceeds)),
+          SnackBar(content: Text(historyGuardText(AppLocalizations.of(context), e, entry: true))),
         );
         return;
       }

@@ -865,6 +865,9 @@ class PortfolioRepository {
     if (worsensCoverage(before: before, after: after)) {
       throw const HistoryCoverageException();
     }
+    if (worsensAmortizations(before: before, after: after)) {
+      throw const HistoryCoverageException(HistoryProblem.amortizationUnfunded);
+    }
   }
 
   Future<List<Position>> getPositions() async {
