@@ -2,9 +2,12 @@
 // O universo é o que está no banco (os que o dono buscou, tem em carteira ou em
 // watchlist), não a B3 inteira: as coletas são sob demanda, por ticker.
 
-use sea_orm::DatabaseConnection;
+use std::collections::HashMap;
+
+use sea_orm::{DatabaseConnection, EntityTrait};
 use serde::{Deserialize, Serialize};
 
+use crate::entity::{stock_dividends_avg, stock_fundamentals, stock_quotes};
 use crate::error::AppError;
 
 /// Cada filtro é opcional. Valores em percentual onde o indicador é percentual
@@ -44,11 +47,106 @@ pub struct ScreenerResult {
     pub rows: Vec<ScreenerRow>,
 }
 
+impl ScreenerFilters {
+    fn validate(&self) -> Result<(), AppError> {
+        let named = [
+            ("pe_max", self.pe_max),
+            ("pb_max", self.pb_max),
+            ("roe_min", self.roe_min),
+            ("dy_min", self.dy_min),
+        ];
+        for (name, value) in named {
+            if value.is_some_and(|v| !v.is_finite()) {
+                return Err(AppError::InvalidInput(format!("filtro {name} precisa ser um número finito")));
+            }
+        }
+        Ok(())
+    }
+
+    /// Filtro ligado exclui a linha cujo indicador não existe.
+    fn accepts(&self, row: &ScreenerRow) -> bool {
+        let max_ok = |limit: Option<f64>, value: Option<f64>| limit.is_none_or(|l| value.is_some_and(|v| v <= l));
+        let min_ok = |limit: Option<f64>, value: Option<f64>| limit.is_none_or(|l| value.is_some_and(|v| v >= l));
+        max_ok(self.pe_max, row.pe)
+            && max_ok(self.pb_max, row.pb)
+            && min_ok(self.roe_min, Some(row.roe))
+            && min_ok(self.dy_min, row.dividend_yield)
+    }
+}
+
+/// `numerator / price`, só quando os dois são positivos (LPA ≤ 0 ou preço ≤ 0 não dão razão útil).
+fn ratio(price: f64, per_share: f64) -> Option<f64> {
+    (price > 0.0 && per_share > 0.0).then(|| price / per_share)
+}
+
+/// A linha mais recente de cada ticker. As coletas inserem uma linha nova a cada
+/// rodada, então o histórico fica na tabela; a de maior `fetched_at` (e, no
+/// empate, a de maior `id`) vale.
+fn latest_by_ticker<T>(rows: Vec<T>, key: impl Fn(&T) -> (&str, &str, i32)) -> HashMap<String, T> {
+    let mut latest: HashMap<String, T> = HashMap::new();
+    for row in rows {
+        let (ticker, at, id) = key(&row);
+        let newer = latest.get(ticker).is_none_or(|current| {
+            let (_, current_at, current_id) = key(current);
+            (at, id) > (current_at, current_id)
+        });
+        if newer {
+            latest.insert(ticker.to_string(), row);
+        }
+    }
+    latest
+}
+
 pub async fn screen_stocks_in(
-    _db: &DatabaseConnection,
-    _filters: &ScreenerFilters,
+    db: &DatabaseConnection,
+    filters: &ScreenerFilters,
 ) -> Result<ScreenerResult, AppError> {
-    unimplemented!("screener: implementação vem depois dos testes")
+    filters.validate()?;
+
+    let quotes = latest_by_ticker(stock_quotes::Entity::find().all(db).await?, |q| {
+        (q.ticker.as_str(), q.fetched_at.as_str(), q.id)
+    });
+    let fundamentals = latest_by_ticker(stock_fundamentals::Entity::find().all(db).await?, |f| {
+        (f.ticker.as_str(), f.fetched_at.as_str(), f.id)
+    });
+    let dividends = latest_by_ticker(stock_dividends_avg::Entity::find().all(db).await?, |d| {
+        (d.ticker.as_str(), d.fetched_at.as_str(), d.id)
+    });
+
+    let mut universe_size = 0;
+    let mut rows = Vec::new();
+    for (ticker, fund) in &fundamentals {
+        let Some(quote) = quotes.get(ticker) else { continue };
+        universe_size += 1;
+        let row = ScreenerRow {
+            ticker: ticker.clone(),
+            name: quote.name.clone(),
+            currency: quote.currency.clone(),
+            price: quote.price,
+            pe: ratio(quote.price, fund.lpa),
+            pb: ratio(quote.price, fund.vpa),
+            roe: fund.roe,
+            payout: fund.payout,
+            dividend_yield: dividends
+                .get(ticker)
+                .filter(|_| quote.price > 0.0)
+                .map(|d| d.avg_dividend_5y / quote.price * 100.0),
+            fundamentals_fetched_at: fund.fetched_at.clone(),
+        };
+        if filters.accepts(&row) {
+            rows.push(row);
+        }
+    }
+    rows.sort_by(|a, b| a.ticker.cmp(&b.ticker));
+    Ok(ScreenerResult { universe_size, rows })
+}
+
+#[tauri::command]
+pub async fn screen_stocks(
+    db: tauri::State<'_, DatabaseConnection>,
+    filters: ScreenerFilters,
+) -> Result<ScreenerResult, AppError> {
+    screen_stocks_in(db.inner(), &filters).await
 }
 
 #[cfg(test)]
