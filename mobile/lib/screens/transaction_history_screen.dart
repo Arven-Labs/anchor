@@ -169,6 +169,10 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       messenger.showSnackBar(
         SnackBar(content: Text(l.txhImported(written))),
       );
+    } on HistoryCoverageException {
+      messenger.showSnackBar(
+        SnackBar(content: Text(l.ptxCoverageSaleExceeds)),
+      );
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text(l.txhImportFailed('$e'))),
