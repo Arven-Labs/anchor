@@ -104,8 +104,16 @@ pub fn risk_free_suggestion(
     di_10y: Option<(NaiveDate, f64)>,
     selic: Option<(NaiveDate, f64)>,
 ) -> Option<RiskFreeSuggestion> {
-    let _ = (di_10y, selic);
-    unimplemented!("risk_free_suggestion")
+    let usable = |point: Option<(NaiveDate, f64)>| point.filter(|&(_, rate)| rate.is_finite() && rate > 0.0);
+    usable(di_10y)
+        .map(|(as_of, rate_pct)| RiskFreeSuggestion { rate_pct, source: RiskFreeSource::Di10y, as_of })
+        .or_else(|| {
+            usable(selic).map(|(as_of, rate_pct)| RiskFreeSuggestion {
+                rate_pct,
+                source: RiskFreeSource::SelicMeta,
+                as_of,
+            })
+        })
 }
 
 #[cfg(test)]

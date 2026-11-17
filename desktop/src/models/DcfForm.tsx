@@ -4,6 +4,7 @@ import { useTickerCollector } from "../collector/useTickerCollector";
 import { useValuationActions } from "./useValuationActions";
 import ValuationResult from "../components/ValuationResult";
 import Field from "../components/Field";
+import RiskFreeHint from "./RiskFreeHint";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -315,6 +316,7 @@ function DcfForm({ ticker: initialTicker, assetClass }: { ticker?: string; asset
               value={riskFreeRate}
               onChange={(e) => setRiskFreeRate(e.currentTarget.value)}
             />
+            <RiskFreeHint onUse={(ratePct) => setRiskFreeRate(String(ratePct))} />
           </Field>
 
           <Field label="Market risk premium (%)">

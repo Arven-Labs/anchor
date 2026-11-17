@@ -4,6 +4,7 @@ import { useTickerCollector } from "../collector/useTickerCollector";
 import { useValuationActions } from "./useValuationActions";
 import ValuationResult from "../components/ValuationResult";
 import Field from "../components/Field";
+import RiskFreeHint from "./RiskFreeHint";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -200,6 +201,7 @@ function RimForm({ ticker: initialTicker, assetClass }: { ticker?: string; asset
               value={ke}
               onChange={(e) => setKe(e.currentTarget.value)}
             />
+            <RiskFreeHint ke={ke} />
             <p className="text-xs text-muted-foreground">
               Use a nominal Ke — the model discounts nominal book value/ROE
               flows with no inflation adjustment, so a real Ke would inflate

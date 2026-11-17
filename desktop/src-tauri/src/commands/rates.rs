@@ -64,6 +64,19 @@ pub struct InterestRatesView {
     /// `None` sem erro = nenhuma curva publicada nos últimos dias.
     pub di: Option<DiCurveView>,
     pub di_error: Option<String>,
+    /// Taxa livre de risco sugerida aos valuations: DI de 10 anos, senão a meta Selic.
+    pub risk_free: Option<rates::RiskFreeSuggestion>,
+}
+
+/// Prazo da curva DI usado como taxa livre de risco, em anos (juro nominal de longo prazo).
+const RISK_FREE_TENOR_YEARS: f64 = 10.0;
+
+fn risk_free_of(selic: Option<&SelicView>, di: Option<&DiCurveView>) -> Option<rates::RiskFreeSuggestion> {
+    let di_10y = di.and_then(|curve| {
+        let key = curve.key_rates.iter().find(|k| k.years == RISK_FREE_TENOR_YEARS)?;
+        Some((curve.reference_date, key.rate_pct?))
+    });
+    rates::risk_free_suggestion(di_10y, selic.map(|s| (s.since, s.current_pct)))
 }
 
 /// Curva do último pregão em ou antes de `from` (volta dia a dia; dia sem
@@ -156,7 +169,8 @@ pub async fn get_interest_rates(
         Ok(view) => (view, None),
         Err(err) => (None, Some(err.to_string())),
     };
-    Ok(InterestRatesView { selic, selic_error, di, di_error })
+    let risk_free = risk_free_of(selic.as_ref(), di.as_ref());
+    Ok(InterestRatesView { selic, selic_error, di, di_error, risk_free })
 }
 
 // Testes `#[ignore]` — vão às fontes públicas (BCB e B3) de verdade. Rodar com

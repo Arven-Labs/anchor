@@ -4,6 +4,7 @@ import { useTickerCollector } from "../collector/useTickerCollector";
 import { useValuationActions } from "./useValuationActions";
 import ValuationResult from "../components/ValuationResult";
 import Field from "../components/Field";
+import RiskFreeHint from "./RiskFreeHint";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -210,6 +211,7 @@ function ProjectedCeilingForm({ ticker: initialTicker, assetClass }: { ticker?: 
               value={ke}
               onChange={(e) => setKe(e.currentTarget.value)}
             />
+            <RiskFreeHint ke={ke} />
           </Field>
 
           <div className="flex gap-3 sm:col-span-2">
