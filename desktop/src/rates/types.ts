@@ -31,4 +31,12 @@ export type InterestRatesView = {
   selic_error: string | null;
   di: DiCurveView | null;
   di_error: string | null;
+  // Taxa livre de risco sugerida aos valuations: DI de 10 anos, senão a Selic.
+  risk_free: RiskFreeSuggestion | null;
+};
+
+export type RiskFreeSuggestion = {
+  rate_pct: number;
+  source: "di10y" | "selic_meta";
+  as_of: string;
 };
