@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{NaiveDate, Utc};
+use chrono::{Duration, NaiveDate, Utc};
 use sea_orm::{DatabaseConnection, EntityTrait};
 use serde::{Deserialize, Serialize};
 
@@ -80,13 +80,18 @@ impl ScreenerFilters {
     }
 }
 
+const TRAILING_WINDOW_DAYS: i64 = 365;
+
 /// Soma dos dividendos dos últimos 12 meses: pagamentos com
 /// `today - 365 dias < data <= today` (data futura não conta). `None` sem nenhum
 /// pagamento coletado; `Some(0.0)` com pagamentos coletados mas nenhum na janela
 /// (parou de pagar). `payments` = (data, valor por ação).
 fn trailing_12m_dividends(payments: &[(NaiveDate, f64)], today: NaiveDate) -> Option<f64> {
-    let _ = (payments, today);
-    unimplemented!("trailing_12m_dividends")
+    if payments.is_empty() {
+        return None;
+    }
+    let window_start = today - Duration::days(TRAILING_WINDOW_DAYS);
+    Some(payments.iter().filter(|(date, _)| *date > window_start && *date <= today).map(|(_, amount)| amount).sum())
 }
 
 /// `numerator / price`, só quando os dois são positivos (LPA ≤ 0 ou preço ≤ 0 não dão razão útil).

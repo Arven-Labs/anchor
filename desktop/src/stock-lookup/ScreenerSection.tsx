@@ -28,7 +28,8 @@ type ScreenerRow = {
   pb: number | null;
   roe: number;
   payout: number | null;
-  dividend_yield: number | null;
+  dividend_yield_12m: number | null;
+  dividend_yield_5y_avg: number | null;
   fundamentals_fetched_at: string;
 };
 
@@ -43,7 +44,7 @@ const FIELDS: { key: keyof Draft; label: string; hint: string }[] = [
   { key: "pe_max", label: "P/E max", hint: "e.g. 10" },
   { key: "pb_max", label: "P/B max", hint: "e.g. 1.5" },
   { key: "roe_min", label: "ROE min (%)", hint: "e.g. 15" },
-  { key: "dy_min", label: "Dividend yield min (%)", hint: "e.g. 6" },
+  { key: "dy_min", label: "Dividend yield 12m min (%)", hint: "e.g. 6" },
 ];
 
 /** Campo vazio vira `null` (filtro desligado); texto que não é número vira `undefined` (inválido). */
@@ -153,7 +154,8 @@ function ScreenerSection() {
                   <TableHead className="text-right">P/E</TableHead>
                   <TableHead className="text-right">P/B</TableHead>
                   <TableHead className="text-right">ROE</TableHead>
-                  <TableHead className="text-right">Div. yield</TableHead>
+                  <TableHead className="text-right">Div. yield 12m</TableHead>
+                  <TableHead className="text-right">Div. yield 5y avg</TableHead>
                   <TableHead className="text-right">Payout</TableHead>
                   <TableHead>Fundamentals as of</TableHead>
                 </TableRow>
@@ -167,7 +169,8 @@ function ScreenerSection() {
                     <TableCell className="text-right">{formatRatio(row.pe)}</TableCell>
                     <TableCell className="text-right">{formatRatio(row.pb)}</TableCell>
                     <TableCell className="text-right">{formatPercent(row.roe)}</TableCell>
-                    <TableCell className="text-right">{formatPercent(row.dividend_yield)}</TableCell>
+                    <TableCell className="text-right">{formatPercent(row.dividend_yield_12m)}</TableCell>
+                    <TableCell className="text-right">{formatPercent(row.dividend_yield_5y_avg)}</TableCell>
                     <TableCell className="text-right">{formatFractionAsPercent(row.payout)}</TableCell>
                     <TableCell>{row.fundamentals_fetched_at.slice(0, 10)}</TableCell>
                   </TableRow>
