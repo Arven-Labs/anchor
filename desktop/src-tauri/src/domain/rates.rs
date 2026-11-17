@@ -79,12 +79,75 @@ pub fn rate_at_years(vertices: &[(i32, f64)], years: f64) -> Option<f64> {
     Some(first.1)
 }
 
+/// De onde veio a taxa livre de risco sugerida aos valuations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RiskFreeSource {
+    /// DI futuro de 10 anos (juro nominal de longo prazo).
+    Di10y,
+    /// Meta Selic vigente (reserva: curtíssimo prazo).
+    SelicMeta,
+}
+
+/// Taxa livre de risco sugerida, em % a.a., com a fonte e a data a que se refere.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+pub struct RiskFreeSuggestion {
+    pub rate_pct: f64,
+    pub source: RiskFreeSource,
+    pub as_of: NaiveDate,
+}
+
+/// Escolhe a taxa livre de risco: DI de 10 anos se houver; senão a meta Selic;
+/// senão nada. Cada entrada é (data de referência, taxa % a.a.). Taxa que não
+/// é finita ou é ≤ 0 não é usada (cai para a próxima fonte).
+pub fn risk_free_suggestion(
+    di_10y: Option<(NaiveDate, f64)>,
+    selic: Option<(NaiveDate, f64)>,
+) -> Option<RiskFreeSuggestion> {
+    let _ = (di_10y, selic);
+    unimplemented!("risk_free_suggestion")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn d(s: &str) -> NaiveDate {
         NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    #[test]
+    fn risk_free_prefers_the_ten_year_di_over_the_selic() {
+        let got = risk_free_suggestion(Some((d("2026-11-14"), 11.8)), Some((d("2026-06-18"), 10.5))).unwrap();
+        assert_eq!(got.source, RiskFreeSource::Di10y);
+        assert_eq!(got.rate_pct, 11.8);
+        assert_eq!(got.as_of, d("2026-11-14"));
+    }
+
+    #[test]
+    fn risk_free_falls_back_to_the_selic_when_there_is_no_ten_year_di() {
+        let got = risk_free_suggestion(None, Some((d("2026-06-18"), 10.5))).unwrap();
+        assert_eq!(got.source, RiskFreeSource::SelicMeta);
+        assert_eq!(got.rate_pct, 10.5);
+        assert_eq!(got.as_of, d("2026-06-18"));
+    }
+
+    #[test]
+    fn risk_free_is_none_without_any_rate() {
+        assert_eq!(risk_free_suggestion(None, None), None);
+    }
+
+    #[test]
+    fn risk_free_skips_an_unusable_di_and_uses_the_selic() {
+        for bad in [f64::NAN, f64::INFINITY, 0.0, -1.0] {
+            let got = risk_free_suggestion(Some((d("2026-11-14"), bad)), Some((d("2026-06-18"), 10.5))).unwrap();
+            assert_eq!(got.source, RiskFreeSource::SelicMeta, "DI {bad}");
+        }
+    }
+
+    #[test]
+    fn risk_free_is_none_when_every_rate_is_unusable() {
+        assert_eq!(risk_free_suggestion(Some((d("2026-11-14"), f64::NAN)), Some((d("2026-06-18"), 0.0))), None);
     }
 
     fn month<'a>(returns: &'a [(String, f64)], ym: &str) -> f64 {
