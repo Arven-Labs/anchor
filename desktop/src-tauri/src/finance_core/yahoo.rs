@@ -282,7 +282,7 @@ async fn fetch_chart(instrument: &Instrument, query: &str) -> Result<ChartResult
 }
 
 fn dividends_avg_query() -> String {
-    format!("range={HISTORY_RANGE}&interval=3mo&events=div")
+    format!("range={HISTORY_RANGE}&interval=1d&events=div")
 }
 
 pub struct Yahoo;
