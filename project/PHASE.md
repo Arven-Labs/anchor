@@ -490,6 +490,8 @@ Planejado com `/plan` na Sessão 10 (pesquisa real contra a doc do Gemini via `W
 
 ### Fase 8 — Sync Multi-Dispositivo via TruthID + Arweave (ideia levantada na Sessão 11, desenho revisado na Sessão 22, replanejada pós-migração do TruthID pro Arweave na Sessão 87, não iniciada)
 
+> **CONGELADA (Sessão 373, 2026-11-17, ADR 0006):** o anchor passará a usar o arca para sync e backup quando as fases 4 e 5 do arca estiverem concluídas. Nenhuma fatia nova desta fase. Não usar o pin com banco real (SQLite sem cifra, destino permanente e público).
+
 **Objetivo**: sincronizar valuations/alertas salvos entre dispositivos (celular, outro PC) de forma descentralizada — sem servidor próprio do Practice Valuation — reaproveitando a identidade e a infraestrutura já existentes no TruthID (outro projeto do usuário, `~/Documents/workspace/truthid`).
 
 **Sessão 18 (2026-07-14/15) — prova de conceito do canal de assinatura delegada, feita a partir de
