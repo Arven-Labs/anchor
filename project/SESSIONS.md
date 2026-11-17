@@ -5610,3 +5610,9 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Achado de processo**: o CI do #160 falhou no `valuation-risk-free.e2e.mjs`, spec meu do #159 (`element not interactable` ao abrir o seletor de modelo depois de a página rolar), reproduzido em 2 de 2 rodadas. Corrigido à parte no PR #161 (helper que rola o seletor antes de abrir) e trazido por merge da `main`. Lição: em E2E de formulário longo, rolar até o controle antes de clicar.
 - **Não verificado**: o DY de 12 meses com dados reais de coleta (só dados semeados); a janela é pela data do evento que o Yahoo informa (data ex), não pela data de pagamento; se `stock_dividend_payments` estiver desatualizado, o 12m subestima e a tela não mostra a idade dessa coleta; datas de pagamento fora do formato `AAAA-MM-DD` são ignoradas em silêncio; o visual das duas colunas em tela real (só CI).
 - **Em aberto**: rodar a coleta de novo nos tickers já na base não é mais necessário para o DY de 12 meses (usa `stock_dividend_payments`, coletado com `1d`), mas as linhas antigas de `stock_dividends_avg` feitas com `3mo` seguem lá até a próxima coleta e alimentam a coluna de 5 anos, Bazin, Gordon e Teto Projetado.
+
+## Sessão 373 — Finanças pessoais ficam no anchor (ADR 0005)
+- **Pedido do dono**: avaliar colocar o Firefly III por baixo das Finanças, mantendo a interface atual. Plan mode; mapeamento só de leitura.
+- **Achado**: o relatório de reuso do workspace (2026-11-13) contou `finance_core` e `finance_api` (dados de mercado) como Finanças; o módulo real tem ~4,8 mil linhas de Rust e ~3,9 mil de TSX no desktop. O Firefly cobriria só o CRUD; dívidas, empréstimos, porquinho, patrimônio líquido e importação de extrato continuariam aqui.
+- **Decisão do dono**: manter e registrar. ADR 0005 em `project/adr/`. Nenhum código mudou.
+- **Não verificado**: licença, dívida com amortização e importação OFX no Firefly III.
