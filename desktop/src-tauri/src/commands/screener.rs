@@ -4,15 +4,18 @@
 
 use std::collections::HashMap;
 
+use chrono::{NaiveDate, Utc};
 use sea_orm::{DatabaseConnection, EntityTrait};
 use serde::{Deserialize, Serialize};
 
-use crate::entity::{stock_dividends_avg, stock_fundamentals, stock_quotes};
+use crate::entity::{stock_dividend_payments, stock_dividends_avg, stock_fundamentals, stock_quotes};
 use crate::error::AppError;
 
 /// Cada filtro é opcional. Valores em percentual onde o indicador é percentual
 /// (`roe_min` e `dy_min`: 15 significa 15%). Filtro ligado exclui o ticker cujo
-/// indicador não existe (ex.: P/L de empresa com LPA ≤ 0).
+/// indicador não existe (ex.: P/L de empresa com LPA ≤ 0). `dy_min` compara o
+/// rendimento de dividendos dos últimos 12 meses (`dividend_yield_12m`), não a
+/// média de 5 anos.
 #[derive(Debug, Default, Deserialize)]
 pub struct ScreenerFilters {
     pub pe_max: Option<f64>,
@@ -34,8 +37,11 @@ pub struct ScreenerRow {
     /// Percentual, como guardado em `stock_fundamentals`.
     pub roe: f64,
     pub payout: Option<f64>,
+    /// Dividendos pagos nos últimos 12 meses ÷ preço, em percentual. `None` sem nenhum
+    /// pagamento coletado; `0` com pagamentos coletados mas nenhum na janela.
+    pub dividend_yield_12m: Option<f64>,
     /// Dividendo médio de 5 anos ÷ preço, em percentual. `None` sem dividendo coletado.
-    pub dividend_yield: Option<f64>,
+    pub dividend_yield_5y_avg: Option<f64>,
     /// Data da coleta mais recente dos fundamentos, para a tela mostrar a idade do dado.
     pub fundamentals_fetched_at: String,
 }
@@ -70,8 +76,17 @@ impl ScreenerFilters {
         max_ok(self.pe_max, row.pe)
             && max_ok(self.pb_max, row.pb)
             && min_ok(self.roe_min, Some(row.roe))
-            && min_ok(self.dy_min, row.dividend_yield)
+            && min_ok(self.dy_min, row.dividend_yield_12m)
     }
+}
+
+/// Soma dos dividendos dos últimos 12 meses: pagamentos com
+/// `today - 365 dias < data <= today` (data futura não conta). `None` sem nenhum
+/// pagamento coletado; `Some(0.0)` com pagamentos coletados mas nenhum na janela
+/// (parou de pagar). `payments` = (data, valor por ação).
+fn trailing_12m_dividends(payments: &[(NaiveDate, f64)], today: NaiveDate) -> Option<f64> {
+    let _ = (payments, today);
+    unimplemented!("trailing_12m_dividends")
 }
 
 /// `numerator / price`, só quando os dois são positivos (LPA ≤ 0 ou preço ≤ 0 não dão razão útil).
@@ -101,6 +116,15 @@ pub async fn screen_stocks_in(
     db: &DatabaseConnection,
     filters: &ScreenerFilters,
 ) -> Result<ScreenerResult, AppError> {
+    screen_stocks_on(db, filters, Utc::now().date_naive()).await
+}
+
+/// `today` é entrada (não lê o relógio) para a janela de 12 meses ser testável.
+pub async fn screen_stocks_on(
+    db: &DatabaseConnection,
+    filters: &ScreenerFilters,
+    today: NaiveDate,
+) -> Result<ScreenerResult, AppError> {
     filters.validate()?;
 
     let quotes = latest_by_ticker(stock_quotes::Entity::find().all(db).await?, |q| {
@@ -112,6 +136,12 @@ pub async fn screen_stocks_in(
     let dividends = latest_by_ticker(stock_dividends_avg::Entity::find().all(db).await?, |d| {
         (d.ticker.as_str(), d.fetched_at.as_str(), d.id)
     });
+    let mut payments: HashMap<String, Vec<(NaiveDate, f64)>> = HashMap::new();
+    for payment in stock_dividend_payments::Entity::find().all(db).await? {
+        if let Ok(date) = NaiveDate::parse_from_str(&payment.payment_date, "%Y-%m-%d") {
+            payments.entry(payment.ticker).or_default().push((date, payment.amount));
+        }
+    }
 
     let mut universe_size = 0;
     let mut rows = Vec::new();
@@ -127,7 +157,12 @@ pub async fn screen_stocks_in(
             pb: ratio(quote.price, fund.vpa),
             roe: fund.roe,
             payout: fund.payout,
-            dividend_yield: dividends
+            dividend_yield_12m: payments
+                .get(ticker)
+                .and_then(|paid| trailing_12m_dividends(paid, today))
+                .filter(|_| quote.price > 0.0)
+                .map(|total| total / quote.price * 100.0),
+            dividend_yield_5y_avg: dividends
                 .get(ticker)
                 .filter(|_| quote.price > 0.0)
                 .map(|d| d.avg_dividend_5y / quote.price * 100.0),
@@ -220,6 +255,122 @@ mod tests {
         (a - b).abs() < 1e-9
     }
 
+    fn today() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 11, 17).unwrap()
+    }
+
+    /// Pagamento de dividendo `days_ago` dias antes de `today()` (negativo = no futuro).
+    async fn paid(db: &DatabaseConnection, ticker: &str, days_ago: i64, amount: f64) {
+        let date = today() - chrono::Duration::days(days_ago);
+        stock_dividend_payments::ActiveModel {
+            ticker: Set(ticker.to_string()),
+            payment_date: Set(date.to_string()),
+            amount: Set(amount),
+            source: Set("test".to_string()),
+            fetched_at: Set("2026-11-01T10:00:00+00:00".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert dividend payment");
+    }
+
+    fn on(days_ago: i64, amount: f64) -> (NaiveDate, f64) {
+        (today() - chrono::Duration::days(days_ago), amount)
+    }
+
+    #[test]
+    fn trailing_12m_sums_only_the_payments_inside_the_window() {
+        let payments = [on(60, 1.0), on(200, 1.0), on(400, 5.0)];
+        assert_eq!(trailing_12m_dividends(&payments, today()), Some(2.0));
+    }
+
+    #[test]
+    fn trailing_12m_window_includes_364_days_ago_and_excludes_365() {
+        assert_eq!(trailing_12m_dividends(&[on(364, 1.0), on(365, 100.0)], today()), Some(1.0));
+    }
+
+    #[test]
+    fn trailing_12m_includes_today_and_ignores_future_dates() {
+        assert_eq!(trailing_12m_dividends(&[on(0, 1.0), on(-1, 50.0)], today()), Some(1.0));
+    }
+
+    #[test]
+    fn trailing_12m_is_zero_when_payments_exist_but_none_in_the_window() {
+        assert_eq!(trailing_12m_dividends(&[on(400, 5.0)], today()), Some(0.0));
+    }
+
+    #[test]
+    fn trailing_12m_is_none_without_any_payment() {
+        assert_eq!(trailing_12m_dividends(&[], today()), None);
+    }
+
+    #[tokio::test]
+    async fn the_12m_yield_is_the_window_total_over_the_current_price() {
+        let db = memory_db().await;
+        full(&db, "PAY3", 20.0, 2.0, 10.0, 15.0, 3.0).await;
+        paid(&db, "PAY3", 60, 1.0).await;
+        paid(&db, "PAY3", 200, 1.0).await;
+        paid(&db, "PAY3", 400, 5.0).await; // fora da janela
+
+        let result = screen_stocks_on(&db, &ScreenerFilters::default(), today()).await.unwrap();
+
+        let row = &result.rows[0];
+        assert!(close(row.dividend_yield_12m.unwrap(), 10.0), "2 / 20: {row:?}");
+        assert!(close(row.dividend_yield_5y_avg.unwrap(), 15.0), "3 / 20: {row:?}");
+    }
+
+    #[tokio::test]
+    async fn dy_min_filters_the_12m_yield_not_the_five_year_average() {
+        let db = memory_db().await;
+        // A: média de 5 anos alta (DY 20%), mas só 1% nos últimos 12 meses.
+        full(&db, "A3", 10.0, 2.0, 10.0, 15.0, 2.0).await;
+        paid(&db, "A3", 30, 0.1).await;
+        // B: média de 5 anos baixa (DY 1%), mas 10% nos últimos 12 meses.
+        full(&db, "B3", 10.0, 2.0, 10.0, 15.0, 0.1).await;
+        paid(&db, "B3", 30, 1.0).await;
+
+        let result = screen_stocks_on(&db, &ScreenerFilters { dy_min: Some(5.0), ..Default::default() }, today())
+            .await
+            .unwrap();
+
+        assert_eq!(tickers(&result), vec!["B3"]);
+    }
+
+    #[tokio::test]
+    async fn a_ticker_that_stopped_paying_has_zero_12m_yield_and_a_never_collected_one_has_none() {
+        let db = memory_db().await;
+        full(&db, "STOP3", 10.0, 2.0, 10.0, 15.0, 1.0).await;
+        paid(&db, "STOP3", 400, 5.0).await;
+        full(&db, "NEW3", 10.0, 2.0, 10.0, 15.0, 1.0).await;
+
+        let open = screen_stocks_on(&db, &ScreenerFilters::default(), today()).await.unwrap();
+        let by = |t: &str| open.rows.iter().find(|r| r.ticker == t).unwrap().dividend_yield_12m;
+        assert_eq!(by("STOP3"), Some(0.0));
+        assert_eq!(by("NEW3"), None);
+
+        let zero = screen_stocks_on(&db, &ScreenerFilters { dy_min: Some(0.0), ..Default::default() }, today())
+            .await
+            .unwrap();
+        assert_eq!(tickers(&zero), vec!["STOP3"], "0% é dado real; sem coleta não passa");
+        let one = screen_stocks_on(&db, &ScreenerFilters { dy_min: Some(1.0), ..Default::default() }, today())
+            .await
+            .unwrap();
+        assert!(one.rows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn another_tickers_payments_do_not_count() {
+        let db = memory_db().await;
+        full(&db, "MINE3", 10.0, 2.0, 10.0, 15.0, 1.0).await;
+        paid(&db, "MINE3", 30, 1.0).await;
+        paid(&db, "OTHER3", 30, 9.0).await;
+
+        let result = screen_stocks_on(&db, &ScreenerFilters::default(), today()).await.unwrap();
+
+        assert!(close(result.rows[0].dividend_yield_12m.unwrap(), 10.0), "{:?}", result.rows[0]);
+    }
+
     #[tokio::test]
     async fn derives_pe_pb_and_dividend_yield_from_the_stored_rows() {
         let db = memory_db().await;
@@ -231,7 +382,7 @@ mod tests {
         let row = &result.rows[0];
         assert!(close(row.pe.unwrap(), 8.0), "{row:?}");
         assert!(close(row.pb.unwrap(), 1.25), "{row:?}");
-        assert!(close(row.dividend_yield.unwrap(), 7.5), "{row:?}");
+        assert!(close(row.dividend_yield_5y_avg.unwrap(), 7.5), "{row:?}");
         assert!(close(row.roe, 16.0) && close(row.price, 40.0));
     }
 
@@ -269,13 +420,17 @@ mod tests {
     #[tokio::test]
     async fn filters_combine_with_and() {
         let db = memory_db().await;
-        full(&db, "A3", 16.0, 2.0, 16.0, 20.0, 1.6).await; // P/L 8, P/VP 1, ROE 20, DY 10
+        full(&db, "A3", 16.0, 2.0, 16.0, 20.0, 1.6).await; // P/L 8, P/VP 1, ROE 20
         full(&db, "B3", 16.0, 2.0, 16.0, 5.0, 1.6).await; // ROE baixo
-        full(&db, "C3", 16.0, 2.0, 16.0, 20.0, 0.16).await; // DY 1
+        full(&db, "C3", 16.0, 2.0, 16.0, 20.0, 0.16).await;
+        paid(&db, "A3", 30, 1.6).await; // DY 12m 10
+        paid(&db, "B3", 30, 1.6).await; // DY 12m 10
+        paid(&db, "C3", 30, 0.16).await; // DY 12m 1
 
-        let result = screen_stocks_in(
+        let result = screen_stocks_on(
             &db,
             &ScreenerFilters { pe_max: Some(10.0), pb_max: Some(1.5), roe_min: Some(15.0), dy_min: Some(6.0) },
+            today(),
         )
         .await
         .unwrap();
@@ -291,7 +446,7 @@ mod tests {
         fundamentals(&db, "NODIV3", 1.0, 5.0, 10.0, at).await;
 
         let open = screen_stocks_in(&db, &ScreenerFilters::default()).await.unwrap();
-        assert!(open.rows[0].dividend_yield.is_none());
+        assert!(open.rows[0].dividend_yield_12m.is_none() && open.rows[0].dividend_yield_5y_avg.is_none());
 
         let filtered = screen_stocks_in(&db, &ScreenerFilters { dy_min: Some(0.0), ..Default::default() })
             .await
@@ -331,11 +486,18 @@ mod tests {
     async fn a_zero_price_gives_no_ratio_instead_of_infinity() {
         let db = memory_db().await;
         full(&db, "ZERO3", 0.0, 2.0, 10.0, 15.0, 1.0).await;
+        paid(&db, "ZERO3", 30, 1.0).await;
 
-        let result = screen_stocks_in(&db, &ScreenerFilters::default()).await.unwrap();
+        let result = screen_stocks_on(&db, &ScreenerFilters::default(), today()).await.unwrap();
 
         let row = &result.rows[0];
-        assert!(row.pe.is_none() && row.pb.is_none() && row.dividend_yield.is_none(), "{row:?}");
+        assert!(
+            row.pe.is_none()
+                && row.pb.is_none()
+                && row.dividend_yield_12m.is_none()
+                && row.dividend_yield_5y_avg.is_none(),
+            "{row:?}"
+        );
     }
 
     #[tokio::test]
