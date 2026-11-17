@@ -133,6 +133,12 @@ function App() {
     setSection("lookup");
   }
 
+  // P20 — volta à tela vazia de Research (a dos atalhos de juros, câmbio e Screener).
+  function backToResearchHome() {
+    setActiveTicker(null);
+    setResearchView("asset");
+  }
+
   function openRates() {
     setResearchView("rates");
     setSection("lookup");
@@ -278,6 +284,7 @@ function App() {
               onOpenRates={openRates}
               onOpenFx={openFx}
               onOpenScreener={openScreener}
+              onBack={backToResearchHome}
             />
           </TabsContent>
 
