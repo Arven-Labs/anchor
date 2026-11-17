@@ -14,6 +14,13 @@ const modelSelect = () =>
   $('//label[normalize-space(.)="Valuation model"]/following-sibling::button[@role="combobox"]');
 const input = (label) => $(`//label[normalize-space(.)="${label}"]/following-sibling::input`);
 
+// O formulário é longo: depois de clicar em "Use" ou digitar num campo, a página fica rolada e o
+// seletor de modelo (no topo) deixa de ser clicável ("element not interactable"). Rolar antes de abrir.
+async function selectModel(label) {
+  await (await modelSelect()).scrollIntoView({ block: "center", inline: "center" });
+  await pickOption(modelSelect(), label);
+}
+
 async function fill(label, value) {
   const field = await input(label);
   await field.scrollIntoView({ block: "center" });
@@ -45,7 +52,7 @@ describe("Anchor — taxa livre de risco sugerida nos valuations", () => {
   });
 
   it("DCF: mostra a taxa livre com a fonte e a data, sem preencher o campo", async () => {
-    await pickOption(modelSelect(), "DCF / FCFF");
+    await selectModel("DCF / FCFF");
 
     const hint = byId("risk-free-hint");
     await hint.waitForDisplayed({ timeout: 20_000 });
@@ -66,7 +73,7 @@ describe("Anchor — taxa livre de risco sugerida nos valuations", () => {
   });
 
   it("Gordon: Ke abaixo da taxa livre mostra o aviso e continua editável", async () => {
-    await pickOption(modelSelect(), "Gordon / DDM");
+    await selectModel("Gordon / DDM");
     await byId("risk-free-hint").waitForDisplayed({ timeout: 20_000 });
 
     await fill("Required return — Ke (%)", "8");
