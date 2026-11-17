@@ -5616,3 +5616,5 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Achado**: o relatório de reuso do workspace (2026-11-13) contou `finance_core` e `finance_api` (dados de mercado) como Finanças; o módulo real tem ~4,8 mil linhas de Rust e ~3,9 mil de TSX no desktop. O Firefly cobriria só o CRUD; dívidas, empréstimos, porquinho, patrimônio líquido e importação de extrato continuariam aqui.
 - **Decisão do dono**: manter e registrar. ADR 0005 em `project/adr/`. Nenhum código mudou.
 - **Não verificado**: licença, dívida com amortização e importação OFX no Firefly III.
+- **Sync via arca (ADR 0006, mesma sessão)**: decisão do dono de que o anchor usará o arca para sync e backup, quando as fases 4 (revisão de segurança) e 5 (anchor como segundo consumidor) do arca estiverem concluídas. A Fase 8 (TruthID + Arweave) fica congelada, sem fatia nova. Aviso registrado: não usar `pin_database_snapshot`/`push_pin_content` com banco real, pois mandam o SQLite sem cifra para um destino permanente e público. Nenhum código mudou.
+- **Não verificado (arca)**: prazo do arca; se o formato dele cobre um SQLite inteiro; o destino da identidade TruthID depois.
