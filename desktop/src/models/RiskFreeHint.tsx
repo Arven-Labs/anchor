@@ -27,7 +27,7 @@ export default function RiskFreeHint({
 
   const riskFree = data?.risk_free ?? null;
   const keValue = ke === undefined || ke.trim() === "" ? null : Number(ke);
-  const keBelow = riskFree !== null && keValue !== null && Number.isFinite(keValue) && keValue <= riskFree.rate_pct;
+  const keBelow = riskFree !== null && keValue !== null && Number.isFinite(keValue) && keValue >= riskFree.rate_pct;
 
   return (
     <div data-testid="risk-free" className="grid gap-1 text-sm text-muted-foreground">
