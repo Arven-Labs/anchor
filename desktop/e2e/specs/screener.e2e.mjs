@@ -1,5 +1,5 @@
 import { $, expect } from "@wdio/globals";
-import { byId, enterWorkspace, sql, textOf, waitForText } from "./helpers.mjs";
+import { byId, enterWorkspace, pickOption, sql, textOf, waitForText } from "./helpers.mjs";
 
 // Screener de ações: filtra os tickers que já estão na base. Os dados são
 // semeados direto no banco (sem rede), então o teste vale em qualquer runner.
@@ -88,5 +88,32 @@ describe("Anchor — Screener de ações", function () {
     const filtered = await textOf(byId("screener-table"));
     expect(filtered).toContain("CHEAP3");
     expect(filtered).not.toContain("PRICY3");
+  });
+
+  // P20: depois de abrir o Screener (ou um ativo) não havia como voltar à tela vazia de
+  // Research, onde ficam os atalhos de juros, câmbio e Screener.
+  it("Voltar sai do Screener e mostra os atalhos de novo", async function () {
+    await byId("research-back").waitForDisplayed({ timeout: 10_000 });
+    await byId("research-back").click();
+
+    await byId("open-screener").waitForDisplayed({ timeout: 10_000 });
+    await byId("open-fx").waitForDisplayed();
+    await byId("screener-table").waitForExist({ reverse: true });
+    // Na tela vazia não há para onde voltar.
+    await byId("research-back").waitForExist({ reverse: true });
+  });
+
+  it("Voltar sai da tela de um ativo e mostra os atalhos de novo", async function () {
+    await pickOption(byId("global-search-class"), "Stock (B3)");
+    await byId("global-search-ticker").setValue("CHEAP3");
+    await byId("global-search-submit").click();
+
+    // O botão depende só do ticker aberto; não espera a rede responder.
+    await byId("research-back").waitForDisplayed({ timeout: 10_000 });
+    await byId("open-screener").waitForExist({ reverse: true });
+    await byId("research-back").click();
+
+    await byId("open-screener").waitForDisplayed({ timeout: 10_000 });
+    await byId("research-back").waitForExist({ reverse: true });
   });
 });
