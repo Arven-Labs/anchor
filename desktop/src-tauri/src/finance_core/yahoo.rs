@@ -281,6 +281,10 @@ async fn fetch_chart(instrument: &Instrument, query: &str) -> Result<ChartResult
     parse_chart(&http::get_text("Yahoo Finance", &url, http::DEFAULT_TIMEOUT).await?)
 }
 
+fn dividends_avg_query() -> String {
+    format!("range={HISTORY_RANGE}&interval=1d&events=div")
+}
+
 pub struct Yahoo;
 
 impl DataProvider for Yahoo {
@@ -308,8 +312,7 @@ impl MarketDataProvider for Yahoo {
 
     fn dividends_avg<'a>(&'a self, instrument: &'a Instrument) -> ProviderResult<'a, f64> {
         Box::pin(async move {
-            let chart =
-                fetch_chart(instrument, &format!("range={HISTORY_RANGE}&interval=3mo&events=div")).await?;
+            let chart = fetch_chart(instrument, &dividends_avg_query()).await?;
             dividends_avg_of(&chart, Utc::now().year()).ok_or_else(|| {
                 AppError::NoData(format!("{}: no complete year of dividends", instrument.ticker))
             })
@@ -525,6 +528,16 @@ mod tests {
         assert_eq!(dividends_avg_of(&r, 2026), None);
         let at = chrono::NaiveDate::from_ymd_opt(2026, 2, 1).unwrap().and_hms_opt(12, 0, 0).unwrap().and_utc().timestamp();
         assert_eq!(dividends_avg_of(&parse(&[T0], &[Some(1.0)], &[(at, 1.0)]), 2026), None);
+    }
+
+    /// Com `interval=3mo` o Yahoo omite eventos de dividendo (medido em 2026-11-17: BBAS3 sem
+    /// 2023 a 2025, WEGE3 sem 2024 e 2025). Só `interval=1d` devolve todos, como em `dividend_payments`.
+    #[test]
+    fn dividends_avg_requests_daily_candles_so_yahoo_returns_every_dividend() {
+        let query = dividends_avg_query();
+        assert!(query.contains("interval=1d"), "{query}");
+        assert!(query.contains("events=div"), "{query}");
+        assert!(query.contains(&format!("range={HISTORY_RANGE}")), "{query}");
     }
 
     #[test]
