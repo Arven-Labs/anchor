@@ -5,6 +5,8 @@ FROM node:20-bookworm-slim
 # - libgtk-3-dev: toolkit de janelas do Linux
 # - libssl-dev: criptografia (HTTPS)
 # - build-essential: compilador C (dependências do Rust precisam)
+# - libudev-dev e pkg-config: o `hidapi` (visualizador de wallets, Fase 36) acha a
+#   libudev por pkg-config; sem eles o build do app para no build script
 # - as demais: ícones, indicadores de sistema, imagens SVG
 RUN apt-get update && apt-get install -y \
     build-essential \
@@ -15,6 +17,8 @@ RUN apt-get update && apt-get install -y \
     libwebkit2gtk-4.1-dev \
     libayatana-appindicator3-dev \
     librsvg2-dev \
+    libudev-dev \
+    pkg-config \
     patchelf \
     && rm -rf /var/lib/apt/lists/*
 
