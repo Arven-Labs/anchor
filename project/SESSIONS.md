@@ -5568,3 +5568,17 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Decisão**: B, aprovada no plano. Reabrir se o informe passar a ser consumido por outra ferramenta ou por um contador que precise da distinção.
 - **Em aberto**: nenhum limite do câmbio (P16/P17) resta. Pendências 🟡 só bloqueadas: P12(b), P14, P15, P19.
 - **Não verificado**: não rodei os testes; a leitura do `foreign.rs:397` e do `foreign_tax.dart:436` é de código, não de execução.
+
+## Sessão 369 — screener de ações (1ª frente do ROADMAP, Sessão 340): backend e tela
+- **Pedido do dono**: começar a frente "automatizar a análise de ações" pelos filtros (screener) sobre os dados já coletados. A sessão foi interrompida pela bateria; **este registro foi escrito depois, reconstruído dos PRs, dos commits e do código** (não de lembrança da sessão), na retomada de 2026-11-17.
+- **Feito** (2026-11-16):
+  - **#154 (mesclado), backend**: comando Tauri `screen_stocks` (`desktop/src-tauri/src/commands/screener.rs`). Filtros opcionais `pe_max`, `pb_max`, `roe_min` e `dy_min`, combinados com E. `roe_min` e `dy_min` em percentual (15 = 15%). Filtro ligado exclui o ticker sem o indicador (ex.: P/L com LPA ≤ 0 ou preço ≤ 0, DY sem dividendo coletado). P/L = preço ÷ LPA, P/VP = preço ÷ VPA, DY = dividendo médio de 5 anos ÷ preço. Usa a linha mais recente de cada tabela (`fetched_at`, desempate por `id`). Filtro não finito (NaN, infinito) é recusado com `InvalidInput`. Só leitura de dados locais: sem migration, sem dinheiro nem imposto.
+  - **#155 (mesclado)**: restaura o `desktop/package-lock.json`, que um `npm` local alterou sem querer no #154.
+  - **#156 (aberto), tela**: seção "Stock screener" em Research (`ScreenerSection.tsx`), com atalho no estado vazio, os quatro filtros, a tabela e o aviso de que filtra só o que já foi coletado. E2E `screener.e2e.mjs`: semeia 2 tickers direto no banco (sem rede) e confere a lista e o filtro por P/L.
+- **Decisão de escopo (do PR #154)**: o universo é **o que já está na base** (buscado, em carteira ou em watchlist), não a B3 inteira, porque as coletas são sob demanda por ticker. Uma lista completa da B3 exigiria uma fonte nova e fica fora.
+- **Testes**: 10 em `screener.rs`. Segundo o corpo do #154, antes da implementação os 10 falharam (stub `unimplemented!`) e depois passaram, com a suíte inteira em 1283 no CI. No #156, o CI do PR (run 43985914554) passou em `e2e`, `frontend`, `guard` e `gate`; `rust`, `mobile` e `contracts` foram pulados pelo filtro de caminho.
+- **Em aberto**:
+  - As outras 3 frentes do ROADMAP seguem sem desenho: RI das empresas, teses e análises, preenchimento dos valuations.
+  - Faltam filtros e colunas além dos quatro (setor, valor de mercado, ordenação, salvar filtro). Nada disso foi pedido.
+  - Reabrir o universo se o dono quiser rastrear a B3 inteira.
+- **Não verificado**: a tela num app real (só CI e E2E com dados semeados); o screener com dados reais de coleta (preço e fundamentos vindos das fontes, não de `INSERT`). A tela mostra a data da coleta dos fundamentos (`ScreenerSection.tsx:172`, só os 10 primeiros caracteres; conferido por `grep`). Não reli o código do `ScreenerSection.tsx` linha a linha para este registro.
