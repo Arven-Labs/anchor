@@ -1,6 +1,7 @@
-import { BanknoteIcon, PercentIcon, SearchIcon } from "lucide-react";
+import { BanknoteIcon, FilterIcon, PercentIcon, SearchIcon } from "lucide-react";
 import type { AssetClass } from "../portfolio/types";
 import RatesSection from "./RatesSection";
+import ScreenerSection from "./ScreenerSection";
 import { Button } from "@/components/ui/button";
 import StockAnalysisSection from "./StockAnalysisSection";
 import FiiLookupSection from "./FiiLookupSection";
@@ -51,12 +52,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 /// Fase 32, seção I — `view = "fx"` mostra o câmbio multi-moeda (o par é
 /// escolhido na própria tela, sem ticker). Mesmo desenho dos juros: moeda não é
 /// classe de ativo, então fica fora de `AssetClass` e da busca global.
-export type ResearchView = "asset" | "rates" | "fx";
+/// `view = "screener"` mostra o filtro de ações já coletadas (sem ticker), mesmo
+/// desenho dos juros e do câmbio.
+export type ResearchView = "asset" | "rates" | "fx" | "screener";
 
 const VIEW_TITLES: Record<ResearchView, string> = {
   asset: "Research",
   rates: "Research — Interest rates",
   fx: "Research — Currencies",
+  screener: "Research — Stock screener",
 };
 
 function StockLookupPanel({
@@ -66,6 +70,7 @@ function StockLookupPanel({
   view,
   onOpenRates,
   onOpenFx,
+  onOpenScreener,
 }: {
   workspaceId: number;
   assetClass: AssetClass;
@@ -73,6 +78,7 @@ function StockLookupPanel({
   view: ResearchView;
   onOpenRates: () => void;
   onOpenFx: () => void;
+  onOpenScreener: () => void;
 }) {
   return (
     <Card>
@@ -83,6 +89,8 @@ function StockLookupPanel({
         {view === "rates" && <RatesSection />}
 
         {view === "fx" && <FxLookupSection />}
+
+        {view === "screener" && <ScreenerSection />}
 
         {view === "asset" && !activeTicker && (
           <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border py-10 text-center text-muted-foreground">
@@ -96,6 +104,10 @@ function StockLookupPanel({
               <Button variant="outline" size="sm" onClick={onOpenFx} data-testid="open-fx">
                 <BanknoteIcon />
                 Or see currency exchange rates
+              </Button>
+              <Button variant="outline" size="sm" onClick={onOpenScreener} data-testid="open-screener">
+                <FilterIcon />
+                Or screen the stocks you've collected
               </Button>
             </div>
           </div>

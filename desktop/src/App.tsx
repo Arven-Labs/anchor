@@ -143,6 +143,11 @@ function App() {
     setSection("lookup");
   }
 
+  function openScreener() {
+    setResearchView("screener");
+    setSection("lookup");
+  }
+
   if (workspaceId === null) {
     return (
       <main className="mx-auto max-w-6xl p-8">
@@ -272,6 +277,7 @@ function App() {
               view={researchView}
               onOpenRates={openRates}
               onOpenFx={openFx}
+              onOpenScreener={openScreener}
             />
           </TabsContent>
 
