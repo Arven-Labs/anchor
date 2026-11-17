@@ -1,4 +1,4 @@
-import { BanknoteIcon, FilterIcon, PercentIcon, SearchIcon } from "lucide-react";
+import { ArrowLeftIcon, BanknoteIcon, FilterIcon, PercentIcon, SearchIcon } from "lucide-react";
 import type { AssetClass } from "../portfolio/types";
 import RatesSection from "./RatesSection";
 import ScreenerSection from "./ScreenerSection";
@@ -71,6 +71,7 @@ function StockLookupPanel({
   onOpenRates,
   onOpenFx,
   onOpenScreener,
+  onBack,
 }: {
   workspaceId: number;
   assetClass: AssetClass;
@@ -79,10 +80,29 @@ function StockLookupPanel({
   onOpenRates: () => void;
   onOpenFx: () => void;
   onOpenScreener: () => void;
+  onBack: () => void;
 }) {
+  // P20 — o estado de Research mora em `App.tsx`; sem este botão, depois da 1ª busca (ou de
+  // abrir juros, câmbio ou Screener) a tela vazia, com os atalhos, não voltava mais.
+  const canGoBack = view !== "asset" || activeTicker !== null;
+
   return (
     <Card>
       <CardHeader>
+        {canGoBack && (
+          <div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-ml-2"
+              onClick={onBack}
+              data-testid="research-back"
+            >
+              <ArrowLeftIcon />
+              Back
+            </Button>
+          </div>
+        )}
         <CardTitle>{VIEW_TITLES[view]}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
