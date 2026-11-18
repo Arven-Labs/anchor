@@ -1,7 +1,9 @@
 //! Crescimento histórico dos dividendos por ação, para sugerir o `g` de Gordon e
 //! do Teto Projetado. É só uma sugestão: o usuário decide se usa.
 
-use chrono::NaiveDate;
+use std::collections::BTreeMap;
+
+use chrono::{Datelike, NaiveDate};
 
 /// Crescimento anual composto dos dividendos, com o período que o sustenta.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
@@ -23,8 +25,22 @@ pub const MIN_SPAN_YEARS: i32 = 3;
 /// - O último ano completo (`today.year() - 1`) precisa ter pago algo; se parou de pagar, `None`.
 /// - O ano inicial é o mais antigo com pagamento, no máximo `MAX_SPAN_YEARS` antes do final.
 /// - Variação com menos de `MIN_SPAN_YEARS` anos, ponta não positiva ou valor não finito: `None`.
-pub fn dividend_growth(_payments: &[(NaiveDate, f64)], _today: NaiveDate) -> Option<DividendGrowth> {
-    unimplemented!("etapa 2 do plano: implementar depois dos testes")
+pub fn dividend_growth(payments: &[(NaiveDate, f64)], today: NaiveDate) -> Option<DividendGrowth> {
+    let to_year = today.year() - 1;
+    let mut by_year: BTreeMap<i32, f64> = BTreeMap::new();
+    for (date, amount) in payments {
+        if date.year() <= to_year {
+            *by_year.entry(date.year()).or_insert(0.0) += amount;
+        }
+    }
+    let end = *by_year.get(&to_year)?;
+    let (&from_year, &start) = by_year.range(to_year - MAX_SPAN_YEARS..).next()?;
+    let span = to_year - from_year;
+    if span < MIN_SPAN_YEARS || !(start.is_finite() && start > 0.0 && end.is_finite() && end > 0.0) {
+        return None;
+    }
+    let cagr_pct = ((end / start).powf(1.0 / f64::from(span)) - 1.0) * 100.0;
+    Some(DividendGrowth { cagr_pct, from_year, to_year })
 }
 
 #[cfg(test)]
