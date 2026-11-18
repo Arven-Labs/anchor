@@ -1104,7 +1104,7 @@
   "profitabilityTitle": "Profitability",
   "profitabilityBeforeTax": "Return before taxes",
   "profitabilityRefresh": "Update price history",
-  "profitabilityEmpty": "No buys, sells or income on stocks, REITs, ETFs, BDRs or metals to measure.",
+  "profitabilityEmpty": "No buys, sells or income on stocks, REITs, ETFs, BDRs, metals or crypto to measure.",
   "profitabilityCumulative": "Cumulative: {value}",
   "@profitabilityCumulative": {"placeholders": {"value": {"type": "String"}}},
   "profitabilityTrailing12": "Last 12 months: {value}",

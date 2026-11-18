@@ -147,7 +147,7 @@ void main() {
     await _pump(tester, compute: () async => const ProfitabilityResult(months: [], excluded: []));
 
     expect(
-      find.text('Nenhuma compra, venda ou provento de ação, FII, ETF, BDR ou metal para medir.'),
+      find.text('Nenhuma compra, venda ou provento de ação, FII, ETF, BDR, metal ou cripto para medir.'),
       findsOneWidget,
     );
   });

@@ -857,7 +857,7 @@
   "profitabilityTitle": "Rentabilidade",
   "profitabilityBeforeTax": "Retorno antes de impostos",
   "profitabilityRefresh": "Atualizar histórico de preços",
-  "profitabilityEmpty": "Nenhuma compra, venda ou provento de ação, FII, ETF, BDR ou metal para medir.",
+  "profitabilityEmpty": "Nenhuma compra, venda ou provento de ação, FII, ETF, BDR, metal ou cripto para medir.",
   "profitabilityCumulative": "Acumulado: {value}",
   "profitabilityTrailing12": "Últimos 12 meses: {value}",
   "profitabilityFinalValue": "Valor final: {value}",

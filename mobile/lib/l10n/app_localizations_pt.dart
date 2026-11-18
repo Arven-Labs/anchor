@@ -3154,7 +3154,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get profitabilityEmpty =>
-      'Nenhuma compra, venda ou provento de ação, FII, ETF, BDR ou metal para medir.';
+      'Nenhuma compra, venda ou provento de ação, FII, ETF, BDR, metal ou cripto para medir.';
 
   @override
   String profitabilityCumulative(String value) {

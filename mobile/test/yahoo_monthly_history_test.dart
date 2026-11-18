@@ -119,12 +119,14 @@ void main() {
       await expectLater(notFound.fetchMonthlyHistory('XPTO3.SA'), throwsA(isA<QuoteNotFoundException>()));
     });
 
-    test('B6: símbolo do Yahoo por classe; cripto e fundo não têm', () {
+    test('B6: símbolo do Yahoo por classe; cripto usa o par em dólar e fundo não tem', () {
       expect(YahooQuoteService.symbolFor(_asset('PETR4', AssetClass.acaoBr)), 'PETR4.SA');
       expect(YahooQuoteService.symbolFor(_asset('HGLG11', AssetClass.fii)), 'HGLG11.SA');
       expect(YahooQuoteService.symbolFor(_asset('AAPL', AssetClass.acaoInternacional)), 'AAPL');
       expect(YahooQuoteService.symbolFor(_asset('XAU', AssetClass.metal)), 'GC=F');
-      expect(YahooQuoteService.symbolFor(_asset('BTC', AssetClass.cripto)), isNull);
+      // O Yahoo não tem `BTC-BRL` (404, medido em 2026-11-18); só o par em dólar.
+      expect(YahooQuoteService.symbolFor(_asset('BTC', AssetClass.cripto)), 'BTC-USD');
+      expect(YahooQuoteService.symbolFor(_asset('eth', AssetClass.cripto)), 'ETH-USD');
       expect(YahooQuoteService.symbolFor(_asset('FIDX', AssetClass.fundo)), isNull);
     });
   });
