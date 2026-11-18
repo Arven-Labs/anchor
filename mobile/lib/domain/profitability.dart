@@ -188,7 +188,7 @@ ProfitabilityResult computeProfitability({
           'month': key,
         });
       }
-      emv += toBrl(entry.value * price, priceCurrency(asset), target);
+      emv += toBrl(entry.value * price, asset.currency, target);
     }
 
     double r;
