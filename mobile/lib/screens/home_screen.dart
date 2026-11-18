@@ -6,6 +6,8 @@ import '../domain/home_layout.dart';
 import '../domain/home_summary.dart';
 import '../domain/money_format.dart';
 import '../domain/number_locale.dart';
+import '../domain/profitability.dart';
+import '../domain/twr.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/home_labels.dart';
 import '../l10n/language_settings.dart';
@@ -15,6 +17,7 @@ import '../services/home_layout_repository.dart';
 import '../services/live_positions.dart';
 import '../services/net_worth_loader.dart';
 import '../services/portfolio_repository.dart';
+import '../services/profitability_repository.dart';
 import '../services/quote_dispatcher.dart';
 import '../services/yahoo_quote_service.dart';
 
@@ -54,8 +57,9 @@ Widget _bigNumber(Text text) => FittedBox(
 /// Aba Início: cards-resumo da carteira e do patrimônio na moeda base, que o dono
 /// reordena, esconde e alterna entre meia e cheia largura (modo Personalizar). O
 /// layout é por aparelho, como todo o resto do mobile. Os 4 widgets usam só dados que
-/// o celular já tem; retorno TWR, favoritos e carteiras múltiplas do desktop ficam de
-/// fora.
+/// o celular já tem; favoritos e carteiras múltiplas do desktop ficam de fora. O card de
+/// rentabilidade (TWR) lê só o histórico de preços já gravado, sem atualizá-lo na rede
+/// (a tela de Rentabilidade, no Portfolio, é quem faz isso).
 class HomeScreen extends StatefulWidget {
   /// Série da moeda em reais; o padrão é o Yahoo com o fallback de inverso e de
   /// pernas via dólar. Injetável para teste, sem rede.
@@ -64,7 +68,16 @@ class HomeScreen extends StatefulWidget {
   /// Posições com preço atual; o padrão lê a carteira e cota na rede.
   final Future<List<LivePositionRow>> Function()? loadPositions;
 
-  const HomeScreen({super.key, this.fetchFx, this.loadPositions});
+  /// Rentabilidade (TWR) para o card; o padrão é `ProfitabilityRepository.compute()`.
+  /// Injetável para teste, sem rede.
+  final Future<ProfitabilityResult> Function()? loadProfitability;
+
+  const HomeScreen({
+    super.key,
+    this.fetchFx,
+    this.loadPositions,
+    this.loadProfitability,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -89,12 +102,38 @@ class _HomeScreenState extends State<HomeScreen> {
   Set<String> _fxFailed = {};
   int _run = 0;
 
+  /// A rentabilidade carrega à parte do resto: uma falha dela (câmbio, histórico de
+  /// preços) vira traço no próprio card e não esconde os outros.
+  bool _twrLoading = true;
+  ProfitabilityResult? _twr;
+  int _twrRun = 0;
+
   @override
   void initState() {
     super.initState();
     _loadLayout();
     _loadData();
+    _loadTwr();
   }
+
+  Future<void> _loadTwr() async {
+    final run = ++_twrRun;
+    setState(() => _twrLoading = true);
+    ProfitabilityResult? result;
+    try {
+      result = await (widget.loadProfitability ??
+          ProfitabilityRepository().compute)();
+    } catch (_) {
+      result = null;
+    }
+    if (!mounted || run != _twrRun) return;
+    setState(() {
+      _twr = result;
+      _twrLoading = false;
+    });
+  }
+
+  Future<void> _refresh() => Future.wait([_loadData(), _loadTwr()]);
 
   Future<void> _loadLayout() async {
     final layout = await _layoutRepository.load();
@@ -286,7 +325,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final l = AppLocalizations.of(context);
     final rows = homeRows(_layout);
     return RefreshIndicator(
-      onRefresh: _loadData,
+      onRefresh: _refresh,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -341,6 +380,8 @@ class _HomeScreenState extends State<HomeScreen> {
         content = _allocation();
       case HomeWidgetKey.netWorth:
         content = _netWorthCard();
+      case HomeWidgetKey.twr:
+        content = _twrCard();
     }
     return Card(
       key: Key('home-card-${config.key.id}'),
@@ -443,6 +484,55 @@ class _HomeScreenState extends State<HomeScreen> {
             key: const Key('home-profit-excluded'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
+      ],
+    );
+  }
+
+  /// 12M é o número grande; sem 12 meses medidos, o acumulado ocupa o lugar e o 12M some.
+  /// Sem mês medido, ou com falha, um traço. A TWR do celular é bruta de imposto.
+  Widget _twrCard() {
+    final l = AppLocalizations.of(context);
+    final months = _twr?.months ?? const <MonthlyReturn>[];
+    if (_twrLoading) {
+      return const SizedBox(
+        height: 20,
+        width: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    if (months.isEmpty) {
+      return const Text('—', key: Key('home-twr-text'));
+    }
+    final cumulative = months.last.rCumulativePct;
+    final trailing = trailingTwelveMonthPct([
+      for (final m in months) m.rCumulativePct,
+    ]);
+    final big = trailing ?? cumulative;
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _bigNumber(
+          Text(
+            homeProfitPercentLabel(big, locale: l.localeName),
+            key: const Key('home-twr-text'),
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: big >= 0 ? scheme.primary : scheme.error,
+            ),
+          ),
+        ),
+        if (trailing != null)
+          Text(
+            l.profitabilityCumulative(
+              homeProfitPercentLabel(cumulative, locale: l.localeName),
+            ),
+            key: const Key('home-twr-cumulative'),
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        Text(
+          l.profitabilityBeforeTax,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
       ],
     );
   }

@@ -10,7 +10,8 @@ enum HomeWidgetKey {
   totalValue('total_value', wideByDefault: false),
   profit('profit', wideByDefault: false),
   allocation('allocation', wideByDefault: true),
-  netWorth('net_worth', wideByDefault: true);
+  netWorth('net_worth', wideByDefault: true),
+  twr('twr', wideByDefault: false);
 
   /// Identificador gravado no JSON e usado nas chaves de teste; não muda nunca.
   final String id;

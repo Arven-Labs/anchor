@@ -26,6 +26,7 @@ void main() {
         'profit': 'Lucro não realizado',
         'allocation': 'Alocação por classe',
         'net_worth': 'Patrimônio líquido',
+        'twr': 'Rentabilidade (TWR)',
       });
     });
 
@@ -35,6 +36,7 @@ void main() {
         'profit': 'Unrealized profit',
         'allocation': 'Allocation by class',
         'net_worth': 'Net worth',
+        'twr': 'Return (TWR)',
       });
     });
 
@@ -44,6 +46,7 @@ void main() {
         'profit',
         'allocation',
         'net_worth',
+        'twr',
       ]);
     });
   });
