@@ -58,7 +58,7 @@ pub async fn collect_crypto_brl(db: &DatabaseConnection, tickers: &[String], fx:
 /// nenhuma (par ausente) fica de fora em vez de ganhar um valor errado.
 pub fn crypto_brl_series(usd: &[(NaiveDate, f64)], fx: &FxHistory) -> Vec<(NaiveDate, f64)> {
     usd.iter()
-        .filter_map(|(date, close)| fx.rate_on("USD", "BRL", *date).map(|rate| (*date, close / rate)))
+        .filter_map(|(date, close)| fx.rate_on("USD", "BRL", *date).map(|rate| (*date, close * rate)))
         .collect()
 }
 
