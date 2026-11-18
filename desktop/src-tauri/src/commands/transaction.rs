@@ -650,7 +650,7 @@ pub async fn suggest_crypto_swap_value(
     suggest_crypto_swap_value_in(db.inner(), asset_id, &date, quantity).await
 }
 
-/// Valor de mercado em reais de `quantity` da moeda na data, pelo fechamento `-BRL` já coletado (o mesmo que o
+/// Valor de mercado em reais de `quantity` da moeda na data, pelo fechamento em reais já coletado (`TICKER-USD` × USDBRL; o mesmo que o
 /// backtest usa). `None` quando não há como sugerir: ativo que não é cripto ou não está em reais, sem fechamento
 /// recente, ou entrada inválida; o formulário então deixa o valor para o usuário digitar.
 pub async fn suggest_crypto_swap_value_in(
