@@ -17,7 +17,7 @@ pub struct DividendGrowth {
 /// Janela máxima: os últimos 5 anos de variação (6 anos-calendário).
 pub const MAX_SPAN_YEARS: i32 = 5;
 /// Menos que isso é ruído: não sugere.
-pub const MIN_SPAN_YEARS: i32 = 3;
+pub const MIN_SPAN_YEARS: i32 = 4;
 
 /// CAGR da soma anual de dividendos por ação. `payments` = (data, valor por ação).
 ///
