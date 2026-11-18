@@ -6542,6 +6542,85 @@ async fn the_swap_value_is_suggested_from_the_brl_close_and_only_when_it_is_rece
     assert!(suggest(9999, "2026-02-01", 1.0).await.is_err(), "ativo inexistente");
 }
 
+// ---------------------------------------------------------------------------
+// Histórico de cripto em reais (P21): o Yahoo não tem `-BRL` (404, medido em 2026-11-18), então a série em reais
+// vem de `TICKER-USD` multiplicado pelo câmbio USDBRL do dia.
+// ---------------------------------------------------------------------------
+
+fn fx_history(pair: &str, series: &[(chrono::NaiveDate, f64)]) -> crate::domain::currency_conversion::FxHistory {
+    crate::domain::currency_conversion::FxHistory::new(std::collections::HashMap::from([(pair.to_string(), series.to_vec())]))
+}
+
+#[test]
+fn crypto_usd_closes_become_brl_day_by_day_using_the_nearest_exchange_rate() {
+    use crate::finance_api::adjusted_close::crypto_brl_series;
+
+    let d = |day: u32| chrono::NaiveDate::from_ymd_opt(2026, 1, day).unwrap();
+    // O câmbio só tem dia útil (segunda 5,00, sexta 5,20); a cripto negocia todo dia.
+    let fx = fx_history("USDBRL", &[(d(5), 5.0), (d(9), 5.2)]);
+    let usd = [(d(5), 50_000.0), (d(9), 50_000.0), (d(10), 40_000.0), (d(11), 40_000.0)];
+
+    let brl = crypto_brl_series(&usd, &fx);
+
+    assert_eq!(brl.iter().map(|(date, _)| *date).collect::<Vec<_>>(), usd.iter().map(|(date, _)| *date).collect::<Vec<_>>());
+    assert!(close(brl[0].1, 250_000.0), "50.000 × 5,00");
+    assert!(close(brl[1].1, 260_000.0), "50.000 × 5,20");
+    assert!(close(brl[2].1, 208_000.0), "sábado usa a taxa de sexta: 40.000 × 5,20");
+    assert!(close(brl[3].1, 208_000.0), "domingo também");
+}
+
+#[test]
+fn without_a_usd_brl_rate_the_crypto_series_is_empty_instead_of_wrong() {
+    use crate::finance_api::adjusted_close::crypto_brl_series;
+
+    let d = |day: u32| chrono::NaiveDate::from_ymd_opt(2026, 1, day).unwrap();
+    let only_other_pairs = fx_history("EURUSD", &[(d(5), 1.1)]);
+
+    assert!(crypto_brl_series(&[(d(5), 50_000.0)], &only_other_pairs).is_empty());
+}
+
+#[tokio::test]
+async fn the_converted_crypto_series_is_stored_in_brl_and_feeds_the_swap_value_suggestion() {
+    use crate::commands::transaction::suggest_crypto_swap_value_in;
+    use crate::entity::stock_adjusted_close;
+    use crate::finance_api::adjusted_close::store_crypto_brl;
+    use sea_orm::EntityTrait;
+
+    let db = memory_db().await;
+    let btc = asset(&db, "BTC", "cripto").await; // cadastrada em reais, a que a permuta e o backtest leem
+    let d = |day: u32| chrono::NaiveDate::from_ymd_opt(2026, 2, day).unwrap();
+    let fx = fx_history("USDBRL", &[(d(1), 5.0)]);
+
+    // US$ 100 e US$ 200 a 5,00 viram R$ 500 e R$ 1.000, gravados sob o ticker do ativo.
+    let stored = store_crypto_brl(&db, "BTC", &[(d(1), 100.0), (d(2), 200.0)], &fx, "2026-02-10T00:00:00Z").await.unwrap();
+
+    assert_eq!(stored, 2);
+    let rows = stock_adjusted_close::Entity::find().all(&db).await.unwrap();
+    let on = |date: &str| rows.iter().find(|r| r.ticker == "BTC" && r.price_date == date).unwrap().adj_close_price;
+    assert!(close(on("2026-02-01"), 500.0) && close(on("2026-02-02"), 1000.0));
+    // Antes do conserto ninguém gravava essa série e a sugestão devolvia `None`.
+    assert_eq!(suggest_crypto_swap_value_in(&db, btc.id, "2026-02-02", 1.5).await.unwrap(), Some(1500.0));
+}
+
+#[tokio::test]
+async fn crypto_without_any_usd_brl_rate_is_refused_and_nothing_is_stored() {
+    use crate::entity::stock_adjusted_close;
+    use crate::error::AppError;
+    use crate::finance_api::adjusted_close::store_crypto_brl;
+    use sea_orm::EntityTrait;
+
+    let db = memory_db().await;
+    let d = |day: u32| chrono::NaiveDate::from_ymd_opt(2026, 2, day).unwrap();
+    let no_usd_brl = fx_history("EURUSD", &[(d(1), 1.1)]);
+
+    let result = store_crypto_brl(&db, "BTC", &[(d(1), 100.0)], &no_usd_brl, "2026-02-10T00:00:00Z").await;
+
+    assert!(matches!(result, Err(AppError::NoData(_))), "falha explícita, não silêncio: {result:?}");
+    assert!(stock_adjusted_close::Entity::find().all(&db).await.unwrap().is_empty());
+    // Sem pontos para converter não há o que recusar.
+    assert_eq!(store_crypto_brl(&db, "BTC", &[], &no_usd_brl, "2026-02-10T00:00:00Z").await.unwrap(), 0);
+}
+
 #[tokio::test]
 async fn the_backtest_simulates_crypto_from_the_brl_series_and_weighs_it_in_the_base_currency() {
     use crate::commands::backtest::{run_backtest_in, BacktestRequest};
@@ -6560,7 +6639,7 @@ async fn the_backtest_simulates_crypto_from_the_brl_series_and_weighs_it_in_the_
     }
     let start = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
     seed_prices(&db, "AAAA3", true, start, &vec![100.0; 40]).await;
-    // O BTC tem a série ajustada em reais (par `-BRL`); o fechamento em USD do CoinGecko não pode entrar no lugar dela.
+    // O BTC tem a série ajustada em reais (`-USD` × câmbio, P21); o fechamento em USD do CoinGecko não pode entrar no lugar dela.
     seed_prices(&db, "BTC", true, start, &(0..40).map(|i| 100.0 + i as f64).collect::<Vec<_>>()).await;
     seed_prices(&db, "BTC", false, start, &vec![100.0; 40]).await;
     // O ETH só tem o fechamento em USD: sem a série em reais, sai com aviso em vez de usar o preço errado.

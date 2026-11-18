@@ -118,7 +118,7 @@ fn parse_day(raw: &str) -> Result<NaiveDate, AppError> {
 const CRYPTO_CLASS: &str = "cripto";
 
 /// Série diária do ativo: fechamento ajustado quando existe, senão o fechamento simples (`price_only`). Cripto não
-/// cai no fechamento simples: o do CoinGecko é em USD, e a série ajustada dela é o par `-BRL` do Yahoo.
+/// cai no fechamento simples: o do CoinGecko é em USD, e a série ajustada dela é `TICKER-USD` do Yahoo vezes o câmbio USDBRL (o Yahoo não tem par `-BRL`).
 async fn load_series(db: &DatabaseConnection, ticker: &str, asset_class: &str) -> Result<(Vec<(NaiveDate, f64)>, bool), AppError> {
     let adjusted = stock_adjusted_close::Entity::find()
         .filter(stock_adjusted_close::Column::Ticker.eq(ticker))

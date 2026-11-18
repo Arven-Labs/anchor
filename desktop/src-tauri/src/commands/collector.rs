@@ -89,7 +89,7 @@ pub async fn collect_asset(
         Some("cripto") => {
             let r = finance_api_crypto::collect_ticker(db, ticker).await?;
             // Histórico longo em BRL para o backtest, em melhor esforço: se falhar, a cotação já gravada fica.
-            let _ = crate::finance_api::adjusted_close::collect_crypto_brl(db, &[ticker.to_string()]).await;
+            let _ = collect_crypto_brl_history(db, &[ticker.to_string()]).await;
             Ok(summary(format!(
                 "{} ({}): US$ {:.2} — {} history point(s) — Fear & Greed: {} ({})",
                 r.symbol, r.name, r.price, r.history_points, r.fear_greed_value, r.fear_greed_classification,
@@ -254,9 +254,19 @@ pub async fn run_price_history_backfill(
     result
 }
 
+// Histórico de cripto em reais (P21): o Yahoo não tem par `-BRL`, então a série vem de `TICKER-USD` × o câmbio
+// USDBRL. Garante o par antes (coleta em melhor esforço: com a série já guardada, uma falha de rede não impede a
+// conversão) e o entrega já carregado à coleta, que fica em `finance_api` sem depender de `commands`.
+async fn collect_crypto_brl_history(db: &DatabaseConnection, tickers: &[String]) -> Result<usize, AppError> {
+    let _ = finance_api_fx::collect_pair(db, "USD", "BRL").await;
+    let currencies = std::collections::HashSet::from(["USD".to_string()]);
+    let fx = crate::commands::currency::load_fx_history(db, "BRL", &currencies).await?;
+    crate::finance_api::adjusted_close::collect_crypto_brl(db, tickers, &fx).await
+}
+
 // Fase 22 — só o fechamento ajustado (dividendos e desdobramentos) de ativos da B3 (`global = false`) ou
 // estrangeiros (`global = true`), usado pelo backtest. Com `crypto = true` os tickers são de cripto e o histórico
-// vem do par `-BRL` do Yahoo (`global` é ignorado).
+// vem de `TICKER-USD` do Yahoo convertido para reais pelo câmbio USDBRL (`global` é ignorado).
 #[tauri::command]
 pub async fn run_adjusted_close_backfill(
     lock: tauri::State<'_, AtomicBool>,
@@ -269,7 +279,7 @@ pub async fn run_adjusted_close_backfill(
         return Err(AppError::CollectorBusy);
     }
     let result = if crypto.unwrap_or(false) {
-        crate::finance_api::adjusted_close::collect_crypto_brl(db.inner(), &tickers).await
+        collect_crypto_brl_history(db.inner(), &tickers).await
     } else {
         crate::finance_api::adjusted_close::collect_adjusted_close(db.inner(), &tickers, global).await
     }

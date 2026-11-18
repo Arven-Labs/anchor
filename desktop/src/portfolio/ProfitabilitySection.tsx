@@ -250,7 +250,7 @@ function ProfitabilitySection({ portfolioId }: { portfolioId: number }) {
     return [...new Set(tickers)];
   }, [positionsQuery.data]);
 
-  // Cripto não passa pelo backfill do Yahoo `.SA`: o histórico longo em BRL (par `-BRL`) alimenta só o backtest.
+  // Cripto não passa pelo backfill do Yahoo `.SA`: o histórico longo em BRL (`TICKER-USD` × câmbio USDBRL) alimenta só o backtest.
   const cryptoTickers = useMemo(
     () => [...new Set((positionsQuery.data ?? []).filter((p) => p.asset_class === "cripto").map((p) => p.ticker))],
     [positionsQuery.data],
