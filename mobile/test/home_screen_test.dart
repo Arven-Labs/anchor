@@ -494,7 +494,7 @@ void main() {
 
       final layout = await layoutRepository.load();
 
-      expect(layout.first.key, HomeWidgetKey.netWorth);
+      expect(layout.first.key, HomeWidgetKey.twr);
       expect(layout.every((c) => !c.visible), isTrue);
     });
   });

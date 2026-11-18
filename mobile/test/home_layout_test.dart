@@ -56,6 +56,7 @@ void main() {
         HomeWidgetKey.totalValue,
         HomeWidgetKey.profit,
         HomeWidgetKey.allocation,
+        HomeWidgetKey.twr,
       ]);
       expect(merged[0].wide, isFalse);
       expect(merged[1].visible, isFalse);
