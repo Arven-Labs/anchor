@@ -388,6 +388,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get homeWidgetNetWorth => 'Patrimônio líquido';
 
   @override
+  String get homeWidgetTwr => 'Rentabilidade (TWR)';
+
+  @override
   String get assetClassAcaoBr => 'Ação BR';
 
   @override

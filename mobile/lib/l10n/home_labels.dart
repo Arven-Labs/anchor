@@ -10,6 +10,7 @@ String homeWidgetName(AppLocalizations l, HomeWidgetKey key) => switch (key) {
   HomeWidgetKey.profit => l.homeWidgetProfit,
   HomeWidgetKey.allocation => l.homeWidgetAllocation,
   HomeWidgetKey.netWorth => l.homeWidgetNetWorth,
+  HomeWidgetKey.twr => l.homeWidgetTwr,
 };
 
 /// Nome da classe no idioma da tela. `AssetClass.label` (português) segue existindo para as

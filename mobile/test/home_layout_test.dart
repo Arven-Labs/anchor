@@ -14,7 +14,7 @@ void main() {
   ];
 
   group('layout padrão', () {
-    test('tem os 4 widgets visíveis, na ordem, com alocação e patrimônio em largura cheia', () {
+    test('tem os 5 widgets visíveis, na ordem, com alocação e patrimônio em largura cheia', () {
       final layout = defaultHomeLayout();
 
       expect(keys(layout), [
@@ -22,9 +22,10 @@ void main() {
         HomeWidgetKey.profit,
         HomeWidgetKey.allocation,
         HomeWidgetKey.netWorth,
+        HomeWidgetKey.twr,
       ]);
       expect(layout.every((c) => c.visible), isTrue);
-      expect([for (final c in layout) c.wide], [false, false, true, true]);
+      expect([for (final c in layout) c.wide], [false, false, true, true, false]);
     });
 
     test('cada chamada devolve uma lista nova (editar uma não muda a outra)', () {
@@ -33,7 +34,7 @@ void main() {
 
       a.removeAt(0);
 
-      expect(b, hasLength(4));
+      expect(b, hasLength(5));
     });
   });
 
@@ -55,6 +56,7 @@ void main() {
         HomeWidgetKey.totalValue,
         HomeWidgetKey.profit,
         HomeWidgetKey.allocation,
+        HomeWidgetKey.twr,
       ]);
       expect(merged[0].wide, isFalse);
       expect(merged[1].visible, isFalse);
@@ -72,9 +74,23 @@ void main() {
         HomeWidgetKey.totalValue,
         HomeWidgetKey.allocation,
         HomeWidgetKey.netWorth,
+        HomeWidgetKey.twr,
       ]);
       expect(merged[2].visible, isTrue);
       expect(merged[2].wide, isTrue, reason: 'alocação é larga por padrão');
+    });
+
+    test('layout salvo antes do card de rentabilidade ganha o card no fim, visível e em meia largura', () {
+      final merged = mergeWithDefaults([
+        config(HomeWidgetKey.netWorth, wide: true),
+        config(HomeWidgetKey.totalValue),
+        config(HomeWidgetKey.profit),
+        config(HomeWidgetKey.allocation, wide: true),
+      ]);
+
+      expect(merged.last.key, HomeWidgetKey.twr);
+      expect(merged.last.visible, isTrue);
+      expect(merged.last.wide, isFalse);
     });
 
     test('chave repetida no salvo: a primeira vale', () {
@@ -195,6 +211,7 @@ void main() {
         [HomeWidgetKey.totalValue, HomeWidgetKey.profit],
         [HomeWidgetKey.allocation],
         [HomeWidgetKey.netWorth],
+        [HomeWidgetKey.twr],
       ]);
     });
 

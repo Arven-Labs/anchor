@@ -728,6 +728,12 @@ abstract class AppLocalizations {
   /// **'Net worth'**
   String get homeWidgetNetWorth;
 
+  /// No description provided for @homeWidgetTwr.
+  ///
+  /// In en, this message translates to:
+  /// **'Return (TWR)'**
+  String get homeWidgetTwr;
+
   /// No description provided for @assetClassAcaoBr.
   ///
   /// In en, this message translates to:

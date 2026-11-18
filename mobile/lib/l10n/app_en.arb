@@ -134,6 +134,7 @@
   "homeWidgetProfit": "Unrealized profit",
   "homeWidgetAllocation": "Allocation by class",
   "homeWidgetNetWorth": "Net worth",
+  "homeWidgetTwr": "Return (TWR)",
 
   "assetClassAcaoBr": "BR stock",
   "assetClassFii": "FII",

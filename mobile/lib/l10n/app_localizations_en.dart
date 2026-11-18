@@ -386,6 +386,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeWidgetNetWorth => 'Net worth';
 
   @override
+  String get homeWidgetTwr => 'Return (TWR)';
+
+  @override
   String get assetClassAcaoBr => 'BR stock';
 
   @override

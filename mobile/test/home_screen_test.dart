@@ -8,6 +8,8 @@ import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/fx_history.dart';
 import 'package:anchor_mobile/domain/home_layout.dart';
 import 'package:anchor_mobile/domain/money_format.dart';
+import 'package:anchor_mobile/domain/profitability.dart';
+import 'package:anchor_mobile/domain/profitability_error.dart';
 import 'package:anchor_mobile/models/asset.dart';
 import 'package:anchor_mobile/models/bank_account.dart';
 import 'package:anchor_mobile/models/general_transaction.dart';
@@ -105,6 +107,7 @@ void main() {
   Future<void> pumpHome(
     WidgetTester tester, {
     Future<List<LivePositionRow>> Function()? loadPositions,
+    Future<ProfitabilityResult> Function()? loadProfitability,
     String locale = 'pt',
   }) async {
     await tester.pumpWidget(const SizedBox());
@@ -114,6 +117,7 @@ void main() {
           fetchFx: (currency) async =>
               FxHistory([(DateTime.now(), currency == 'USD' ? 5.0 : 1.0)]),
           loadPositions: loadPositions ?? () async => positions,
+          loadProfitability: loadProfitability,
         ),
         locale: locale,
       ),
@@ -135,7 +139,7 @@ void main() {
     await settleUntil(tester, () => !has('home-save'));
   }
 
-  testWidgets('mostra os 4 cards com os valores convertidos para a moeda base', (
+  testWidgets('mostra os 5 cards com os valores convertidos para a moeda base', (
     tester,
   ) async {
     await tester.runAsync(seedCash);
@@ -217,6 +221,84 @@ void main() {
 
     expect(has('home-error'), isTrue);
     expect(has('home-card-total_value'), isTrue);
+  });
+
+  // `n` meses com o acumulado (em pontos percentuais) dado por `cumulative(i)`.
+  ProfitabilityResult twrResult(int n, double Function(int i) cumulative) =>
+      ProfitabilityResult(
+        months: [
+          for (var i = 0; i < n; i++)
+            MonthlyReturn(
+              yearMonth: '2025-${(i + 1).toString().padLeft(2, '0')}',
+              bmv: 100,
+              emv: 100,
+              cfTotal: 0,
+              rMonthPct: 0,
+              rCumulativePct: cumulative(i),
+            ),
+        ],
+        excluded: const [],
+      );
+
+  group('card de rentabilidade (TWR)', () {
+    // Acumulado: 10% no mês 0 e 34,2% no mês 12 → 12M = 1,342 / 1,10 − 1 = 22,0%.
+    testWidgets('com 13 meses ou mais: 12M é o número grande e o acumulado vai embaixo', (
+      tester,
+    ) async {
+      await pumpHome(
+        tester,
+        loadProfitability: () async =>
+            twrResult(13, (i) => i == 0 ? 10 : (i == 12 ? 34.2 : 20)),
+      );
+      await settleUntil(tester, () => has('home-twr-text'));
+
+      expect(text(tester, 'home-twr-text'), '+22,0%');
+      expect(text(tester, 'home-twr-cumulative'), 'Acumulado: +34,2%');
+    });
+
+    testWidgets('com menos de 13 meses: o acumulado vira o número grande e o 12M some', (
+      tester,
+    ) async {
+      await pumpHome(
+        tester,
+        loadProfitability: () async => twrResult(5, (i) => i * 2.0),
+      );
+      await settleUntil(tester, () => has('home-twr-text'));
+
+      expect(text(tester, 'home-twr-text'), '+8,0%');
+      expect(has('home-twr-cumulative'), isFalse);
+    });
+
+    testWidgets('sem nenhum mês medido: traço', (tester) async {
+      await pumpHome(
+        tester,
+        loadProfitability: () async =>
+            const ProfitabilityResult(months: [], excluded: []),
+      );
+      await settleUntil(tester, () => has('home-twr-text'));
+
+      expect(text(tester, 'home-twr-text'), '—');
+      expect(has('home-twr-cumulative'), isFalse);
+    });
+
+    testWidgets('a rentabilidade falhar vira traço e os outros 4 cards seguem normais', (
+      tester,
+    ) async {
+      await tester.runAsync(seedCash);
+      await pumpHome(
+        tester,
+        loadProfitability: () async => throw ProfitabilityError(
+          ProfitabilityErrorCode.missingFx,
+          {'currency': 'USD'},
+        ),
+      );
+      await settleUntil(tester, () => has('home-twr-text'));
+
+      expect(text(tester, 'home-twr-text'), '—');
+      expect(has('home-error'), isFalse);
+      expect(text(tester, 'home-total-value-text'), formatMoney(370, 'BRL', locale: 'pt'));
+      expect(text(tester, 'home-net-worth-text'), formatMoney(1370, 'BRL', locale: 'pt'));
+    });
   });
 
   testWidgets('esconder um widget e salvar persiste depois de recarregar a tela', (
@@ -412,7 +494,7 @@ void main() {
 
       final layout = await layoutRepository.load();
 
-      expect(layout.first.key, HomeWidgetKey.netWorth);
+      expect(layout.first.key, HomeWidgetKey.twr);
       expect(layout.every((c) => !c.visible), isTrue);
     });
   });
