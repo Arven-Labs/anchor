@@ -10,9 +10,10 @@ import 'twr.dart';
 // Dietz Modificado (o app não tem sub-ledger de caixa, então uma compra equivale a um
 // aporte). Bruta de imposto: o mobile não registra DARF pago.
 
-/// Classes com fechamento mensal pelo Yahoo (as mesmas do desktop, menos cripto, que o
-/// mobile ainda não coleta).
+/// Classes com fechamento mensal pelo Yahoo (as mesmas do desktop). Cripto entra pelo par em
+/// dólar (`BTC-USD`): o Yahoo não tem `BTC-BRL` e o CoinGecko gratuito só dá 365 dias.
 const profitabilityAssetClasses = {
+  AssetClass.cripto,
   AssetClass.acaoBr,
   AssetClass.fii,
   AssetClass.etfBr,
@@ -23,6 +24,11 @@ const profitabilityAssetClasses = {
   AssetClass.etfUs,
   AssetClass.metal,
 };
+
+/// Moeda em que o fechamento mensal do ativo está gravado. Igual à do cadastro, exceto na
+/// cripto: o histórico vem sempre em dólar, mesmo para o ativo cadastrado em reais. O custo
+/// (compra, venda, provento) continua na moeda do cadastro; só o valor de mercado usa esta.
+String priceCurrency(Asset asset) => asset.assetClass == AssetClass.cripto ? 'USD' : asset.currency;
 
 class MonthlyReturn {
   final String yearMonth;
@@ -182,7 +188,7 @@ ProfitabilityResult computeProfitability({
           'month': key,
         });
       }
-      emv += toBrl(entry.value * price, asset.currency, target);
+      emv += toBrl(entry.value * price, priceCurrency(asset), target);
     }
 
     double r;

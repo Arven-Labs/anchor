@@ -3155,7 +3155,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get profitabilityEmpty =>
-      'No buys, sells or income on stocks, REITs, ETFs, BDRs or metals to measure.';
+      'No buys, sells or income on stocks, REITs, ETFs, BDRs, metals or crypto to measure.';
 
   @override
   String profitabilityCumulative(String value) {

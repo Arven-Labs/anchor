@@ -279,18 +279,100 @@ void main() {
     });
   });
 
+  // Cripto: o único histórico gratuito (Yahoo `BTC-USD`) cota em dólar, então o fechamento é
+  // sempre US$ e só o valor de mercado passa pelo câmbio; o custo fica na moeda do cadastro.
+  group('cripto (preço em dólar)', () {
+    final btcBrl = _asset(1, 'BTC', assetClass: AssetClass.cripto);
+    final btcUsd = _asset(1, 'BTC', assetClass: AssetClass.cripto, currency: 'USD');
+    final fx = {
+      'USD': FxHistory([
+        (DateTime.utc(2026, 1, 10), 5.0),
+        (DateTime.utc(2026, 1, 31), 6.0),
+      ]),
+    };
+
+    test('19: cadastrada em reais: custo em R$ e valor final = qtd × preço US$ × câmbio', () {
+      // Compra de 0,1 BTC por R$ 2.500 no dia 10; fecha janeiro a US$ 50.000 × 6,00:
+      // 0,1 × 50.000 × 6,00 = R$ 30.000. O custo NÃO passa pelo câmbio (já está em reais).
+      final r = _run(
+        assets: [btcBrl],
+        txs: [_buy(1, jan10, 0.1, 2500)],
+        closes: {'BTC': {'2026-01': 50000.0}},
+        fx: fx,
+        today: DateTime(2026, 1, 31),
+      );
+      expect(r.months.single.cfTotal, closeTo(2500, 1e-9));
+      expect(r.months.single.emv, closeTo(30000, 1e-9));
+    });
+
+    test('20: cadastrada em dólar: fluxo e valor final convertidos pela taxa da própria data', () {
+      // Compra de 0,1 BTC por US$ 500 a 5,00 = R$ 2.500; valor final 0,1 × 50.000 × 6,00.
+      final r = _run(
+        assets: [btcUsd],
+        txs: [_buy(1, jan10, 0.1, 500)],
+        closes: {'BTC': {'2026-01': 50000.0}},
+        fx: fx,
+        today: DateTime(2026, 1, 31),
+      );
+      expect(r.months.single.cfTotal, closeTo(2500, 1e-9));
+      expect(r.months.single.emv, closeTo(30000, 1e-9));
+    });
+
+    test('21: cripto em reais sem série de câmbio do dólar é recusada com erro nomeado', () {
+      expect(
+        () => _run(
+          assets: [btcBrl],
+          txs: [_buy(1, jan10, 0.1, 2500)],
+          closes: {'BTC': {'2026-01': 50000.0}},
+          today: DateTime(2026, 1, 31),
+        ),
+        _error(ProfitabilityErrorCode.missingFx, {'currency': 'USD'}),
+      );
+    });
+
+    test('22: sem o fechamento do mês a cripto é recusada com erro nomeado', () {
+      expect(
+        () => _run(
+          assets: [btcBrl],
+          txs: [_buy(1, jan10, 0.1, 2500)],
+          fx: fx,
+          today: DateTime(2026, 1, 31),
+        ),
+        _error(ProfitabilityErrorCode.missingMonthPrice, {'ticker': 'BTC', 'month': '2026-01'}),
+      );
+    });
+
+    test('23: cripto não tem desdobramento: nunca vira ativo excluído', () {
+      final r = _run(
+        assets: [btcBrl],
+        txs: [_buy(1, jan10, 0.1, 2500)],
+        closes: {'BTC': {'2026-01': 50000.0}},
+        fx: fx,
+        today: DateTime(2026, 1, 31),
+      );
+      expect(r.excluded, isEmpty);
+    });
+
+    test('24: ação em reais continua sem câmbio (a moeda do preço só muda para cripto)', () {
+      final r = _run(
+        txs: [_buy(1, jan10, 10, 300)],
+        closes: {'PETR4': {'2026-01': 32.0}},
+        today: DateTime(2026, 1, 31),
+      );
+      expect(r.months.single.emv, 320);
+    });
+  });
+
   group('o que entra', () {
-    test('15: cripto, tesouro, fundo e aporte sem ativo ficam fora; não mexem nos números', () {
+    test('15: tesouro, fundo e aporte sem ativo ficam fora; não mexem nos números', () {
       final r = _run(
         assets: [
           _asset(1, 'PETR4'),
-          _asset(2, 'BTC', assetClass: AssetClass.cripto),
           _asset(3, 'LFT', assetClass: AssetClass.tesouroDireto),
           _asset(4, 'FIDX', assetClass: AssetClass.fundo),
         ],
         txs: [
           _buy(1, jan10, 10, 300),
-          _buy(2, jan10, 1, 90000),
           _buy(3, jan10, 1, 1000),
           _buy(4, jan10, 100, 500),
           _tx(null, TransactionType.aporte, jan10, total: 5000),

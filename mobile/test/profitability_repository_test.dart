@@ -133,15 +133,31 @@ void main() {
       histories = {
         'PETR4.SA': const MonthlyPriceHistory(closes: {'2026-01': 32.0}, splits: []),
         'AAPL': const MonthlyPriceHistory(closes: {'2026-01': 110.0}, splits: []),
+        'BTC-USD': const MonthlyPriceHistory(closes: {'2026-01': 50000.0}, splits: []),
       };
 
       final summary = await repo().refreshPriceHistory();
 
-      expect(fetchedSymbols, unorderedEquals(['PETR4.SA', 'AAPL']));
-      expect(summary.updated, unorderedEquals(['PETR4', 'AAPL']));
+      expect(fetchedSymbols, unorderedEquals(['PETR4.SA', 'AAPL', 'BTC-USD']));
+      expect(summary.updated, unorderedEquals(['PETR4', 'AAPL', 'BTC']));
       expect(summary.failed, isEmpty);
       expect(await storedCloses('PETR4'), {'2026-01': 32.0});
       expect(await storedCloses('AAPL'), {'2026-01': 110.0});
+      expect(await storedCloses('BTC'), {'2026-01': 50000.0}, reason: 'o bruto em dólar, gravado sob o ticker');
+    });
+
+    test('B8b: cripto sem par no Yahoo vai para "falhou" e não derruba as outras', () async {
+      final btc = await addAsset('BTC', AssetClass.cripto);
+      final xyz = await addAsset('XYZ', AssetClass.cripto);
+      await buy(btc, DateTime(2026, 1, 10), 1, 100);
+      await buy(xyz, DateTime(2026, 1, 10), 1, 100);
+      histories = {'BTC-USD': const MonthlyPriceHistory(closes: {'2026-01': 50000.0}, splits: [])};
+      failing = {'XYZ-USD'};
+
+      final summary = await repo().refreshPriceHistory();
+
+      expect(summary.updated, ['BTC']);
+      expect(summary.failed, ['XYZ']);
     });
 
     test('B9: atualizar duas vezes mantém o que o Yahoo mandou por último', () async {
@@ -211,6 +227,26 @@ void main() {
       expect(fxCalls, hasLength(1));
       expect(fxCalls.single.$1, 'USD');
       expect(fxCalls.single.$2.year * 10000 + fxCalls.single.$2.month * 100 + fxCalls.single.$2.day, 20260112);
+    });
+
+    test('B12b: cripto cadastrada em reais pede o câmbio do dólar desde a 1ª transação dela', () async {
+      final petr = await addAsset('PETR4', AssetClass.acaoBr);
+      final btc = await addAsset('BTC', AssetClass.cripto); // BRL: o preço é que vem em dólar
+      await buy(petr, DateTime(2026, 1, 5), 10, 300);
+      await buy(btc, DateTime(2026, 1, 12), 0.1, 2500);
+      histories = {
+        'PETR4.SA': const MonthlyPriceHistory(closes: {'2026-01': 32.0}, splits: []),
+        'BTC-USD': const MonthlyPriceHistory(closes: {'2026-01': 50000.0}, splits: []),
+      };
+      await repo().refreshPriceHistory();
+
+      final result = await repo().compute();
+
+      expect(fxCalls, hasLength(1));
+      expect(fxCalls.single.$1, 'USD');
+      expect(fxCalls.single.$2.year * 10000 + fxCalls.single.$2.month * 100 + fxCalls.single.$2.day, 20260112);
+      // PETR4 10 × 32 = 320; BTC 0,1 × 50.000 × 5,50 (câmbio do dia 31) = 27.500.
+      expect(result.months.single.emv, closeTo(320 + 27500, 1e-9));
     });
 
     test('B12: câmbio que o Yahoo não entrega vira erro nomeado de câmbio faltando', () async {

@@ -4969,7 +4969,7 @@ abstract class AppLocalizations {
   /// No description provided for @profitabilityEmpty.
   ///
   /// In en, this message translates to:
-  /// **'No buys, sells or income on stocks, REITs, ETFs, BDRs or metals to measure.'**
+  /// **'No buys, sells or income on stocks, REITs, ETFs, BDRs, metals or crypto to measure.'**
   String get profitabilityEmpty;
 
   /// No description provided for @profitabilityCumulative.

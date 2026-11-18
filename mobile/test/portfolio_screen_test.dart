@@ -372,8 +372,14 @@ void main() {
       expect(find.text('Profitability'), findsOneWidget);
     });
 
-    testWidgets('B20: só com cripto o item Rentabilidade não aparece (Teses e Watchlists sim)', (tester) async {
+    testWidgets('B20: com cripto o item Rentabilidade aparece (cripto passou a ser classe medida)', (tester) async {
       await pumpPortfolio(tester, [_row(ticker: 'BTC', assetClass: AssetClass.cripto)], locale: 'en');
+      await openMoreMenu(tester, 'More');
+      expect(find.text('Profitability'), findsOneWidget);
+    });
+
+    testWidgets('B20: só com fundo o item Rentabilidade não aparece (Teses e Watchlists sim)', (tester) async {
+      await pumpPortfolio(tester, [_row(ticker: 'FIDX', assetClass: AssetClass.fundo)], locale: 'en');
       await openMoreMenu(tester, 'More');
       expect(find.text('Profitability'), findsNothing);
       expect(find.text('Theses'), findsOneWidget);

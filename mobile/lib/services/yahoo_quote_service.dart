@@ -38,8 +38,9 @@ class YahooQuoteService {
   };
 
   /// Símbolo do Yahoo para o histórico do ativo: `.SA` nas classes da B3, o próprio ticker
-  /// nas do exterior, o contrato futuro no metal. `null` para classe sem histórico aqui
-  /// (cripto, fundo, renda fixa, imóvel, empresa não listada).
+  /// nas do exterior, o contrato futuro no metal, o par em dólar (`BTC-USD`) na cripto: o
+  /// Yahoo não tem par em reais (`BTC-BRL` dá 404, medido em 2026-11-18). `null` para classe
+  /// sem histórico aqui (fundo, renda fixa, imóvel, empresa não listada).
   static String? symbolFor(Asset asset) => switch (asset.assetClass) {
     AssetClass.acaoBr ||
     AssetClass.fii ||
@@ -48,6 +49,7 @@ class YahooQuoteService {
     AssetClass.bdr => '${asset.ticker}.SA',
     AssetClass.acaoInternacional || AssetClass.reit || AssetClass.etfUs => asset.ticker,
     AssetClass.metal => _metalYahooSymbol[asset.ticker.toUpperCase()],
+    AssetClass.cripto => '${asset.ticker.toUpperCase()}-USD',
     _ => null,
   };
 

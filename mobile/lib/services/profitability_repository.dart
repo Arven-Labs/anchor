@@ -119,11 +119,14 @@ class ProfitabilityRepository {
 
     final fx = <String, FxHistory>{};
     final measuredIds = {for (final a in measured) a.id!};
-    for (final currency in {for (final a in measured) a.currency}) {
+    // Moedas que o cálculo converte: a do cadastro (custo) e a do preço (valor de mercado),
+    // que só difere na cripto (cadastrada em reais, preço em dólar).
+    Set<String> currenciesOf(Asset a) => {a.currency, priceCurrency(a)};
+    for (final currency in {for (final a in measured) ...currenciesOf(a)}) {
       if (currency == 'BRL') continue;
       final firstDate = transactions
           .where((tx) => tx.assetId != null && measuredIds.contains(tx.assetId) && _relevantTypes.contains(tx.type))
-          .where((tx) => measured.firstWhere((a) => a.id == tx.assetId).currency == currency)
+          .where((tx) => currenciesOf(measured.firstWhere((a) => a.id == tx.assetId)).contains(currency))
           .map((tx) => tx.date)
           .reduce((a, b) => a.isBefore(b) ? a : b);
       try {
