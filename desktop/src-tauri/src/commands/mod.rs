@@ -38,6 +38,7 @@ pub mod profitability;
 pub mod projected_ceiling;
 pub mod property;
 pub mod proventos;
+pub mod dividend_growth;
 pub mod rates;
 pub mod reit;
 pub mod rim;

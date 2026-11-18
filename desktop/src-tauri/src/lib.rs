@@ -218,6 +218,7 @@ pub fn run() {
             commands::tax::mark_tax_paid,
             commands::tax::unmark_tax_paid,
             commands::rates::get_interest_rates,
+            commands::dividend_growth::get_dividend_growth,
             commands::reit::list_reit_fundamentals,
             commands::reit::get_reit_manual_indicators,
             commands::reit::save_reit_manual_indicators,
