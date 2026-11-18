@@ -291,7 +291,7 @@ void main() {
       ]),
     };
 
-    test('19: cadastrada em reais: custo em R$ e valor final = qtd × preço US$ × câmbio', () {
+    test('19: cadastrada em reais: custo em reais e valor final = qtd × preço em dólar × câmbio', () {
       // Compra de 0,1 BTC por R$ 2.500 no dia 10; fecha janeiro a US$ 50.000 × 6,00:
       // 0,1 × 50.000 × 6,00 = R$ 30.000. O custo NÃO passa pelo câmbio (já está em reais).
       final r = _run(
