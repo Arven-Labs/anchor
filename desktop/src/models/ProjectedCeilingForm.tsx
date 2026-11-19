@@ -5,6 +5,7 @@ import { useValuationActions } from "./useValuationActions";
 import ValuationResult from "../components/ValuationResult";
 import Field from "../components/Field";
 import RiskFreeHint from "./RiskFreeHint";
+import DividendGrowthHint from "./DividendGrowthHint";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -181,6 +182,7 @@ function ProjectedCeilingForm({ ticker: initialTicker, assetClass }: { ticker?: 
               value={expectedGrowth}
               onChange={(e) => setExpectedGrowth(e.currentTarget.value)}
             />
+            <DividendGrowthHint ticker={ticker} onUse={(g) => setExpectedGrowth(String(g))} />
           </Field>
 
           <Field label="Projection years — N">

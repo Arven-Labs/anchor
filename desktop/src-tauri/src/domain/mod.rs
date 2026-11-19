@@ -8,6 +8,7 @@ pub mod cost_basis;
 pub mod crypto_score;
 pub mod currency_conversion;
 pub mod dcf;
+pub mod dividend_growth;
 pub mod dividend_suggestion;
 pub mod gordon;
 pub mod graham;
