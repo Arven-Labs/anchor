@@ -100,8 +100,8 @@ describe("Anchor — hints de premissa ao editar um valuation salvo", () => {
 
     await byId("dividend-growth-use").click();
     expect(await input("Expected dividend growth — g").getValue()).toBe("10");
-    // 0,14 × 100 aparece como 14.000000000000002 (limitação antiga de `toEditableString`): compara o número.
-    expect(Number(await input("Required return — Ke").getValue())).toBeCloseTo(14, 6);
+    // 0,14 × 100 não pode aparecer como 14.000000000000002 (ruído de ponto flutuante em `toEditableString`).
+    expect(await input("Required return — Ke").getValue()).toBe("14");
     expect(await byId("growth-above-ke").isExisting()).toBe(false);
 
     await replaceValue("Required return — Ke", "9");

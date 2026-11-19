@@ -5667,3 +5667,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Processo**: 4 rodadas de CI até o E2E passar. As 3 primeiras erradas por chute (ponto flutuante, `setValue`); a causa só apareceu com um diagnóstico no próprio teste (DOM com `"0"`). Era para ter medido na 2ª.
 - **Flaky visto**: `portfolio.e2e` (apagar compra e venda no Ledger) falhou numa rodada e passou na seguinte, sem relação com a mudança. Não investiguei.
 - **Não verificado**: os hints no formulário de edição com ticker real; os modelos RIM e Banks (o piso do Ke usa o mesmo código, mas o E2E cobre só Gordon, DCF e Teto Projetado).
+
+## Sessão 379 — desktop: campo em % do formulário de edição sem ruído de ponto flutuante (PR #173)
+- **Pedido**: corrigir o defeito deixado como "não corrigido" na Sessão 378: `toEditableString` mostrava `0.14 × 100` como `14.000000000000002`.
+- **Feito**: `desktop/src/valuations/inputFields.ts`: o formato `percentage` agora usa `String(Number((num * 100).toPrecision(12)))`. 12 dígitos significativos cortam o ruído (perto do 16º dígito) sem apagar premissas reais como `7.125`; o `Number()` tira zeros à direita. `fromEditableString`, o valor guardado e os outros formatos não mudaram.
+- **Testes primeiro**: o `valuation-edit-hints.e2e.mjs` trocou o `toBeCloseTo(14, 6)` por `toBe("14")` e falhou antes da correção (run 44525628355: `Expected: "14"`, `Received: "14.000000000000002"`; DCF e Teto Projetado em cascata). Depois da correção, CI do PR verde (run 44526961901).
+- **Conferido à mão** (node, sem build): `0.14→14`, `0.07125→7.125`, `0→0`, `1→100`, `0.285→28.5`.
+- **Não feito**: a quebra proposital (trocar o 12 do `toPrecision`); o código não é crítico (só texto mostrado) e o E2E já falhou antes da correção. Sem teste unitário: o desktop não tem framework (adicionar `vitest` ficou fora de escopo, exigiria `avaliar-dependencia`).
+- **Não verificado**: valores minúsculos (`1e-9` vira `"1e-7"`, igual ao comportamento anterior); o ida e volta pelo `fromEditableString` com 12 dígitos só é coberto pelo caso do Ke.
