@@ -105,6 +105,14 @@ describe("Anchor — hints de premissa ao editar um valuation salvo", () => {
     expect(await byId("growth-above-ke").isExisting()).toBe(false);
 
     await replaceValue("Required return — Ke", "9");
+    // DIAGNÓSTICO TEMPORÁRIO (remover): o que há no DOM quando o aviso não aparece.
+    await browser.pause(1500);
+    console.log(
+      "DIAG ke=", await (await input("Required return — Ke")).getValue(),
+      "| g=", await (await input("Expected dividend growth — g")).getValue(),
+      "| hint=", await byId("dividend-growth").isExisting() ? await byId("dividend-growth").getText() : "(sem hint)",
+      "| rf=", await byId("risk-free").isExisting() ? await byId("risk-free").getText() : "(sem rf)",
+    );
     await byId("growth-above-ke").waitForDisplayed({ timeout: 10_000 });
     await byId("ke-below-risk-free").waitForDisplayed({ timeout: 10_000 });
     await closeEdit();
