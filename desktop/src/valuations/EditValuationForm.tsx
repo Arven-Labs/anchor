@@ -92,7 +92,7 @@ function EditValuationForm({
   // Os hints se penduram na chave do campo (este formulário não conhece o modelo por dentro).
   // g ≥ Ke só avisa no Gordon, que diverge nesse caso; o Teto Projetado não.
   function hintFor(key: string) {
-    if (key === "current_dividend") {
+    if (key === "current_dividendX") {
       return <TrailingDividendHint ticker={ticker} onUse={(d) => setDraft(key, d)} />;
     }
     if (key === "expected_growth") {
