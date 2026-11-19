@@ -86,7 +86,7 @@ const TRAILING_WINDOW_DAYS: i64 = 365;
 /// `today - 365 dias < data <= today` (data futura não conta). `None` sem nenhum
 /// pagamento coletado; `Some(0.0)` com pagamentos coletados mas nenhum na janela
 /// (parou de pagar). `payments` = (data, valor por ação).
-fn trailing_12m_dividends(payments: &[(NaiveDate, f64)], today: NaiveDate) -> Option<f64> {
+pub(crate) fn trailing_12m_dividends(payments: &[(NaiveDate, f64)], today: NaiveDate) -> Option<f64> {
     if payments.is_empty() {
         return None;
     }

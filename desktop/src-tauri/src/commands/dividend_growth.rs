@@ -5,23 +5,37 @@
 use chrono::{NaiveDate, Utc};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
+use super::screener::trailing_12m_dividends;
 use crate::domain::dividend_growth::{self, DividendGrowth};
 use crate::entity::stock_dividend_payments;
 use crate::error::AppError;
+
+/// Pagamentos coletados do ticker como (data, valor por ação); linha com data ilegível é ignorada.
+async fn payments_of(db: &DatabaseConnection, ticker: &str) -> Result<Vec<(NaiveDate, f64)>, AppError> {
+    Ok(stock_dividend_payments::Entity::find()
+        .filter(stock_dividend_payments::Column::Ticker.eq(ticker.trim().to_uppercase()))
+        .all(db)
+        .await?
+        .into_iter()
+        .filter_map(|p| NaiveDate::parse_from_str(&p.payment_date, "%Y-%m-%d").ok().map(|d| (d, p.amount)))
+        .collect())
+}
 
 async fn dividend_growth_in(
     db: &DatabaseConnection,
     ticker: &str,
     today: NaiveDate,
 ) -> Result<Option<DividendGrowth>, AppError> {
-    let payments: Vec<(NaiveDate, f64)> = stock_dividend_payments::Entity::find()
-        .filter(stock_dividend_payments::Column::Ticker.eq(ticker.trim().to_uppercase()))
-        .all(db)
-        .await?
-        .into_iter()
-        .filter_map(|p| NaiveDate::parse_from_str(&p.payment_date, "%Y-%m-%d").ok().map(|d| (d, p.amount)))
-        .collect();
-    Ok(dividend_growth::dividend_growth(&payments, today))
+    Ok(dividend_growth::dividend_growth(&payments_of(db, ticker).await?, today))
+}
+
+/// Dividendos por ação pagos nos últimos 12 meses (sugestão de D0 para Gordon e Teto Projetado).
+async fn trailing_dividend_in(
+    db: &DatabaseConnection,
+    ticker: &str,
+    today: NaiveDate,
+) -> Result<Option<f64>, AppError> {
+    Ok(trailing_12m_dividends(&payments_of(db, ticker).await?, today))
 }
 
 #[tauri::command]
@@ -30,6 +44,14 @@ pub async fn get_dividend_growth(
     ticker: String,
 ) -> Result<Option<DividendGrowth>, AppError> {
     dividend_growth_in(db.inner(), &ticker, Utc::now().date_naive()).await
+}
+
+#[tauri::command]
+pub async fn get_trailing_dividend(
+    db: tauri::State<'_, DatabaseConnection>,
+    ticker: String,
+) -> Result<Option<f64>, AppError> {
+    trailing_dividend_in(db.inner(), &ticker, Utc::now().date_naive()).await
 }
 
 #[cfg(test)]
@@ -68,6 +90,42 @@ mod tests {
 
         assert!((got.cagr_pct - 100.0).abs() < 1e-6);
         assert_eq!((got.from_year, got.to_year), (2022, 2025));
+    }
+
+    #[tokio::test]
+    async fn trailing_dividend_sums_the_last_12_months_of_the_asked_ticker_only() {
+        let db = memory_db().await;
+        paid(&db, "AAAA3", "2025-06-15", 1.0).await;
+        paid(&db, "AAAA3", "2025-12-15", 0.5).await;
+        paid(&db, "AAAA3", "2024-06-15", 9.0).await; // fora da janela
+        paid(&db, "BBBB3", "2025-06-15", 7.0).await; // outro ticker
+
+        let got = trailing_dividend_in(&db, " aaaa3 ", today()).await.unwrap();
+
+        assert_eq!(got, Some(1.5));
+    }
+
+    #[tokio::test]
+    async fn trailing_dividend_ignores_a_payment_dated_in_the_future() {
+        let db = memory_db().await;
+        paid(&db, "AAAA3", "2025-06-15", 1.0).await;
+        paid(&db, "AAAA3", "2026-05-01", 3.0).await;
+
+        assert_eq!(trailing_dividend_in(&db, "AAAA3", today()).await.unwrap(), Some(1.0));
+    }
+
+    #[tokio::test]
+    async fn trailing_dividend_is_zero_when_the_ticker_stopped_paying() {
+        let db = memory_db().await;
+        paid(&db, "AAAA3", "2023-06-15", 2.0).await;
+
+        assert_eq!(trailing_dividend_in(&db, "AAAA3", today()).await.unwrap(), Some(0.0));
+    }
+
+    #[tokio::test]
+    async fn trailing_dividend_is_none_without_any_collected_payment() {
+        let db = memory_db().await;
+        assert_eq!(trailing_dividend_in(&db, "NADA3", today()).await.unwrap(), None);
     }
 
     #[tokio::test]
