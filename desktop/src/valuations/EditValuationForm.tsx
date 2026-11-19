@@ -6,6 +6,7 @@ import { INPUT_FIELDS, toEditableString, fromEditableString } from "./inputField
 import Field from "../components/Field";
 import DividendGrowthHint from "../models/DividendGrowthHint";
 import RiskFreeHint from "../models/RiskFreeHint";
+import TrailingDividendHint from "../models/TrailingDividendHint";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -91,6 +92,9 @@ function EditValuationForm({
   // Os hints se penduram na chave do campo (este formulário não conhece o modelo por dentro).
   // g ≥ Ke só avisa no Gordon, que diverge nesse caso; o Teto Projetado não.
   function hintFor(key: string) {
+    if (key === "current_dividend") {
+      return <TrailingDividendHint ticker={ticker} onUse={(d) => setDraft(key, d)} />;
+    }
     if (key === "expected_growth") {
       return (
         <DividendGrowthHint
