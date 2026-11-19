@@ -5693,3 +5693,13 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Escopo menor que o plano**: cortei os casos "parou de pagar" (coberto pelos testes Rust e pelo E2E de criação) e "Bazin sem hint" (exigiria semear tabelas do Bazin que não li); spec novo em vez de estender o `valuation-edit-hints`, para não mexer nas datas fixas do g.
 - **Deslize do processo**: na abertura da sessão li o `PENDING.md` com `cut -c1-400`, perdi o fim das linhas e recomendei duas vezes itens já resolvidos (P21 e P16/P17) antes de achar o trabalho real. A linha inteira estava lá; conferi no código só depois.
 - **Não verificado**: o hint em tela real (só E2E); o `portfolio.e2e` flaky continua sem investigação.
+
+## Sessão 382 — desktop/e2e: estabiliza o `portfolio.e2e` (corrida ao apagar venda e compra no Ledger, PR #177)
+- **Pedido**: investigar o flaky visto na Sessão 378 e de novo na 381 (run 44622312344).
+- **Achado**: as duas falhas são no mesmo teste ("recusa apagar a compra… e deixa apagar a venda e depois a compra"), na última espera (`portfolio.e2e.mjs:190`, "a compra deveria ter sido apagada"). O Delete tem 2 cliques (`confirmingDeleteId`, `LedgerSection.tsx:168`). O teste espera a venda sumir **do banco** e clica na compra; o `onSuccess` da exclusão da venda (`setConfirmingDeleteId(null)`, linha 185) pode chegar depois do 1º clique, desarmar o botão, e o 2º clique só arma de novo.
+- **Medição no CI** (spec temporário no PR #176, fechado sem mesclar): esperando só o banco (como era) **1 falha em 20** (run 44634335845) e **4 em 40** (run 44635490049); esperando a venda sumir da tela **0 em 40**, rodadas intercaladas no mesmo run. Somando, ~8% no modo antigo.
+- **Feito**: uma espera a mais no `portfolio.e2e.mjs` (`ledger-delete-<venda>` some da tela antes de clicar na compra), com comentário do porquê. O componente não mudou.
+- **Prova**: CI do PR verde, 27 de 27 specs (run 44637968648). Isso sozinho prova pouco para uma taxa de ~8%; a prova é a medição. **Sem quebra proposital**: a falha é uma corrida e não dá para forçá-la de forma determinística.
+- **Não corrigido (decisão do dono)**: a corrida existe no componente (o `onSuccess` e o `onError` zeram o arme sem checar a linha; correção possível: `setConfirmingDeleteId(cur => cur === id ? null : cur)`). Só um clique em milissegundos a dispara, então fica como pendência, não como defeito do usuário comum.
+- **Processo**: a 1ª medição (20 rodadas, 1 falha) era pouca; refiz com 80 rodadas intercaladas para controlar a carga do runner, e só então apliquei a correção.
+- **Não verificado**: a correção do teste contra uma taxa de ~8% com mais de uma rodada do spec real; o comportamento em tela real.
