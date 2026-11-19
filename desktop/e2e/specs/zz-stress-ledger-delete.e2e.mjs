@@ -5,12 +5,14 @@ import { byId, enterWorkspace, sql } from "./helpers.mjs";
 // suspeita: apagar a venda e, logo depois, a compra, que exigem 2 cliques cada (o 1º arma o "Confirm?").
 // Hipótese: o `onSuccess` da exclusão da venda chega depois do 1º clique na compra e desarma o botão.
 // WAIT_ON_SCREEN = false reproduz o teste de hoje (espera só o banco); true espera a venda sumir da tela.
-const ROUNDS = 20;
-const WAIT_ON_SCREEN = false;
+// Rodadas ímpares esperam só o banco (como o teste de hoje); as pares esperam a venda sumir da tela.
+// Intercaladas no mesmo run para a carga do runner afetar os dois modos igual.
+const ROUNDS = 80;
 
 const exists = (id) => Number(sql(`SELECT count(*) FROM transactions WHERE id = ${id}`)) === 1;
 
 async function round(i, portfolio) {
+  const WAIT_ON_SCREEN = i % 2 === 0;
   const ticker = `STR${i}`;
   sql(
     "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
@@ -45,7 +47,7 @@ async function round(i, portfolio) {
 }
 
 describe("STRESS — apagar venda e logo depois a compra no Ledger", () => {
-  it(`repete ${ROUNDS} vezes (WAIT_ON_SCREEN=${WAIT_ON_SCREEN}) e conta as falhas`, async () => {
+  it(`repete ${ROUNDS} vezes (ímpar: só o banco; par: espera a tela) e conta as falhas`, async () => {
     await enterWorkspace("E2E Stress Ledger");
     const workspace = sql("SELECT id FROM workspace WHERE name = 'E2E Stress Ledger'");
     sql(`INSERT INTO portfolio (workspace_id, name, created_at) VALUES (${workspace}, 'Main', '2026-01-01T00:00:00Z')`);
@@ -53,16 +55,16 @@ describe("STRESS — apagar venda e logo depois a compra no Ledger", () => {
     await byId("nav-portfolio").click();
     await byId("portfolio-tab-ledger").waitForDisplayed({ timeout: 30_000 });
 
-    let failures = 0;
+    const failures = { db: 0, screen: 0 };
     for (let i = 1; i <= ROUNDS; i++) {
       try {
         await round(i, portfolio);
       } catch (error) {
-        failures += 1;
-        console.log(`STRESS_ROUND_FAIL ${i}: ${error.message}`);
+        failures[i % 2 === 0 ? "screen" : "db"] += 1;
+        console.log(`STRESS_ROUND_FAIL ${i} (${i % 2 === 0 ? "tela" : "banco"}): ${error.message}`);
       }
     }
-    console.log(`STRESS_RESULT WAIT_ON_SCREEN=${WAIT_ON_SCREEN} falhas=${failures}/${ROUNDS}`);
-    expect(failures).toBe(0);
+    console.log(`STRESS_RESULT só-banco=${failures.db}/${ROUNDS / 2} espera-tela=${failures.screen}/${ROUNDS / 2}`);
+    expect(failures.db + failures.screen).toBe(0);
   });
 });
