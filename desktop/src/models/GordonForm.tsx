@@ -6,6 +6,7 @@ import ValuationResult from "../components/ValuationResult";
 import Field from "../components/Field";
 import RiskFreeHint from "./RiskFreeHint";
 import DividendGrowthHint from "./DividendGrowthHint";
+import TrailingDividendHint from "./TrailingDividendHint";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -164,6 +165,7 @@ function GordonForm({ ticker: initialTicker, assetClass }: { ticker?: string; as
               Pre-filled with the average dividend of the last 5 years —
               adjust if you have the exact value of the last dividend paid.
             </p>
+            <TrailingDividendHint ticker={ticker} onUse={(d) => setCurrentDividend(String(d))} />
           </Field>
 
           <Field label="Expected dividend growth — g (%)">

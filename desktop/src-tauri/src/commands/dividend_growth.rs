@@ -5,33 +5,37 @@
 use chrono::{NaiveDate, Utc};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
+use super::screener::trailing_12m_dividends;
 use crate::domain::dividend_growth::{self, DividendGrowth};
 use crate::entity::stock_dividend_payments;
 use crate::error::AppError;
+
+/// Pagamentos coletados do ticker como (data, valor por ação); linha com data ilegível é ignorada.
+async fn payments_of(db: &DatabaseConnection, ticker: &str) -> Result<Vec<(NaiveDate, f64)>, AppError> {
+    Ok(stock_dividend_payments::Entity::find()
+        .filter(stock_dividend_payments::Column::Ticker.eq(ticker.trim().to_uppercase()))
+        .all(db)
+        .await?
+        .into_iter()
+        .filter_map(|p| NaiveDate::parse_from_str(&p.payment_date, "%Y-%m-%d").ok().map(|d| (d, p.amount)))
+        .collect())
+}
 
 async fn dividend_growth_in(
     db: &DatabaseConnection,
     ticker: &str,
     today: NaiveDate,
 ) -> Result<Option<DividendGrowth>, AppError> {
-    let payments: Vec<(NaiveDate, f64)> = stock_dividend_payments::Entity::find()
-        .filter(stock_dividend_payments::Column::Ticker.eq(ticker.trim().to_uppercase()))
-        .all(db)
-        .await?
-        .into_iter()
-        .filter_map(|p| NaiveDate::parse_from_str(&p.payment_date, "%Y-%m-%d").ok().map(|d| (d, p.amount)))
-        .collect();
-    Ok(dividend_growth::dividend_growth(&payments, today))
+    Ok(dividend_growth::dividend_growth(&payments_of(db, ticker).await?, today))
 }
 
 /// Dividendos por ação pagos nos últimos 12 meses (sugestão de D0 para Gordon e Teto Projetado).
-#[allow(dead_code)] // provisório: só os testes o chamam até o passo 2 ligar o comando
 async fn trailing_dividend_in(
-    _db: &DatabaseConnection,
-    _ticker: &str,
-    _today: NaiveDate,
+    db: &DatabaseConnection,
+    ticker: &str,
+    today: NaiveDate,
 ) -> Result<Option<f64>, AppError> {
-    todo!("passo 2 do plano: consulta + trailing_12m_dividends")
+    Ok(trailing_12m_dividends(&payments_of(db, ticker).await?, today))
 }
 
 #[tauri::command]
@@ -40,6 +44,14 @@ pub async fn get_dividend_growth(
     ticker: String,
 ) -> Result<Option<DividendGrowth>, AppError> {
     dividend_growth_in(db.inner(), &ticker, Utc::now().date_naive()).await
+}
+
+#[tauri::command]
+pub async fn get_trailing_dividend(
+    db: tauri::State<'_, DatabaseConnection>,
+    ticker: String,
+) -> Result<Option<f64>, AppError> {
+    trailing_dividend_in(db.inner(), &ticker, Utc::now().date_naive()).await
 }
 
 #[cfg(test)]
