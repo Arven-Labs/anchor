@@ -1,4 +1,4 @@
-import { $, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 import { byId, clickCentered, enterWorkspace, pickOption, sql } from "./helpers.mjs";
 
 // Hints de premissa também ao EDITAR um valuation salvo: g (histórico de dividendos)
@@ -44,6 +44,18 @@ function seed() {
     "INSERT INTO projected_ceiling_inputs (valuation_id, current_dividend, expected_growth, projection_years, desired_yield, ke) " +
       `VALUES (${CEILING}, 1.5, 0.04, 5, 0.06, 0.14)`,
   );
+}
+
+// Os campos de edição já vêm preenchidos: o `setValue` do WebDriver não os substitui num input
+// controlado pelo React (o texto novo entra no fim do antigo). O setter nativo + `input` faz o React ler.
+async function replaceValue(label, value) {
+  const field = await input(label);
+  await field.scrollIntoView({ block: "center" });
+  await browser.execute((el, next) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setter.call(el, next);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }, field, value);
 }
 
 async function openEdit(modelText) {
@@ -92,9 +104,7 @@ describe("Anchor — hints de premissa ao editar um valuation salvo", () => {
     expect(Number(await input("Required return — Ke").getValue())).toBeCloseTo(14, 6);
     expect(await byId("growth-above-ke").isExisting()).toBe(false);
 
-    const ke = await input("Required return — Ke");
-    await ke.scrollIntoView({ block: "center" });
-    await ke.setValue("9");
+    await replaceValue("Required return — Ke", "9");
     await byId("growth-above-ke").waitForDisplayed({ timeout: 10_000 });
     await byId("ke-below-risk-free").waitForDisplayed({ timeout: 10_000 });
     await closeEdit();
@@ -119,9 +129,7 @@ describe("Anchor — hints de premissa ao editar um valuation salvo", () => {
     await byId("dividend-growth-use").click();
     expect(await input("Expected growth — g").getValue()).toBe("10");
 
-    const ke = await input("Discount rate — Ke");
-    await ke.scrollIntoView({ block: "center" });
-    await ke.setValue("9");
+    await replaceValue("Discount rate — Ke", "9");
     await byId("ke-below-risk-free").waitForDisplayed({ timeout: 10_000 });
     expect(await byId("growth-above-ke").isExisting()).toBe(false);
   });
