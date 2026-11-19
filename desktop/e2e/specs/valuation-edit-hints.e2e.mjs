@@ -105,15 +105,6 @@ describe("Anchor — hints de premissa ao editar um valuation salvo", () => {
     expect(await byId("growth-above-ke").isExisting()).toBe(false);
 
     await replaceValue("Required return — Ke", "9");
-    // DIAGNÓSTICO TEMPORÁRIO (remover): o que há no DOM quando o aviso não aparece.
-    for (const wait of [0, 1500]) {
-      await browser.pause(wait);
-      const dump = await browser.execute(() => ({
-        text: document.body.innerText.replace(/\s+/g, " ").slice(0, 700),
-        inputs: [...document.querySelectorAll("input")].map((i) => i.value).join("|"),
-      }));
-      console.log(`DIAG +${wait}ms`, JSON.stringify(dump));
-    }
     await byId("growth-above-ke").waitForDisplayed({ timeout: 10_000 });
     await byId("ke-below-risk-free").waitForDisplayed({ timeout: 10_000 });
     await closeEdit();

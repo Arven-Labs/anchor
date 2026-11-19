@@ -84,7 +84,7 @@ function EditValuationForm({
     },
   });
 
-  function setDraft(key: string, value: number) {
+  function setDraft(key: string, value: number | string) {
     setDrafts((current) => ({ ...current, [key]: String(value) }));
   }
 
@@ -169,12 +169,11 @@ function EditValuationForm({
                   type="number"
                   step="any"
                   value={drafts[field.key] ?? ""}
-                  onChange={(e) =>
-                    setDrafts((current) => ({
-                      ...current,
-                      [field.key]: e.currentTarget.value,
-                    }))
-                  }
+                  onChange={(e) => {
+                    // Lê o valor antes: dentro do atualizador `currentTarget` já pode ser null.
+                    const value = e.currentTarget.value;
+                    setDraft(field.key, value);
+                  }}
                 />
                 {hintFor(field.key)}
               </Field>
