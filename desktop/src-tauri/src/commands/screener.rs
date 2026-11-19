@@ -91,7 +91,7 @@ pub(crate) fn trailing_12m_dividends(payments: &[(NaiveDate, f64)], today: Naive
         return None;
     }
     let window_start = today - Duration::days(TRAILING_WINDOW_DAYS);
-    Some(payments.iter().filter(|(date, _)| *date >= window_start && *date <= today).map(|(_, amount)| amount).sum())
+    Some(payments.iter().filter(|(date, _)| *date > window_start && *date <= today).map(|(_, amount)| amount).sum())
 }
 
 /// `numerator / price`, só quando os dois são positivos (LPA ≤ 0 ou preço ≤ 0 não dão razão útil).
