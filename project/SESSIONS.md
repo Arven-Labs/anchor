@@ -5656,3 +5656,14 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Decisões do dono**: mínimo de 3 anos de variação; JCP e extraordinários entram na soma (não dá para separá-los com os dados coletados, e o hint diz isso); g >= Ke só avisa, não limita.
 - **Não verificado**: o hint num ticker real coletado (o E2E semeia só o TEST3); quão ruidoso fica o CAGR com dividendo extraordinário; o `EditValuationForm` não ganhou o hint.
 - **Erro de processo**: recomendei o P16/P17 sem ler a coluna de status, e custou algumas voltas. Lição: ler a linha inteira do PENDING antes de recomendar.
+
+## Sessão 378 — desktop: hints de g e de taxa livre também ao editar um valuation salvo (ROADMAP 33, frente 4, PR #172)
+- **Pedido**: continuar na frente 4. O `EditValuationForm` não tinha os hints do #171 (g) nem os da Sessão 371 (taxa livre de risco e piso do Ke). Plan mode.
+- **Feito**: `EditValuationForm.tsx` ganhou `hintFor(chave)`: `expected_growth` mostra `DividendGrowthHint` (aviso g >= Ke só no Gordon), `risk_free_rate` (DCF) mostra `RiskFreeHint` com "Use", `ke` mostra o piso. Os hints se penduram na chave do campo, não no modelo (o formulário é genérico, dirigido por `INPUT_FIELDS`). E2E novo `valuation-edit-hints.e2e.mjs` (Gordon, DCF, Teto Projetado).
+- **Defeito antigo achado pelo E2E e corrigido aqui**: no `EditValuationForm`, o `onChange` lia `e.currentTarget.value` **dentro** do atualizador do `setDrafts`; o atualizador pode rodar depois do handler, com `currentTarget` nulo, e a árvore inteira do React caía (a página ficava só com `"0"` e sem inputs). Chegou ao teste porque o E2E digitou num campo já preenchido. Agora o valor é lido antes. Não é obra dos hints: o defeito existia no formulário.
+- **Não corrigido (fora do escopo)**: `toEditableString` mostra `0.14 × 100` como `14.000000000000002` nos campos em %. O E2E compara o número com tolerância.
+- **Testes primeiro**: o E2E falhou antes dos hints (run 44430329460: `dividend-growth-hint` ausente no Gordon; DCF e Teto Projetado falharam em cascata, então não são prova independente). Depois, CI do PR verde, 25 specs (run 44440696809).
+- **Quebra proposital**: troquei a chave `expected_growth` no `hintFor` (run 44441615065): só o `valuation-edit-hints` falhou. Revertida em commit próprio.
+- **Processo**: 4 rodadas de CI até o E2E passar. As 3 primeiras erradas por chute (ponto flutuante, `setValue`); a causa só apareceu com um diagnóstico no próprio teste (DOM com `"0"`). Era para ter medido na 2ª.
+- **Flaky visto**: `portfolio.e2e` (apagar compra e venda no Ledger) falhou numa rodada e passou na seguinte, sem relação com a mudança. Não investiguei.
+- **Não verificado**: os hints no formulário de edição com ticker real; os modelos RIM e Banks (o piso do Ke usa o mesmo código, mas o E2E cobre só Gordon, DCF e Teto Projetado).

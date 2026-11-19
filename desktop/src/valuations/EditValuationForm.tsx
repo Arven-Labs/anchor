@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppError, ValuationModel } from "../types";
 import { INPUT_FIELDS, toEditableString, fromEditableString } from "./inputFields";
 import Field from "../components/Field";
+import DividendGrowthHint from "../models/DividendGrowthHint";
+import RiskFreeHint from "../models/RiskFreeHint";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,6 +84,27 @@ function EditValuationForm({
     },
   });
 
+  function setDraft(key: string, value: number | string) {
+    setDrafts((current) => ({ ...current, [key]: String(value) }));
+  }
+
+  // Os hints se penduram na chave do campo (este formulário não conhece o modelo por dentro).
+  // g ≥ Ke só avisa no Gordon, que diverge nesse caso; o Teto Projetado não.
+  function hintFor(key: string) {
+    if (key === "expected_growth") {
+      return (
+        <DividendGrowthHint
+          ticker={ticker}
+          ke={valuation.model === "gordon" ? drafts.ke : undefined}
+          onUse={(g) => setDraft(key, g)}
+        />
+      );
+    }
+    if (key === "risk_free_rate") return <RiskFreeHint onUse={(rf) => setDraft(key, rf)} />;
+    if (key === "ke") return <RiskFreeHint ke={drafts.ke} />;
+    return null;
+  }
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     updateMutation.mutate();
@@ -146,13 +169,13 @@ function EditValuationForm({
                   type="number"
                   step="any"
                   value={drafts[field.key] ?? ""}
-                  onChange={(e) =>
-                    setDrafts((current) => ({
-                      ...current,
-                      [field.key]: e.currentTarget.value,
-                    }))
-                  }
+                  onChange={(e) => {
+                    // Lê o valor antes: dentro do atualizador `currentTarget` já pode ser null.
+                    const value = e.currentTarget.value;
+                    setDraft(field.key, value);
+                  }}
                 />
+                {hintFor(field.key)}
               </Field>
             ))}
 
