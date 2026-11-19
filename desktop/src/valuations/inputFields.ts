@@ -155,7 +155,9 @@ export function formatInputValue(value: unknown, format: InputFieldFormat): stri
 // can go back into a number input and back out again.
 export function toEditableString(value: unknown, format: InputFieldFormat): string {
   const num = Number(value);
-  if (format === "percentage") return String(num * 100);
+  // 0.14 * 100 = 14.000000000000002 em ponto flutuante; 12 dígitos significativos cortam o ruído
+  // (que fica perto do 16º) sem apagar premissas reais como 7.125%. Number() tira zeros à direita.
+  if (format === "percentage") return String(Number((num * 100).toPrecision(12)));
   if (format === "integer") return String(Math.round(num));
   return String(num);
 }
