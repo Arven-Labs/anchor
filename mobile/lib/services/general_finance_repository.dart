@@ -9,7 +9,8 @@ import '../models/general_transaction.dart';
 import '../models/general_transaction_category.dart';
 import '../models/liability.dart';
 import '../models/loan.dart';
-import '../domain/general_finance.dart' show ReconciliationPreview, reconciliationPreview, toIsoDay;
+import '../domain/general_finance.dart'
+    show ReconciliationPreview, TransferCost, reconciliationPreview, toIsoDay;
 import '../domain/liability.dart';
 import '../domain/porquinho_yield.dart';
 
@@ -664,6 +665,7 @@ class GeneralFinanceRepository {
     required double valorEntrada,
     required String date,
     String? notes,
+    List<TransferCost> costs = const [],
     DateTime? now,
   }) async {
     for (final valor in [valorSaida, valorEntrada]) {
