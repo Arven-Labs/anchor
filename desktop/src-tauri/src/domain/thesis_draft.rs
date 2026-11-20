@@ -50,7 +50,7 @@ pub struct Draft {
 pub fn latest_per_model(valuations: Vec<DraftValuation>) -> Vec<DraftValuation> {
     let mut newest: BTreeMap<String, DraftValuation> = BTreeMap::new();
     for v in valuations {
-        let replace = newest.get(&v.model).is_none_or(|current| v.updated_at > current.updated_at);
+        let replace = newest.get(&v.model).is_none_or(|current| v.updated_at < current.updated_at);
         if replace {
             newest.insert(v.model.clone(), v);
         }
@@ -87,7 +87,7 @@ fn indicator_lines(ticker: &str, ind: Option<&DraftIndicators>) -> String {
          - Dividend yield (12m): {}\n\
          - Dividend yield (5y avg): {}\n",
         date_part(&ind.fetched_at),
-        or_missing(ind.pe, |x| format!("{x:.2}")),
+        format!("{:.2}", ind.pe.unwrap_or(0.0)),
         or_missing(ind.pb, |x| format!("{x:.2}")),
         ind.roe,
         pct(ind.dividend_yield_12m),
@@ -106,7 +106,7 @@ fn valuation_lines(valuations: &[DraftValuation]) -> String {
                 "- {}: fair price {}, margin {}, {} (updated {})\n",
                 v.model,
                 or_missing(v.fair_price, |x| format!("{x:.2}")),
-                or_missing(v.safety_margin, |x| format!("{:.1}%", x * 100.0)),
+                or_missing(v.safety_margin, |x| format!("{:.1}%", x)),
                 v.verdict.as_deref().unwrap_or(MISSING),
                 date_part(&v.updated_at),
             )
