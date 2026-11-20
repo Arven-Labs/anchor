@@ -474,7 +474,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_same_filing_in_both_years_counts_once() {
+    async fn filings_repeated_in_both_years_count_once() {
         let line = release("1023", "2026-01-05", LINK_A);
         let fake = Fake::new(vec![(2026, csv_bytes(&[line.clone()])), (2025, csv_bytes(&[line]))]);
         assert_eq!(filings_with(&fake, BB, 2026).await.unwrap().len(), 1);
