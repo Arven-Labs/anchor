@@ -200,6 +200,19 @@ pub struct CreateTransferRequest {
     pub valor_entrada: f64,
     pub transaction_date: String,
     pub notes: Option<String>,
+    /// Custos explícitos da operação (IOF, tarifa, remessa), debitados da conta de origem
+    /// além de `valor_saida`. Vazio por padrão: quem não manda o campo segue como antes.
+    #[serde(default)]
+    pub costs: Vec<TransferCost>,
+}
+
+/// Um custo digitado pelo usuário, na moeda da conta de origem.
+#[derive(Deserialize)]
+pub struct TransferCost {
+    /// `"iof"` (categoria Taxes) ou `"fee"` (categoria Fees).
+    pub kind: String,
+    pub valor: f64,
+    pub notes: Option<String>,
 }
 
 #[derive(Serialize)]
