@@ -77,9 +77,9 @@ Exemplo guia (Anchor, Sessões 155–156): estimar sozinho o rendimento do porqu
 1. Ler o `project/` (INDEX → o arquivo relevante) e a memória.
 2. Plan mode quando for item novo ou mexer em schema; fatia pequena e fechada pode pular, dito explicitamente.
 3. Código e testes (unitário, de fluxo contra o schema real, E2E), **editando com Edit/Write**.
-4. Verificação: **o CI é a verificação** nos dois projetos. No Warden, nada de build ou teste local (compila, clippy e testes rodam no GitHub Actions). No Anchor, o
-   `./dev.sh check` (tsc + cargo check) enquanto desenvolve e o CI para os testes de verdade, como diz o `INDEX.md`; rodar `cargo test` no Docker da máquina foi
-   feito em sessões anteriores, mas não é necessário.
+4. Verificação: **o CI é a verificação** nos dois projetos. No Warden, nada de build ou teste local (compila, clippy e testes rodam no GitHub Actions). No Anchor vale o mesmo desde
+   2026-11-20 (ADR 0017 do workspace): na VM do agente nada de `./dev.sh check`, `cargo test` nem build; o `./dev.sh check` (tsc + cargo check)
+   ficou para o dono, no PC dele. Antes disso o agente rodava o `./dev.sh check` enquanto desenvolvia e o `cargo test` no Docker da máquina em sessões anteriores.
 5. `git push` e **ler o CI**; se falhar, ler o log (`gh run view <id> --log-failed`), corrigir e publicar de novo.
 6. Se a fatia tem tela: **baixar e olhar as capturas** (seção 2.2).
 7. Registrar: `SESSIONS.md` (o que foi feito, o que foi verificado e como, o que não foi), `PHASE.md`/`PENDING.md` conforme o projeto, e o resultado do CI.
