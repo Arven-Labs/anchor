@@ -185,6 +185,10 @@ describe("Anchor — carteira: compra, venda e recompra", () => {
       await byId(`ledger-delete-${sellId}`).click();
       await byId(`ledger-delete-${sellId}`).click();
       await browser.waitUntil(() => !exists(sellId), { timeout: 20_000, timeoutMsg: "a venda deveria ter sido apagada" });
+      // O banco apaga antes de a tela saber: o `onSuccess` da exclusão da venda ainda limpa o "Confirm?"
+      // (`setConfirmingDeleteId(null)`) e, se chegar depois do 1º clique na compra, desarma o botão e o 2º clique
+      // só arma de novo. Medido no CI: 5 falhas em 60 rodadas esperando só o banco, 0 em 40 esperando a tela.
+      await byId(`ledger-delete-${sellId}`).waitForExist({ timeout: 20_000, reverse: true });
       await byId(`ledger-delete-${buyId}`).click();
       await byId(`ledger-delete-${buyId}`).click();
       await browser.waitUntil(() => !exists(buyId), { timeout: 20_000, timeoutMsg: "a compra deveria ter sido apagada" });
