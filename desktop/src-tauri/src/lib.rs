@@ -237,6 +237,7 @@ pub fn run() {
             commands::dividend_suggestion::confirm_dividend_suggestion,
             commands::dividend_suggestion::discard_dividend_suggestion,
             commands::cvm_notice::list_cvm_dividend_notices,
+            commands::company_filings::list_company_filings,
             commands::options::list_option_chain,
             commands::options::get_option_greeks,
             commands::options::simulate_option_strategy,
