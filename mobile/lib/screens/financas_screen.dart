@@ -409,6 +409,9 @@ class _FinancasScreenState extends State<FinancasScreen> {
     BankAccount from = _accounts.first;
     BankAccount to = _accounts[1];
     var date = DateTime.now();
+    // IOF e tarifa digitados, debitados da origem além do que saiu (o mesmo do desktop).
+    final costKinds = <TransferCostKind>[];
+    final costControllers = <TextEditingController>[];
 
     final saved = await showDialog<bool>(
       context: context,
@@ -417,6 +420,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
           final cross = from.currency != to.currency;
           final out = parseAmount(outController.text);
           final incoming = parseAmount(inController.text);
+          final costsValid = costControllers.every((c) => parseAmount(c.text) != null);
           return AlertDialog(
             title: Text(l.finTransfer),
             content: SingleChildScrollView(
@@ -484,6 +488,72 @@ class _FinancasScreenState extends State<FinancasScreen> {
                     ),
                   ],
                   const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      l.finCostsHeader(from.currency),
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                  ),
+                  for (var i = 0; i < costKinds.length; i++)
+                    Row(
+                      children: [
+                        DropdownButton<TransferCostKind>(
+                          key: Key('financas-transfer-cost-kind-$i'),
+                          value: costKinds[i],
+                          items: [
+                            DropdownMenuItem(
+                              value: TransferCostKind.iof,
+                              child: Text(l.finCostIof),
+                            ),
+                            DropdownMenuItem(
+                              value: TransferCostKind.fee,
+                              child: Text(l.finCostFee),
+                            ),
+                          ],
+                          onChanged: (value) => setDialogState(
+                            () => costKinds[i] = value ?? costKinds[i],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            key: Key('financas-transfer-cost-valor-$i'),
+                            controller: costControllers[i],
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            onChanged: (_) => setDialogState(() {}),
+                            decoration: InputDecoration(
+                              labelText: l.finAmount(from.currency),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          key: Key('financas-transfer-cost-remove-$i'),
+                          tooltip: l.finCostRemove,
+                          icon: const Icon(Icons.close),
+                          onPressed: () => setDialogState(() {
+                            costKinds.removeAt(i);
+                            // Sem `dispose()`, como os outros campos deste diálogo.
+                            costControllers.removeAt(i);
+                          }),
+                        ),
+                      ],
+                    ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      key: const Key('financas-transfer-cost-add'),
+                      icon: const Icon(Icons.add),
+                      label: Text(l.finCostAdd),
+                      onPressed: () => setDialogState(() {
+                        costKinds.add(TransferCostKind.iof);
+                        costControllers.add(TextEditingController());
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.calendar_today_outlined),
                     label: Text(
@@ -513,7 +583,8 @@ class _FinancasScreenState extends State<FinancasScreen> {
                 child: Text(l.actionCancel),
               ),
               FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
+                // Custo sem valor válido bloqueia o botão (como o desktop), em vez de sumir sem avisar.
+                onPressed: costsValid ? () => Navigator.of(context).pop(true) : null,
                 child: Text(l.finTransfer),
               ),
             ],
@@ -551,6 +622,11 @@ class _FinancasScreenState extends State<FinancasScreen> {
       valorEntrada: valorEntrada,
       date: toIsoDay(date),
       notes: notes.isEmpty ? null : notes,
+      costs: [
+        for (var i = 0; i < costKinds.length; i++)
+          // O botão só liberou com todos os valores válidos.
+          TransferCost(costKinds[i], parseAmount(costControllers[i].text)!),
+      ],
     );
     await _load();
   }

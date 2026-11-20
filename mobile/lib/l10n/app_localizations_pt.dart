@@ -747,6 +747,23 @@ class AppLocalizationsPt extends AppLocalizations {
   String get finSpreadIncluded => 'Spread e tarifa já embutidos nos valores.';
 
   @override
+  String finCostsHeader(String currency) {
+    return 'Custos ($currency, debitados da conta de origem)';
+  }
+
+  @override
+  String get finCostAdd => 'Adicionar custo';
+
+  @override
+  String get finCostRemove => 'Remover custo';
+
+  @override
+  String get finCostIof => 'IOF';
+
+  @override
+  String get finCostFee => 'Tarifa / remessa';
+
+  @override
   String get finNotes => 'Observação';
 
   @override

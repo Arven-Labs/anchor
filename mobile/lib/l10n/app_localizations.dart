@@ -1304,6 +1304,36 @@ abstract class AppLocalizations {
   /// **'Spread and fees already included in the amounts.'**
   String get finSpreadIncluded;
 
+  /// No description provided for @finCostsHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'Costs ({currency}, charged to the origin account)'**
+  String finCostsHeader(String currency);
+
+  /// No description provided for @finCostAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add cost'**
+  String get finCostAdd;
+
+  /// No description provided for @finCostRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove cost'**
+  String get finCostRemove;
+
+  /// No description provided for @finCostIof.
+  ///
+  /// In en, this message translates to:
+  /// **'IOF'**
+  String get finCostIof;
+
+  /// No description provided for @finCostFee.
+  ///
+  /// In en, this message translates to:
+  /// **'Fee / remittance'**
+  String get finCostFee;
+
   /// No description provided for @finNotes.
   ///
   /// In en, this message translates to:

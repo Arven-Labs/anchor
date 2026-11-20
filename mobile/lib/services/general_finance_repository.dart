@@ -10,7 +10,7 @@ import '../models/general_transaction_category.dart';
 import '../models/liability.dart';
 import '../models/loan.dart';
 import '../domain/general_finance.dart'
-    show ReconciliationPreview, TransferCost, reconciliationPreview, toIsoDay;
+    show ReconciliationPreview, TransferCost, TransferCostKind, reconciliationPreview, toIsoDay;
 import '../domain/liability.dart';
 import '../domain/porquinho_yield.dart';
 
@@ -668,7 +668,7 @@ class GeneralFinanceRepository {
     List<TransferCost> costs = const [],
     DateTime? now,
   }) async {
-    for (final valor in [valorSaida, valorEntrada]) {
+    for (final valor in [valorSaida, valorEntrada, for (final cost in costs) cost.valor]) {
       if (!valor.isFinite || valor <= 0) {
         throw FinanceArgumentError(FinanceErrorCode.transferAmountsMustBePositive);
       }
@@ -728,6 +728,23 @@ class GeneralFinanceRepository {
         ),
         'transfer_id': transferId,
       });
+      // Cada custo é uma despesa na conta de origem presa à transferência pelo `transfer_id`:
+      // apagar qualquer perna apaga o custo junto, e o saldo e o orçamento já tratam `despesa`
+      // como débito (a mesma regra do desktop).
+      final moment = now ?? DateTime.now();
+      for (final cost in costs) {
+        final category = await _ensureCategory(
+          txn,
+          cost.kind == TransferCostKind.iof ? taxesCategoryName : feesCategoryName,
+          moment,
+        );
+        await txn.insert('general_transactions', {
+          ...leg(fromAccountId, GeneralTransactionType.despesa, cost.valor),
+          'category_id': category,
+          'notes': null,
+          'transfer_id': transferId,
+        });
+      }
       return transferId;
     });
   }
@@ -839,6 +856,9 @@ class GeneralFinanceRepository {
 
   /// Nome da categoria dos impostos retidos (IOF e IR), criada na primeira estimativa lançada.
   static const taxesCategoryName = 'Taxes';
+
+  /// Nome da categoria das tarifas e remessas de uma transferência, criada no primeiro uso.
+  static const feesCategoryName = 'Fees';
 
   /// Começo da nota da receita de uma estimativa lançada (o mesmo texto do desktop).
   static const estimatedYieldNote = 'Yield CDB Porquinho';
