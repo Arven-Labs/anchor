@@ -126,4 +126,31 @@ describe("Anchor — moeda por conta, de ponta a ponta", () => {
     );
     await snap("accounts-foreign-balance");
   });
+
+  // Custos de transferência. Fica no fim: os testes acima conferem o saldo de -100 da 1ª transferência.
+  it("uma transferência com IOF e tarifa mostra o custo total na linha única", async () => {
+    await byId("nav-finances").click();
+    await byId("finances-tab-transactions").click();
+    await byId("transfer-new").click();
+
+    await pickOption(byId("transfer-from"), "Nubank (Me) · BRL");
+    await pickOption(byId("transfer-to"), "Banco Nación (Me) · ARS");
+    await byId("transfer-amount-out").setValue("50");
+    await byId("transfer-amount-in").setValue("9000");
+
+    await byId("transfer-cost-add").click();
+    await byId("transfer-cost-valor-0").setValue("0.30");
+    await byId("transfer-cost-add").click();
+    await pickOption(byId("transfer-cost-kind-1"), "Fee / remittance");
+    await byId("transfer-cost-valor-1").setValue("4.70");
+    await byId("transfer-submit").click();
+
+    await waitForText(
+      byId("transfer-costs-total"),
+      (text) => text.includes("5.00 BRL"),
+      "a linha da transferência deveria somar os custos (0,30 + 4,70) na moeda da origem",
+    );
+    // Os custos não viram linhas soltas: são 2 transferências, 2 linhas.
+    expect((await elementsOf('[data-testid="transfer-row"]')).length).toBe(2);
+  });
 });

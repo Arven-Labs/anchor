@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::currency::{base_currency, load_fx_history, DEFAULT_BASE_CURRENCY};
 use crate::commands::loan::ensure_account_in_workspace;
+use crate::commands::tax::{ensure_fees_category, ensure_taxes_category};
 use crate::domain::currency_conversion::FxHistory;
 use crate::entity::{bank_account, general_transaction};
 use crate::error::AppError;
@@ -187,6 +188,9 @@ pub async fn delete_general_transaction_in(
 pub const TRANSFER_OUT: &str = "transferencia_saida";
 pub const TRANSFER_IN: &str = "transferencia_entrada";
 
+const COST_IOF: &str = "iof";
+const COST_FEE: &str = "fee";
+
 #[derive(Deserialize)]
 pub struct CreateTransferRequest {
     pub workspace_id: i32,
@@ -246,6 +250,14 @@ pub async fn create_transfer_in(
     if request.from_account_id == request.to_account_id {
         return Err(AppError::InvalidInput("choose two different accounts".to_string()));
     }
+    for cost in &request.costs {
+        if !matches!(cost.kind.as_str(), COST_IOF | COST_FEE) {
+            return Err(AppError::InvalidInput(format!("unknown cost kind '{}'", cost.kind)));
+        }
+        if !cost.valor.is_finite() || cost.valor <= 0.0 {
+            return Err(AppError::InvalidInput("cost valor must be positive".to_string()));
+        }
+    }
 
     let txn = db.begin().await?;
     let from = ensure_account_in_workspace(&txn, request.from_account_id, request.workspace_id).await?;
@@ -275,6 +287,21 @@ pub async fn create_transfer_in(
     let mut incoming = leg(to.id, TRANSFER_IN, request.valor_entrada);
     incoming.transfer_id = Set(Some(transfer_id));
     incoming.insert(&txn).await?;
+
+    // Cada custo é uma despesa na conta de origem presa à transferência pelo `transfer_id`: apagar
+    // qualquer perna apaga o custo junto, e o saldo e o orçamento já tratam `despesa` como débito.
+    for cost in &request.costs {
+        let category_id = if cost.kind == COST_IOF {
+            ensure_taxes_category(&txn, request.workspace_id).await?
+        } else {
+            ensure_fees_category(&txn, request.workspace_id).await?
+        };
+        let mut row = leg(from.id, DESPESA, cost.valor);
+        row.category_id = Set(Some(category_id));
+        row.notes = Set(cost.notes.clone());
+        row.transfer_id = Set(Some(transfer_id));
+        row.insert(&txn).await?;
+    }
     txn.commit().await?;
 
     let same_currency = from.currency == to.currency;
