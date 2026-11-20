@@ -31,6 +31,12 @@ type TransferResult = {
   effective_rate: number | null;
 };
 
+// Custos digitados (IOF, tarifa, remessa): debitados da conta de origem, na moeda dela, além do
+// valor enviado. Se o extrato já embute a tarifa no valor recebido, não digite de novo.
+type CostKind = "iof" | "fee";
+
+type CostDraft = { kind: CostKind; valor: string };
+
 type CreateTransferRequest = {
   workspace_id: number;
   from_account_id: number;
@@ -39,6 +45,7 @@ type CreateTransferRequest = {
   valor_entrada: number;
   transaction_date: string;
   notes: string | null;
+  costs: { kind: CostKind; valor: number; notes: string | null }[];
 };
 
 function todayIso(): string {
@@ -68,8 +75,9 @@ function TransferDialog({
   const [amountIn, setAmountIn] = useState("");
   const [date, setDate] = useState(todayIso());
   const [notes, setNotes] = useState("");
+  const [costs, setCosts] = useState<CostDraft[]>([]);
 
-  const from = accounts.find((a) => String(a.id) === fromId);
+  const from =accounts.find((a) => String(a.id) === fromId);
   const to = accounts.find((a) => String(a.id) === toId);
   const crossCurrency = from !== undefined && to !== undefined && from.currency !== to.currency;
   const out = Number(amountOut);
@@ -85,9 +93,14 @@ function TransferDialog({
       setAmountOut("");
       setAmountIn("");
       setNotes("");
+      setCosts([]);
       onOpenChange(false);
     },
   });
+
+  function updateCost(index: number, patch: Partial<CostDraft>) {
+    setCosts((current) => current.map((c, i) => (i === index ? { ...c, ...patch } : c)));
+  }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -99,11 +112,18 @@ function TransferDialog({
       valor_entrada: incoming,
       transaction_date: date,
       notes: notes.trim() === "" ? null : notes,
+      costs: costs.map((c) => ({ kind: c.kind, valor: Number(c.valor), notes: null })),
     });
   }
 
+  const costsValid = costs.every((c) => Number(c.valor) > 0);
   const canSubmit =
-    from !== undefined && to !== undefined && fromId !== toId && out > 0 && incoming > 0;
+    from !== undefined &&
+    to !== undefined &&
+    fromId !== toId &&
+    out > 0 &&
+    incoming > 0 &&
+    costsValid;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -176,6 +196,56 @@ function TransferDialog({
               Effective rate: 1 {from.currency} = {rate.toFixed(4)} {to.currency}
             </p>
           )}
+
+          <div className="flex flex-col gap-2" data-testid="transfer-costs">
+            <p className="text-sm text-muted-foreground">
+              Costs{from ? ` (${from.currency}, charged to the origin account)` : ""}: IOF, fees or
+              remittance. Skip what your statement already shows inside the received amount.
+            </p>
+            {costs.map((cost, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <Select
+                  value={cost.kind}
+                  onValueChange={(value) => updateCost(index, { kind: value as CostKind })}
+                >
+                  <SelectTrigger className="w-40" data-testid={`transfer-cost-kind-${index}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="iof">IOF</SelectItem>
+                    <SelectItem value="fee">Fee / remittance</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  required
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder="Amount"
+                  data-testid={`transfer-cost-valor-${index}`}
+                  value={cost.valor}
+                  onChange={(e) => updateCost(index, { valor: e.currentTarget.value })}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  data-testid={`transfer-cost-remove-${index}`}
+                  onClick={() => setCosts((current) => current.filter((_, i) => i !== index))}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              className="w-fit"
+              data-testid="transfer-cost-add"
+              onClick={() => setCosts((current) => [...current, { kind: "iof", valor: "" }])}
+            >
+              Add cost
+            </Button>
+          </div>
 
           <Field label="Date">
             <Input

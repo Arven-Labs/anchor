@@ -634,6 +634,7 @@ pub async fn confirm_statement_pending_in(
                     valor_entrada: edited.valor,
                     transaction_date,
                     notes: edited.notes,
+                    costs: Vec::new(),
                 },
             )
             .await?;

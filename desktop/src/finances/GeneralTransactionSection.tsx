@@ -126,7 +126,9 @@ function GeneralTransactionSection({ workspaceId }: { workspaceId: number }) {
     return true;
   });
 
-  function transferSummary(transferId: number): { accounts: string; value: string } | null {
+  function transferSummary(
+    transferId: number,
+  ): { accounts: string; value: string; costs: string | null; notes: string | null } | null {
     const legs = legsByTransfer.get(transferId) ?? [];
     const sent = legs.find((l) => l.transaction_type === "transferencia_saida");
     const received = legs.find((l) => l.transaction_type === "transferencia_entrada");
@@ -135,10 +137,18 @@ function GeneralTransactionSection({ workspaceId }: { workspaceId: number }) {
     const toAccount = accounts.find((a) => a.id === received.bank_account_id);
     const sentText = `${sent.valor.toFixed(2)} ${fromAccount?.currency ?? ""}`.trim();
     const receivedText = `${received.valor.toFixed(2)} ${toAccount?.currency ?? ""}`.trim();
+    // Custos (IOF, tarifa) são despesas na conta de origem presas à transferência.
+    const costTotal = legs
+      .filter((l) => l.transaction_type === "despesa")
+      .reduce((sum, l) => sum + l.valor, 0);
     return {
       accounts: `${fromAccount?.nome ?? "—"} → ${toAccount?.nome ?? "—"}`,
       value:
         fromAccount?.currency === toAccount?.currency ? sentText : `${sentText} → ${receivedText}`,
+      costs:
+        costTotal > 0 ? `${costTotal.toFixed(2)} ${fromAccount?.currency ?? ""}`.trim() : null,
+      // A linha que representa o par pode ser um custo: a nota é a da perna de saída.
+      notes: sent.notes,
     };
   }
 
@@ -246,8 +256,15 @@ function GeneralTransactionSection({ workspaceId }: { workspaceId: number }) {
                       <TableCell>Transfer</TableCell>
                       <TableCell>{transfer.accounts}</TableCell>
                       <TableCell>—</TableCell>
-                      <TableCell data-testid="transfer-value">{transfer.value}</TableCell>
-                      <TableCell>{tx.notes ?? "—"}</TableCell>
+                      <TableCell>
+                        <span data-testid="transfer-value">{transfer.value}</span>
+                        {transfer.costs !== null && (
+                          <span className="block text-xs text-muted-foreground" data-testid="transfer-costs-total">
+                            + {transfer.costs} costs
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>{transfer.notes ?? "—"}</TableCell>
                       <TableCell>
                         <Button
                           variant={isConfirming ? "destructive" : "outline"}

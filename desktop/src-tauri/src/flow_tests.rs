@@ -39,7 +39,7 @@ use crate::commands::bank_account::{
 };
 use crate::commands::general_transaction::{
     create_transfer_in, delete_general_transaction_in, update_general_transaction_in, CreateTransferRequest,
-    UpdateGeneralTransactionRequest,
+    TransferCost, UpdateGeneralTransactionRequest,
 };
 use crate::commands::general_transaction_category::list_categories_view;
 use crate::test_support::{
@@ -1493,7 +1493,12 @@ fn transfer_request(
         valor_entrada: entrada,
         transaction_date: "2026-03-01".to_string(),
         notes: None,
+        costs: Vec::new(),
     }
+}
+
+fn cost(kind: &str, valor: f64) -> TransferCost {
+    TransferCost { kind: kind.to_string(), valor, notes: None }
 }
 
 #[tokio::test]
@@ -1625,6 +1630,164 @@ async fn invalid_transfers_are_rejected_and_a_transfer_cannot_be_edited() {
         notes: None,
     };
     assert!(update_general_transaction_in(&db, edit).await.is_err());
+}
+
+async fn all_general_rows(db: &sea_orm::DatabaseConnection) -> Vec<crate::entity::general_transaction::Model> {
+    crate::entity::general_transaction::Entity::find().all(db).await.unwrap()
+}
+
+#[tokio::test]
+async fn transfer_costs_reduce_the_origin_balance_and_the_net_worth() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Costs").await;
+    let a = bank_account(&db, ws.id, "Nubank").await;
+    let b = bank_account(&db, ws.id, "Itaú").await;
+    cash_in(&db, ws.id, a.id, 1000.0, "2026-01-01").await;
+
+    let mut request = transfer_request(ws.id, a.id, b.id, 300.0, 300.0);
+    request.costs = vec![cost("iof", 3.0), cost("fee", 7.0)];
+    create_transfer_in(&db, request).await.unwrap();
+
+    let accounts = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    let balance_of = |id: i32| accounts.iter().find(|x| x.id == id).unwrap().balance;
+    assert!(close(balance_of(a.id), 1000.0 - 300.0 - 10.0));
+    assert!(close(balance_of(b.id), 300.0));
+    // O patrimônio cai exatamente pelos custos: a transferência em si só muda o dinheiro de conta.
+    assert!(close(compute_net_worth(&db, ws.id).await.unwrap().total_cash, 990.0));
+}
+
+#[tokio::test]
+async fn each_cost_is_an_expense_on_the_origin_account_tied_to_the_transfer() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Costs").await;
+    let a = bank_account(&db, ws.id, "Nubank").await;
+    let usd = bank_account_in(&db, ws.id, "Chase", "USD").await;
+    cash_in(&db, ws.id, a.id, 1000.0, "2026-01-01").await;
+
+    let mut request = transfer_request(ws.id, a.id, usd.id, 500.0, 95.0);
+    request.costs = vec![
+        TransferCost { kind: "iof".to_string(), valor: 3.5, notes: Some("IOF 0,38%".to_string()) },
+        cost("fee", 12.0),
+    ];
+    let transfer_id = create_transfer_in(&db, request).await.unwrap().transfer_id;
+
+    let rows = all_general_rows(&db).await;
+    let costs: Vec<_> = rows.iter().filter(|r| r.transfer_id == Some(transfer_id) && r.transaction_type == "despesa").collect();
+    assert_eq!(costs.len(), 2);
+    // Moeda da conta de origem (BRL): o custo não vai para a conta em dólar.
+    assert!(costs.iter().all(|r| r.bank_account_id == a.id && r.transaction_date == "2026-03-01"));
+    assert!(costs.iter().any(|r| close(r.valor, 3.5) && r.notes.as_deref() == Some("IOF 0,38%")));
+    assert!(costs.iter().any(|r| close(r.valor, 12.0)));
+    // As 2 pernas da transferência continuam sendo só 2.
+    assert_eq!(rows.iter().filter(|r| r.transaction_type.starts_with("transferencia_")).count(), 2);
+}
+
+#[tokio::test]
+async fn iof_goes_to_taxes_and_fees_to_fees_in_the_monthly_budget() {
+    use chrono::Datelike;
+    let db = memory_db().await;
+    let ws = workspace(&db, "Costs").await;
+    let a = bank_account(&db, ws.id, "Nubank").await;
+    let b = bank_account(&db, ws.id, "Itaú").await;
+    cash_in(&db, ws.id, a.id, 1000.0, "2026-01-01").await;
+
+    let mut request = transfer_request(ws.id, a.id, b.id, 300.0, 300.0);
+    request.transaction_date = chrono::Utc::now().date_naive().with_day(1).unwrap().format("%Y-%m-%d").to_string();
+    request.costs = vec![cost("iof", 3.0), cost("fee", 7.0), cost("fee", 2.0)];
+    create_transfer_in(&db, request).await.unwrap();
+
+    let categories = list_categories_view(&db, ws.id).await.unwrap();
+    let spent = |name: &str| categories.iter().find(|c| c.nome == name).map(|c| c.spent_this_month);
+    assert!(close(spent("Taxes").unwrap(), 3.0));
+    assert!(close(spent("Fees").unwrap(), 9.0));
+}
+
+#[tokio::test]
+async fn deleting_any_leg_of_a_transfer_also_deletes_its_costs() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Costs").await;
+    let a = bank_account(&db, ws.id, "Nubank").await;
+    let b = bank_account(&db, ws.id, "Itaú").await;
+    cash_in(&db, ws.id, a.id, 1000.0, "2026-01-01").await;
+    let mut request = transfer_request(ws.id, a.id, b.id, 300.0, 300.0);
+    request.costs = vec![cost("iof", 3.0), cost("fee", 7.0)];
+    create_transfer_in(&db, request).await.unwrap();
+
+    let entrada = all_general_rows(&db).await.into_iter().find(|r| r.transaction_type == "transferencia_entrada").unwrap();
+    delete_general_transaction_in(&db, entrada.id).await.unwrap();
+
+    // Só sobra o depósito inicial, e os R$ 1.000 voltam inteiros: nenhum custo órfão.
+    assert_eq!(all_general_rows(&db).await.len(), 1);
+    let accounts = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    assert!(close(accounts.iter().find(|x| x.id == a.id).unwrap().balance, 1000.0));
+}
+
+#[tokio::test]
+async fn deleting_the_destination_account_also_deletes_the_costs_of_its_transfers() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Costs").await;
+    let a = bank_account(&db, ws.id, "Nubank").await;
+    let b = bank_account(&db, ws.id, "Itaú").await;
+    cash_in(&db, ws.id, a.id, 1000.0, "2026-01-01").await;
+    let mut request = transfer_request(ws.id, a.id, b.id, 300.0, 300.0);
+    request.costs = vec![cost("fee", 7.0)];
+    create_transfer_in(&db, request).await.unwrap();
+
+    delete_bank_account_in(&db, b.id).await.unwrap();
+
+    let accounts = list_bank_accounts_view(&db, ws.id).await.unwrap();
+    assert!(close(accounts[0].balance, 1000.0));
+    assert_eq!(all_general_rows(&db).await.len(), 1);
+}
+
+#[tokio::test]
+async fn an_invalid_cost_rejects_the_whole_transfer_and_saves_nothing() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Costs").await;
+    let a = bank_account(&db, ws.id, "Nubank").await;
+    let b = bank_account(&db, ws.id, "Itaú").await;
+    cash_in(&db, ws.id, a.id, 1000.0, "2026-01-01").await;
+
+    let bad_costs = [
+        cost("fee", 0.0),
+        cost("fee", -1.0),
+        cost("fee", f64::NAN),
+        cost("fee", f64::INFINITY),
+        cost("bogus", 5.0),
+        cost("", 5.0),
+    ];
+    for bad in bad_costs {
+        // O custo válido vem antes: se a validação só rodasse na gravação, ele já teria sido salvo.
+        let mut request = transfer_request(ws.id, a.id, b.id, 300.0, 300.0);
+        request.costs = vec![cost("iof", 3.0), bad];
+        assert!(create_transfer_in(&db, request).await.is_err());
+    }
+    // Só o depósito inicial: nem as pernas nem o custo bom foram gravados.
+    assert_eq!(all_general_rows(&db).await.len(), 1);
+}
+
+#[tokio::test]
+async fn a_transfer_without_costs_still_saves_only_its_two_legs() {
+    let db = memory_db().await;
+    let ws = workspace(&db, "Costs").await;
+    let a = bank_account(&db, ws.id, "Nubank").await;
+    let b = bank_account(&db, ws.id, "Itaú").await;
+    cash_in(&db, ws.id, a.id, 1000.0, "2026-01-01").await;
+    create_transfer_in(&db, transfer_request(ws.id, a.id, b.id, 300.0, 300.0)).await.unwrap();
+
+    let rows = all_general_rows(&db).await;
+    assert_eq!(rows.len(), 3);
+    assert!(rows.iter().all(|r| r.transaction_type != "despesa"));
+}
+
+#[test]
+fn a_transfer_request_without_the_costs_field_still_deserializes() {
+    // O frontend antigo e o importador de extrato não mandam `costs`.
+    let request: CreateTransferRequest = serde_json::from_str(
+        r#"{"workspace_id":1,"from_account_id":1,"to_account_id":2,"valor_saida":10.0,"valor_entrada":10.0,"transaction_date":"2026-03-01","notes":null}"#,
+    )
+    .unwrap();
+    assert!(request.costs.is_empty());
 }
 
 #[tokio::test]

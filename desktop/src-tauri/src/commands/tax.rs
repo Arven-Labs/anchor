@@ -40,6 +40,7 @@ const TRANSFER: &str = "transferencia";
 const DESPESA: &str = "despesa";
 const TAXES_CATEGORY: &str = "Taxes";
 const YIELD_CATEGORY: &str = "Yield";
+const FEES_CATEGORY: &str = "Fees";
 const EPS: f64 = 1e-9;
 
 fn parse_date(value: &str) -> Result<NaiveDate, AppError> {
@@ -997,6 +998,15 @@ pub(crate) async fn ensure_yield_category<C: sea_orm::ConnectionTrait>(
     workspace_id: i32,
 ) -> Result<i32, AppError> {
     ensure_category(db, workspace_id, YIELD_CATEGORY).await
+}
+
+/// Categoria "Fees" do Workspace, criada se ainda não existir (tarifa e remessa de
+/// uma transferência ou câmbio).
+pub(crate) async fn ensure_fees_category<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    workspace_id: i32,
+) -> Result<i32, AppError> {
+    ensure_category(db, workspace_id, FEES_CATEGORY).await
 }
 
 async fn ensure_category<C: sea_orm::ConnectionTrait>(
