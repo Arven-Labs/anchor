@@ -43,15 +43,21 @@ describe("Anchor — Ledger: a exclusão de uma linha não desarma o Confirm? de
 
   it("atrasa a resposta de delete_transaction no navegador", async () => {
     // `invoke` do @tauri-apps/api é resolvido na hora da chamada (core.js), então trocar a função vale.
-    await browser.execute((delay) => {
+    const applied = await browser.execute((delay) => {
       const internals = window.__TAURI_INTERNALS__;
       const original = internals.invoke;
-      internals.invoke = (cmd, args, options) => {
+      window.__delayedDeletes = 0;
+      const patched = (cmd, args, options) => {
         const result = original.call(internals, cmd, args, options);
         if (cmd !== "delete_transaction") return result;
+        window.__delayedDeletes += 1;
         return result.then((value) => new Promise((resolve) => setTimeout(() => resolve(value), delay)));
       };
+      internals.invoke = patched;
+      return internals.invoke === patched;
     }, DELAY_MS);
+    console.log(`DIAG patch aplicado=${applied}`);
+    expect(applied).toBe(true);
   });
 
   it("excluir A e armar B enquanto a resposta de A não chegou: B continua em Confirm?", async () => {
@@ -60,6 +66,10 @@ describe("Anchor — Ledger: a exclusão de uma linha não desarma o Confirm? de
     await browser.waitUntil(() => !exists(rowA), { timeout: 20_000, timeoutMsg: "A deveria ter sido apagada no banco" });
 
     // A resposta de A ainda está atrasada: a linha A continua na tela e B ainda não foi armada.
+    console.log(
+      `DIAG delete interceptadas=${await browser.execute(() => window.__delayedDeletes)} ` +
+        `linhaA na tela=${await byId(`ledger-delete-${rowA}`).isExisting()}`,
+    );
     expect(await byId(`ledger-delete-${rowA}`).isExisting()).toBe(true);
     await byId(`ledger-delete-${rowB}`).click(); // arma B
     expect(await textOf(byId(`ledger-delete-${rowB}`))).toBe("Confirm?");
