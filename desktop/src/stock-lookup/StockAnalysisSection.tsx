@@ -19,6 +19,7 @@ import NewValuationDialog from "../models/NewValuationDialog";
 import SavedValuationsPanel from "../valuations/SavedValuationsPanel";
 import AssetThesesSidebar from "./AssetThesesSidebar";
 import OptionsSection from "./OptionsSection";
+import CompanyFilingsCard from "./CompanyFilingsCard";
 import {
   AddToAssetsButton,
   CompanyLogo,
@@ -366,6 +367,8 @@ function StockAnalysisSection({
               <p className="text-muted-foreground">No saved valuation for {ticker} yet.</p>
             )}
           </div>
+
+          <CompanyFilingsCard key={ticker} ticker={ticker} />
 
           <OptionsSection key={ticker} ticker={ticker} price={price} workspaceId={workspaceId} />
 

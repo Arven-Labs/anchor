@@ -180,14 +180,68 @@ pub struct CompanyFiling {
 /// Quais pares (categoria, tipo) do IPE são release ou apresentação de resultado.
 /// Qualquer outro (Fato Relevante, Comunicado em geral, Proventos...) devolve `None`.
 pub fn classify_filing(category: &str, kind: &str) -> Option<FilingKind> {
-    let _ = (category, kind);
-    todo!("classify_filing")
+    match (category, kind) {
+        ("Dados Econômico-Financeiros", "Press-release") => Some(FilingKind::Release),
+        ("Comunicado ao Mercado", "Apresentações a analistas/agentes do mercado") => Some(FilingKind::Presentation),
+        _ => None,
+    }
 }
 
 /// Releases e apresentações de `cvm_code` dentro de um zip (primeiro arquivo do zip).
 fn read_filings(zip_path: &Path, cvm_code: i32) -> Result<Vec<CompanyFiling>, AppError> {
-    let _ = (zip_path, cvm_code);
-    todo!("read_filings")
+    let file = File::open(zip_path)?;
+    let mut archive = zip::ZipArchive::new(BufReader::new(file)).map_err(unavailable)?;
+    let entry = archive.by_index(0).map_err(unavailable)?;
+    let mut reader = csv::ReaderBuilder::new().delimiter(b';').flexible(true).from_reader(entry);
+
+    let headers = reader.byte_headers().map_err(unavailable)?.clone();
+    let required = |name: &str| {
+        headers
+            .iter()
+            .position(|h| h == name.as_bytes())
+            .ok_or_else(|| unavailable(format!("missing column {name}")))
+    };
+    let (c_cvm, c_category, c_type, c_subject, c_delivered, c_protocol, c_link) = (
+        required("Codigo_CVM")?,
+        required("Categoria")?,
+        required("Tipo")?,
+        required("Assunto")?,
+        required("Data_Entrega")?,
+        required("Protocolo_Entrega")?,
+        required("Link_Download")?,
+    );
+
+    let mut filings = Vec::new();
+    for record in reader.byte_records() {
+        let record = record.map_err(unavailable)?;
+        let field = |i: usize| record.get(i).map(latin1).unwrap_or_default();
+        let Some(kind) = classify_filing(&field(c_category), &field(c_type)) else {
+            continue;
+        };
+        if field(c_cvm).trim().parse::<i32>().ok() != Some(cvm_code) {
+            continue;
+        }
+        let delivered = field(c_delivered);
+        let data_entrega = NaiveDate::parse_from_str(delivered.trim(), "%Y-%m-%d")
+            .map_err(|e| unavailable(format!("invalid Data_Entrega '{delivered}': {e}")))?;
+        let link_download = field(c_link);
+        let protocolo = field(c_protocol);
+        filings.push(CompanyFiling {
+            protocolo_entrega: if protocolo.is_empty() { link_download.clone() } else { protocolo },
+            data_entrega,
+            link_download,
+            kind,
+            subject: field(c_subject),
+        });
+    }
+    Ok(filings)
+}
+
+async fn year_filings(fetcher: &dyn ZipFetcher, year: i32, cvm_code: i32) -> Result<Vec<CompanyFiling>, AppError> {
+    let path = fetcher.zip(year).await?;
+    tokio::task::spawn_blocking(move || read_filings(&path, cvm_code))
+        .await
+        .map_err(|e| unavailable(format!("parsing task failed: {e}")))?
 }
 
 /// Do ano `current_year` e do anterior, do mais antigo ao mais novo, sem repetir a mesma
@@ -197,8 +251,23 @@ pub async fn filings_with(
     cvm_code: i32,
     current_year: i32,
 ) -> Result<Vec<CompanyFiling>, AppError> {
-    let _ = (fetcher, cvm_code, current_year);
-    todo!("filings_with")
+    let mut filings = Vec::new();
+    let mut errors = Vec::new();
+    for year in [current_year, current_year - 1] {
+        match year_filings(fetcher, year, cvm_code).await {
+            Ok(found) => filings.extend(found),
+            Err(err) => errors.push(err),
+        }
+    }
+    if filings.is_empty() && !errors.is_empty() {
+        return Err(errors.remove(0));
+    }
+    let mut seen = HashSet::new();
+    filings.retain(|f| seen.insert(f.protocolo_entrega.clone()));
+    filings.sort_by(|a, b| {
+        a.data_entrega.cmp(&b.data_entrega).then_with(|| a.protocolo_entrega.cmp(&b.protocolo_entrega))
+    });
+    Ok(filings)
 }
 
 pub async fn company_filings(cvm_code: i32) -> Result<Vec<CompanyFiling>, AppError> {

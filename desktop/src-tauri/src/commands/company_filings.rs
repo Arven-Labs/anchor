@@ -21,8 +21,20 @@ pub struct CompanyFilingView {
 
 /// Entregas de `since` em diante (inclusive), da mais nova à mais antiga, no máximo `limit`.
 fn recent_filings(filings: Vec<CompanyFiling>, since: NaiveDate, limit: usize) -> Vec<CompanyFilingView> {
-    let _ = (filings, since, limit);
-    todo!("recent_filings")
+    let mut recent: Vec<CompanyFiling> = filings.into_iter().filter(|f| f.data_entrega >= since).collect();
+    recent.sort_by(|a, b| {
+        b.data_entrega.cmp(&a.data_entrega).then_with(|| a.protocolo_entrega.cmp(&b.protocolo_entrega))
+    });
+    recent
+        .into_iter()
+        .take(limit)
+        .map(|f| CompanyFilingView {
+            delivered_on: f.data_entrega.to_string(),
+            kind: f.kind,
+            subject: f.subject,
+            pdf_url: f.link_download,
+        })
+        .collect()
 }
 
 async fn filings_for(ticker: &str, since: NaiveDate) -> Result<Vec<CompanyFilingView>, AppError> {
