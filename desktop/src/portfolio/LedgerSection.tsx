@@ -176,17 +176,23 @@ function LedgerSection({
 
   const deleteMutation = useMutation<void, AppError, number>({
     mutationFn: (transactionId) => invoke("delete_transaction", { transactionId }),
-    onSuccess: () => {
+    onSuccess: (_data, deletedId) => {
       queryClient.invalidateQueries({ queryKey: ["transactions", portfolioId] });
       queryClient.invalidateQueries({ queryKey: ["positions", portfolioId] });
       // O imposto e os fundos leem as mesmas transações: sem isto mostrariam o valor de antes da exclusão.
       queryClient.invalidateQueries({ queryKey: ["tax-assessment"] });
       queryClient.invalidateQueries({ queryKey: ["funds-overview"] });
-      setConfirmingDeleteId(null);
+      disarmDelete(deletedId);
     },
     // Fecha o "Confirm?" para o erro (venda ficaria descoberta) não deixar o botão armado.
-    onError: () => setConfirmingDeleteId(null),
+    onError: (_error, failedId) => disarmDelete(failedId),
   });
+
+  // Só desarma se o "Confirm?" ainda é da linha desta exclusão: a resposta atrasada de A não pode
+  // desarmar o clique que o usuário já deu em B (P22).
+  function disarmDelete(id: number) {
+    setConfirmingDeleteId((current) => (current === id ? null : current));
+  }
 
   function handleDeleteClick(id: number) {
     if (confirmingDeleteId === id) {
