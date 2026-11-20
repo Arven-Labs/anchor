@@ -181,7 +181,7 @@ pub struct CompanyFiling {
 /// Qualquer outro (Fato Relevante, Comunicado em geral, Proventos...) devolve `None`.
 pub fn classify_filing(category: &str, kind: &str) -> Option<FilingKind> {
     match (category, kind) {
-        ("Dados Econômico-Financeiros", "Press-release") => Some(FilingKind::Release),
+        ("Dados Econômico-Financeiros", _) => Some(FilingKind::Release),
         ("Comunicado ao Mercado", "Apresentações a analistas/agentes do mercado") => Some(FilingKind::Presentation),
         _ => None,
     }
