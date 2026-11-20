@@ -6,17 +6,45 @@ use chrono::{NaiveDate, Utc};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 use crate::commands::screener::{screen_stocks_on, ScreenerFilters};
-use crate::domain::thesis_draft::{render_draft, Draft, DraftInput};
+use crate::domain::thesis_draft::{render_draft, Draft, DraftIndicators, DraftInput, DraftValuation};
 use crate::entity::valuation;
 use crate::error::AppError;
 
 /// `today` é entrada (não lê o relógio) para o retrato datado ser testável.
 pub async fn build_draft_on(db: &DatabaseConnection, ticker: &str, today: NaiveDate) -> Result<Draft, AppError> {
-    let _ = (db, ticker, today);
-    let _ = (screen_stocks_on, ScreenerFilters::default, render_draft, Utc::now);
-    let _: Option<DraftInput> = None;
-    let _ = (valuation::Entity::find(), valuation::Column::Ticker.eq(""));
-    todo!("build_draft_on")
+    let ticker = ticker.trim().to_uppercase();
+    let screened = screen_stocks_on(db, &ScreenerFilters::default(), today).await?;
+    let row = screened.rows.into_iter().find(|r| r.ticker == ticker);
+    let valuations = valuation::Entity::find()
+        .filter(valuation::Column::Ticker.eq(ticker.as_str()))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|v| DraftValuation {
+            model: v.model,
+            fair_price: v.fair_price,
+            safety_margin: v.safety_margin,
+            verdict: v.verdict,
+            updated_at: v.updated_at,
+        })
+        .collect();
+    let input = DraftInput {
+        name: row.as_ref().and_then(|r| r.name.clone()),
+        indicators: row.map(|r| DraftIndicators {
+            price: r.price,
+            currency: r.currency,
+            pe: r.pe,
+            pb: r.pb,
+            roe: r.roe,
+            dividend_yield_12m: r.dividend_yield_12m,
+            dividend_yield_5y_avg: r.dividend_yield_5y_avg,
+            fetched_at: r.fundamentals_fetched_at,
+        }),
+        ticker,
+        today,
+        valuations,
+    };
+    Ok(render_draft(&input))
 }
 
 #[tauri::command]

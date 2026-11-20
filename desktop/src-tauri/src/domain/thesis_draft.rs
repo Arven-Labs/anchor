@@ -48,15 +48,86 @@ pub struct Draft {
 
 /// O valuation mais recente (maior `updated_at`) de cada modelo, em ordem de nome do modelo.
 pub fn latest_per_model(valuations: Vec<DraftValuation>) -> Vec<DraftValuation> {
-    let _ = valuations;
-    let _ = BTreeMap::<String, DraftValuation>::new();
-    todo!("latest_per_model")
+    let mut newest: BTreeMap<String, DraftValuation> = BTreeMap::new();
+    for v in valuations {
+        let replace = newest.get(&v.model).is_none_or(|current| v.updated_at > current.updated_at);
+        if replace {
+            newest.insert(v.model.clone(), v);
+        }
+    }
+    newest.into_values().collect()
+}
+
+const MISSING: &str = "n/d";
+
+fn or_missing(value: Option<f64>, format: impl Fn(f64) -> String) -> String {
+    value.map_or_else(|| MISSING.to_string(), format)
+}
+
+/// Só a data (`AAAA-MM-DD`) de um carimbo ISO.
+fn date_part(stamp: &str) -> &str {
+    stamp.get(..10).unwrap_or(stamp)
+}
+
+fn indicator_lines(ticker: &str, ind: Option<&DraftIndicators>) -> String {
+    let Some(ind) = ind else {
+        return format!("No collected data for {ticker} yet ({MISSING}). Run a fetch in Research first.\n");
+    };
+    let price = match &ind.currency {
+        Some(currency) => format!("{:.2} {currency}", ind.price),
+        None => format!("{:.2}", ind.price),
+    };
+    let pct = |v: Option<f64>| or_missing(v, |x| format!("{x:.1}%"));
+    format!(
+        "Data collected {}. The numbers below are frozen at the snapshot date.\n\n\
+         - Price: {price}\n\
+         - P/E: {}\n\
+         - P/B: {}\n\
+         - ROE: {:.1}%\n\
+         - Dividend yield (12m): {}\n\
+         - Dividend yield (5y avg): {}\n",
+        date_part(&ind.fetched_at),
+        or_missing(ind.pe, |x| format!("{x:.2}")),
+        or_missing(ind.pb, |x| format!("{x:.2}")),
+        ind.roe,
+        pct(ind.dividend_yield_12m),
+        pct(ind.dividend_yield_5y_avg),
+    )
+}
+
+fn valuation_lines(valuations: &[DraftValuation]) -> String {
+    if valuations.is_empty() {
+        return format!("No saved valuation ({MISSING}).\n");
+    }
+    valuations
+        .iter()
+        .map(|v| {
+            format!(
+                "- {}: fair price {}, margin {}, {} (updated {})\n",
+                v.model,
+                or_missing(v.fair_price, |x| format!("{x:.2}")),
+                or_missing(v.safety_margin, |x| format!("{:.1}%", x * 100.0)),
+                v.verdict.as_deref().unwrap_or(MISSING),
+                date_part(&v.updated_at),
+            )
+        })
+        .collect()
 }
 
 /// Título "`TICKER` thesis" e o Markdown do rascunho. Campo ausente vira `n/d`, nunca zero.
 pub fn render_draft(input: &DraftInput) -> Draft {
-    let _ = input;
-    todo!("render_draft")
+    let heading = match &input.name {
+        Some(name) => format!("# {} — {name}", input.ticker),
+        None => format!("# {}", input.ticker),
+    };
+    let content_markdown = format!(
+        "{heading}\n\n## Snapshot ({})\n\n{}\n### Saved valuations\n\n{}\n\
+         ## Why own it\n\n\n## Risks\n\n\n## What would make me sell\n\n\n## Next review\n\n",
+        input.today,
+        indicator_lines(&input.ticker, input.indicators.as_ref()),
+        valuation_lines(&latest_per_model(input.valuations.clone())),
+    );
+    Draft { title: format!("{} thesis", input.ticker), content_markdown }
 }
 
 #[cfg(test)]
