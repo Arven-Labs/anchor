@@ -404,6 +404,148 @@ void main() {
       expect(await repository.listTransactions(), isEmpty);
     });
 
+    group('custos (IOF e tarifa)', () {
+      Future<int> withCosts(
+        int from,
+        int to,
+        List<TransferCost> costs, {
+        double out = 100,
+        double incoming = 100,
+      }) => repository.createTransfer(
+        fromAccountId: from,
+        toAccountId: to,
+        valorSaida: out,
+        valorEntrada: incoming,
+        date: '2026-08-05',
+        costs: costs,
+      );
+
+      Future<String?> categoryName(GeneralTransaction t) async {
+        final categories = await repository.listCategories();
+        return categories.where((c) => c.id == t.categoryId).map((c) => c.nome).firstOrNull;
+      }
+
+      test('IOF vira despesa em Taxes na conta de origem, presa à transferência', () async {
+        final a = await open('A', 'BRL');
+        final b = await open('B', 'BRL');
+
+        final id = await withCosts(a, b, [const TransferCost(TransferCostKind.iof, 0.38)]);
+
+        final txs = await repository.listTransactions();
+        expect(txs, hasLength(3));
+        expect(txs.every((t) => t.transferId == id), isTrue);
+        final cost = txs.singleWhere((t) => t.type == GeneralTransactionType.despesa);
+        expect(cost.bankAccountId, a);
+        expect(cost.valor, 0.38);
+        expect(cost.date, '2026-08-05');
+        expect(await categoryName(cost), 'Taxes');
+        final balances = computeBalances(txs, '2026-12-31');
+        expect(balances[a], closeTo(-100.38, 1e-9));
+        expect(balances[b], 100.0);
+      });
+
+      test('tarifa vai para Fees, criada no primeiro uso e reaproveitada depois', () async {
+        final a = await open('A', 'BRL');
+        final b = await open('B', 'BRL');
+
+        await withCosts(a, b, [const TransferCost(TransferCostKind.fee, 5)]);
+        await withCosts(a, b, [const TransferCost(TransferCostKind.fee, 7)]);
+
+        final costs = (await repository.listTransactions()).where(
+          (t) => t.type == GeneralTransactionType.despesa,
+        );
+        expect(costs.map((t) => t.valor).toSet(), {5.0, 7.0});
+        expect({for (final t in costs) await categoryName(t)}, {'Fees'});
+        expect((await repository.listCategories()).where((c) => c.nome == 'Fees'), hasLength(1));
+      });
+
+      test('IOF e tarifa juntos: duas despesas, cada uma na sua categoria', () async {
+        final a = await open('A', 'BRL');
+        final b = await open('B', 'BRL');
+
+        final id = await withCosts(a, b, [
+          const TransferCost(TransferCostKind.iof, 0.38),
+          const TransferCost(TransferCostKind.fee, 5),
+        ]);
+
+        final txs = await repository.listTransactions();
+        expect(txs, hasLength(4));
+        expect(txs.every((t) => t.transferId == id), isTrue);
+        final byValor = {
+          for (final t in txs.where((t) => t.type == GeneralTransactionType.despesa))
+            t.valor: await categoryName(t),
+        };
+        expect(byValor, {0.38: 'Taxes', 5.0: 'Fees'});
+      });
+
+      test('sem custos fica como antes: duas pernas e nenhuma categoria criada', () async {
+        final a = await open('A', 'BRL');
+        final b = await open('B', 'BRL');
+
+        await withCosts(a, b, const []);
+
+        expect(await repository.listTransactions(), hasLength(2));
+        expect(await repository.listCategories(), isEmpty);
+      });
+
+      test('custo zero, negativo ou NaN recusa tudo: nem as pernas são gravadas', () async {
+        final a = await open('A', 'BRL');
+        final b = await open('B', 'BRL');
+
+        for (final bad in [0.0, -1.0, double.nan, double.infinity]) {
+          await expectLater(
+            withCosts(a, b, [
+              const TransferCost(TransferCostKind.iof, 1),
+              TransferCost(TransferCostKind.fee, bad),
+            ]),
+            throwsArgumentError,
+          );
+        }
+        expect(await repository.listTransactions(), isEmpty);
+        expect(await repository.listCategories(), isEmpty);
+      });
+
+      test('apagar uma perna apaga os custos junto', () async {
+        final a = await open('A', 'BRL');
+        final b = await open('B', 'BRL');
+        await repository.insertTransaction(tx(a, GeneralTransactionType.receita, 5, '2026-08-01'));
+        await withCosts(a, b, [
+          const TransferCost(TransferCostKind.iof, 0.38),
+          const TransferCost(TransferCostKind.fee, 5),
+        ]);
+        final incoming = (await repository.listTransactions()).firstWhere(
+          (t) => t.type == GeneralTransactionType.transferenciaEntrada,
+        );
+
+        await repository.deleteTransaction(incoming.id!);
+
+        expect((await repository.listTransactions()).single.type, GeneralTransactionType.receita);
+      });
+
+      test('apagar a conta de destino apaga os custos que estavam na origem', () async {
+        final a = await open('A', 'BRL');
+        final b = await open('B', 'BRL');
+        await withCosts(a, b, [const TransferCost(TransferCostKind.iof, 0.38)]);
+
+        await repository.deleteAccount(b);
+
+        expect(await repository.listTransactions(), isEmpty);
+      });
+
+      test('câmbio: o custo é na moeda da origem e não mexe no valor que chegou', () async {
+        final nubank = await open('Nubank', 'BRL');
+        final chase = await open('Chase', 'USD');
+
+        await withCosts(nubank, chase, [
+          const TransferCost(TransferCostKind.iof, 1.95),
+        ], out: 520, incoming: 100);
+
+        final balances = computeBalances(await repository.listTransactions(), '2026-12-31');
+        expect(balances[nubank], closeTo(-521.95, 1e-9));
+        expect(balances[chase], 100.0);
+      });
+    });
+
     test('apagar uma perna apaga a outra; lançamento comum fica de pé', () async {
       final a = await open('A', 'BRL');
       final b = await open('B', 'BRL');

@@ -748,6 +748,23 @@ class AppLocalizationsEn extends AppLocalizations {
       'Spread and fees already included in the amounts.';
 
   @override
+  String finCostsHeader(String currency) {
+    return 'Costs ($currency, charged to the origin account)';
+  }
+
+  @override
+  String get finCostAdd => 'Add cost';
+
+  @override
+  String get finCostRemove => 'Remove cost';
+
+  @override
+  String get finCostIof => 'IOF';
+
+  @override
+  String get finCostFee => 'Fee / remittance';
+
+  @override
   String get finNotes => 'Notes';
 
   @override

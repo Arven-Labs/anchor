@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:anchor_mobile/data/db.dart';
 import 'package:anchor_mobile/domain/finance_error.dart';
+import 'package:anchor_mobile/domain/general_finance.dart' show TransferCost, TransferCostKind;
 import 'package:anchor_mobile/domain/liability.dart';
 import 'package:anchor_mobile/models/bank_account.dart';
 import 'package:anchor_mobile/models/general_transaction.dart';
@@ -296,6 +297,24 @@ void main() {
         transfer(out: 10, inn: 11),
         financeError(FinanceErrorCode.transferSameCurrencyAmountsDiffer),
       );
+    });
+
+    test('transferência: custo zero, negativo ou NaN usa o código dos valores positivos', () async {
+      final a = await repository.insertAccount(account('Alfa', 'BRL'));
+      final b = await repository.insertAccount(account('Beta', 'BRL'));
+
+      Future<int> transfer(double cost) => repository.createTransfer(
+        fromAccountId: a,
+        toAccountId: b,
+        valorSaida: 10,
+        valorEntrada: 10,
+        date: '2026-01-02',
+        costs: [TransferCost(TransferCostKind.iof, cost)],
+      );
+
+      for (final bad in [0.0, -1.0, double.nan]) {
+        await expectLater(transfer(bad), financeError(FinanceErrorCode.transferAmountsMustBePositive));
+      }
     });
 
     // O cálculo das parcelas (domínio) também lança erro tipado: principal, taxa e prazo.

@@ -24,6 +24,18 @@ double? parseAmount(String text) {
   return value != null && value.isFinite && value > 0 ? value : null;
 }
 
+/// Tipo de um custo digitado numa transferência: `iof` vai para a categoria Taxes e `fee`
+/// (tarifa, remessa) para Fees (o mesmo critério do desktop).
+enum TransferCostKind { iof, fee }
+
+/// Custo explícito de uma transferência, na moeda da conta de origem e além do valor que saiu.
+class TransferCost {
+  const TransferCost(this.kind, this.valor);
+
+  final TransferCostKind kind;
+  final double valor;
+}
+
 /// Porta de `signed_valor` (`desktop/src-tauri/src/commands/bank_account.rs`):
 /// despesa, parcela de dívida, empréstimo concedido e saída de transferência
 /// saem da conta; receita, recebimento de empréstimo e entrada de

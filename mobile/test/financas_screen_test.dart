@@ -305,6 +305,69 @@ void main() {
     expect(textOf(tester, 'financas-balance-$b').data, 'BRL 120,50');
   });
 
+  testWidgets('transferir com IOF digitado debita a origem e grava o custo em Taxes', (tester) async {
+    late int a;
+    await tester.runAsync(() async {
+      a = await account('Alfa', 'BRL');
+      await account('Beta', 'BRL');
+      await add(a, GeneralTransactionType.receita, 500, '2026-01-02');
+    });
+    await pumpScreen(tester);
+
+    await tester.tap(find.byTooltip('Transferir'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('financas-transfer-out')), '120,5');
+    await tester.tap(find.byKey(const Key('financas-transfer-cost-add')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('financas-transfer-cost-valor-0')), '0,38');
+    // O botão só habilita no rebuild que o `onChanged` do campo pede: sem o frame, o toque pega o botão ainda desligado.
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Transferir'));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 200; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+      await tester.pump();
+      if (find.text('BRL 379,12').evaluate().isNotEmpty &&
+          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+        break;
+      }
+    }
+
+    late List<GeneralTransaction> txs;
+    late List<GeneralTransactionCategory> categories;
+    await tester.runAsync(() async {
+      txs = await repository.listTransactions();
+      categories = await repository.listCategories();
+    });
+    // Perna de saída, de entrada e o custo, mais a receita inicial: se vierem só os da receita, o diálogo não gravou.
+    expect(txs, hasLength(4), reason: 'lançamentos gravados: $txs');
+    expect(textOf(tester, 'financas-balance-$a').data, 'BRL 379,12');
+    final cost = txs.singleWhere((t) => t.type == GeneralTransactionType.despesa);
+    expect(cost.valor, 0.38);
+    expect(categories.singleWhere((c) => c.id == cost.categoryId).nome, 'Taxes');
+  });
+
+  testWidgets('custo sem valor deixa o botão Transferir desligado até o campo ficar válido', (tester) async {
+    await tester.runAsync(() async {
+      await account('Alfa', 'BRL');
+      await account('Beta', 'BRL');
+    });
+    await pumpScreen(tester);
+
+    await tester.tap(find.byTooltip('Transferir'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('financas-transfer-out')), '10');
+    await tester.tap(find.byKey(const Key('financas-transfer-cost-add')));
+    await tester.pumpAndSettle();
+
+    FilledButton submit() => tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Transferir'));
+    expect(submit().onPressed, isNull);
+
+    await tester.enterText(find.byKey(const Key('financas-transfer-cost-valor-0')), '1');
+    await tester.pump();
+    expect(submit().onPressed, isNotNull);
+  });
+
   group('conciliar saldo', () {
     Future<int> openReconcile(WidgetTester tester) async {
       late int id;
