@@ -52,6 +52,7 @@ pub mod fund;
 pub mod offshore;
 pub mod tax;
 pub mod thesis;
+pub mod thesis_draft;
 pub mod transaction;
 pub mod truthid;
 pub mod update_check;
