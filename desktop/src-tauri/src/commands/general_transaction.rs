@@ -254,7 +254,7 @@ pub async fn create_transfer_in(
         if !matches!(cost.kind.as_str(), COST_IOF | COST_FEE) {
             return Err(AppError::InvalidInput(format!("unknown cost kind '{}'", cost.kind)));
         }
-        if !cost.valor.is_finite() || cost.valor < 0.0 {
+        if !cost.valor.is_finite() || cost.valor <= 0.0 {
             return Err(AppError::InvalidInput("cost valor must be positive".to_string()));
         }
     }
@@ -291,7 +291,7 @@ pub async fn create_transfer_in(
     // Cada custo é uma despesa na conta de origem presa à transferência pelo `transfer_id`: apagar
     // qualquer perna apaga o custo junto, e o saldo e o orçamento já tratam `despesa` como débito.
     for cost in &request.costs {
-        let category_id = if cost.kind == COST_FEE {
+        let category_id = if cost.kind == COST_IOF {
             ensure_taxes_category(&txn, request.workspace_id).await?
         } else {
             ensure_fees_category(&txn, request.workspace_id).await?
