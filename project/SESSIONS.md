@@ -5722,3 +5722,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Mudança**: `desktop/src/portfolio/LedgerSection.tsx`: `onSuccess` e `onError` do `deleteMutation` usam o id da exclusão (`variables`) e `disarmDelete(id)` só limpa o `confirmingDeleteId` se ele ainda for esse id.
 - **Verificação**: `npx tsc --noEmit` local sem erro; CI: ver o PR.
 - **Não verificado**: a corrida (nenhum teste a reproduz), a quebra proposital e o app real.
+
+## Sessão 386 — custos de transferência e câmbio (IOF, tarifa), desktop (PR #182)
+- **Pedido**: seguir o roadmap e implementar a fatia dos custos de transferência; plano aprovado em plan mode. Decisões do dono: custos como `despesa` presas ao `transfer_id` (sem migration), IOF digitado (sem alíquota fixa), só desktop.
+- **Mudança**: `create_transfer_in` aceita `costs` (`iof` ou `fee`, valor finito e positivo, validado antes de abrir a transação); cada custo vira `despesa` na conta de origem, categoria Taxes (IOF) ou Fees (`ensure_fees_category`, criada no 1º uso). `TransferDialog.tsx` ganhou a seção de custos; a linha da transferência mostra o total e usa a nota da perna de saída. Apagar perna ou conta de destino apaga os custos pelo `transfer_id` (já era assim). Edição de custo isolado continua recusada.
+- **Testes primeiro**: 8 testes em `flow_tests.rs` + 1 E2E em `accounts.e2e.mjs`. No commit só dos testes (esqueleto do campo, sem gravar), o CI deu 1324 passaram e 4 falharam por comportamento (saldo, linhas, categoria Fees, custo inválido). Os 2 testes de apagar perna e conta passaram antes da implementação (sem custo gravado não provam nada; ficam como guarda).
+- **Implementação**: CI verde (`rust / test`, `e2e`, `frontend`) no commit `eee32ef`.
+- **Quebra proposital**: `<=` por `<` na validação e IOF na categoria errada (commit `88e9662`): o CI deu 1326 passaram e 2 falharam (`an_invalid_cost_rejects_the_whole_transfer_and_saves_nothing` e `iof_goes_to_taxes_and_fees_to_fees_in_the_monthly_budget`). Revertida em `553c450`. A cascata de apagar não foi quebrada de propósito.
+- **Não verificado**: o app real; o IOF contra um extrato real; o mobile (fatia seguinte); o efeito no limite mensal de Taxes e Fees (custos passam a contar nele).
