@@ -331,13 +331,15 @@ void main() {
       }
     }
 
-    expect(textOf(tester, 'financas-balance-$a').data, 'BRL 379,12');
     late List<GeneralTransaction> txs;
     late List<GeneralTransactionCategory> categories;
     await tester.runAsync(() async {
       txs = await repository.listTransactions();
       categories = await repository.listCategories();
     });
+    // Perna de saída, de entrada e o custo, mais a receita inicial: se vierem só os da receita, o diálogo não gravou.
+    expect(txs, hasLength(4), reason: 'lançamentos gravados: $txs');
+    expect(textOf(tester, 'financas-balance-$a').data, 'BRL 379,12');
     final cost = txs.singleWhere((t) => t.type == GeneralTransactionType.despesa);
     expect(cost.valor, 0.38);
     expect(categories.singleWhere((c) => c.id == cost.categoryId).nome, 'Taxes');
