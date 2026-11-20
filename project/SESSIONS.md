@@ -5703,3 +5703,8 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não corrigido (decisão do dono)**: a corrida existe no componente (o `onSuccess` e o `onError` zeram o arme sem checar a linha; correção possível: `setConfirmingDeleteId(cur => cur === id ? null : cur)`). Só um clique em milissegundos a dispara, então fica como pendência, não como defeito do usuário comum.
 - **Processo**: a 1ª medição (20 rodadas, 1 falha) era pouca; refiz com 80 rodadas intercaladas para controlar a carga do runner, e só então apliquei a correção.
 - **Não verificado**: a correção do teste contra uma taxa de ~8% com mais de uma rodada do spec real; o comportamento em tela real.
+
+## Sessão 383 — PENDING: registra a corrida do "Confirm?" do Delete no Ledger como P22
+- **Pedido**: registrar como pendência a corrida do componente deixada na Sessão 382 (decisão do dono: "vamos de 1").
+- **Feito**: só docs. `PENDING.md` ganhou o P22 (🟢 Baixa): causa, medição, correção de uma linha (`cur === id ? null : cur` no `onSuccess` e no `onError` de `LedgerSection.tsx`), e o que fazer antes de corrigir (teste que falhe sem a correção, medição antes e depois). O código não mudou.
+- **Não verificado**: a correção proposta; é a hipótese da Sessão 382, não foi aplicada nem medida.
