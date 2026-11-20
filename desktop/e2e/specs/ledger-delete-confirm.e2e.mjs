@@ -53,11 +53,40 @@ describe("Anchor — Ledger: a exclusão de uma linha não desarma o Confirm? de
         window.__delayedDeletes += 1;
         return result.then((value) => new Promise((resolve) => setTimeout(() => resolve(value), delay)));
       };
-      internals.invoke = patched;
-      return internals.invoke === patched;
+      const log = [];
+      const describe = (obj, key) => {
+        const d = Object.getOwnPropertyDescriptor(obj, key);
+        return d ? JSON.stringify({ writable: d.writable, configurable: d.configurable, get: !!d.get }) : "ausente";
+      };
+      log.push(`invoke=${describe(internals, "invoke")} window.__TAURI_INTERNALS__=${describe(window, "__TAURI_INTERNALS__")}`);
+      const works = () => window.__TAURI_INTERNALS__.invoke === patched;
+      try {
+        internals.invoke = patched;
+      } catch (e) {
+        log.push(`atribuir: ${e.message}`);
+      }
+      if (!works()) {
+        try {
+          Object.defineProperty(internals, "invoke", { value: patched, configurable: true, writable: true });
+        } catch (e) {
+          log.push(`defineProperty no invoke: ${e.message}`);
+        }
+      }
+      if (!works()) {
+        try {
+          Object.defineProperty(window, "__TAURI_INTERNALS__", {
+            value: { ...internals, invoke: patched },
+            configurable: true,
+            writable: true,
+          });
+        } catch (e) {
+          log.push(`substituir o objeto: ${e.message}`);
+        }
+      }
+      return { ok: works(), log };
     }, DELAY_MS);
-    console.log(`DIAG patch aplicado=${applied}`);
-    expect(applied).toBe(true);
+    console.log(`DIAG patch ok=${applied.ok} ${applied.log.join(" | ")}`);
+    expect(applied.ok).toBe(true);
   });
 
   it("excluir A e armar B enquanto a resposta de A não chegou: B continua em Confirm?", async () => {
