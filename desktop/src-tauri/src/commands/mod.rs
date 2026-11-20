@@ -10,6 +10,7 @@ pub mod crypto_indicator;
 pub mod custodia;
 pub mod data_source_credentials;
 pub mod dcf;
+pub mod company_filings;
 pub mod cvm_notice;
 pub mod dividend_suggestion;
 pub mod option_position;

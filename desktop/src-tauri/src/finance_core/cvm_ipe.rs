@@ -154,6 +154,127 @@ pub async fn notices_with(
 }
 
 // ---------------------------------------------------------------------------
+// Releases e apresentações de resultado (RI)
+// ---------------------------------------------------------------------------
+
+/// Só links: o conteúdo do PDF não é lido (parsing de dado externo, e a IA saiu do Anchor).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FilingKind {
+    /// Categoria "Dados Econômico-Financeiros", tipo "Press-release".
+    Release,
+    /// Categoria "Comunicado ao Mercado", tipo "Apresentações a analistas/agentes do mercado".
+    Presentation,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompanyFiling {
+    pub protocolo_entrega: String,
+    pub data_entrega: NaiveDate,
+    pub link_download: String,
+    pub kind: FilingKind,
+    /// Coluna `Assunto` (ex.: "Apresentação de Resultados 3T26"); pode vir vazia.
+    pub subject: String,
+}
+
+/// Quais pares (categoria, tipo) do IPE são release ou apresentação de resultado.
+/// Qualquer outro (Fato Relevante, Comunicado em geral, Proventos...) devolve `None`.
+pub fn classify_filing(category: &str, kind: &str) -> Option<FilingKind> {
+    match (category, kind) {
+        ("Dados Econômico-Financeiros", "Press-release") => Some(FilingKind::Release),
+        ("Comunicado ao Mercado", "Apresentações a analistas/agentes do mercado") => Some(FilingKind::Presentation),
+        _ => None,
+    }
+}
+
+/// Releases e apresentações de `cvm_code` dentro de um zip (primeiro arquivo do zip).
+fn read_filings(zip_path: &Path, cvm_code: i32) -> Result<Vec<CompanyFiling>, AppError> {
+    let file = File::open(zip_path)?;
+    let mut archive = zip::ZipArchive::new(BufReader::new(file)).map_err(unavailable)?;
+    let entry = archive.by_index(0).map_err(unavailable)?;
+    let mut reader = csv::ReaderBuilder::new().delimiter(b';').flexible(true).from_reader(entry);
+
+    let headers = reader.byte_headers().map_err(unavailable)?.clone();
+    let required = |name: &str| {
+        headers
+            .iter()
+            .position(|h| h == name.as_bytes())
+            .ok_or_else(|| unavailable(format!("missing column {name}")))
+    };
+    let (c_cvm, c_category, c_type, c_subject, c_delivered, c_protocol, c_link) = (
+        required("Codigo_CVM")?,
+        required("Categoria")?,
+        required("Tipo")?,
+        required("Assunto")?,
+        required("Data_Entrega")?,
+        required("Protocolo_Entrega")?,
+        required("Link_Download")?,
+    );
+
+    let mut filings = Vec::new();
+    for record in reader.byte_records() {
+        let record = record.map_err(unavailable)?;
+        let field = |i: usize| record.get(i).map(latin1).unwrap_or_default();
+        let Some(kind) = classify_filing(&field(c_category), &field(c_type)) else {
+            continue;
+        };
+        if field(c_cvm).trim().parse::<i32>().ok() != Some(cvm_code) {
+            continue;
+        }
+        let delivered = field(c_delivered);
+        let data_entrega = NaiveDate::parse_from_str(delivered.trim(), "%Y-%m-%d")
+            .map_err(|e| unavailable(format!("invalid Data_Entrega '{delivered}': {e}")))?;
+        let link_download = field(c_link);
+        let protocolo = field(c_protocol);
+        filings.push(CompanyFiling {
+            protocolo_entrega: if protocolo.is_empty() { link_download.clone() } else { protocolo },
+            data_entrega,
+            link_download,
+            kind,
+            subject: field(c_subject),
+        });
+    }
+    Ok(filings)
+}
+
+async fn year_filings(fetcher: &dyn ZipFetcher, year: i32, cvm_code: i32) -> Result<Vec<CompanyFiling>, AppError> {
+    let path = fetcher.zip(year).await?;
+    tokio::task::spawn_blocking(move || read_filings(&path, cvm_code))
+        .await
+        .map_err(|e| unavailable(format!("parsing task failed: {e}")))?
+}
+
+/// Do ano `current_year` e do anterior, do mais antigo ao mais novo, sem repetir a mesma
+/// entrega (identidade = protocolo ou, em branco, o link). Mesma regra de erro de `notices_with`.
+pub async fn filings_with(
+    fetcher: &dyn ZipFetcher,
+    cvm_code: i32,
+    current_year: i32,
+) -> Result<Vec<CompanyFiling>, AppError> {
+    let mut filings = Vec::new();
+    let mut errors = Vec::new();
+    for year in [current_year, current_year - 1] {
+        match year_filings(fetcher, year, cvm_code).await {
+            Ok(found) => filings.extend(found),
+            Err(err) => errors.push(err),
+        }
+    }
+    if filings.is_empty() && !errors.is_empty() {
+        return Err(errors.remove(0));
+    }
+    let mut seen = HashSet::new();
+    filings.retain(|f| seen.insert(f.protocolo_entrega.clone()));
+    filings.sort_by(|a, b| {
+        a.data_entrega.cmp(&b.data_entrega).then_with(|| a.protocolo_entrega.cmp(&b.protocolo_entrega))
+    });
+    Ok(filings)
+}
+
+pub async fn company_filings(cvm_code: i32) -> Result<Vec<CompanyFiling>, AppError> {
+    filings_with(&CvmIpeZips, cvm_code, Utc::now().year()).await
+}
+
+// ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
 
@@ -347,6 +468,117 @@ mod tests {
     async fn an_invalid_delivery_date_is_provider_unavailable() {
         let fake = Fake::new(vec![(2026, csv_bytes(&[dividend("1023", "11/02/2026", LINK_A)])), (2025, csv_bytes(&[]))]);
         assert!(matches!(notices_with(&fake, BB, 2026).await, Err(AppError::ProviderUnavailable(_))));
+    }
+
+    // --- releases e apresentações (RI) ---
+
+    const CAT_FIN: &str = "Dados Econômico-Financeiros";
+    const CAT_COMM: &str = "Comunicado ao Mercado";
+    const TIPO_RELEASE: &str = "Press-release";
+    const TIPO_PRES: &str = "Apresentações a analistas/agentes do mercado";
+
+    fn filing_row(cvm: &str, category: &str, tipo: &str, subject: &str, delivered: &str, link: &str) -> String {
+        format!("00.000.000/0001-91;BANCO DO BRASIL S.A.;{cvm};2026-02-10;{category};{tipo};;{subject};{delivered};AP - Apresentação;;1;{link}")
+    }
+
+    fn release(cvm: &str, delivered: &str, link: &str) -> String {
+        filing_row(cvm, CAT_FIN, TIPO_RELEASE, "Release 3T26", delivered, link)
+    }
+
+    #[test]
+    fn classifies_press_release_and_analyst_presentation() {
+        assert_eq!(classify_filing(CAT_FIN, TIPO_RELEASE), Some(FilingKind::Release));
+        assert_eq!(classify_filing(CAT_COMM, TIPO_PRES), Some(FilingKind::Presentation));
+    }
+
+    #[test]
+    fn classification_needs_both_category_and_type() {
+        assert_eq!(classify_filing(CAT_COMM, TIPO_RELEASE), None);
+        assert_eq!(classify_filing(CAT_FIN, TIPO_PRES), None);
+        assert_eq!(classify_filing(CAT_FIN, "Demonstrações Financeiras Anuais Completas"), None);
+        assert_eq!(classify_filing("Fato Relevante", ""), None);
+        assert_eq!(classify_filing(DIVIDEND_CATEGORY, ""), None);
+    }
+
+    #[tokio::test]
+    async fn filings_keep_only_releases_and_presentations_of_the_company() {
+        let fake = Fake::new(vec![(
+            2026,
+            csv_bytes(&[
+                release("001023", "2026-11-05", LINK_A),
+                release("009512", "2026-11-06", LINK_B),
+                filing_row("001023", CAT_COMM, TIPO_PRES, "Apresentação de Resultados 3T26", "2026-11-07", LINK_C),
+                filing_row("001023", "Fato Relevante", "", "Qualquer", "2026-11-08", "https://x/fr"),
+                filing_row("001023", CAT_FIN, "Demonstrações Financeiras Anuais Completas", "", "2026-11-09", "https://x/dfp"),
+                dividend("001023", "2026-11-10", "https://x/div"),
+            ]),
+        )]);
+        let filings = filings_with(&fake, BB, 2026).await.unwrap();
+        let links: Vec<_> = filings.iter().map(|f| f.link_download.as_str()).collect();
+        assert_eq!(links, [LINK_A, LINK_C]);
+    }
+
+    #[tokio::test]
+    async fn filing_carries_kind_subject_and_delivery_date() {
+        let fake = Fake::new(vec![(
+            2026,
+            csv_bytes(&[filing_row("1023", CAT_COMM, TIPO_PRES, "Apresentação de Resultados 3T26", "2026-11-07", LINK_C)]),
+        )]);
+        let f = &filings_with(&fake, BB, 2026).await.unwrap()[0];
+        assert_eq!(f.kind, FilingKind::Presentation);
+        assert_eq!(f.subject, "Apresentação de Resultados 3T26");
+        assert_eq!(f.data_entrega, NaiveDate::from_ymd_opt(2026, 11, 7).unwrap());
+        assert_eq!(f.protocolo_entrega, LINK_C);
+    }
+
+    #[tokio::test]
+    async fn filings_merge_both_years_oldest_first() {
+        let fake = Fake::new(vec![
+            (2026, csv_bytes(&[release("1023", "2026-05-05", LINK_B)])),
+            (2025, csv_bytes(&[release("1023", "2025-11-05", LINK_A)])),
+        ]);
+        let filings = filings_with(&fake, BB, 2026).await.unwrap();
+        let links: Vec<_> = filings.iter().map(|f| f.link_download.as_str()).collect();
+        assert_eq!(links, [LINK_A, LINK_B]);
+    }
+
+    #[tokio::test]
+    async fn filings_repeated_in_both_years_count_once() {
+        let line = release("1023", "2026-01-05", LINK_A);
+        let fake = Fake::new(vec![(2026, csv_bytes(&[line.clone()])), (2025, csv_bytes(&[line]))]);
+        assert_eq!(filings_with(&fake, BB, 2026).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn company_without_filings_is_an_empty_list() {
+        let fake = Fake::new(vec![
+            (2026, csv_bytes(&[release("9512", "2026-02-11", LINK_A)])),
+            (2025, csv_bytes(&[])),
+        ]);
+        assert!(filings_with(&fake, BB, 2026).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn filings_with_both_years_failing_is_provider_unavailable() {
+        let fake = Fake::new(vec![]);
+        assert!(matches!(filings_with(&fake, BB, 2026).await, Err(AppError::ProviderUnavailable(_))));
+    }
+
+    #[tokio::test]
+    async fn filings_need_the_type_and_subject_columns() {
+        let csv = "Codigo_CVM;Categoria;Data_Entrega;Protocolo_Entrega;Link_Download\n1023;Comunicado ao Mercado;2026-11-07;;x"
+            .chars()
+            .map(|c| c as u8)
+            .collect();
+        let fake = Fake::new(vec![(2026, csv), (2025, Vec::new())]);
+        let err = filings_with(&fake, BB, 2026).await.unwrap_err();
+        assert!(matches!(&err, AppError::ProviderUnavailable(m) if m.contains("missing column")), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_filing_with_an_invalid_delivery_date_is_provider_unavailable() {
+        let fake = Fake::new(vec![(2026, csv_bytes(&[release("1023", "07/11/2026", LINK_A)])), (2025, csv_bytes(&[]))]);
+        assert!(matches!(filings_with(&fake, BB, 2026).await, Err(AppError::ProviderUnavailable(_))));
     }
 
     // Ao vivo (rede, ~13 MB): `cargo test --lib -- --ignored --nocapture live_dividend_notices`.
