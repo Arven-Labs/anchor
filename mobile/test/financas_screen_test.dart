@@ -320,6 +320,8 @@ void main() {
     await tester.tap(find.byKey(const Key('financas-transfer-cost-add')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('financas-transfer-cost-valor-0')), '0,38');
+    // O botão só habilita no rebuild que o `onChanged` do campo pede: sem o frame, o toque pega o botão ainda desligado.
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Transferir'));
     await tester.pumpAndSettle();
     for (var i = 0; i < 200; i++) {
