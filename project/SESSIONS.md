@@ -5708,3 +5708,11 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Pedido**: registrar como pendência a corrida do componente deixada na Sessão 382 (decisão do dono: "vamos de 1").
 - **Feito**: só docs. `PENDING.md` ganhou o P22 (🟢 Baixa): causa, medição, correção de uma linha (`cur === id ? null : cur` no `onSuccess` e no `onError` de `LedgerSection.tsx`), e o que fazer antes de corrigir (teste que falhe sem a correção, medição antes e depois). O código não mudou.
 - **Não verificado**: a correção proposta; é a hipótese da Sessão 382, não foi aplicada nem medida.
+
+## Sessão 384 — P22: tentativa de teste determinístico sem sucesso; achado registrado (PR #179 fechado)
+- **Pedido**: corrigir o P22 (corrida do "Confirm?" do Delete no Ledger), com teste que falhe antes.
+- **Tentativa**: E2E novo atrasando no navegador a resposta de `delete_transaction` (patch de `window.__TAURI_INTERNALS__.invoke`), para armar a linha B enquanto a exclusão de A ainda não respondeu. Confirmei em `@tauri-apps/api` 2.12.4 que o `invoke` é resolvido na chamada (`core.js:341`).
+- **Resultado**: não funciona. 1º run (44649119066) falhou na linha A "ainda na tela" (o atraso não valeu); diagnóstico no teste (44651253475): `patch aplicado=false`, 0 chamadas interceptadas; 2º diagnóstico (44652442546) com 3 estratégias e os descritores: `window.__TAURI_INTERNALS__` e `invoke` são `writable:false, configurable:false`. O Tauri os trava de propósito.
+- **Decisão do dono**: parar (opção C) em vez de travar o SQLite pelo teste (A) ou corrigir sem o teste que falha antes (B). O P22 segue aberto, 🟢 Baixa, com o achado e o caminho que sobra.
+- **Processo**: gastei 3 rodadas de CI (~40 min) antes de o diagnóstico mostrar a causa; o 1º vermelho era por motivo errado (o atraso não aplicava), e só o diagnóstico no próprio teste deixou isso claro. Não houve mudança de código do app.
+- **Não verificado**: a opção A (lock do SQLite) e o `busy_timeout` do sqlx.
