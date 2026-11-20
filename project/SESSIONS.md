@@ -5716,3 +5716,9 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Decisão do dono**: parar (opção C) em vez de travar o SQLite pelo teste (A) ou corrigir sem o teste que falha antes (B). O P22 segue aberto, 🟢 Baixa, com o achado e o caminho que sobra.
 - **Processo**: gastei 3 rodadas de CI (~40 min) antes de o diagnóstico mostrar a causa; o 1º vermelho era por motivo errado (o atraso não aplicava), e só o diagnóstico no próprio teste deixou isso claro. Não houve mudança de código do app.
 - **Não verificado**: a opção A (lock do SQLite) e o `busy_timeout` do sqlx.
+
+## Sessão 385 — P22: corrige o "Confirm?" do Delete no Ledger, sem teste que falhe antes
+- **Pedido**: seguir a opção B da Sessão 384 (corrigir sem o teste de regressão).
+- **Mudança**: `desktop/src/portfolio/LedgerSection.tsx`: `onSuccess` e `onError` do `deleteMutation` usam o id da exclusão (`variables`) e `disarmDelete(id)` só limpa o `confirmingDeleteId` se ele ainda for esse id.
+- **Verificação**: `npx tsc --noEmit` local sem erro; CI: ver o PR.
+- **Não verificado**: a corrida (nenhum teste a reproduz), a quebra proposital e o app real.
