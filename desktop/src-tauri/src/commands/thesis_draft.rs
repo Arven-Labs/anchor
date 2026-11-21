@@ -3,11 +3,14 @@
 // Os indicadores vêm do screener (mesma conta de DY e razões), os valuations da tabela `valuation`.
 
 use chrono::{NaiveDate, Utc};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 
 use crate::commands::screener::{screen_stocks_on, ScreenerFilters};
-use crate::domain::thesis_draft::{render_draft, Draft, DraftIndicators, DraftInput, DraftValuation};
-use crate::entity::valuation;
+use crate::domain::thesis_draft::{
+    render_draft, render_fii_draft, Draft, DraftIndicators, DraftInput, DraftValuation, FiiDraftInput, FiiDraftMonthly,
+    FiiDraftProperty,
+};
+use crate::entity::{fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_quotes, valuation};
 use crate::error::AppError;
 
 /// `today` é entrada (não lê o relógio) para o retrato datado ser testável.
@@ -48,8 +51,71 @@ pub async fn build_draft_on(db: &DatabaseConnection, ticker: &str, today: NaiveD
 }
 
 /// Rascunho de tese de FII. Só lê o que já foi coletado (cotação, CNPJ em cache, CVM): sem rede.
-pub async fn build_fii_draft_on(_db: &DatabaseConnection, _ticker: &str, _today: NaiveDate) -> Result<Draft, AppError> {
-    todo!()
+pub async fn build_fii_draft_on(db: &DatabaseConnection, ticker: &str, today: NaiveDate) -> Result<Draft, AppError> {
+    let ticker = ticker.trim().to_uppercase();
+    let quote = stock_quotes::Entity::find()
+        .filter(stock_quotes::Column::Ticker.eq(ticker.as_str()))
+        .order_by_desc(stock_quotes::Column::FetchedAt)
+        .one(db)
+        .await?;
+    let cnpj = fii_cnpj_cache::Entity::find()
+        .filter(fii_cnpj_cache::Column::Ticker.eq(ticker.as_str()))
+        .one(db)
+        .await?
+        .map(|c| c.cnpj);
+
+    let (monthly, properties) = match cnpj {
+        Some(cnpj) => {
+            let monthly = fii_cvm_monthly::Entity::find()
+                .filter(fii_cvm_monthly::Column::Cnpj.eq(cnpj.as_str()))
+                .order_by_desc(fii_cvm_monthly::Column::ReferenceDate)
+                .one(db)
+                .await?
+                .map(|m| FiiDraftMonthly {
+                    reference_date: m.reference_date,
+                    net_assets: m.patrimonio_liquido,
+                    book_value_per_share: m.valor_patrimonial_cota,
+                    shareholders: m.numero_cotistas,
+                    dividend_yield_month: m.dividend_yield_mes,
+                    effective_return_month: m.rentabilidade_efetiva_mes,
+                });
+            let rows = fii_cvm_properties::Entity::find()
+                .filter(fii_cvm_properties::Column::Cnpj.eq(cnpj.as_str()))
+                .order_by_desc(fii_cvm_properties::Column::ReferenceDate)
+                .all(db)
+                .await?;
+            let latest_date = rows.first().map(|p| p.reference_date.clone());
+            let properties = rows
+                .into_iter()
+                .filter(|p| Some(&p.reference_date) == latest_date.as_ref())
+                .map(|p| FiiDraftProperty {
+                    name: p.nome_imovel,
+                    area_m2: p.area_m2,
+                    vacancy: p.percentual_vacancia,
+                    delinquency: p.percentual_inadimplencia,
+                    leased: p.percentual_locado,
+                })
+                .collect();
+            (monthly, properties)
+        }
+        None => (None, Vec::new()),
+    };
+
+    let input = FiiDraftInput {
+        name: quote.as_ref().and_then(|q| q.name.clone()),
+        price: quote.as_ref().map(|q| q.price),
+        currency: quote.and_then(|q| q.currency),
+        ticker,
+        today,
+        monthly,
+        properties,
+    };
+    Ok(render_fii_draft(&input))
+}
+
+#[tauri::command]
+pub async fn build_fii_thesis_draft(db: tauri::State<'_, DatabaseConnection>, ticker: String) -> Result<Draft, AppError> {
+    build_fii_draft_on(db.inner(), ticker.trim(), Utc::now().date_naive()).await
 }
 
 #[tauri::command]

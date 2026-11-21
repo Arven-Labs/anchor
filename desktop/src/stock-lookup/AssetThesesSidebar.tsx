@@ -110,7 +110,7 @@ function AssetThesesSidebar({
   // Frente 3 do ROADMAP: rascunho determinístico (sem IA) com o retrato datado dos números
   // já coletados. Só preenche o formulário; quem salva é o "Save", depois de o dono editar.
   const draftMutation = useMutation<{ title: string; content_markdown: string }, AppError, void>({
-    mutationFn: () => invoke("build_thesis_draft", { ticker }),
+    mutationFn: () => invoke(assetClass === "fii" ? "build_fii_thesis_draft" : "build_thesis_draft", { ticker }),
     onSuccess: (draft) => {
       setFormTitle(draft.title);
       setFormContent(draft.content_markdown);

@@ -162,9 +162,89 @@ pub struct FiiDraftInput {
     pub properties: Vec<FiiDraftProperty>,
 }
 
+/// P/VP = preço ÷ VP da cota. Sem preço, sem mês da CVM ou com VP zerado, não há razão: `None`.
+fn price_to_book(price: Option<f64>, monthly: Option<&FiiDraftMonthly>) -> Option<f64> {
+    let book = monthly?.book_value_per_share;
+    (book > 0.0).then(|| price.map(|p| p / book)).flatten()
+}
+
+fn fii_quote_lines(input: &FiiDraftInput) -> String {
+    let price = match (input.price, &input.currency) {
+        (Some(p), Some(currency)) => format!("{p:.2} {currency}"),
+        (Some(p), None) => format!("{p:.2}"),
+        (None, _) => MISSING.to_string(),
+    };
+    let pvp = or_missing(price_to_book(input.price, input.monthly.as_ref()), |x| format!("{x:.2}"));
+    let Some(m) = &input.monthly else {
+        return format!(
+            "No CVM data for {} yet ({MISSING}). Update CVM data in Research first.\n\n- Price: {price}\n- P/VP: {pvp}\n",
+            input.ticker
+        );
+    };
+    let pct = |v: Option<f64>| or_missing(v.map(|x| x * 100.0), |x| format!("{x:.1}%"));
+    format!(
+        "Quote and CVM data below are frozen at the snapshot date. CVM reference {}.\n\n\
+         - Price: {price}\n\
+         - P/VP: {pvp}\n\
+         - Book value per share: {:.2}\n\
+         - Net assets: {:.2}\n\
+         - Shareholders: {}\n\
+         - Dividend yield (month): {}\n\
+         - Effective return (month): {}\n",
+        date_part(&m.reference_date),
+        m.book_value_per_share,
+        m.net_assets,
+        m.shareholders.map_or_else(|| MISSING.to_string(), |n| n.to_string()),
+        pct(m.dividend_yield_month),
+        pct(m.effective_return_month),
+    )
+}
+
+/// Média de uma figura (fração) entre os imóveis que a têm: ponderada por área quando todos esses
+/// imóveis têm área, senão simples. A linha diz qual foi usada. Sem nenhum valor: `n/d`.
+fn property_average_line(label: &str, properties: &[FiiDraftProperty], figure: impl Fn(&FiiDraftProperty) -> Option<f64>) -> String {
+    let with_figure: Vec<(f64, Option<f64>)> = properties.iter().filter_map(|p| figure(p).map(|v| (v, p.area_m2))).collect();
+    if with_figure.is_empty() {
+        return format!("- {label}: {MISSING}\n");
+    }
+    let total_area: f64 = with_figure.iter().filter_map(|(_, area)| *area).sum();
+    let weighted = with_figure.iter().all(|(_, area)| area.is_some()) && total_area > 0.0;
+    let (average, method) = if weighted {
+        let sum: f64 = with_figure.iter().map(|(v, area)| v * area.unwrap_or(0.0)).sum();
+        (sum / total_area, "area-weighted")
+    } else {
+        (with_figure.iter().map(|(v, _)| v).sum::<f64>() / with_figure.len() as f64, "simple average")
+    };
+    format!("- {label} ({method}): {:.1}%\n", average * 100.0)
+}
+
+fn property_lines(properties: &[FiiDraftProperty]) -> String {
+    if properties.is_empty() {
+        return format!("No property data ({MISSING}).\n");
+    }
+    format!(
+        "- Properties: {}\n{}{}{}",
+        properties.len(),
+        property_average_line("Vacancy", properties, |p| p.vacancy),
+        property_average_line("Delinquency", properties, |p| p.delinquency),
+        property_average_line("Leased", properties, |p| p.leased),
+    )
+}
+
 /// Rascunho de tese de FII: cota, P/VP e indicadores CVM. Campo ausente vira `n/d`, nunca zero.
-pub fn render_fii_draft(_input: &FiiDraftInput) -> Draft {
-    todo!()
+pub fn render_fii_draft(input: &FiiDraftInput) -> Draft {
+    let heading = match &input.name {
+        Some(name) => format!("# {} — {name}", input.ticker),
+        None => format!("# {}", input.ticker),
+    };
+    let content_markdown = format!(
+        "{heading}\n\n## Snapshot ({})\n\n{}\n### Properties\n\n{}\n\
+         ## Why own it\n\n\n## Risks\n\n\n## What would make me sell\n\n\n## Next review\n\n",
+        input.today,
+        fii_quote_lines(input),
+        property_lines(&input.properties),
+    );
+    Draft { title: format!("{} thesis", input.ticker), content_markdown }
 }
 
 #[cfg(test)]
