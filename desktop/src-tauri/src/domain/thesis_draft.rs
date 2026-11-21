@@ -165,7 +165,7 @@ pub struct FiiDraftInput {
 /// P/VP = preço ÷ VP da cota. Sem preço, sem mês da CVM ou com VP zerado, não há razão: `None`.
 fn price_to_book(price: Option<f64>, monthly: Option<&FiiDraftMonthly>) -> Option<f64> {
     let book = monthly?.book_value_per_share;
-    (book > 0.0).then(|| price.map(|p| p / book)).flatten()
+    (book >= 0.0).then(|| price.map(|p| p / book)).flatten()
 }
 
 fn fii_quote_lines(input: &FiiDraftInput) -> String {
@@ -181,7 +181,7 @@ fn fii_quote_lines(input: &FiiDraftInput) -> String {
             input.ticker
         );
     };
-    let pct = |v: Option<f64>| or_missing(v.map(|x| x * 100.0), |x| format!("{x:.1}%"));
+    let pct = |v: Option<f64>| or_missing(v, |x| format!("{x:.1}%"));
     format!(
         "Quote and CVM data below are frozen at the snapshot date. CVM reference {}.\n\n\
          - Price: {price}\n\
@@ -208,7 +208,7 @@ fn property_average_line(label: &str, properties: &[FiiDraftProperty], figure: i
         return format!("- {label}: {MISSING}\n");
     }
     let total_area: f64 = with_figure.iter().filter_map(|(_, area)| *area).sum();
-    let weighted = with_figure.iter().all(|(_, area)| area.is_some()) && total_area > 0.0;
+    let weighted = with_figure.iter().any(|(_, area)| area.is_some()) && total_area > 0.0;
     let (average, method) = if weighted {
         let sum: f64 = with_figure.iter().map(|(v, area)| v * area.unwrap_or(0.0)).sum();
         (sum / total_area, "area-weighted")
