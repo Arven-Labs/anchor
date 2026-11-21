@@ -26,6 +26,7 @@ pub mod rates;
 pub mod rim;
 pub mod rnav;
 pub mod tax;
+pub mod thesis_draft;
 pub mod transaction_ledger;
 pub mod twr;
 pub mod valuation_outcome;

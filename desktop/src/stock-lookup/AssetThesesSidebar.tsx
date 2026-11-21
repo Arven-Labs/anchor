@@ -66,6 +66,7 @@ function AssetThesesSidebar({
   const [formContent, setFormContent] = useState("");
   const [formMode, setFormMode] = useState<"edit" | "preview">("edit");
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
+  const [confirmingDraft, setConfirmingDraft] = useState(false);
 
   const assetsQuery = useQuery<Asset[], AppError>({
     queryKey: ["assets"],
@@ -103,6 +104,28 @@ function AssetThesesSidebar({
   function closeDialog() {
     setDialogThesisId(null);
     setConfirmingDeleteId(null);
+    setConfirmingDraft(false);
+  }
+
+  // Frente 3 do ROADMAP: rascunho determinístico (sem IA) com o retrato datado dos números
+  // já coletados. Só preenche o formulário; quem salva é o "Save", depois de o dono editar.
+  const draftMutation = useMutation<{ title: string; content_markdown: string }, AppError, void>({
+    mutationFn: () => invoke("build_thesis_draft", { ticker }),
+    onSuccess: (draft) => {
+      setFormTitle(draft.title);
+      setFormContent(draft.content_markdown);
+      setFormMode("edit");
+      setConfirmingDraft(false);
+    },
+  });
+
+  function handleDraftClick() {
+    // Não apaga em silêncio o que o dono já digitou: pede um segundo clique.
+    if (formContent.trim() !== "" && !confirmingDraft) {
+      setConfirmingDraft(true);
+      return;
+    }
+    draftMutation.mutate();
   }
 
   const createMutation = useMutation<Thesis, AppError, void>({
@@ -216,6 +239,33 @@ function AssetThesesSidebar({
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {dialogThesisId === "new" && (
+              <div className="flex flex-col gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={confirmingDraft ? "destructive" : "outline"}
+                  className="self-start"
+                  data-testid="thesis-draft-button"
+                  disabled={draftMutation.isPending}
+                  onClick={handleDraftClick}
+                >
+                  {draftMutation.isPending
+                    ? "Building..."
+                    : confirmingDraft
+                      ? "Replace current text?"
+                      : "Draft from data"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Fills the title and a dated snapshot of the numbers already collected for{" "}
+                  {ticker}, plus blank sections to write. Nothing is saved until you press Save.
+                </p>
+                {draftMutation.isError && (
+                  <p className="text-sm text-red-600">{draftMutation.error.message}</p>
+                )}
+              </div>
+            )}
+
             <Field label="Title">
               <Input
                 required
