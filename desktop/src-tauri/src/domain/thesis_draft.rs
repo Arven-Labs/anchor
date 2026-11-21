@@ -309,7 +309,7 @@ pub fn render_fund_draft(input: &FundDraftInput) -> Draft {
 
 fn fund_lines(input: &FundDraftInput) -> String {
     let tech = input.technicals.as_ref();
-    if input.price.is_none() && tech.is_none() && input.avg_dividend_5y.is_none() {
+    if input.price.is_none() || tech.is_none() || input.avg_dividend_5y.is_none() {
         return format!("No collected data for {} yet ({MISSING}). Run a fetch in Research first.\n", input.ticker);
     }
     let price = match (input.price, &input.currency) {
@@ -318,7 +318,7 @@ fn fund_lines(input: &FundDraftInput) -> String {
         (None, _) => MISSING.to_string(),
     };
     let amount = |pick: fn(&FundDraftTechnicals) -> Option<f64>| or_missing(tech.and_then(pick), |x| format!("{x:.2}"));
-    let percent = |pick: fn(&FundDraftTechnicals) -> Option<f64>| or_missing(tech.and_then(pick), |x| format!("{x:.1}%"));
+    let percent = |pick: fn(&FundDraftTechnicals) -> Option<f64>| or_missing(tech.and_then(pick), |x| format!("{:.1}%", x * 100.0));
     let underlying = input.underlying.as_ref().map_or_else(String::new, |u| format!("- Underlying: {u}\n"));
     format!(
         "Quote and technicals below are frozen at the snapshot date.\n\n\

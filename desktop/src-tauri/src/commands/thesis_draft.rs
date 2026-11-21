@@ -127,7 +127,7 @@ pub async fn build_fund_draft_on(db: &DatabaseConnection, ticker: &str, kind: Fu
         .await?;
     let technicals = stock_technicals::Entity::find()
         .filter(stock_technicals::Column::Ticker.eq(ticker.as_str()))
-        .order_by_desc(stock_technicals::Column::FetchedAt)
+        .order_by_asc(stock_technicals::Column::FetchedAt)
         .one(db)
         .await?
         .map(|t| FundDraftTechnicals {
