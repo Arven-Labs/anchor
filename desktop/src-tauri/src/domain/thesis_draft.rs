@@ -247,6 +247,102 @@ pub fn render_fii_draft(input: &FiiDraftInput) -> Draft {
     Draft { title: format!("{} thesis", input.ticker), content_markdown }
 }
 
+/// Classes de fundo/recibo com a mesma coleta (cotação, técnicos, dividendo médio). O nome na
+/// serialização é o `asset_class` do app, para o frontend mandar a classe como está.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+pub enum FundKind {
+    #[serde(rename = "etf_br")]
+    Etf,
+    #[serde(rename = "bdr")]
+    Bdr,
+}
+
+impl FundKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Etf => "ETF",
+            Self::Bdr => "BDR",
+        }
+    }
+}
+
+/// Última linha de `stock_technicals`. SMAs em preço; CAGR em percentual (15 = 15%), como no banco.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FundDraftTechnicals {
+    pub sma_50: Option<f64>,
+    pub sma_100: Option<f64>,
+    pub sma_200: Option<f64>,
+    pub cagr_5y: Option<f64>,
+    pub cagr_10y: Option<f64>,
+    pub fetched_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FundDraftInput {
+    pub kind: FundKind,
+    pub ticker: String,
+    pub name: Option<String>,
+    pub today: NaiveDate,
+    pub price: Option<f64>,
+    pub currency: Option<String>,
+    pub technicals: Option<FundDraftTechnicals>,
+    pub avg_dividend_5y: Option<f64>,
+    /// Classe do ativo subjacente do BDR (`assets.underlying_asset_class`); só aparece se existir.
+    pub underlying: Option<String>,
+}
+
+/// Rascunho de tese de ETF ou BDR: cotação, médias móveis, CAGR e dividendo médio. Campo ausente
+/// vira `n/d`, nunca zero. Sem nenhum dado coletado, só o aviso.
+pub fn render_fund_draft(input: &FundDraftInput) -> Draft {
+    let heading = match &input.name {
+        Some(name) => format!("# {} — {name}", input.ticker),
+        None => format!("# {}", input.ticker),
+    };
+    let content_markdown = format!(
+        "{heading}\n\n## Snapshot ({})\n\n{}\n\
+         ## Why own it\n\n\n## Risks\n\n\n## What would make me sell\n\n\n## Next review\n\n",
+        input.today,
+        fund_lines(input),
+    );
+    Draft { title: format!("{} thesis", input.ticker), content_markdown }
+}
+
+fn fund_lines(input: &FundDraftInput) -> String {
+    let tech = input.technicals.as_ref();
+    if input.price.is_none() && tech.is_none() && input.avg_dividend_5y.is_none() {
+        return format!("No collected data for {} yet ({MISSING}). Run a fetch in Research first.\n", input.ticker);
+    }
+    let price = match (input.price, &input.currency) {
+        (Some(p), Some(currency)) => format!("{p:.2} {currency}"),
+        (Some(p), None) => format!("{p:.2}"),
+        (None, _) => MISSING.to_string(),
+    };
+    let amount = |pick: fn(&FundDraftTechnicals) -> Option<f64>| or_missing(tech.and_then(pick), |x| format!("{x:.2}"));
+    let percent = |pick: fn(&FundDraftTechnicals) -> Option<f64>| or_missing(tech.and_then(pick), |x| format!("{x:.1}%"));
+    let underlying = input.underlying.as_ref().map_or_else(String::new, |u| format!("- Underlying: {u}\n"));
+    format!(
+        "Quote and technicals below are frozen at the snapshot date.\n\n\
+         - Class: {}\n\
+         {underlying}\
+         - Price: {price}\n\
+         - SMA 50: {}\n\
+         - SMA 100: {}\n\
+         - SMA 200: {}\n\
+         - CAGR 5y: {}\n\
+         - CAGR 10y: {}\n\
+         - Avg dividend/share (5y): {}\n\
+         - Technicals collected: {}\n",
+        input.kind.label(),
+        amount(|t| t.sma_50),
+        amount(|t| t.sma_100),
+        amount(|t| t.sma_200),
+        percent(|t| t.cagr_5y),
+        percent(|t| t.cagr_10y),
+        or_missing(input.avg_dividend_5y, |x| format!("{x:.2}")),
+        tech.map_or_else(|| MISSING.to_string(), |t| date_part(&t.fetched_at).to_string()),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -555,5 +651,129 @@ mod tests {
             .collect();
         assert!(positions.windows(2).all(|w| w[0] < w[1]), "{positions:?}");
         assert!(positions[0] > text.find("- Properties:").unwrap());
+    }
+
+    fn fund_input() -> FundDraftInput {
+        FundDraftInput {
+            kind: FundKind::Etf,
+            ticker: "BOVA11".into(),
+            name: Some("iShares Ibovespa".into()),
+            today: today(),
+            price: Some(130.0),
+            currency: Some("BRL".into()),
+            technicals: Some(FundDraftTechnicals {
+                sma_50: Some(128.5),
+                sma_100: Some(125.0),
+                sma_200: Some(120.25),
+                cagr_5y: Some(12.5),
+                cagr_10y: Some(9.0),
+                fetched_at: "2026-11-01T10:00:00+00:00".into(),
+            }),
+            avg_dividend_5y: Some(1.2),
+            underlying: None,
+        }
+    }
+
+    fn fund_md(input: &FundDraftInput) -> String {
+        render_fund_draft(input).content_markdown
+    }
+
+    #[test]
+    fn the_fund_title_is_the_ticker_and_the_word_thesis() {
+        assert_eq!(render_fund_draft(&fund_input()).title, "BOVA11 thesis");
+    }
+
+    #[test]
+    fn the_fund_heading_has_the_ticker_and_the_name() {
+        assert!(fund_md(&fund_input()).starts_with("# BOVA11 — iShares Ibovespa\n"));
+        let mut no_name = fund_input();
+        no_name.name = None;
+        assert!(fund_md(&no_name).starts_with("# BOVA11\n"));
+    }
+
+    #[test]
+    fn the_fund_snapshot_carries_today_and_the_class() {
+        let text = fund_md(&fund_input());
+        assert!(text.contains("## Snapshot (2026-11-20)"), "{text}");
+        assert!(text.contains("- Class: ETF"), "{text}");
+        let mut bdr = fund_input();
+        bdr.kind = FundKind::Bdr;
+        assert!(fund_md(&bdr).contains("- Class: BDR"));
+    }
+
+    #[test]
+    fn the_fund_numbers_are_listed_with_their_units() {
+        let text = fund_md(&fund_input());
+        for line in [
+            "- Price: 130.00 BRL",
+            "- SMA 50: 128.50",
+            "- SMA 100: 125.00",
+            "- SMA 200: 120.25",
+            "- CAGR 5y: 12.5%",
+            "- CAGR 10y: 9.0%",
+            "- Avg dividend/share (5y): 1.20",
+            "- Technicals collected: 2026-11-01",
+        ] {
+            assert!(text.contains(line), "faltou `{line}` em:\n{text}");
+        }
+    }
+
+    #[test]
+    fn a_missing_fund_number_is_n_d_never_zero() {
+        let mut i = fund_input();
+        i.currency = None;
+        let t = i.technicals.as_mut().unwrap();
+        t.sma_200 = None;
+        t.cagr_10y = None;
+        i.avg_dividend_5y = None;
+        let text = fund_md(&i);
+        assert!(text.contains("- Price: 130.00\n"), "{text}");
+        assert!(text.contains("- SMA 200: n/d"), "{text}");
+        assert!(text.contains("- CAGR 10y: n/d"), "{text}");
+        assert!(text.contains("- Avg dividend/share (5y): n/d"), "{text}");
+        assert!(!text.contains("- SMA 200: 0"), "{text}");
+    }
+
+    #[test]
+    fn a_fund_with_a_quote_but_no_technicals_keeps_the_quote_and_marks_the_rest_n_d() {
+        let mut i = fund_input();
+        i.technicals = None;
+        let text = fund_md(&i);
+        assert!(text.contains("- Price: 130.00 BRL"), "{text}");
+        assert!(text.contains("- SMA 50: n/d"), "{text}");
+        assert!(text.contains("- Technicals collected: n/d"), "{text}");
+    }
+
+    #[test]
+    fn a_fund_without_any_collected_data_gets_a_notice_and_no_numbers() {
+        let mut i = fund_input();
+        i.price = None;
+        i.technicals = None;
+        i.avg_dividend_5y = None;
+        let text = fund_md(&i);
+        assert!(text.contains("No collected data for BOVA11 yet (n/d)."), "{text}");
+        assert!(!text.contains("- Price:"), "{text}");
+        assert!(text.contains("## Why own it"), "{text}");
+    }
+
+    #[test]
+    fn the_underlying_class_appears_only_when_known() {
+        let mut bdr = fund_input();
+        bdr.kind = FundKind::Bdr;
+        assert!(!fund_md(&bdr).contains("Underlying"));
+        bdr.underlying = Some("acao_internacional".into());
+        assert!(fund_md(&bdr).contains("- Underlying: acao_internacional"));
+    }
+
+    #[test]
+    fn the_fund_draft_has_no_valuations_section_and_ends_with_the_blank_sections_in_order() {
+        let text = fund_md(&fund_input());
+        assert!(!text.contains("Saved valuations"), "{text}");
+        let positions: Vec<usize> = ["## Why own it", "## Risks", "## What would make me sell", "## Next review"]
+            .iter()
+            .map(|h| text.find(h).unwrap_or_else(|| panic!("faltou `{h}` em:\n{text}")))
+            .collect();
+        assert!(positions.windows(2).all(|w| w[0] < w[1]), "{positions:?}");
+        assert!(positions[0] > text.find("- Avg dividend/share (5y)").unwrap());
     }
 }

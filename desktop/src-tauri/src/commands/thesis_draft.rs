@@ -8,9 +8,12 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOr
 use crate::commands::screener::{screen_stocks_on, ScreenerFilters};
 use crate::domain::thesis_draft::{
     render_draft, render_fii_draft, Draft, DraftIndicators, DraftInput, DraftValuation, FiiDraftInput, FiiDraftMonthly,
-    FiiDraftProperty,
+    FiiDraftProperty, FundDraftInput, FundDraftTechnicals, FundKind, render_fund_draft,
 };
-use crate::entity::{fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_quotes, valuation};
+use crate::entity::{
+    assets, fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_dividends_avg, stock_quotes, stock_technicals,
+    valuation,
+};
 use crate::error::AppError;
 
 /// `today` é entrada (não lê o relógio) para o retrato datado ser testável.
@@ -113,6 +116,66 @@ pub async fn build_fii_draft_on(db: &DatabaseConnection, ticker: &str, today: Na
     Ok(render_fii_draft(&input))
 }
 
+/// Rascunho de tese de ETF ou BDR. Só lê o que já foi coletado (cotação, técnicos, dividendo médio
+/// e, no BDR, a classe subjacente do ativo cadastrado): sem rede.
+pub async fn build_fund_draft_on(db: &DatabaseConnection, ticker: &str, kind: FundKind, today: NaiveDate) -> Result<Draft, AppError> {
+    let ticker = ticker.trim().to_uppercase();
+    let quote = stock_quotes::Entity::find()
+        .filter(stock_quotes::Column::Ticker.eq(ticker.as_str()))
+        .order_by_desc(stock_quotes::Column::FetchedAt)
+        .one(db)
+        .await?;
+    let technicals = stock_technicals::Entity::find()
+        .filter(stock_technicals::Column::Ticker.eq(ticker.as_str()))
+        .order_by_desc(stock_technicals::Column::FetchedAt)
+        .one(db)
+        .await?
+        .map(|t| FundDraftTechnicals {
+            sma_50: t.sma_50,
+            sma_100: t.sma_100,
+            sma_200: t.sma_200,
+            cagr_5y: t.cagr_5y,
+            cagr_10y: t.cagr_10y,
+            fetched_at: t.fetched_at,
+        });
+    let avg_dividend_5y = stock_dividends_avg::Entity::find()
+        .filter(stock_dividends_avg::Column::Ticker.eq(ticker.as_str()))
+        .order_by_desc(stock_dividends_avg::Column::FetchedAt)
+        .one(db)
+        .await?
+        .map(|d| d.avg_dividend_5y);
+    let underlying = match kind {
+        FundKind::Bdr => assets::Entity::find()
+            .filter(assets::Column::Ticker.eq(ticker.as_str()))
+            .one(db)
+            .await?
+            .and_then(|a| a.underlying_asset_class),
+        FundKind::Etf => None,
+    };
+
+    let input = FundDraftInput {
+        kind,
+        name: quote.as_ref().and_then(|q| q.name.clone()),
+        price: quote.as_ref().map(|q| q.price),
+        currency: quote.and_then(|q| q.currency),
+        ticker,
+        today,
+        technicals,
+        avg_dividend_5y,
+        underlying,
+    };
+    Ok(render_fund_draft(&input))
+}
+
+#[tauri::command]
+pub async fn build_fund_thesis_draft(
+    db: tauri::State<'_, DatabaseConnection>,
+    ticker: String,
+    kind: FundKind,
+) -> Result<Draft, AppError> {
+    build_fund_draft_on(db.inner(), ticker.trim(), kind, Utc::now().date_naive()).await
+}
+
 #[tauri::command]
 pub async fn build_fii_thesis_draft(db: tauri::State<'_, DatabaseConnection>, ticker: String) -> Result<Draft, AppError> {
     build_fii_draft_on(db.inner(), ticker.trim(), Utc::now().date_naive()).await
@@ -128,8 +191,11 @@ mod tests {
     use sea_orm::{ActiveModelTrait, Set};
 
     use super::*;
-    use crate::entity::{fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_fundamentals, stock_quotes};
-    use crate::test_support::memory_db;
+    use crate::entity::{
+        assets, fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_dividends_avg, stock_fundamentals,
+        stock_quotes, stock_technicals,
+    };
+    use crate::test_support::{asset, memory_db};
 
     fn today() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 11, 20).unwrap()
@@ -321,6 +387,98 @@ mod tests {
         let text = build_fii_draft_on(&db, "ZZZZ11", today()).await.unwrap().content_markdown;
         assert!(text.contains("No CVM data for ZZZZ11 yet (n/d)."), "{text}");
         assert!(text.contains("- Price: n/d"), "{text}");
+    }
+
+    async fn fund_technicals(db: &DatabaseConnection, ticker: &str, sma_50: f64, fetched_at: &str) {
+        stock_technicals::ActiveModel {
+            ticker: Set(ticker.to_string()),
+            sma_50: Set(Some(sma_50)),
+            sma_100: Set(Some(125.0)),
+            sma_200: Set(None),
+            cagr_5y: Set(Some(12.5)),
+            cagr_10y: Set(Some(9.0)),
+            source: Set("test".to_string()),
+            fetched_at: Set(fetched_at.to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert technicals");
+    }
+
+    async fn fund_dividend_avg(db: &DatabaseConnection, ticker: &str, avg: f64, fetched_at: &str) {
+        stock_dividends_avg::ActiveModel {
+            ticker: Set(ticker.to_string()),
+            avg_dividend_5y: Set(avg),
+            source: Set("test".to_string()),
+            fetched_at: Set(fetched_at.to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert dividend avg");
+    }
+
+    #[tokio::test]
+    async fn the_fund_draft_uses_the_latest_quote_technicals_and_dividend_average() {
+        let db = memory_db().await;
+        fii_quote(&db, "BOVA11", 120.0, "2026-10-01T10:00:00+00:00").await;
+        fii_quote(&db, "BOVA11", 130.0, "2026-11-01T10:00:00+00:00").await;
+        fund_technicals(&db, "BOVA11", 100.0, "2026-10-01T10:00:00+00:00").await;
+        fund_technicals(&db, "BOVA11", 128.5, "2026-11-01T10:00:00+00:00").await;
+        fund_dividend_avg(&db, "BOVA11", 1.0, "2026-10-01T10:00:00+00:00").await;
+        fund_dividend_avg(&db, "BOVA11", 1.2, "2026-11-01T10:00:00+00:00").await;
+
+        let draft = build_fund_draft_on(&db, "bova11", FundKind::Etf, today()).await.unwrap();
+        let text = draft.content_markdown;
+        assert_eq!(draft.title, "BOVA11 thesis");
+        assert!(text.contains("- Class: ETF"), "{text}");
+        assert!(text.contains("- Price: 130.00 BRL"), "a cotação mais nova: {text}");
+        assert!(text.contains("- SMA 50: 128.50"), "os técnicos mais novos: {text}");
+        assert!(text.contains("- SMA 200: n/d"), "{text}");
+        assert!(text.contains("- CAGR 5y: 12.5%"), "{text}");
+        assert!(text.contains("- Avg dividend/share (5y): 1.20"), "o dividendo médio mais novo: {text}");
+    }
+
+    #[tokio::test]
+    async fn another_funds_data_does_not_leak_into_the_fund_draft() {
+        let db = memory_db().await;
+        fii_quote(&db, "BOVA11", 130.0, "2026-11-01T10:00:00+00:00").await;
+        fund_technicals(&db, "OUTRO11", 999.0, "2026-11-02T10:00:00+00:00").await;
+        fund_dividend_avg(&db, "OUTRO11", 77.0, "2026-11-02T10:00:00+00:00").await;
+        let text = build_fund_draft_on(&db, "BOVA11", FundKind::Etf, today()).await.unwrap().content_markdown;
+        assert!(text.contains("- SMA 50: n/d"), "{text}");
+        assert!(!text.contains("999.00") && !text.contains("77.00"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn the_bdr_draft_shows_the_underlying_class_of_the_registered_asset() {
+        let db = memory_db().await;
+        fii_quote(&db, "AAPL34", 60.0, "2026-11-01T10:00:00+00:00").await;
+        let registered = asset(&db, "AAPL34", "bdr").await;
+        let mut active: assets::ActiveModel = registered.into();
+        active.underlying_asset_class = Set(Some("acao_internacional".to_string()));
+        active.update(&db).await.expect("set underlying");
+
+        let text = build_fund_draft_on(&db, "AAPL34", FundKind::Bdr, today()).await.unwrap().content_markdown;
+        assert!(text.contains("- Class: BDR"), "{text}");
+        assert!(text.contains("- Underlying: acao_internacional"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_bdr_without_a_registered_asset_has_no_underlying_line() {
+        let db = memory_db().await;
+        fii_quote(&db, "AAPL34", 60.0, "2026-11-01T10:00:00+00:00").await;
+        let text = build_fund_draft_on(&db, "AAPL34", FundKind::Bdr, today()).await.unwrap().content_markdown;
+        assert!(!text.contains("Underlying"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn an_unknown_fund_gets_the_skeleton_and_no_error() {
+        let db = memory_db().await;
+        let text = build_fund_draft_on(&db, "ZZZZ11", FundKind::Etf, today()).await.unwrap().content_markdown;
+        assert!(text.contains("No collected data for ZZZZ11 yet (n/d)."), "{text}");
+        assert!(text.contains("## Why own it"), "{text}");
     }
 
     #[tokio::test]
