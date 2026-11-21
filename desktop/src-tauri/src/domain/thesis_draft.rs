@@ -293,8 +293,54 @@ pub struct FundDraftInput {
 
 /// Rascunho de tese de ETF ou BDR: cotação, médias móveis, CAGR e dividendo médio. Campo ausente
 /// vira `n/d`, nunca zero. Sem nenhum dado coletado, só o aviso.
-pub fn render_fund_draft(_input: &FundDraftInput) -> Draft {
-    todo!()
+pub fn render_fund_draft(input: &FundDraftInput) -> Draft {
+    let heading = match &input.name {
+        Some(name) => format!("# {} — {name}", input.ticker),
+        None => format!("# {}", input.ticker),
+    };
+    let content_markdown = format!(
+        "{heading}\n\n## Snapshot ({})\n\n{}\n\
+         ## Why own it\n\n\n## Risks\n\n\n## What would make me sell\n\n\n## Next review\n\n",
+        input.today,
+        fund_lines(input),
+    );
+    Draft { title: format!("{} thesis", input.ticker), content_markdown }
+}
+
+fn fund_lines(input: &FundDraftInput) -> String {
+    let tech = input.technicals.as_ref();
+    if input.price.is_none() && tech.is_none() && input.avg_dividend_5y.is_none() {
+        return format!("No collected data for {} yet ({MISSING}). Run a fetch in Research first.\n", input.ticker);
+    }
+    let price = match (input.price, &input.currency) {
+        (Some(p), Some(currency)) => format!("{p:.2} {currency}"),
+        (Some(p), None) => format!("{p:.2}"),
+        (None, _) => MISSING.to_string(),
+    };
+    let amount = |pick: fn(&FundDraftTechnicals) -> Option<f64>| or_missing(tech.and_then(pick), |x| format!("{x:.2}"));
+    let percent = |pick: fn(&FundDraftTechnicals) -> Option<f64>| or_missing(tech.and_then(pick), |x| format!("{x:.1}%"));
+    let underlying = input.underlying.as_ref().map_or_else(String::new, |u| format!("- Underlying: {u}\n"));
+    format!(
+        "Quote and technicals below are frozen at the snapshot date.\n\n\
+         - Class: {}\n\
+         {underlying}\
+         - Price: {price}\n\
+         - SMA 50: {}\n\
+         - SMA 100: {}\n\
+         - SMA 200: {}\n\
+         - CAGR 5y: {}\n\
+         - CAGR 10y: {}\n\
+         - Avg dividend/share (5y): {}\n\
+         - Technicals collected: {}\n",
+        input.kind.label(),
+        amount(|t| t.sma_50),
+        amount(|t| t.sma_100),
+        amount(|t| t.sma_200),
+        percent(|t| t.cagr_5y),
+        percent(|t| t.cagr_10y),
+        or_missing(input.avg_dividend_5y, |x| format!("{x:.2}")),
+        tech.map_or_else(|| MISSING.to_string(), |t| date_part(&t.fetched_at).to_string()),
+    )
 }
 
 #[cfg(test)]

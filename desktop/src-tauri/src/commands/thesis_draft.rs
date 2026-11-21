@@ -8,9 +8,12 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOr
 use crate::commands::screener::{screen_stocks_on, ScreenerFilters};
 use crate::domain::thesis_draft::{
     render_draft, render_fii_draft, Draft, DraftIndicators, DraftInput, DraftValuation, FiiDraftInput, FiiDraftMonthly,
-    FiiDraftProperty, FundKind,
+    FiiDraftProperty, FundDraftInput, FundDraftTechnicals, FundKind, render_fund_draft,
 };
-use crate::entity::{fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_quotes, valuation};
+use crate::entity::{
+    assets, fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_dividends_avg, stock_quotes, stock_technicals,
+    valuation,
+};
 use crate::error::AppError;
 
 /// `today` é entrada (não lê o relógio) para o retrato datado ser testável.
@@ -115,8 +118,62 @@ pub async fn build_fii_draft_on(db: &DatabaseConnection, ticker: &str, today: Na
 
 /// Rascunho de tese de ETF ou BDR. Só lê o que já foi coletado (cotação, técnicos, dividendo médio
 /// e, no BDR, a classe subjacente do ativo cadastrado): sem rede.
-pub async fn build_fund_draft_on(_db: &DatabaseConnection, _ticker: &str, _kind: FundKind, _today: NaiveDate) -> Result<Draft, AppError> {
-    todo!()
+pub async fn build_fund_draft_on(db: &DatabaseConnection, ticker: &str, kind: FundKind, today: NaiveDate) -> Result<Draft, AppError> {
+    let ticker = ticker.trim().to_uppercase();
+    let quote = stock_quotes::Entity::find()
+        .filter(stock_quotes::Column::Ticker.eq(ticker.as_str()))
+        .order_by_desc(stock_quotes::Column::FetchedAt)
+        .one(db)
+        .await?;
+    let technicals = stock_technicals::Entity::find()
+        .filter(stock_technicals::Column::Ticker.eq(ticker.as_str()))
+        .order_by_desc(stock_technicals::Column::FetchedAt)
+        .one(db)
+        .await?
+        .map(|t| FundDraftTechnicals {
+            sma_50: t.sma_50,
+            sma_100: t.sma_100,
+            sma_200: t.sma_200,
+            cagr_5y: t.cagr_5y,
+            cagr_10y: t.cagr_10y,
+            fetched_at: t.fetched_at,
+        });
+    let avg_dividend_5y = stock_dividends_avg::Entity::find()
+        .filter(stock_dividends_avg::Column::Ticker.eq(ticker.as_str()))
+        .order_by_desc(stock_dividends_avg::Column::FetchedAt)
+        .one(db)
+        .await?
+        .map(|d| d.avg_dividend_5y);
+    let underlying = match kind {
+        FundKind::Bdr => assets::Entity::find()
+            .filter(assets::Column::Ticker.eq(ticker.as_str()))
+            .one(db)
+            .await?
+            .and_then(|a| a.underlying_asset_class),
+        FundKind::Etf => None,
+    };
+
+    let input = FundDraftInput {
+        kind,
+        name: quote.as_ref().and_then(|q| q.name.clone()),
+        price: quote.as_ref().map(|q| q.price),
+        currency: quote.and_then(|q| q.currency),
+        ticker,
+        today,
+        technicals,
+        avg_dividend_5y,
+        underlying,
+    };
+    Ok(render_fund_draft(&input))
+}
+
+#[tauri::command]
+pub async fn build_fund_thesis_draft(
+    db: tauri::State<'_, DatabaseConnection>,
+    ticker: String,
+    kind: FundKind,
+) -> Result<Draft, AppError> {
+    build_fund_draft_on(db.inner(), ticker.trim(), kind, Utc::now().date_naive()).await
 }
 
 #[tauri::command]

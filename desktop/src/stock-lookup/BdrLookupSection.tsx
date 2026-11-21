@@ -10,6 +10,7 @@ import type {
   StockQuote,
   StockTechnicals,
 } from "../collector/types";
+import AssetThesesSidebar from "./AssetThesesSidebar";
 import DividendHistoryChart from "./DividendHistoryChart";
 import PriceHistoryChart from "./PriceHistoryChart";
 import {
@@ -37,7 +38,7 @@ type CollectorSummary = { success: boolean; output: string };
 /// "BR" — um BDR representa uma empresa estrangeira, quase nunca Brasil
 /// (decisão do dono do projeto, Sessão 53) — continua editável, o Yahoo não
 /// devolve o país real da empresa por trás do ticker.
-function BdrLookupSection({ ticker }: { ticker: string }) {
+function BdrLookupSection({ ticker, workspaceId }: { ticker: string; workspaceId: number }) {
   const [noteDraft, setNoteDraft] = useState("");
   const autoFetchedTickerRef = useRef<string | null>(null);
 
@@ -206,6 +207,18 @@ function BdrLookupSection({ ticker }: { ticker: string }) {
               No dividend payments found for {ticker} — not every BDR distributes.
             </p>
           )}
+
+          <AssetThesesSidebar
+            workspaceId={workspaceId}
+            ticker={ticker}
+            assetClass="bdr"
+            name={quoteQuery.data?.name ?? ticker}
+            currency={quoteQuery.data?.currency ?? "BRL"}
+            exchange={quoteQuery.data?.exchange ?? null}
+            cnpj={null}
+            exposureType="pais"
+            exposureValue="US"
+          />
 
           <div>
             <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Notes</h3>

@@ -10,6 +10,7 @@ import type {
   StockQuote,
   StockTechnicals,
 } from "../collector/types";
+import AssetThesesSidebar from "./AssetThesesSidebar";
 import DividendHistoryChart from "./DividendHistoryChart";
 import PriceHistoryChart from "./PriceHistoryChart";
 import {
@@ -36,7 +37,7 @@ type CollectorSummary = { success: boolean; output: string };
 /// Composição da carteira/índice replicado/site do fundo ficaram de fora —
 /// pesquisado e confirmado que nem Yahoo nem bolsai têm esse dado de graça
 /// pra ETF brasileiro (ver PHASE.md item 8, achado da Sessão 49/50).
-function EtfLookupSection({ ticker }: { ticker: string }) {
+function EtfLookupSection({ ticker, workspaceId }: { ticker: string; workspaceId: number }) {
   const [noteDraft, setNoteDraft] = useState("");
   const autoFetchedTickerRef = useRef<string | null>(null);
 
@@ -203,6 +204,16 @@ function EtfLookupSection({ ticker }: { ticker: string }) {
               No dividend payments found for {ticker} — not every ETF distributes.
             </p>
           )}
+
+          <AssetThesesSidebar
+            workspaceId={workspaceId}
+            ticker={ticker}
+            assetClass="etf_br"
+            name={quoteQuery.data?.name ?? ticker}
+            currency={quoteQuery.data?.currency ?? "BRL"}
+            exchange={quoteQuery.data?.exchange ?? null}
+            cnpj={null}
+          />
 
           <div>
             <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Notes</h3>

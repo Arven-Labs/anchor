@@ -137,11 +137,11 @@ function StockLookupPanel({
           (assetClass === "fii" ? (
             <FiiLookupSection key={activeTicker} ticker={activeTicker} workspaceId={workspaceId} />
           ) : assetClass === "etf_br" ? (
-            <EtfLookupSection key={activeTicker} ticker={activeTicker} />
+            <EtfLookupSection key={activeTicker} ticker={activeTicker} workspaceId={workspaceId} />
           ) : assetClass === "cripto" ? (
             <CryptoLookupSection key={activeTicker} ticker={activeTicker} />
           ) : assetClass === "bdr" ? (
-            <BdrLookupSection key={activeTicker} ticker={activeTicker} />
+            <BdrLookupSection key={activeTicker} ticker={activeTicker} workspaceId={workspaceId} />
           ) : assetClass === "metal" ? (
             <MetalLookupSection key={activeTicker} ticker={activeTicker} />
           ) : assetClass === "reit" ? (
