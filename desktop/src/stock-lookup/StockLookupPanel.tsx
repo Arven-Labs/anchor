@@ -135,7 +135,7 @@ function StockLookupPanel({
 
         {view === "asset" && activeTicker &&
           (assetClass === "fii" ? (
-            <FiiLookupSection key={activeTicker} ticker={activeTicker} />
+            <FiiLookupSection key={activeTicker} ticker={activeTicker} workspaceId={workspaceId} />
           ) : assetClass === "etf_br" ? (
             <EtfLookupSection key={activeTicker} ticker={activeTicker} />
           ) : assetClass === "cripto" ? (

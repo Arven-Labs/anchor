@@ -130,6 +130,123 @@ pub fn render_draft(input: &DraftInput) -> Draft {
     Draft { title: format!("{} thesis", input.ticker), content_markdown }
 }
 
+/// Último mês de `fii_cvm_monthly`. Os percentuais são fração (0,05 = 5%), como no banco.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FiiDraftMonthly {
+    pub reference_date: String,
+    pub net_assets: f64,
+    pub book_value_per_share: f64,
+    pub shareholders: Option<i32>,
+    pub dividend_yield_month: Option<f64>,
+    pub effective_return_month: Option<f64>,
+}
+
+/// Um imóvel de `fii_cvm_properties`, na última data de referência. Percentuais em fração.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FiiDraftProperty {
+    pub name: String,
+    pub area_m2: Option<f64>,
+    pub vacancy: Option<f64>,
+    pub delinquency: Option<f64>,
+    pub leased: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FiiDraftInput {
+    pub ticker: String,
+    pub name: Option<String>,
+    pub today: NaiveDate,
+    pub price: Option<f64>,
+    pub currency: Option<String>,
+    pub monthly: Option<FiiDraftMonthly>,
+    pub properties: Vec<FiiDraftProperty>,
+}
+
+/// P/VP = preço ÷ VP da cota. Sem preço, sem mês da CVM ou com VP zerado, não há razão: `None`.
+fn price_to_book(price: Option<f64>, monthly: Option<&FiiDraftMonthly>) -> Option<f64> {
+    let book = monthly?.book_value_per_share;
+    (book > 0.0).then(|| price.map(|p| p / book)).flatten()
+}
+
+fn fii_quote_lines(input: &FiiDraftInput) -> String {
+    let price = match (input.price, &input.currency) {
+        (Some(p), Some(currency)) => format!("{p:.2} {currency}"),
+        (Some(p), None) => format!("{p:.2}"),
+        (None, _) => MISSING.to_string(),
+    };
+    let pvp = or_missing(price_to_book(input.price, input.monthly.as_ref()), |x| format!("{x:.2}"));
+    let Some(m) = &input.monthly else {
+        return format!(
+            "No CVM data for {} yet ({MISSING}). Update CVM data in Research first.\n\n- Price: {price}\n- P/VP: {pvp}\n",
+            input.ticker
+        );
+    };
+    let pct = |v: Option<f64>| or_missing(v.map(|x| x * 100.0), |x| format!("{x:.1}%"));
+    format!(
+        "Quote and CVM data below are frozen at the snapshot date. CVM reference {}.\n\n\
+         - Price: {price}\n\
+         - P/VP: {pvp}\n\
+         - Book value per share: {:.2}\n\
+         - Net assets: {:.2}\n\
+         - Shareholders: {}\n\
+         - Dividend yield (month): {}\n\
+         - Effective return (month): {}\n",
+        date_part(&m.reference_date),
+        m.book_value_per_share,
+        m.net_assets,
+        m.shareholders.map_or_else(|| MISSING.to_string(), |n| n.to_string()),
+        pct(m.dividend_yield_month),
+        pct(m.effective_return_month),
+    )
+}
+
+/// Média de uma figura (fração) entre os imóveis que a têm: ponderada por área quando todos esses
+/// imóveis têm área, senão simples. A linha diz qual foi usada. Sem nenhum valor: `n/d`.
+fn property_average_line(label: &str, properties: &[FiiDraftProperty], figure: impl Fn(&FiiDraftProperty) -> Option<f64>) -> String {
+    let with_figure: Vec<(f64, Option<f64>)> = properties.iter().filter_map(|p| figure(p).map(|v| (v, p.area_m2))).collect();
+    if with_figure.is_empty() {
+        return format!("- {label}: {MISSING}\n");
+    }
+    let total_area: f64 = with_figure.iter().filter_map(|(_, area)| *area).sum();
+    let weighted = with_figure.iter().all(|(_, area)| area.is_some()) && total_area > 0.0;
+    let (average, method) = if weighted {
+        let sum: f64 = with_figure.iter().map(|(v, area)| v * area.unwrap_or(0.0)).sum();
+        (sum / total_area, "area-weighted")
+    } else {
+        (with_figure.iter().map(|(v, _)| v).sum::<f64>() / with_figure.len() as f64, "simple average")
+    };
+    format!("- {label} ({method}): {:.1}%\n", average * 100.0)
+}
+
+fn property_lines(properties: &[FiiDraftProperty]) -> String {
+    if properties.is_empty() {
+        return format!("No property data ({MISSING}).\n");
+    }
+    format!(
+        "- Properties: {}\n{}{}{}",
+        properties.len(),
+        property_average_line("Vacancy", properties, |p| p.vacancy),
+        property_average_line("Delinquency", properties, |p| p.delinquency),
+        property_average_line("Leased", properties, |p| p.leased),
+    )
+}
+
+/// Rascunho de tese de FII: cota, P/VP e indicadores CVM. Campo ausente vira `n/d`, nunca zero.
+pub fn render_fii_draft(input: &FiiDraftInput) -> Draft {
+    let heading = match &input.name {
+        Some(name) => format!("# {} — {name}", input.ticker),
+        None => format!("# {}", input.ticker),
+    };
+    let content_markdown = format!(
+        "{heading}\n\n## Snapshot ({})\n\n{}\n### Properties\n\n{}\n\
+         ## Why own it\n\n\n## Risks\n\n\n## What would make me sell\n\n\n## Next review\n\n",
+        input.today,
+        fii_quote_lines(input),
+        property_lines(&input.properties),
+    );
+    Draft { title: format!("{} thesis", input.ticker), content_markdown }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,5 +394,166 @@ mod tests {
         ]);
         let summary: Vec<(&str, Option<f64>)> = kept.iter().map(|v| (v.model.as_str(), v.fair_price)).collect();
         assert_eq!(summary, [("bazin", Some(25.0)), ("graham", Some(10.0))]);
+    }
+
+    fn fii_monthly() -> FiiDraftMonthly {
+        FiiDraftMonthly {
+            reference_date: "2026-10-31".into(),
+            net_assets: 3_000_000_000.0,
+            book_value_per_share: 200.0,
+            shareholders: Some(150_000),
+            dividend_yield_month: Some(0.008),
+            effective_return_month: Some(0.012),
+        }
+    }
+
+    fn fii_property(name: &str, area: Option<f64>, vacancy: Option<f64>, delinquency: Option<f64>, leased: Option<f64>) -> FiiDraftProperty {
+        FiiDraftProperty { name: name.into(), area_m2: area, vacancy, delinquency, leased }
+    }
+
+    fn fii_input() -> FiiDraftInput {
+        FiiDraftInput {
+            ticker: "HGLG11".into(),
+            name: Some("CSHG Logística".into()),
+            today: today(),
+            price: Some(160.0),
+            currency: Some("BRL".into()),
+            monthly: Some(fii_monthly()),
+            properties: vec![
+                fii_property("Galpão A", Some(100.0), Some(0.10), Some(0.0), Some(0.90)),
+                fii_property("Galpão B", Some(300.0), Some(0.02), Some(0.04), Some(0.98)),
+            ],
+        }
+    }
+
+    fn fii_md(input: &FiiDraftInput) -> String {
+        render_fii_draft(input).content_markdown
+    }
+
+    #[test]
+    fn the_fii_title_is_the_ticker_and_the_word_thesis() {
+        assert_eq!(render_fii_draft(&fii_input()).title, "HGLG11 thesis");
+    }
+
+    #[test]
+    fn the_fii_heading_has_the_ticker_and_the_name() {
+        assert!(fii_md(&fii_input()).starts_with("# HGLG11 — CSHG Logística\n"));
+        let mut no_name = fii_input();
+        no_name.name = None;
+        assert!(fii_md(&no_name).starts_with("# HGLG11\n"));
+    }
+
+    #[test]
+    fn the_fii_snapshot_carries_today_and_the_cvm_reference_date() {
+        let text = fii_md(&fii_input());
+        assert!(text.contains("## Snapshot (2026-11-20)"), "{text}");
+        assert!(text.contains("CVM reference 2026-10-31."), "{text}");
+    }
+
+    #[test]
+    fn the_fii_indicators_are_listed_with_their_units() {
+        let text = fii_md(&fii_input());
+        for line in [
+            "- Price: 160.00 BRL",
+            "- P/VP: 0.80",
+            "- Book value per share: 200.00",
+            "- Net assets: 3000000000.00",
+            "- Shareholders: 150000",
+            "- Dividend yield (month): 0.8%",
+            "- Effective return (month): 1.2%",
+        ] {
+            assert!(text.contains(line), "faltou `{line}` em:\n{text}");
+        }
+    }
+
+    #[test]
+    fn the_pvp_is_the_price_over_the_book_value_per_share() {
+        let mut i = fii_input();
+        i.price = Some(250.0);
+        assert!(fii_md(&i).contains("- P/VP: 1.25"));
+    }
+
+    #[test]
+    fn a_missing_fii_number_is_n_d_never_zero() {
+        let mut i = fii_input();
+        i.price = None;
+        let m = i.monthly.as_mut().unwrap();
+        m.dividend_yield_month = None;
+        m.shareholders = None;
+        let text = fii_md(&i);
+        assert!(text.contains("- Price: n/d"), "{text}");
+        assert!(text.contains("- P/VP: n/d"), "{text}");
+        assert!(text.contains("- Dividend yield (month): n/d"), "{text}");
+        assert!(text.contains("- Shareholders: n/d"), "{text}");
+        assert!(!text.contains("- P/VP: 0"), "{text}");
+    }
+
+    #[test]
+    fn a_zero_book_value_makes_the_pvp_n_d_instead_of_dividing_by_zero() {
+        let mut i = fii_input();
+        i.monthly.as_mut().unwrap().book_value_per_share = 0.0;
+        let text = fii_md(&i);
+        assert!(text.contains("- P/VP: n/d"), "{text}");
+        assert!(!text.contains("inf"), "{text}");
+    }
+
+    #[test]
+    fn a_fii_without_cvm_data_gets_a_notice_and_no_cvm_numbers() {
+        let mut i = fii_input();
+        i.monthly = None;
+        let text = fii_md(&i);
+        assert!(text.contains("No CVM data for HGLG11 yet (n/d)."), "{text}");
+        assert!(text.contains("- P/VP: n/d"), "{text}");
+        assert!(!text.contains("- Net assets:"), "{text}");
+    }
+
+    #[test]
+    fn the_property_averages_are_weighted_by_area_when_every_area_is_known() {
+        let text = fii_md(&fii_input());
+        for line in [
+            "- Properties: 2",
+            "- Vacancy (area-weighted): 4.0%",
+            "- Delinquency (area-weighted): 3.0%",
+            "- Leased (area-weighted): 96.0%",
+        ] {
+            assert!(text.contains(line), "faltou `{line}` em:\n{text}");
+        }
+    }
+
+    #[test]
+    fn without_every_area_the_property_average_is_simple_and_says_so() {
+        let mut i = fii_input();
+        i.properties[1].area_m2 = None;
+        let text = fii_md(&i);
+        assert!(text.contains("- Vacancy (simple average): 6.0%"), "{text}");
+        assert!(!text.contains("area-weighted"), "{text}");
+    }
+
+    #[test]
+    fn a_property_without_a_figure_is_left_out_of_that_average() {
+        let mut i = fii_input();
+        i.properties[0].vacancy = None;
+        assert!(fii_md(&i).contains("- Vacancy (area-weighted): 2.0%"));
+        i.properties[1].vacancy = None;
+        assert!(fii_md(&i).contains("- Vacancy: n/d"));
+    }
+
+    #[test]
+    fn a_fii_without_properties_says_so() {
+        let mut i = fii_input();
+        i.properties = vec![];
+        assert!(fii_md(&i).contains("No property data (n/d)."));
+    }
+
+    #[test]
+    fn the_fii_draft_has_no_valuations_section_and_ends_with_the_blank_sections_in_order() {
+        let text = fii_md(&fii_input());
+        assert!(!text.contains("Saved valuations"), "{text}");
+        let positions: Vec<usize> = ["## Why own it", "## Risks", "## What would make me sell", "## Next review"]
+            .iter()
+            .map(|h| text.find(h).unwrap_or_else(|| panic!("faltou `{h}` em:\n{text}")))
+            .collect();
+        assert!(positions.windows(2).all(|w| w[0] < w[1]), "{positions:?}");
+        assert!(positions[0] > text.find("- Properties:").unwrap());
     }
 }

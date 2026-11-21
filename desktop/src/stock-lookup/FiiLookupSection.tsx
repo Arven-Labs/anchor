@@ -10,6 +10,7 @@ import type {
   StockPriceHistory,
   StockQuote,
 } from "../collector/types";
+import AssetThesesSidebar from "./AssetThesesSidebar";
 import DividendHistoryChart from "./DividendHistoryChart";
 import PriceHistoryChart from "./PriceHistoryChart";
 import {
@@ -48,7 +49,7 @@ function formatArea(value: number | null): string {
 /// nenhuma ação do usuário — diferente do cadastro de Ativo
 /// (`AssetSection.tsx`), aqui não há nada pra persistir/confirmar, é só
 /// pesquisa.
-function FiiLookupSection({ ticker }: { ticker: string }) {
+function FiiLookupSection({ ticker, workspaceId }: { ticker: string; workspaceId: number }) {
   const [noteDraft, setNoteDraft] = useState("");
   const autoFetchedTickerRef = useRef<string | null>(null);
   const autoFetchedCvmCnpjRef = useRef<string | null>(null);
@@ -360,6 +361,16 @@ function FiiLookupSection({ ticker }: { ticker: string }) {
             </h3>
             <DividendHistoryChart payments={dividendsQuery.data ?? []} />
           </div>
+
+          <AssetThesesSidebar
+            workspaceId={workspaceId}
+            ticker={ticker}
+            assetClass="fii"
+            name={quoteQuery.data?.name ?? ticker}
+            currency={quoteQuery.data?.currency ?? "BRL"}
+            exchange={quoteQuery.data?.exchange ?? null}
+            cnpj={cnpj}
+          />
 
           <div>
             <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Notes</h3>

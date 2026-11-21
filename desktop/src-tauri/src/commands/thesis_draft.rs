@@ -3,11 +3,14 @@
 // Os indicadores vêm do screener (mesma conta de DY e razões), os valuations da tabela `valuation`.
 
 use chrono::{NaiveDate, Utc};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 
 use crate::commands::screener::{screen_stocks_on, ScreenerFilters};
-use crate::domain::thesis_draft::{render_draft, Draft, DraftIndicators, DraftInput, DraftValuation};
-use crate::entity::valuation;
+use crate::domain::thesis_draft::{
+    render_draft, render_fii_draft, Draft, DraftIndicators, DraftInput, DraftValuation, FiiDraftInput, FiiDraftMonthly,
+    FiiDraftProperty,
+};
+use crate::entity::{fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_quotes, valuation};
 use crate::error::AppError;
 
 /// `today` é entrada (não lê o relógio) para o retrato datado ser testável.
@@ -47,6 +50,74 @@ pub async fn build_draft_on(db: &DatabaseConnection, ticker: &str, today: NaiveD
     Ok(render_draft(&input))
 }
 
+/// Rascunho de tese de FII. Só lê o que já foi coletado (cotação, CNPJ em cache, CVM): sem rede.
+pub async fn build_fii_draft_on(db: &DatabaseConnection, ticker: &str, today: NaiveDate) -> Result<Draft, AppError> {
+    let ticker = ticker.trim().to_uppercase();
+    let quote = stock_quotes::Entity::find()
+        .filter(stock_quotes::Column::Ticker.eq(ticker.as_str()))
+        .order_by_desc(stock_quotes::Column::FetchedAt)
+        .one(db)
+        .await?;
+    let cnpj = fii_cnpj_cache::Entity::find()
+        .filter(fii_cnpj_cache::Column::Ticker.eq(ticker.as_str()))
+        .one(db)
+        .await?
+        .map(|c| c.cnpj);
+
+    let (monthly, properties) = match cnpj {
+        Some(cnpj) => {
+            let monthly = fii_cvm_monthly::Entity::find()
+                .filter(fii_cvm_monthly::Column::Cnpj.eq(cnpj.as_str()))
+                .order_by_desc(fii_cvm_monthly::Column::ReferenceDate)
+                .one(db)
+                .await?
+                .map(|m| FiiDraftMonthly {
+                    reference_date: m.reference_date,
+                    net_assets: m.patrimonio_liquido,
+                    book_value_per_share: m.valor_patrimonial_cota,
+                    shareholders: m.numero_cotistas,
+                    dividend_yield_month: m.dividend_yield_mes,
+                    effective_return_month: m.rentabilidade_efetiva_mes,
+                });
+            let rows = fii_cvm_properties::Entity::find()
+                .filter(fii_cvm_properties::Column::Cnpj.eq(cnpj.as_str()))
+                .order_by_desc(fii_cvm_properties::Column::ReferenceDate)
+                .all(db)
+                .await?;
+            let latest_date = rows.first().map(|p| p.reference_date.clone());
+            let properties = rows
+                .into_iter()
+                .filter(|p| Some(&p.reference_date) == latest_date.as_ref())
+                .map(|p| FiiDraftProperty {
+                    name: p.nome_imovel,
+                    area_m2: p.area_m2,
+                    vacancy: p.percentual_vacancia,
+                    delinquency: p.percentual_inadimplencia,
+                    leased: p.percentual_locado,
+                })
+                .collect();
+            (monthly, properties)
+        }
+        None => (None, Vec::new()),
+    };
+
+    let input = FiiDraftInput {
+        name: quote.as_ref().and_then(|q| q.name.clone()),
+        price: quote.as_ref().map(|q| q.price),
+        currency: quote.and_then(|q| q.currency),
+        ticker,
+        today,
+        monthly,
+        properties,
+    };
+    Ok(render_fii_draft(&input))
+}
+
+#[tauri::command]
+pub async fn build_fii_thesis_draft(db: tauri::State<'_, DatabaseConnection>, ticker: String) -> Result<Draft, AppError> {
+    build_fii_draft_on(db.inner(), ticker.trim(), Utc::now().date_naive()).await
+}
+
 #[tauri::command]
 pub async fn build_thesis_draft(db: tauri::State<'_, DatabaseConnection>, ticker: String) -> Result<Draft, AppError> {
     build_draft_on(db.inner(), ticker.trim(), Utc::now().date_naive()).await
@@ -57,7 +128,7 @@ mod tests {
     use sea_orm::{ActiveModelTrait, Set};
 
     use super::*;
-    use crate::entity::{stock_fundamentals, stock_quotes};
+    use crate::entity::{fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_fundamentals, stock_quotes};
     use crate::test_support::memory_db;
 
     fn today() -> NaiveDate {
@@ -128,6 +199,128 @@ mod tests {
         assert!(text.contains("- bazin: fair price 25.00, margin 20.0%, CHEAP (updated 2026-10-01)"), "{text}");
         assert!(!text.contains("24.00"), "o valuation antigo do mesmo modelo não entra:\n{text}");
         assert!(!text.contains("99.00"), "valuation de outro ticker não entra:\n{text}");
+    }
+
+    const CNPJ: &str = "11.111.111/0001-11";
+
+    async fn fii_quote(db: &DatabaseConnection, ticker: &str, price: f64, fetched_at: &str) {
+        stock_quotes::ActiveModel {
+            ticker: Set(ticker.to_string()),
+            price: Set(price),
+            source: Set("test".to_string()),
+            fetched_at: Set(fetched_at.to_string()),
+            name: Set(Some("CSHG Logística".to_string())),
+            exchange: Set(None),
+            currency: Set(Some("BRL".to_string())),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert quote");
+    }
+
+    async fn fii_cnpj(db: &DatabaseConnection, ticker: &str, cnpj: &str) {
+        fii_cnpj_cache::ActiveModel {
+            ticker: Set(ticker.to_string()),
+            cnpj: Set(cnpj.to_string()),
+            fund_name: Set("Fundo".to_string()),
+            resolved_at: Set("2026-11-01T10:00:00+00:00".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert cnpj");
+    }
+
+    async fn fii_month(db: &DatabaseConnection, cnpj: &str, reference_date: &str, book_value: f64) {
+        fii_cvm_monthly::ActiveModel {
+            cnpj: Set(cnpj.to_string()),
+            reference_date: Set(reference_date.to_string()),
+            patrimonio_liquido: Set(3_000_000_000.0),
+            valor_patrimonial_cota: Set(book_value),
+            numero_cotistas: Set(Some(150_000)),
+            dividend_yield_mes: Set(Some(0.008)),
+            rentabilidade_efetiva_mes: Set(Some(0.012)),
+            source: Set("test".to_string()),
+            fetched_at: Set("2026-11-01T10:00:00+00:00".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert month");
+    }
+
+    async fn fii_property(db: &DatabaseConnection, cnpj: &str, reference_date: &str, name: &str, vacancy: f64) {
+        fii_cvm_properties::ActiveModel {
+            cnpj: Set(cnpj.to_string()),
+            reference_date: Set(reference_date.to_string()),
+            nome_imovel: Set(name.to_string()),
+            area_m2: Set(Some(100.0)),
+            percentual_vacancia: Set(Some(vacancy)),
+            percentual_inadimplencia: Set(Some(0.0)),
+            percentual_locado: Set(Some(1.0 - vacancy)),
+            source: Set("test".to_string()),
+            fetched_at: Set("2026-11-01T10:00:00+00:00".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert property");
+    }
+
+    #[tokio::test]
+    async fn the_fii_draft_uses_the_latest_quote_month_and_property_date() {
+        let db = memory_db().await;
+        fii_cnpj(&db, "HGLG11", CNPJ).await;
+        fii_quote(&db, "HGLG11", 150.0, "2026-10-01T10:00:00+00:00").await;
+        fii_quote(&db, "HGLG11", 160.0, "2026-11-01T10:00:00+00:00").await;
+        fii_month(&db, CNPJ, "2026-09-30", 100.0).await;
+        fii_month(&db, CNPJ, "2026-10-31", 200.0).await;
+        fii_property(&db, CNPJ, "2026-06-30", "Antigo", 0.50).await;
+        fii_property(&db, CNPJ, "2026-09-30", "Galpão A", 0.10).await;
+
+        let draft = build_fii_draft_on(&db, "hglg11", today()).await.unwrap();
+        let text = draft.content_markdown;
+        assert_eq!(draft.title, "HGLG11 thesis");
+        assert!(text.starts_with("# HGLG11 — CSHG Logística\n"), "{text}");
+        assert!(text.contains("- Price: 160.00 BRL"), "a cotação mais nova: {text}");
+        assert!(text.contains("CVM reference 2026-10-31."), "o mês mais novo: {text}");
+        assert!(text.contains("- P/VP: 0.80"), "160 / 200: {text}");
+        assert!(text.contains("- Properties: 1"), "só a data de referência mais nova: {text}");
+        assert!(text.contains("- Vacancy (area-weighted): 10.0%"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_fii_without_a_cached_cnpj_gets_the_notice_and_the_quote_only() {
+        let db = memory_db().await;
+        fii_quote(&db, "HGLG11", 160.0, "2026-11-01T10:00:00+00:00").await;
+        let text = build_fii_draft_on(&db, "HGLG11", today()).await.unwrap().content_markdown;
+        assert!(text.contains("No CVM data for HGLG11 yet (n/d)."), "{text}");
+        assert!(text.contains("- Price: 160.00 BRL"), "{text}");
+        assert!(text.contains("## Why own it"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn another_funds_data_does_not_leak_into_the_draft() {
+        let db = memory_db().await;
+        fii_cnpj(&db, "HGLG11", CNPJ).await;
+        fii_cnpj(&db, "XPLG11", "22.222.222/0001-22").await;
+        fii_quote(&db, "HGLG11", 160.0, "2026-11-01T10:00:00+00:00").await;
+        fii_month(&db, CNPJ, "2026-10-31", 200.0).await;
+        fii_month(&db, "22.222.222/0001-22", "2026-10-31", 999.0).await;
+        fii_property(&db, "22.222.222/0001-22", "2026-10-31", "Do outro", 0.77).await;
+        let text = build_fii_draft_on(&db, "HGLG11", today()).await.unwrap().content_markdown;
+        assert!(text.contains("- Book value per share: 200.00"), "{text}");
+        assert!(!text.contains("999.00"), "{text}");
+        assert!(text.contains("No property data (n/d)."), "{text}");
+    }
+
+    #[tokio::test]
+    async fn an_unknown_fii_gets_the_skeleton_and_no_error() {
+        let db = memory_db().await;
+        let text = build_fii_draft_on(&db, "ZZZZ11", today()).await.unwrap().content_markdown;
+        assert!(text.contains("No CVM data for ZZZZ11 yet (n/d)."), "{text}");
+        assert!(text.contains("- Price: n/d"), "{text}");
     }
 
     #[tokio::test]
