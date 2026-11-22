@@ -42,7 +42,7 @@ pub fn treatment(asset_class: &str, ticker: &str) -> TaxTreatment {
         "fundo" => TaxTreatment::Ignored,
         // Previdência privada: o IR é do plano (tabela progressiva ou regressiva, retido no resgate). Esta fatia não
         // calcula nenhuma regra fiscal dela; o resgate fica fora da apuração de venda.
-        "previdencia" => TaxTreatment::Ignored,
+        "previdencia" => TaxTreatment::Fii,
         _ => TaxTreatment::Ignored,
     }
 }

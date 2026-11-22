@@ -19,7 +19,7 @@ pub const ASSET_CLASSES_WITH_AUTO_QUOTE: [&str; 10] = [
     "etf_us",
 ];
 // `previdencia`: cada real aportado é uma cota de preço 1; o valor de mercado é o último saldo do extrato.
-const MANUAL_VALUATION_CLASSES: [&str; 3] = ["imovel", "empresa_nao_listada", "previdencia"];
+const MANUAL_VALUATION_CLASSES: [&str; 2] = ["imovel", "empresa_nao_listada"];
 // Fundos: sem cotação de mercado, mas com valor de cota lançado pelo usuário (`fund_quota_values`), que entra no lugar
 // do preço da cotação automática.
 const MANUAL_QUOTA_CLASSES: [&str; 1] = ["fundo"];

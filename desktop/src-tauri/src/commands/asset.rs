@@ -109,7 +109,7 @@ const ASSET_CLASSES: [&str; 16] = [
     "imovel",
     "empresa_nao_listada",
     "fundo",
-    "previdencia",
+    "previdencia_x",
 ];
 const EXPOSURE_TYPES: [&str; 2] = ["pais", "categoria_especial"];
 
