@@ -23,7 +23,7 @@
 // `numSequencia` único por entrega. `Codigo_CVM` vem com zeros à esquerda
 // (`001023`): compara como inteiro.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -158,7 +158,7 @@ pub async fn notices_with(
 // ---------------------------------------------------------------------------
 
 /// Só links: o conteúdo do PDF não é lido (parsing de dado externo, e a IA saiu do Anchor).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FilingKind {
     /// Categoria "Dados Econômico-Financeiros", tipo "Press-release".
@@ -183,12 +183,15 @@ pub struct CompanyFiling {
     pub subject: String,
 }
 
-/// Quais pares (categoria, tipo) do IPE são release ou apresentação de resultado.
-/// Qualquer outro (Fato Relevante, Comunicado em geral, Proventos...) devolve `None`.
+/// Quais entradas do IPE entram na lista de RI: release e apresentação de resultado (pares exatos
+/// de categoria e tipo) e fato relevante (só pela categoria: o `Tipo` vem sempre vazio, medido
+/// em 2025 e 2026). Qualquer outro (Comunicado em geral, Proventos, política de divulgação...)
+/// devolve `None`.
 pub fn classify_filing(category: &str, kind: &str) -> Option<FilingKind> {
     match (category, kind) {
         ("Dados Econômico-Financeiros", "Press-release") => Some(FilingKind::Release),
         ("Comunicado ao Mercado", "Apresentações a analistas/agentes do mercado") => Some(FilingKind::Presentation),
+        ("Fato Relevante", _) => Some(FilingKind::MaterialFact),
         _ => None,
     }
 }
@@ -254,6 +257,30 @@ async fn year_filings(fetcher: &dyn ZipFetcher, year: i32, cvm_code: i32) -> Res
         .map_err(|e| unavailable(format!("parsing task failed: {e}")))?
 }
 
+/// A empresa reapresenta o mesmo fato relevante (`Versao` 2, 3...) com protocolo e link novos.
+/// O mesmo fato = mesma `Data_Referencia` e mesmo assunto; fica a maior versão (empate: a entrega
+/// mais nova). Só vale para fato relevante: foi onde se mediu a repetição.
+fn newest_material_fact_versions(filings: Vec<CompanyFiling>) -> Vec<CompanyFiling> {
+    let rank = |f: &CompanyFiling| (f.version, f.data_entrega, f.protocolo_entrega.clone());
+    let mut best: HashMap<(&str, &str), usize> = HashMap::new();
+    for (i, f) in filings.iter().enumerate() {
+        if f.kind != FilingKind::MaterialFact {
+            continue;
+        }
+        let key = (f.reference_date.as_str(), f.subject.trim());
+        if best.get(&key).is_none_or(|&j| rank(&filings[j]) < rank(f)) {
+            best.insert(key, i);
+        }
+    }
+    let keep: HashSet<usize> = best.into_values().collect();
+    filings
+        .into_iter()
+        .enumerate()
+        .filter(|(i, f)| f.kind != FilingKind::MaterialFact || keep.contains(i))
+        .map(|(_, f)| f)
+        .collect()
+}
+
 /// Do ano `current_year` e do anterior, do mais antigo ao mais novo, sem repetir a mesma
 /// entrega (identidade = protocolo ou, em branco, o link). Mesma regra de erro de `notices_with`.
 pub async fn filings_with(
@@ -274,6 +301,7 @@ pub async fn filings_with(
     }
     let mut seen = HashSet::new();
     filings.retain(|f| seen.insert(f.protocolo_entrega.clone()));
+    let mut filings = newest_material_fact_versions(filings);
     filings.sort_by(|a, b| {
         a.data_entrega.cmp(&b.data_entrega).then_with(|| a.protocolo_entrega.cmp(&b.protocolo_entrega))
     });

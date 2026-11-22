@@ -19,11 +19,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-// Frente 2 do ROADMAP (RI): releases e apresentações de resultado do IPE da CVM.
+// Frente 2 do ROADMAP (RI): releases, apresentações de resultado e fatos relevantes do IPE da CVM.
 // Só links para o PDF no portal da CVM; nada é baixado nem lido pelo app.
 type CompanyFiling = {
   delivered_on: string;
-  kind: "release" | "presentation";
+  kind: "release" | "presentation" | "material_fact";
   subject: string;
   pdf_url: string;
 };
@@ -31,6 +31,7 @@ type CompanyFiling = {
 const KIND_LABEL: Record<CompanyFiling["kind"], string> = {
   release: "Earnings release",
   presentation: "Analyst presentation",
+  material_fact: "Material fact",
 };
 
 export default function CompanyFilingsCard({ ticker }: { ticker: string }) {
@@ -45,10 +46,10 @@ export default function CompanyFilingsCard({ ticker }: { ticker: string }) {
   return (
     <Card data-testid="company-filings">
       <CardHeader>
-        <CardTitle>Earnings releases and presentations</CardTitle>
+        <CardTitle>Releases, presentations and material facts</CardTitle>
         <CardDescription>
-          Last 12 months, from the CVM. Each link opens the PDF on the CVM portal; the app does
-          not read it. Not every company files its release there.
+          Last 12 months, from the CVM, up to 5 of each type. Each link opens the PDF on the CVM
+          portal; the app does not read it. Not every company files its release there.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -59,7 +60,7 @@ export default function CompanyFilingsCard({ ticker }: { ticker: string }) {
           <p className="text-sm text-destructive">{filingsQuery.error.message}</p>
         )}
         {filingsQuery.isSuccess && rows.length === 0 && (
-          <p className="text-sm text-muted-foreground">No release or presentation found.</p>
+          <p className="text-sm text-muted-foreground">No release, presentation or material fact found.</p>
         )}
         {rows.length > 0 && (
           <Table>
