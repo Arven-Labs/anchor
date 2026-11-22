@@ -5892,3 +5892,10 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Não corrigido (mesmo padrão, fora de escopo)**: o resultado anterior também continua visível depois de editar qualquer campo sem apertar Estimate (ex.: mudar os anos). Só o caso do aviso foi tratado.
 - **Fora de escopo**: o prefixo do erro nos outros 247 usos; a mensagem do backend (`pension.rs`); tipo do plano gravado, 12% e declaração, mobile.
 - **Não verificado**: tradução (a UI do desktop é só em inglês, então não há outro idioma a conferir).
+
+## Sessão 403 — previdência: decisão de não levar ao mobile (só docs, nenhum código)
+- **Pedido**: "vamos nos itens da sessão 400". Conferi cada um antes de recomendar: o mobile não tem nada de previdência (`grep` em `mobile/lib` e `mobile/test` sem nenhuma ocorrência) nem `tax_rules` editável (só `domain/come_cotas.dart` tem regra fiscal); o tipo do plano gravado exigiria migration sem dor concreta; o limite de 12% e a declaração dependem de fontes que só o dono lê no navegador.
+- **Decisão do dono (opção 3 das três apresentadas)**: previdência **não vai para o mobile**. As outras opções eram o simulador espelhado em Dart (duas cópias da regra, que podem divergir) e só listar os planos (o mobile nem lista a classe).
+- **Feito**: só registro. `ROADMAP.md` (linha da previdência: decisão, e a "tela real" deixa de constar como aberta, pois as Sessões 401 e 402 a cobriram) e este texto.
+- **Reabrir se**: o dono passar a querer simular previdência no celular. Aí a pergunta é como evitar a segunda cópia da regra (alíquotas embutidas em Dart contra buscar do desktop).
+- **Em aberto**: limite de 12% e declaração (ação do dono: ler a IN SRF 497, a Lei 9.532 compilada e a FAQ da Receita no navegador; depois confirmar as fontes antes de qualquer regra, §4); tipo do plano gravado (só se a digitação cansar). P14 e P15 seguem dependendo do dono.
