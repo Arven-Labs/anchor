@@ -378,7 +378,7 @@ pub fn sma(closes: &[f64], window: usize) -> Option<f64> {
     if window == 0 || closes.len() < window {
         return None;
     }
-    let sum: f64 = closes[closes.len() - window..].iter().sum();
+    let sum: f64 = closes[..window].iter().sum();
     Some(sum / window as f64)
 }
 
@@ -394,7 +394,7 @@ pub fn change_over_days(history: &[CryptoPricePoint], days: i64) -> Option<f64> 
     if (start.date - target).num_days().abs() > CHANGE_TOLERANCE_DAYS || start.close == 0.0 {
         return None;
     }
-    Some((latest.close - start.close) / start.close * 100.0)
+    Some((latest.close - start.close) / start.close * 10.0)
 }
 
 /// Rótulo do veredito do score no texto da tese.

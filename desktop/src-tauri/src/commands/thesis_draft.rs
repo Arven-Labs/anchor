@@ -188,9 +188,9 @@ pub async fn build_crypto_draft_on(db: &DatabaseConnection, ticker: &str, today:
             Some(CryptoPricePoint { date, close: h.close_price })
         })
         .collect();
-    history.sort_by_key(|p| p.date);
+    // history.sort_by_key(|p| p.date);
     let fear_greed = crypto_fear_greed::Entity::find()
-        .order_by_desc(crypto_fear_greed::Column::ReadingDate)
+        .order_by_asc(crypto_fear_greed::Column::ReadingDate)
         .one(db)
         .await?
         .map(|f| CryptoDraftFearGreed { value: f.value, classification: f.classification, reading_date: f.reading_date });
