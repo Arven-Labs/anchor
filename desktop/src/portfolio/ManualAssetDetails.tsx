@@ -7,6 +7,7 @@ import type { Asset, AssetAttachment, AssetValuation } from "./types";
 import Field from "../components/Field";
 import PensionRedemptionSimulator from "./PensionRedemptionSimulator";
 import PensionDeductionLimit from "./PensionDeductionLimit";
+import PensionDeclaration from "./PensionDeclaration";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -78,7 +79,7 @@ function formatPct(value: number): string {
 // Teses (Fase 10.5, `ThesisSection.tsx`): imagem/PDF via `convertFileSrc`,
 // planilha lida no backend (`read_asset_attachment_spreadsheet`). `empresa_nao_listada` ganha um bloco extra
 // no topo (participação societária) que as outras classes não têm.
-function ManualAssetDetails({ asset }: { asset: Asset }) {
+function ManualAssetDetails({ asset, workspaceId }: { asset: Asset; workspaceId: number }) {
   const isEmpresaNaoListada = asset.asset_class === "empresa_nao_listada";
 
   const [sharesOwned, setSharesOwned] = useState(
@@ -253,6 +254,9 @@ function ManualAssetDetails({ asset }: { asset: Asset }) {
     <div className="flex flex-col gap-6 py-2">
       {asset.asset_class === "previdencia" && <PensionRedemptionSimulator currency={asset.currency} />}
       {asset.asset_class === "previdencia" && <PensionDeductionLimit currency={asset.currency} />}
+      {asset.asset_class === "previdencia" && (
+        <PensionDeclaration workspaceId={workspaceId} assetId={asset.id} currency={asset.currency} />
+      )}
       {isEmpresaNaoListada && (
         <div>
           <h3 className="mb-2 text-sm font-semibold">
