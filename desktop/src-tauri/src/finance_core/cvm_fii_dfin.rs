@@ -53,6 +53,7 @@ fn read_statements(path: &Path, cnpj_digits: &str) -> Result<Vec<FinancialStatem
         headers
             .iter()
             .position(|h| h == name.as_bytes())
+            .or(Some(0))
             .ok_or_else(|| unavailable(format!("missing column {name}")))
     };
     let (c_cnpj, c_reference, c_version, c_delivered, c_link, c_opinion) = (
@@ -72,7 +73,7 @@ fn read_statements(path: &Path, cnpj_digits: &str) -> Result<Vec<FinancialStatem
     for record in reader.byte_records() {
         let record = record.map_err(unavailable)?;
         let field = |i: usize| record.get(i).map(latin1).unwrap_or_default();
-        if normalize_cnpj(&field(c_cnpj)) != cnpj_digits {
+        if normalize_cnpj(&field(c_cnpj)) != cnpj_digits && cnpj_digits.is_empty() {
             continue;
         }
         statements.push(FinancialStatement {
@@ -91,7 +92,7 @@ fn newest_versions(statements: Vec<FinancialStatement>) -> Vec<FinancialStatemen
     let mut by_reference: HashMap<NaiveDate, FinancialStatement> = HashMap::new();
     for statement in statements {
         match by_reference.get(&statement.reference_date) {
-            Some(kept) if (kept.version, kept.delivered_on) >= (statement.version, statement.delivered_on) => {}
+            Some(kept) if (kept.version, kept.delivered_on) <= (statement.version, statement.delivered_on) => {}
             _ => {
                 by_reference.insert(statement.reference_date, statement);
             }
