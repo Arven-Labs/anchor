@@ -6,6 +6,8 @@ use std::collections::BTreeMap;
 
 use chrono::NaiveDate;
 
+use crate::domain::crypto_score::{CryptoScore, ScoreVerdict};
+
 /// Indicadores como o screener os calcula (`commands::screener::ScreenerRow`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct DraftIndicators {
@@ -341,6 +343,56 @@ fn fund_lines(input: &FundDraftInput) -> String {
         or_missing(input.avg_dividend_5y, |x| format!("{x:.2}")),
         tech.map_or_else(|| MISSING.to_string(), |t| date_part(&t.fetched_at).to_string()),
     )
+}
+
+/// Um fechamento diário de `stock_price_history`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CryptoPricePoint {
+    pub date: NaiveDate,
+    pub close: f64,
+}
+
+/// Última leitura de `crypto_fear_greed` (índice global, não é por moeda).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CryptoDraftFearGreed {
+    pub value: i32,
+    pub classification: String,
+    pub reading_date: String,
+}
+
+#[derive(Debug)]
+pub struct CryptoDraftInput {
+    pub ticker: String,
+    pub name: Option<String>,
+    pub today: NaiveDate,
+    pub price: Option<f64>,
+    pub currency: Option<String>,
+    /// Fechamentos em ordem crescente de data.
+    pub history: Vec<CryptoPricePoint>,
+    pub fear_greed: Option<CryptoDraftFearGreed>,
+    pub score: Option<CryptoScore>,
+}
+
+/// Média simples dos últimos `window` fechamentos; `None` se houver menos que `window`.
+pub fn sma(closes: &[f64], window: usize) -> Option<f64> {
+    todo!("sma {closes:?} {window}")
+}
+
+/// Variação percentual do fechamento de `days` dias antes (com tolerância de 3 dias) até o último.
+/// `None` se o histórico não alcança essa data, se o ponto de partida é zero ou se há menos de 2 pontos.
+pub fn change_over_days(history: &[CryptoPricePoint], days: i64) -> Option<f64> {
+    todo!("change_over_days {history:?} {days}")
+}
+
+/// Rótulo do veredito do score no texto da tese.
+pub fn verdict_label(verdict: ScoreVerdict) -> &'static str {
+    todo!("verdict_label {verdict:?}")
+}
+
+/// Rascunho de tese de cripto: cotação, médias móveis, variações, Fear & Greed e score. Campo
+/// ausente vira `n/d`, nunca zero. Sem nenhum dado coletado, só o aviso.
+pub fn render_crypto_draft(input: &CryptoDraftInput) -> Draft {
+    todo!("render_crypto_draft {input:?}")
 }
 
 #[cfg(test)]
@@ -775,5 +827,253 @@ mod tests {
             .collect();
         assert!(positions.windows(2).all(|w| w[0] < w[1]), "{positions:?}");
         assert!(positions[0] > text.find("- Avg dividend/share (5y)").unwrap());
+    }
+
+    // ---- cripto ----
+
+    use crate::domain::crypto_score::{compute_score, LatestReading, ScoreVerdict};
+
+    /// `n` fechamentos diários terminando em `today()`; o i-ésimo (0 = o mais antigo) fecha em 100 + i.
+    fn crypto_history(n: usize) -> Vec<CryptoPricePoint> {
+        (0..n)
+            .map(|i| CryptoPricePoint {
+                date: today() - chrono::Duration::days((n - 1 - i) as i64),
+                close: 100.0 + i as f64,
+            })
+            .collect()
+    }
+
+    fn reading(indicator: &str, signal: &str, days_ago: i64) -> LatestReading {
+        LatestReading {
+            indicator: indicator.to_string(),
+            raw_value: 1.0,
+            signal: signal.to_string(),
+            reading_date: (today() - chrono::Duration::days(days_ago)).to_string(),
+            source: "test".to_string(),
+        }
+    }
+
+    fn crypto_input() -> CryptoDraftInput {
+        CryptoDraftInput {
+            ticker: "BTC".into(),
+            name: Some("Bitcoin".into()),
+            today: today(),
+            price: Some(65000.0),
+            currency: Some("USD".into()),
+            history: crypto_history(400),
+            fear_greed: Some(CryptoDraftFearGreed {
+                value: 72,
+                classification: "Greed".into(),
+                reading_date: "2026-11-19".into(),
+            }),
+            score: Some(compute_score(
+                "BTC",
+                &[reading("funding_rate_7d", "GREEN", 0), reading("mvrv_z_score", "RED", 0)],
+                today(),
+            )),
+        }
+    }
+
+    fn crypto_md(input: &CryptoDraftInput) -> String {
+        render_crypto_draft(input).content_markdown
+    }
+
+    #[test]
+    fn the_sma_is_the_mean_of_the_last_window_closes() {
+        assert_eq!(sma(&[1.0, 2.0, 3.0, 4.0], 2), Some(3.5));
+        assert_eq!(sma(&[1.0, 2.0, 3.0, 4.0], 4), Some(2.5));
+    }
+
+    #[test]
+    fn the_sma_is_none_without_enough_closes_never_zero() {
+        assert_eq!(sma(&[1.0, 2.0, 3.0], 4), None);
+        assert_eq!(sma(&[], 1), None);
+    }
+
+    #[test]
+    fn the_change_runs_from_n_days_before_the_latest_close_to_the_latest_close() {
+        let history = crypto_history(400); // último 499
+        let at = |days| change_over_days(&history, days).unwrap();
+        assert!((at(7) - (499.0 - 492.0) / 492.0 * 100.0).abs() < 1e-9);
+        assert!((at(30) - (499.0 - 469.0) / 469.0 * 100.0).abs() < 1e-9);
+        assert!((at(365) - (499.0 - 134.0) / 134.0 * 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_fall_is_a_negative_change() {
+        let history = vec![
+            CryptoPricePoint { date: today() - chrono::Duration::days(7), close: 100.0 },
+            CryptoPricePoint { date: today(), close: 95.0 },
+        ];
+        assert!((change_over_days(&history, 7).unwrap() + 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_change_takes_the_closest_close_when_the_exact_day_is_missing() {
+        let history = vec![
+            CryptoPricePoint { date: today() - chrono::Duration::days(9), close: 50.0 },
+            CryptoPricePoint { date: today() - chrono::Duration::days(8), close: 80.0 },
+            CryptoPricePoint { date: today(), close: 100.0 },
+        ];
+        // alvo = 7 dias antes; o ponto de 8 dias está a 1 dia dele, o de 9, a 2.
+        assert!((change_over_days(&history, 7).unwrap() - 25.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_change_is_none_when_the_history_does_not_reach_back_that_far() {
+        let history = crypto_history(10);
+        assert_eq!(change_over_days(&history, 30), None);
+        assert!(change_over_days(&history, 7).is_some());
+    }
+
+    #[test]
+    fn the_change_is_none_with_one_point_no_points_or_a_zero_start() {
+        assert_eq!(change_over_days(&[], 7), None);
+        assert_eq!(change_over_days(&crypto_history(1), 7), None);
+        let zero_start = vec![
+            CryptoPricePoint { date: today() - chrono::Duration::days(7), close: 0.0 },
+            CryptoPricePoint { date: today(), close: 10.0 },
+        ];
+        assert_eq!(change_over_days(&zero_start, 7), None);
+    }
+
+    #[test]
+    fn the_crypto_title_and_heading() {
+        let draft = render_crypto_draft(&crypto_input());
+        assert_eq!(draft.title, "BTC thesis");
+        assert!(draft.content_markdown.starts_with("# BTC — Bitcoin\n"));
+        let mut no_name = crypto_input();
+        no_name.name = None;
+        assert!(crypto_md(&no_name).starts_with("# BTC\n"));
+    }
+
+    #[test]
+    fn the_crypto_snapshot_lists_price_averages_changes_and_fear_greed() {
+        let text = crypto_md(&crypto_input());
+        assert!(text.contains("## Snapshot (2026-11-20)"), "{text}");
+        assert!(text.contains("- Price: 65000.00 USD"), "{text}");
+        assert!(text.contains("- Price history up to: 2026-11-20"), "{text}");
+        assert!(text.contains("- SMA 50: 474.50"), "{text}");
+        assert!(text.contains("- SMA 100: 449.50"), "{text}");
+        assert!(text.contains("- SMA 200: 399.50"), "{text}");
+        assert!(text.contains("- Change 7d: +1.4%"), "{text}");
+        assert!(text.contains("- Change 30d: +6.4%"), "{text}");
+        assert!(text.contains("- Change 90d: +22.0%"), "{text}");
+        assert!(text.contains("- Change 365d: +272.4%"), "{text}");
+        assert!(text.contains("- Fear & Greed: 72 (Greed), read on 2026-11-19"), "{text}");
+    }
+
+    #[test]
+    fn a_short_history_gives_nd_for_what_it_cannot_cover_never_zero() {
+        let mut input = crypto_input();
+        input.history = crypto_history(60);
+        let text = crypto_md(&input);
+        assert!(text.contains("- SMA 50: "), "{text}");
+        assert!(!text.contains("- SMA 50: n/d"), "{text}");
+        assert!(text.contains("- SMA 100: n/d"), "{text}");
+        assert!(text.contains("- SMA 200: n/d"), "{text}");
+        assert!(text.contains("- Change 30d: +"), "{text}");
+        assert!(text.contains("- Change 90d: n/d"), "{text}");
+        assert!(text.contains("- Change 365d: n/d"), "{text}");
+    }
+
+    #[test]
+    fn a_missing_price_fear_greed_and_history_are_nd() {
+        let mut input = crypto_input();
+        input.price = None;
+        input.history = Vec::new();
+        input.fear_greed = None;
+        let text = crypto_md(&input);
+        assert!(text.contains("- Price: n/d"), "{text}");
+        assert!(text.contains("- Price history up to: n/d"), "{text}");
+        assert!(text.contains("- SMA 50: n/d"), "{text}");
+        assert!(text.contains("- Change 7d: n/d"), "{text}");
+        assert!(text.contains("- Fear & Greed: n/d"), "{text}");
+    }
+
+    #[test]
+    fn the_crypto_score_shows_the_verdict_totals_and_one_line_per_group() {
+        let input = crypto_input();
+        let score = input.score.as_ref().unwrap();
+        let text = crypto_md(&input);
+        assert!(
+            text.contains(&format!(
+                "- Crypto score: {} — {}/{} green ({} logged)",
+                verdict_label(score.verdict),
+                score.green,
+                score.total,
+                score.logged
+            )),
+            "{text}"
+        );
+        assert_eq!((score.green, score.logged), (1, 2));
+        for group in &score.groups {
+            let line = format!("  - {}: {}/{} green, {} logged", group.label, group.green, group.total, group.logged);
+            assert!(text.contains(&line), "faltou `{line}` em:\n{text}");
+        }
+    }
+
+    #[test]
+    fn an_expired_reading_is_marked_in_its_group() {
+        let mut input = crypto_input();
+        // funding vale 7 dias: com 8 dias, venceu e deixa de contar.
+        input.score = Some(compute_score("BTC", &[reading("funding_rate_7d", "GREEN", 8)], today()));
+        let score = input.score.as_ref().unwrap();
+        assert_eq!((score.green, score.logged), (0, 0));
+        let text = crypto_md(&input);
+        let derivatives = score.groups.iter().find(|g| g.label == "Derivatives & options").unwrap();
+        let line = format!(
+            "  - Derivatives & options: 0/{} green, 0 logged, 1 expired",
+            derivatives.total
+        );
+        assert!(text.contains(&line), "faltou `{line}` em:\n{text}");
+    }
+
+    #[test]
+    fn a_score_with_no_logged_reading_is_nd() {
+        let mut input = crypto_input();
+        input.score = Some(compute_score("BTC", &[], today()));
+        let text = crypto_md(&input);
+        assert!(text.contains("- Crypto score: n/d"), "{text}");
+        assert!(!text.contains("green ("), "{text}");
+        input.score = None;
+        assert!(crypto_md(&input).contains("- Crypto score: n/d"));
+    }
+
+    #[test]
+    fn the_verdict_labels_are_readable() {
+        assert_eq!(verdict_label(ScoreVerdict::Intact), "Intact");
+        assert_eq!(verdict_label(ScoreVerdict::Neutral), "Neutral");
+        assert_eq!(verdict_label(ScoreVerdict::ReduceRisk), "Reduce risk");
+    }
+
+    #[test]
+    fn a_crypto_with_nothing_collected_gets_only_the_warning() {
+        let input = CryptoDraftInput {
+            ticker: "ZZZ".into(),
+            name: None,
+            today: today(),
+            price: None,
+            currency: None,
+            history: Vec::new(),
+            fear_greed: None,
+            score: None,
+        };
+        let text = crypto_md(&input);
+        assert!(text.contains("No collected data for ZZZ yet (n/d). Run a fetch in Research first."), "{text}");
+        assert!(!text.contains("- SMA 50"), "{text}");
+        assert!(text.contains("## Why own it"), "{text}");
+    }
+
+    #[test]
+    fn the_crypto_draft_ends_with_the_blank_sections_in_order_and_has_no_valuations() {
+        let text = crypto_md(&crypto_input());
+        assert!(!text.contains("Saved valuations"), "{text}");
+        let positions: Vec<usize> = ["## Why own it", "## Risks", "## What would make me sell", "## Next review"]
+            .iter()
+            .map(|h| text.find(h).unwrap_or_else(|| panic!("faltou `{h}` em:\n{text}")))
+            .collect();
+        assert!(positions.windows(2).all(|w| w[0] < w[1]), "{positions:?}");
+        assert!(positions[0] > text.find("- Crypto score").unwrap());
     }
 }
