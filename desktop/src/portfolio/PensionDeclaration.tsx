@@ -30,7 +30,8 @@ function balanceNote(view: PensionDeclarationView): string {
   return "no statement up to that date: showing the cost";
 }
 
-// Os dois campos da ficha, com o que o dono já gravou. Montado só depois dos dados chegarem, para começar com esses valores.
+// Os dois campos da ficha, com o que o dono já gravou. Montado só depois dos dados chegarem (e de novo quando o valor gravado
+// muda, pela `key`), para mostrar o que ficou no banco, já com os zeros à esquerda, e não o que foi digitado.
 function FichaFields({
   assetId,
   initialGroup,
@@ -150,7 +151,7 @@ export default function PensionDeclaration({
         )}
         {view && (
           <FichaFields
-            key={assetId}
+            key={`${assetId}-${view.group}-${view.code}`}
             assetId={assetId}
             initialGroup={view.group}
             initialCode={view.code}

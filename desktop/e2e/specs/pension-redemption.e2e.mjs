@@ -188,6 +188,12 @@ describe("Anchor — simulador de resgate de previdência", () => {
       "a ficha digitada deveria aparecer completada com zeros",
     );
     expect(sql("SELECT dirpf_group || '|' || dirpf_code FROM assets WHERE ticker = 'PREV1'")).toBe("09|06");
+    // Os campos passam a mostrar o que ficou gravado, e não o "9" e o "6" digitados.
+    await browser.waitUntil(async () => (await byId("pension-dirpf-group").getValue()) === "09", {
+      timeout: 10_000,
+      timeoutMsg: "o campo do grupo deveria mostrar o valor gravado (09)",
+    });
+    expect(await byId("pension-dirpf-code").getValue()).toBe("06");
     await (await byId("pension-declaration")).scrollIntoView({ block: "center" });
     await snap("pension-declaration");
   });
