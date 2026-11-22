@@ -32,6 +32,7 @@ const SHORT_CLASS_LABELS: Record<AssetClass, string> = {
   imovel: "Imóvel",
   empresa_nao_listada: "Empresa",
   fundo: "Fundo",
+  previdencia: "Previdência",
 };
 
 const CLASS_LABELS: Record<AssetClass, string> = {
@@ -50,6 +51,7 @@ const CLASS_LABELS: Record<AssetClass, string> = {
   imovel: "Real estate",
   empresa_nao_listada: "Private company",
   fundo: "Fund",
+  previdencia: "Private pension",
 };
 
 const PLACEHOLDER_BY_CLASS: Partial<Record<AssetClass, string>> = {

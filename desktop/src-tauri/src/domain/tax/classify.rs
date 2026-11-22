@@ -40,6 +40,9 @@ pub fn treatment(asset_class: &str, ticker: &str) -> TaxTreatment {
         "etf_renda_fixa" => TaxTreatment::Ignored,
         // Fundo de investimento: o come-cotas e o IR no resgate são do fundo, fora da apuração de venda (ver `come_cotas`).
         "fundo" => TaxTreatment::Ignored,
+        // Previdência privada: o IR é do plano (tabela progressiva ou regressiva, retido no resgate). Esta fatia não
+        // calcula nenhuma regra fiscal dela; o resgate fica fora da apuração de venda.
+        "previdencia" => TaxTreatment::Ignored,
         _ => TaxTreatment::Ignored,
     }
 }

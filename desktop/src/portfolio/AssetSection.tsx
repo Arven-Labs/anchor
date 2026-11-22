@@ -70,6 +70,13 @@ type UpdateAssetUnderlyingClassRequest = {
   underlying_asset_class: string | null;
 };
 
+// Classes cadastradas à mão, com histórico de avaliações/saldos e anexos (`ManualAssetDetails.tsx`), e o rótulo do botão.
+const MANUAL_DETAILS_LABELS: Record<string, string> = {
+  imovel: "Property details",
+  empresa_nao_listada: "Company details",
+  previdencia: "Pension details",
+};
+
 function AssetSection({ workspaceId }: { workspaceId: number }) {
   const [ticker, setTicker] = useState("");
   const [name, setName] = useState("");
@@ -451,15 +458,14 @@ function AssetSection({ workspaceId }: { workspaceId: number }) {
                           {isExpanded ? "Hide CVM" : "CVM data"}
                         </Button>
                       )}
-                      {(asset.asset_class === "imovel" ||
-                        asset.asset_class === "empresa_nao_listada") && (
+                      {asset.asset_class in MANUAL_DETAILS_LABELS && (
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
                           onClick={() => setManualAssetDialogAssetId(asset.id)}
                         >
-                          {asset.asset_class === "imovel" ? "Property details" : "Company details"}
+                          {MANUAL_DETAILS_LABELS[asset.asset_class]}
                         </Button>
                       )}
                     </TableCell>
@@ -752,7 +758,7 @@ function AssetSection({ workspaceId }: { workspaceId: number }) {
               <>
                 <DialogHeader>
                   <DialogTitle>
-                    {asset.asset_class === "imovel" ? "Property details" : "Company details"} —{" "}
+                    {MANUAL_DETAILS_LABELS[asset.asset_class]} —{" "}
                     {asset.name}
                   </DialogTitle>
                 </DialogHeader>

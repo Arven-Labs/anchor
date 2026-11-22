@@ -72,7 +72,8 @@ export type AssetClass =
   | "renda_fixa"
   | "imovel"
   | "empresa_nao_listada"
-  | "fundo";
+  | "fundo"
+  | "previdencia";
 
 export const ASSET_CLASSES: AssetClass[] = [
   "acao_br",
@@ -90,6 +91,7 @@ export const ASSET_CLASSES: AssetClass[] = [
   "imovel",
   "empresa_nao_listada",
   "fundo",
+  "previdencia",
 ];
 
 export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
@@ -108,6 +110,7 @@ export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   imovel: "Real estate",
   empresa_nao_listada: "Private company",
   fundo: "Fund",
+  previdencia: "Private pension",
 };
 
 // Classes que usam os campos fi_* (renda fixa detalhada) na transação de compra.
