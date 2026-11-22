@@ -762,7 +762,7 @@ function AssetSection({ workspaceId }: { workspaceId: number }) {
                     {asset.name}
                   </DialogTitle>
                 </DialogHeader>
-                <ManualAssetDetails asset={asset} />
+                <ManualAssetDetails asset={asset} workspaceId={workspaceId} />
               </>
             );
           })()}

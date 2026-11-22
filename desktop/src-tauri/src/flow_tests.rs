@@ -7413,6 +7413,93 @@ async fn the_seeded_pension_rules_match_the_law_text() {
     }
 }
 
+// Previdência, declaração: custo e saldo em 31/12 e a ficha (grupo e código) como o dono digitou (Sessão 405).
+#[tokio::test]
+async fn the_pension_declaration_reports_cost_balance_and_the_typed_ficha() {
+    use crate::commands::asset::{update_asset_dirpf_in, UpdateAssetDirpfRequest};
+    use crate::commands::pension::pension_declaration_in;
+    use crate::domain::tax::pension_declaration::BalanceSource;
+    use crate::entity::asset_valuations;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Declaration").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let plan = asset(&db, "PREV1", "previdencia").await;
+    trade(&db, pf.id, plan.id, "compra", 500.0, 500.0, "2026-01-05").await;
+    trade(&db, pf.id, plan.id, "compra", 500.0, 500.0, "2026-02-05").await;
+    trade(&db, pf.id, plan.id, "venda", 300.0, 360.0, "2026-03-10").await;
+    asset_valuations::ActiveModel {
+        asset_id: Set(plan.id),
+        valuation_date: Set("2026-03-01".to_string()),
+        value: Set(1080.0),
+        origin: Set("manual".to_string()),
+        notes: Set(None),
+        created_at: Set("2026-03-01T00:00:00Z".to_string()),
+        ..Default::default()
+    }
+    .insert(&db)
+    .await
+    .unwrap();
+
+    // sem ficha digitada: grupo e código vêm vazios, e o app não inventa nenhum
+    let d = pension_declaration_in(&db, ws.id, plan.id, 2026).await.unwrap();
+    assert_eq!(d.group, None);
+    assert_eq!(d.code, None);
+    assert!(close(d.position.cost, 700.0));
+    assert!(close(d.position.balance, 1080.0));
+    assert_eq!(d.position.balance_source, BalanceSource::Statement);
+
+    // o dono digita a ficha (completada com zeros à esquerda, sem conferir contra a tabela da Receita)
+    update_asset_dirpf_in(
+        &db,
+        UpdateAssetDirpfRequest { asset_id: plan.id, group: Some("9".into()), code: Some("6".into()), country: None },
+    )
+    .await
+    .unwrap();
+    let d = pension_declaration_in(&db, ws.id, plan.id, 2026).await.unwrap();
+    assert_eq!(d.group.as_deref(), Some("09"));
+    assert_eq!(d.code.as_deref(), Some("06"));
+
+    // o ano anterior ao primeiro aporte: o plano não era mantido em 31/12
+    let before = pension_declaration_in(&db, ws.id, plan.id, 2025).await.unwrap();
+    assert_eq!(before.position.balance_source, BalanceSource::NotHeld);
+    assert!(close(before.position.cost, 0.0));
+}
+
+#[tokio::test]
+async fn the_pension_declaration_only_counts_the_workspace_transactions() {
+    use crate::commands::pension::pension_declaration_in;
+
+    let db = memory_db().await;
+    let mine = workspace(&db, "Mine").await;
+    let other = workspace(&db, "Other").await;
+    let my_pf = portfolio(&db, mine.id, "Main").await;
+    let other_pf = portfolio(&db, other.id, "Main").await;
+    let plan = asset(&db, "PREV1", "previdencia").await;
+    trade(&db, my_pf.id, plan.id, "compra", 100.0, 100.0, "2026-01-05").await;
+    trade(&db, other_pf.id, plan.id, "compra", 900.0, 900.0, "2026-01-05").await;
+
+    let d = pension_declaration_in(&db, mine.id, plan.id, 2026).await.unwrap();
+    assert!(close(d.position.cost, 100.0));
+}
+
+#[tokio::test]
+async fn the_pension_declaration_refuses_other_asset_classes_and_absurd_years() {
+    use crate::commands::pension::pension_declaration_in;
+    use crate::error::AppError;
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Refuse").await;
+    portfolio(&db, ws.id, "Main").await;
+    let stock = asset(&db, "PETR4", "acao_br").await;
+    let plan = asset(&db, "PREV1", "previdencia").await;
+
+    assert!(matches!(pension_declaration_in(&db, ws.id, stock.id, 2026).await, Err(AppError::InvalidInput(_))));
+    assert!(matches!(pension_declaration_in(&db, ws.id, plan.id, 1800).await, Err(AppError::InvalidInput(_))));
+    assert!(matches!(pension_declaration_in(&db, ws.id, 9999, 2026).await, Err(AppError::NotFound(_))));
+}
+
 // Limite de dedução do PGBL (Lei 9.532, art. 11): o seed guarda os 12% do texto compilado (Sessão 404).
 #[tokio::test]
 async fn the_seeded_pension_deduction_limit_is_twelve_percent() {

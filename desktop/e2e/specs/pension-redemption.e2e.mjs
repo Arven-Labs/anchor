@@ -32,6 +32,22 @@ describe("Anchor — simulador de resgate de previdência", () => {
       "INSERT INTO assets (ticker, name, asset_class, currency, exposure_type, exposure_value, created_at) " +
         "VALUES ('PREV1', 'Test Pension Plan', 'previdencia', 'BRL', 'pais', 'BR', '2026-01-01T00:00:00Z')",
     );
+    // Para a declaração de 2025: aportes de 500 em jan e fev, extrato de 1.080 em março e resgate de 300 cotas (custo final 700).
+    // Semeado antes de abrir o diálogo, para a consulta do ano não guardar um "plano não mantido" em cache.
+    const portfolio = sql(`SELECT id FROM portfolio WHERE workspace_id = ${workspace}`);
+    const plan = sql("SELECT id FROM assets WHERE ticker = 'PREV1'");
+    const trade = (type, quantity, total, date) =>
+      sql(
+        "INSERT INTO transactions (portfolio_id, asset_id, transaction_type, quantity, unit_price, total_value, fee, transaction_date, created_at) " +
+          `VALUES (${portfolio}, ${plan}, '${type}', ${quantity}, ${total / quantity}, ${total}, 0, '${date}', '${date}T00:00:00Z')`,
+      );
+    trade("compra", 500, 500, "2025-01-05");
+    trade("compra", 500, 500, "2025-02-05");
+    trade("venda", 300, 360, "2025-03-10");
+    sql(
+      "INSERT INTO asset_valuations (asset_id, valuation_date, value, origin, created_at) " +
+        `VALUES (${plan}, '2025-03-01', 1080, 'manual', '2025-03-01T00:00:00Z')`,
+    );
 
     await byId("nav-portfolio").click();
     await byId("portfolio-tab-assets").waitForDisplayed({ timeout: 30_000 });
@@ -146,5 +162,48 @@ describe("Anchor — simulador de resgate de previdência", () => {
   it("limite do PGBL: sem a base, o botão fica desabilitado", async () => {
     await byId("pension-limit-base").setValue("0");
     expect(await byId("pension-limit-submit").isEnabled()).toBe(false);
+  });
+
+  // Declaração (Bens e Direitos): custo e saldo em 31/12 e a ficha digitada. Dados semeados no primeiro caso.
+  it("declaração: começa no ano anterior, sem ficha, e mostra custo e saldo de 2025", async () => {
+    expect(await byId("pension-declaration-year").getValue()).toBe(String(new Date().getFullYear() - 1));
+    await byId("pension-declaration-year").setValue("2025");
+    await waitForText(
+      byId("pension-declaration-position"),
+      (text) => compact(text).includes("Coston31/12/2025:R$700,00"),
+      "o custo de 2025 deveria ser 700 (1.000 aportados menos 300 resgatados)",
+    );
+    const position = compact(await textOf(byId("pension-declaration-position")));
+    expect(position).toContain("Balanceon31/12/2025:R$1.080,00(statementof2025-03-01)");
+    expect(position).toContain("Groupandcodenotfilledin");
+  });
+
+  it("declaração: a ficha digitada é gravada com zeros à esquerda e aparece no informe", async () => {
+    await byId("pension-dirpf-group").setValue("9");
+    await byId("pension-dirpf-code").setValue("6");
+    await clickCentered(byId("pension-dirpf-save"));
+    await waitForText(
+      byId("pension-declaration-ficha"),
+      (text) => compact(text) === "Group09·Code06",
+      "a ficha digitada deveria aparecer completada com zeros",
+    );
+    expect(sql("SELECT dirpf_group || '|' || dirpf_code FROM assets WHERE ticker = 'PREV1'")).toBe("09|06");
+    // Os campos passam a mostrar o que ficou gravado, e não o "9" e o "6" digitados.
+    await browser.waitUntil(async () => (await byId("pension-dirpf-group").getValue()) === "09", {
+      timeout: 10_000,
+      timeoutMsg: "o campo do grupo deveria mostrar o valor gravado (09)",
+    });
+    expect(await byId("pension-dirpf-code").getValue()).toBe("06");
+    await (await byId("pension-declaration")).scrollIntoView({ block: "center" });
+    await snap("pension-declaration");
+  });
+
+  it("declaração: um ano anterior ao primeiro aporte mostra que o plano não era mantido", async () => {
+    await byId("pension-declaration-year").setValue("2023");
+    await waitForText(
+      byId("pension-declaration-position"),
+      (text) => compact(text).includes("Notheldon31/12/2023"),
+      "em 2023 o plano ainda não tinha aportes",
+    );
   });
 });
