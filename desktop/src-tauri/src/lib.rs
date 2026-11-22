@@ -168,6 +168,7 @@ pub fn run() {
             commands::fii::list_fii_financial_statements,
             commands::pension::estimate_pension_redemption,
             commands::pension::estimate_pension_deduction_limit,
+            commands::pension::pension_declaration,
             commands::data_source_credentials::list_data_source_credentials,
             commands::data_source_credentials::set_data_source_credential,
             commands::data_source_credentials::clear_data_source_credential,
