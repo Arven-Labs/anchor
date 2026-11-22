@@ -43,7 +43,7 @@ pub fn estimate_deduction_limit(
     }
     let rate = rules.get(PENSION_PGBL_DEDUCTION_LIMIT, on)?;
     let limit = base * rate;
-    let deductible = contributions.min(limit);
+    let deductible = contributions;
     Ok(DeductionLimitEstimate {
         rate,
         limit,
