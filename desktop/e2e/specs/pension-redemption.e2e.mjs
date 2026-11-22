@@ -111,4 +111,38 @@ describe("Anchor — simulador de resgate de previdência", () => {
     });
     expect(await byId("pension-submit").isEnabled()).toBe(true);
   });
+
+  // Limite de dedução do PGBL: 12% da base (seed da migration), valores digitados.
+  it("limite do PGBL: base 100.000 e aportes 8.000 dão teto 12.000 e folga de 4.000, sem excesso", async () => {
+    await byId("pension-limit-base").setValue("100000");
+    await byId("pension-limit-contributions").setValue("8000");
+    await clickCentered(byId("pension-limit-submit"));
+    await byId("pension-limit-result").waitForDisplayed({ timeout: 20_000 });
+    const result = compact(await textOf(byId("pension-limit-result")));
+    expect(result).toContain("Limit:R$12.000,00(12.00%ofR$100.000,00)");
+    expect(result).toContain("Deductible:R$8.000,00");
+    expect(result).toContain("roomleft:R$4.000,00");
+    expect(await byId("pension-limit-excess").isExisting()).toBe(false);
+    await snap("pension-deduction-limit");
+  });
+
+  it("limite do PGBL: aportes de 15.000 passam 3.000 do teto e o excesso aparece", async () => {
+    await byId("pension-limit-contributions").setValue("15000");
+    // Mexer no campo apaga o resultado anterior; ele só volta com o cálculo novo.
+    await browser.waitUntil(async () => !(await byId("pension-limit-result").isExisting()), {
+      timeout: 10_000,
+      timeoutMsg: "mexer num campo deveria apagar o resultado anterior",
+    });
+    await clickCentered(byId("pension-limit-submit"));
+    const excess = byId("pension-limit-excess");
+    await excess.waitForDisplayed({ timeout: 20_000 });
+    expect(compact(await textOf(excess))).toContain("R$3.000,00isnotdeductible");
+    expect(compact(await textOf(byId("pension-limit-result")))).toContain("roomleft:R$0,00");
+    await snap("pension-deduction-limit-excess");
+  });
+
+  it("limite do PGBL: sem a base, o botão fica desabilitado", async () => {
+    await byId("pension-limit-base").setValue("0");
+    expect(await byId("pension-limit-submit").isEnabled()).toBe(false);
+  });
 });

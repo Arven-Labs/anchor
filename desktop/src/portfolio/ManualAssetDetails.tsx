@@ -6,6 +6,7 @@ import type { AppError } from "../types";
 import type { Asset, AssetAttachment, AssetValuation } from "./types";
 import Field from "../components/Field";
 import PensionRedemptionSimulator from "./PensionRedemptionSimulator";
+import PensionDeductionLimit from "./PensionDeductionLimit";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -251,6 +252,7 @@ function ManualAssetDetails({ asset }: { asset: Asset }) {
   return (
     <div className="flex flex-col gap-6 py-2">
       {asset.asset_class === "previdencia" && <PensionRedemptionSimulator currency={asset.currency} />}
+      {asset.asset_class === "previdencia" && <PensionDeductionLimit currency={asset.currency} />}
       {isEmpresaNaoListada && (
         <div>
           <h3 className="mb-2 text-sm font-semibold">
