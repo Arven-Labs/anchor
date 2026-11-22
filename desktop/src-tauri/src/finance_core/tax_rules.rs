@@ -26,6 +26,9 @@ const RECEITA_CALCULO: &str = "https://www.gov.br/receitafederal/pt-br/assuntos/
 const RECEITA_ISENCOES: &str = "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda/pagamento/renda-variavel/bolsa-de-valores-1/isencoes";
 const RECEITA_REVAR: &str = "https://www.gov.br/receitafederal/pt-br/assuntos/meu-imposto-de-renda/pagamento/renda-variavel/manual";
 
+const PENSION_TABLE: &str = "Lei 11.053/2004, art. 1º (Planalto text read on 2026-11-22; verify the current wording)";
+const PENSION_ADVANCE: &str = "Lei 11.053/2004, art. 3º (Planalto text read on 2026-11-22; verify the current wording)";
+
 /// (key, value, effective_from, description, source)
 const RULES: &[(&str, f64, (i32, u32, u32), &str, &str)] = &[
     ("common_rate", 0.15, (2005, 1, 1), "Rate on monthly net gains from regular (swing) trades of stocks, units, ETFs and BDRs on B3", RECEITA_BOLSA),
@@ -66,6 +69,14 @@ const RULES: &[(&str, f64, (i32, u32, u32), &str, &str)] = &[
     ("fund_ir_investment_entity", 0.15, (2024, 1, 1), "IR withheld on the distribution, amortization or redemption of an investment entity fund (FIP, FIDC, non fixed income ETF), flat on the gain and with no come-cotas", "Lei 14.754/2023, arts. 18 and 24 (secondary sources; verify on gov.br)"),
     ("fund_estoque_rate_general", 0.15, (2023, 12, 12), "IR on the income of a closed or exclusive fund accrued up to 31/12/2023 (quota value at 31/12/2023 over the cost), the general rule", "Lei 14.754/2023, art. 27 (secondary sources; verify on gov.br; its constitutionality is disputed in court)"),
     ("fund_estoque_rate_option", 0.08, (2023, 12, 12), "IR on the same accrued income when the investor opts to anticipate the payment, valid only with the full payment", "Lei 14.754/2023, art. 28 (secondary sources; verify on gov.br)"),
+    // Previdência privada, regime com tabela por prazo (Sessão 399): texto literal da lei, lido no Planalto em 2026-11-22.
+    ("pension_ir_regressive_up_to_2y", 0.35, (2005, 1, 1), "IR withheld on a private pension redemption (table regime), contribution held up to 2 years", PENSION_TABLE),
+    ("pension_ir_regressive_2_to_4y", 0.30, (2005, 1, 1), "IR withheld on a private pension redemption (table regime), contribution held over 2 and up to 4 years", PENSION_TABLE),
+    ("pension_ir_regressive_4_to_6y", 0.25, (2005, 1, 1), "IR withheld on a private pension redemption (table regime), contribution held over 4 and up to 6 years", PENSION_TABLE),
+    ("pension_ir_regressive_6_to_8y", 0.20, (2005, 1, 1), "IR withheld on a private pension redemption (table regime), contribution held over 6 and up to 8 years", PENSION_TABLE),
+    ("pension_ir_regressive_8_to_10y", 0.15, (2005, 1, 1), "IR withheld on a private pension redemption (table regime), contribution held over 8 and up to 10 years", PENSION_TABLE),
+    ("pension_ir_regressive_over_10y", 0.10, (2005, 1, 1), "IR withheld on a private pension redemption (table regime), contribution held over 10 years", PENSION_TABLE),
+    ("pension_ir_advance_rate", 0.15, (2005, 1, 1), "IR withheld as an advance on a private pension redemption when the participant did not opt for the table regime (adjusted in the annual return; not computed here)", PENSION_ADVANCE),
 ];
 
 fn date(ymd: (i32, u32, u32)) -> NaiveDate {

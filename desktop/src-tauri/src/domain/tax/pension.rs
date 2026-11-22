@@ -36,19 +36,58 @@ pub struct RegressiveEstimate {
 }
 
 /// A chave da faixa do prazo em anos desde o aporte. Limite superior inclusivo (a lei diz "inferior ou igual a").
-pub fn bracket_key(_years: f64) -> &'static str {
-    rules::PENSION_IR_REGRESSIVE_UP_TO_2Y
+pub fn bracket_key(years: f64) -> &'static str {
+    if years <= 2.0 {
+        rules::PENSION_IR_REGRESSIVE_UP_TO_2Y
+    } else if years <= 4.0 {
+        rules::PENSION_IR_REGRESSIVE_2_TO_4Y
+    } else if years <= 6.0 {
+        rules::PENSION_IR_REGRESSIVE_4_TO_6Y
+    } else if years <= 8.0 {
+        rules::PENSION_IR_REGRESSIVE_6_TO_8Y
+    } else if years <= 10.0 {
+        rules::PENSION_IR_REGRESSIVE_8_TO_10Y
+    } else {
+        rules::PENSION_IR_REGRESSIVE_OVER_10Y
+    }
 }
 
+/// `redeemed` é o valor bruto do resgate; `income` é a parcela de rendimento (obrigatória no VGBL, ignorada no PGBL);
+/// `years` é o prazo desde o aporte. Alíquotas vigentes em `on`.
 pub fn estimate_regressive(
-    _rules: &RuleSet,
-    _on: NaiveDate,
-    _kind: PensionKind,
-    _redeemed: f64,
-    _income: Option<f64>,
-    _years: f64,
+    rules: &RuleSet,
+    on: NaiveDate,
+    kind: PensionKind,
+    redeemed: f64,
+    income: Option<f64>,
+    years: f64,
 ) -> Result<RegressiveEstimate, AppError> {
-    Err(AppError::InvalidInput("not implemented".to_string()))
+    if !redeemed.is_finite() || redeemed <= 0.0 {
+        return Err(AppError::InvalidInput(format!("invalid redeemed amount {redeemed}")));
+    }
+    if !years.is_finite() || years < 0.0 {
+        return Err(AppError::InvalidInput(format!("invalid years since contribution {years}")));
+    }
+    let taxable_base = match kind {
+        PensionKind::Pgbl => redeemed,
+        PensionKind::Vgbl => match income {
+            None => return Err(AppError::InvalidInput("a VGBL redemption needs the income part".to_string())),
+            Some(i) if !i.is_finite() || i < 0.0 => {
+                return Err(AppError::InvalidInput(format!("invalid income part {i}")));
+            }
+            Some(i) if i > redeemed => {
+                return Err(AppError::InvalidInput(format!(
+                    "income part {i} is greater than the redeemed amount {redeemed}"
+                )));
+            }
+            Some(i) => i,
+        },
+    };
+    let rule_key = bracket_key(years);
+    let rate = rules.get(rule_key, on)?;
+    let advance_rate = rules.get(rules::PENSION_IR_ADVANCE_RATE, on)?;
+    let estimated_tax = taxable_base * rate;
+    Ok(RegressiveEstimate { rule_key, rate, taxable_base, estimated_tax, net_amount: redeemed - estimated_tax, advance_rate })
 }
 
 #[cfg(test)]
