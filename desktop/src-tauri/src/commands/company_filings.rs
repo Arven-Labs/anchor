@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{Duration, NaiveDate, Utc};
 use serde::Serialize;
 
@@ -5,11 +7,11 @@ use crate::error::AppError;
 use crate::finance_api::{client, skip_not_found};
 use crate::finance_core::cvm_ipe::{self, CompanyFiling, FilingKind};
 
-// Releases e apresentações de resultado da empresa, do IPE da CVM (frente 2 do ROADMAP, item
-// "puxar o RI"). Só links para o PDF no portal da CVM: nada é baixado nem lido. O ticker vira
+// Releases, apresentações de resultado e fatos relevantes da empresa, do IPE da CVM (frente 2 do
+// ROADMAP, item "puxar o RI"). Só links para o PDF no portal da CVM: nada é baixado nem lido. O ticker vira
 // código CVM pelo bolsai, como em `cvm_notice.rs`.
 const RECENT_DAYS: i64 = 365;
-const MAX_ROWS: usize = 12;
+const MAX_ROWS_PER_KIND: usize = 5;
 
 #[derive(Serialize, Debug, PartialEq)]
 pub struct CompanyFilingView {
@@ -19,15 +21,22 @@ pub struct CompanyFilingView {
     pub pdf_url: String,
 }
 
-/// Entregas de `since` em diante (inclusive), da mais nova à mais antiga, no máximo `limit`.
-fn recent_filings(filings: Vec<CompanyFiling>, since: NaiveDate, limit: usize) -> Vec<CompanyFilingView> {
+/// Entregas de `since` em diante (inclusive), da mais nova à mais antiga, no máximo `limit_per_kind`
+/// de cada tipo: o corte é por tipo para os fatos relevantes (mais frequentes) não empurrarem
+/// releases e apresentações para fora da lista.
+fn recent_filings(filings: Vec<CompanyFiling>, since: NaiveDate, limit_per_kind: usize) -> Vec<CompanyFilingView> {
     let mut recent: Vec<CompanyFiling> = filings.into_iter().filter(|f| f.data_entrega >= since).collect();
     recent.sort_by(|a, b| {
         b.data_entrega.cmp(&a.data_entrega).then_with(|| a.protocolo_entrega.cmp(&b.protocolo_entrega))
     });
+    let mut taken: HashMap<FilingKind, usize> = HashMap::new();
     recent
         .into_iter()
-        .take(limit)
+        .filter(|f| {
+            let count = taken.entry(f.kind).or_insert(0);
+            *count += 1;
+            *count <= limit_per_kind
+        })
         .map(|f| CompanyFilingView {
             delivered_on: f.data_entrega.to_string(),
             kind: f.kind,
@@ -46,7 +55,7 @@ async fn filings_for(ticker: &str, since: NaiveDate) -> Result<Vec<CompanyFiling
         .trim()
         .parse()
         .map_err(|_| AppError::NoData(format!("invalid CVM code '{}' for {ticker}", bolsai.cvm_code)))?;
-    Ok(recent_filings(cvm_ipe::company_filings(cvm_code).await?, since, MAX_ROWS))
+    Ok(recent_filings(cvm_ipe::company_filings(cvm_code).await?, since, MAX_ROWS_PER_KIND))
 }
 
 #[tauri::command]
@@ -61,6 +70,8 @@ mod tests {
 
     fn filing(date: &str, link: &str, kind: FilingKind) -> CompanyFiling {
         CompanyFiling {
+            reference_date: "2026-02-10".to_string(),
+            version: 1,
             protocolo_entrega: link.to_string(),
             data_entrega: NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap(),
             link_download: link.to_string(),
@@ -97,6 +108,41 @@ mod tests {
         ];
         let urls: Vec<String> = recent_filings(filings, since(), 2).into_iter().map(|v| v.pdf_url).collect();
         assert_eq!(urls, ["c", "b"]);
+    }
+
+    #[test]
+    fn the_limit_is_per_kind_so_material_facts_do_not_push_the_releases_out() {
+        let mut filings = vec![
+            filing("2026-08-01", "rel-1", FilingKind::Release),
+            filing("2026-08-02", "rel-2", FilingKind::Release),
+            filing("2026-08-03", "pres-1", FilingKind::Presentation),
+        ];
+        // Oito fatos relevantes, todos mais novos que os releases.
+        for day in 1..=8 {
+            filings.push(filing(&format!("2026-10-{day:02}"), &format!("fact-{day}"), FilingKind::MaterialFact));
+        }
+        let urls: Vec<String> = recent_filings(filings, since(), 3).into_iter().map(|v| v.pdf_url).collect();
+        // 3 de cada tipo, do mais novo ao mais antigo no conjunto.
+        assert_eq!(urls, ["fact-8", "fact-7", "fact-6", "pres-1", "rel-2", "rel-1"]);
+    }
+
+    #[test]
+    fn a_kind_over_the_limit_keeps_its_newest() {
+        let filings: Vec<CompanyFiling> = (1..=4)
+            .map(|d| filing(&format!("2026-09-{d:02}"), &format!("rel-{d}"), FilingKind::Release))
+            .collect();
+        let urls: Vec<String> = recent_filings(filings, since(), 2).into_iter().map(|v| v.pdf_url).collect();
+        assert_eq!(urls, ["rel-4", "rel-3"]);
+    }
+
+    #[test]
+    fn the_window_applies_to_material_facts_too() {
+        let filings = vec![
+            filing("2026-06-30", "old-fact", FilingKind::MaterialFact),
+            filing("2026-07-01", "edge-fact", FilingKind::MaterialFact),
+        ];
+        let urls: Vec<String> = recent_filings(filings, since(), 10).into_iter().map(|v| v.pdf_url).collect();
+        assert_eq!(urls, ["edge-fact"]);
     }
 
     #[test]
