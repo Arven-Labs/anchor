@@ -12,7 +12,7 @@
 use chrono::NaiveDate;
 use serde::Serialize;
 
-use super::rules::RuleSet;
+use super::rules::{RuleSet, PENSION_PGBL_DEDUCTION_LIMIT};
 use crate::error::AppError;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -30,12 +30,27 @@ pub struct DeductionLimitEstimate {
 
 /// `base` é o total dos rendimentos da base de cálculo informado por quem usa; `contributions` são os aportes ao PGBL no ano.
 pub fn estimate_deduction_limit(
-    _rules: &RuleSet,
-    _on: NaiveDate,
-    _base: f64,
-    _contributions: f64,
+    rules: &RuleSet,
+    on: NaiveDate,
+    base: f64,
+    contributions: f64,
 ) -> Result<DeductionLimitEstimate, AppError> {
-    Ok(DeductionLimitEstimate { rate: 0.0, limit: 0.0, deductible: 0.0, remaining: 0.0, excess: 0.0 })
+    if !base.is_finite() || base <= 0.0 {
+        return Err(AppError::InvalidInput(format!("invalid income base {base}")));
+    }
+    if !contributions.is_finite() || contributions < 0.0 {
+        return Err(AppError::InvalidInput(format!("invalid contributions {contributions}")));
+    }
+    let rate = rules.get(PENSION_PGBL_DEDUCTION_LIMIT, on)?;
+    let limit = base * rate;
+    let deductible = contributions.min(limit);
+    Ok(DeductionLimitEstimate {
+        rate,
+        limit,
+        deductible,
+        remaining: limit - deductible,
+        excess: (contributions - limit).max(0.0),
+    })
 }
 
 #[cfg(test)]

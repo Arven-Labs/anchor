@@ -114,6 +114,7 @@ mod m20261120_100000_create_wallet_viewer;
 mod m20261121_100000_create_wallet_viewer_xpub;
 mod m20261122_100000_add_fx_rate_override_to_transactions;
 mod m20261123_100000_seed_pension_regressive_rules;
+mod m20261123_110000_seed_pension_deduction_limit;
 
 pub struct Migrator;
 
@@ -235,6 +236,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261121_100000_create_wallet_viewer_xpub::Migration),
             Box::new(m20261122_100000_add_fx_rate_override_to_transactions::Migration),
             Box::new(m20261123_100000_seed_pension_regressive_rules::Migration),
+            Box::new(m20261123_110000_seed_pension_deduction_limit::Migration),
         ]
     }
 }

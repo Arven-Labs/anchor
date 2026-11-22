@@ -28,6 +28,7 @@ const RECEITA_REVAR: &str = "https://www.gov.br/receitafederal/pt-br/assuntos/me
 
 const PENSION_TABLE: &str = "Lei 11.053/2004, art. 1º (Planalto text read on 2026-11-22; verify the current wording)";
 const PENSION_ADVANCE: &str = "Lei 11.053/2004, art. 3º (Planalto text read on 2026-11-22; verify the current wording)";
+const PENSION_DEDUCTION: &str = "Lei 9.532/1997, art. 11, wording of Lei 10.887/2004 (Planalto compiled text read on 2026-11-22; verify the current wording)";
 
 /// (key, value, effective_from, description, source)
 const RULES: &[(&str, f64, (i32, u32, u32), &str, &str)] = &[
@@ -77,6 +78,8 @@ const RULES: &[(&str, f64, (i32, u32, u32), &str, &str)] = &[
     ("pension_ir_regressive_8_to_10y", 0.15, (2005, 1, 1), "IR withheld on a private pension redemption (table regime), contribution held over 8 and up to 10 years", PENSION_TABLE),
     ("pension_ir_regressive_over_10y", 0.10, (2005, 1, 1), "IR withheld on a private pension redemption (table regime), contribution held over 10 years", PENSION_TABLE),
     ("pension_ir_advance_rate", 0.15, (2005, 1, 1), "IR withheld as an advance on a private pension redemption when the participant did not opt for the table regime (adjusted in the annual return; not computed here)", PENSION_ADVANCE),
+    // Limite de dedução das contribuições ao PGBL (Sessão 404): texto compilado da Lei 9.532, art. 11, lido no Planalto em 2026-11-22.
+    ("pension_pgbl_deduction_limit", 0.12, (2005, 1, 1), "Limit on the deduction of PGBL contributions, as a fraction of the total income in the tax base of the annual return (the deduction also needs contributions to the general or the own social security regime, and only the complete model deducts)", PENSION_DEDUCTION),
 ];
 
 fn date(ymd: (i32, u32, u32)) -> NaiveDate {
