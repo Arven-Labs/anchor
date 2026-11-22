@@ -46,8 +46,37 @@ pub struct YearEndPosition {
 }
 
 /// A posição do plano em 31/12 de `year`. Compara datas `AAAA-MM-DD` como texto (a ordem lexicográfica é a cronológica).
-pub fn year_end_position(year: i32, _movements: &[Movement], _statements: &[Statement]) -> YearEndPosition {
-    YearEndPosition { year, cost: 0.0, balance: 0.0, balance_source: BalanceSource::NotHeld, balance_date: None }
+pub fn year_end_position(year: i32, movements: &[Movement], statements: &[Statement]) -> YearEndPosition {
+    let year_end = format!("{year}-12-31");
+    let net_quotas: f64 = movements
+        .iter()
+        .filter(|m| m.date <= year_end.as_str())
+        .map(|m| match m.transaction_type {
+            "compra" => m.quantity,
+            "venda" => -m.quantity,
+            _ => 0.0,
+        })
+        .sum();
+    // Menos de meio centavo de cota é resíduo de ponto flutuante (ou resgate além do aportado), não um plano mantido.
+    if net_quotas < 0.005 {
+        return YearEndPosition { year, cost: 0.0, balance: 0.0, balance_source: BalanceSource::NotHeld, balance_date: None };
+    }
+    match statements.iter().filter(|s| s.date <= year_end.as_str()).max_by(|a, b| a.date.cmp(b.date)) {
+        Some(s) => YearEndPosition {
+            year,
+            cost: net_quotas,
+            balance: s.value,
+            balance_source: BalanceSource::Statement,
+            balance_date: Some(s.date.to_string()),
+        },
+        None => YearEndPosition {
+            year,
+            cost: net_quotas,
+            balance: net_quotas,
+            balance_source: BalanceSource::Cost,
+            balance_date: None,
+        },
+    }
 }
 
 #[cfg(test)]
