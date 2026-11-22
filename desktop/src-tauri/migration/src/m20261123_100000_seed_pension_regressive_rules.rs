@@ -20,7 +20,7 @@ const SEEDS: &[(&str, f64, &str, &str)] = &[
     ("pension_ir_regressive_up_to_2y", 0.35, "IR withheld on a private pension redemption (table regime), contribution held up to 2 years", TABLE),
     ("pension_ir_regressive_2_to_4y", 0.30, "IR withheld on a private pension redemption (table regime), contribution held over 2 and up to 4 years", TABLE),
     ("pension_ir_regressive_4_to_6y", 0.25, "IR withheld on a private pension redemption (table regime), contribution held over 4 and up to 6 years", TABLE),
-    ("pension_ir_regressive_6_to_8y", 0.20, "IR withheld on a private pension redemption (table regime), contribution held over 6 and up to 8 years", TABLE),
+    ("pension_ir_regressive_6_to_8y", 0.22, "IR withheld on a private pension redemption (table regime), contribution held over 6 and up to 8 years", TABLE),
     ("pension_ir_regressive_8_to_10y", 0.15, "IR withheld on a private pension redemption (table regime), contribution held over 8 and up to 10 years", TABLE),
     ("pension_ir_regressive_over_10y", 0.10, "IR withheld on a private pension redemption (table regime), contribution held over 10 years", TABLE),
     ("pension_ir_advance_rate", 0.15, "IR withheld as an advance on a private pension redemption when the participant did not opt for the table regime (adjusted in the annual return; not computed here)", ADVANCE),

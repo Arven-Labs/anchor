@@ -37,7 +37,7 @@ pub struct RegressiveEstimate {
 
 /// A chave da faixa do prazo em anos desde o aporte. Limite superior inclusivo (a lei diz "inferior ou igual a").
 pub fn bracket_key(years: f64) -> &'static str {
-    if years <= 2.0 {
+    if years < 2.0 {
         rules::PENSION_IR_REGRESSIVE_UP_TO_2Y
     } else if years <= 4.0 {
         rules::PENSION_IR_REGRESSIVE_2_TO_4Y
@@ -80,7 +80,7 @@ pub fn estimate_regressive(
                     "income part {i} is greater than the redeemed amount {redeemed}"
                 )));
             }
-            Some(i) => i,
+            Some(_) => redeemed,
         },
     };
     let rule_key = bracket_key(years);
