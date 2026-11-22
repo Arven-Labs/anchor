@@ -7,6 +7,7 @@ use crate::commands::collector::CollectorSummary;
 use crate::entity::{fii_cvm_monthly, fii_cvm_properties};
 use crate::error::AppError;
 use crate::finance_api::fii as finance_api_fii;
+use crate::finance_core::cvm_fii_dfin;
 
 /// Fase 10, item 8, Sessão 41 — sugestão de CNPJ pro cadastro de um FII,
 /// resolvida cruzando bolsai + cadastro público da CVM (nunca chuta — 0 ou
@@ -90,4 +91,30 @@ pub async fn list_fii_cvm_properties(
         .await?;
 
     Ok(rows)
+}
+
+/// Uma demonstração financeira do fundo, do `DFIN` da CVM (ver `finance_core::cvm_fii_dfin`). Só o link para o PDF: nada
+/// é baixado nem lido, e quem abre o link é o usuário.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct FiiFinancialStatementView {
+    pub reference_date: String,
+    pub delivered_on: String,
+    pub version: u32,
+    pub auditor_opinion: String,
+    pub pdf_url: String,
+}
+
+#[tauri::command]
+pub async fn list_fii_financial_statements(cnpj: String) -> Result<Vec<FiiFinancialStatementView>, AppError> {
+    Ok(cvm_fii_dfin::financial_statements(&cnpj)
+        .await?
+        .into_iter()
+        .map(|s| FiiFinancialStatementView {
+            reference_date: s.reference_date.to_string(),
+            delivered_on: s.delivered_on.to_string(),
+            version: s.version,
+            auditor_opinion: s.auditor_opinion,
+            pdf_url: s.link,
+        })
+        .collect())
 }

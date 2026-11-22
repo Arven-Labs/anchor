@@ -165,6 +165,7 @@ pub fn run() {
             commands::fii::run_fii_cvm_collector,
             commands::fii::list_fii_cvm_monthly,
             commands::fii::list_fii_cvm_properties,
+            commands::fii::list_fii_financial_statements,
             commands::data_source_credentials::list_data_source_credentials,
             commands::data_source_credentials::set_data_source_credential,
             commands::data_source_credentials::clear_data_source_credential,

@@ -6,13 +6,16 @@
 // navegador. O app não baixa nem lê o PDF, e não consulta o Fundos.NET (a permissão de automatizar esse acesso não está
 // confirmada, ver a Sessão 397). Não é RI no sentido da Sessão 389: são as demonstrações financeiras, 1 a 2 por fundo ao ano.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use chrono::{Datelike, NaiveDate, Utc};
 
 use crate::error::AppError;
+use crate::finance_core::cvm_dfp::latin1;
 use crate::finance_core::cvm_fii::normalize_cnpj;
 use crate::finance_core::disk_cache;
 use crate::finance_core::provider::BoxFuture;
@@ -41,13 +44,60 @@ fn unavailable(detail: impl std::fmt::Display) -> AppError {
 }
 
 /// As demonstrações de `cnpj_digits` (só dígitos) dentro de um CSV anual.
-fn read_statements(_path: &Path, _cnpj_digits: &str) -> Result<Vec<FinancialStatement>, AppError> {
-    Ok(Vec::new())
+fn read_statements(path: &Path, cnpj_digits: &str) -> Result<Vec<FinancialStatement>, AppError> {
+    let mut reader =
+        csv::ReaderBuilder::new().delimiter(b';').flexible(true).from_reader(BufReader::new(File::open(path)?));
+
+    let headers = reader.byte_headers().map_err(unavailable)?.clone();
+    let required = |name: &str| {
+        headers
+            .iter()
+            .position(|h| h == name.as_bytes())
+            .ok_or_else(|| unavailable(format!("missing column {name}")))
+    };
+    let (c_cnpj, c_reference, c_version, c_delivered, c_link, c_opinion) = (
+        required("CNPJ_Fundo_Classe")?,
+        required("Data_Referencia")?,
+        required("Versao")?,
+        required("Data_Entrega")?,
+        required("Link_Download")?,
+        required("Parecer_Auditor")?,
+    );
+
+    let parse_date = |name: &str, raw: &str| {
+        NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d").map_err(|e| unavailable(format!("invalid {name} '{raw}': {e}")))
+    };
+
+    let mut statements = Vec::new();
+    for record in reader.byte_records() {
+        let record = record.map_err(unavailable)?;
+        let field = |i: usize| record.get(i).map(latin1).unwrap_or_default();
+        if normalize_cnpj(&field(c_cnpj)) != cnpj_digits {
+            continue;
+        }
+        statements.push(FinancialStatement {
+            reference_date: parse_date("Data_Referencia", &field(c_reference))?,
+            delivered_on: parse_date("Data_Entrega", &field(c_delivered))?,
+            version: field(c_version).trim().parse().unwrap_or(1),
+            auditor_opinion: field(c_opinion).trim().to_string(),
+            link: field(c_link).trim().to_string(),
+        });
+    }
+    Ok(statements)
 }
 
-/// Para a mesma `Data_Referencia`, só a maior `Versao`: a retificação substitui a anterior.
+/// Para a mesma `Data_Referencia`, só a maior `Versao` (empate: a entrega mais nova): a retificação substitui a anterior.
 fn newest_versions(statements: Vec<FinancialStatement>) -> Vec<FinancialStatement> {
-    statements
+    let mut by_reference: HashMap<NaiveDate, FinancialStatement> = HashMap::new();
+    for statement in statements {
+        match by_reference.get(&statement.reference_date) {
+            Some(kept) if (kept.version, kept.delivered_on) >= (statement.version, statement.delivered_on) => {}
+            _ => {
+                by_reference.insert(statement.reference_date, statement);
+            }
+        }
+    }
+    by_reference.into_values().collect()
 }
 
 // ---------------------------------------------------------------------------
