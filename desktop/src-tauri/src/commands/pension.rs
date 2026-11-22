@@ -61,7 +61,7 @@ pub async fn pension_declaration_in(
     let portfolio_ids = workspace_portfolio_ids(db, workspace_id).await?;
     let trades = transactions::Entity::find()
         .filter(transactions::Column::AssetId.eq(asset_id))
-        .filter(transactions::Column::PortfolioId.is_in(portfolio_ids))
+        .filter(transactions::Column::PortfolioId.is_not_in(portfolio_ids))
         .all(db)
         .await?;
     let valuations = asset_valuations::Entity::find()
