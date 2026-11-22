@@ -36,6 +36,16 @@ pub const FUND_IR_EQUITY: &str = "fund_ir_equity";
 pub const FUND_IR_INVESTMENT_ENTITY: &str = "fund_ir_investment_entity";
 pub const FUND_ESTOQUE_RATE_GENERAL: &str = "fund_estoque_rate_general";
 pub const FUND_ESTOQUE_RATE_OPTION: &str = "fund_estoque_rate_option";
+// Previdência privada, regime com tabela por prazo (Lei 11.053/2004, art. 1º): uma alíquota por faixa de prazo desde o
+// aporte. Os limites das faixas (2, 4, 6, 8 e 10 anos) ficam no código (`domain/tax/pension.rs`).
+pub const PENSION_IR_REGRESSIVE_UP_TO_2Y: &str = "pension_ir_regressive_up_to_2y";
+pub const PENSION_IR_REGRESSIVE_2_TO_4Y: &str = "pension_ir_regressive_2_to_4y";
+pub const PENSION_IR_REGRESSIVE_4_TO_6Y: &str = "pension_ir_regressive_4_to_6y";
+pub const PENSION_IR_REGRESSIVE_6_TO_8Y: &str = "pension_ir_regressive_6_to_8y";
+pub const PENSION_IR_REGRESSIVE_8_TO_10Y: &str = "pension_ir_regressive_8_to_10y";
+pub const PENSION_IR_REGRESSIVE_OVER_10Y: &str = "pension_ir_regressive_over_10y";
+/// Quem não optou pelo regime da tabela tem 15% retidos na fonte como antecipação do ajuste da declaração (art. 3º).
+pub const PENSION_IR_ADVANCE_RATE: &str = "pension_ir_advance_rate";
 
 /// IR retido no resgate de renda fixa, uma taxa fixa por papel (a tabela
 /// regressiva do IR não é modelada; o IOF mora em `domain::tax::iof`). `None`
@@ -120,6 +130,13 @@ pub(crate) fn test_rule_set() -> RuleSet {
         rule(FUND_IR_INVESTMENT_ENTITY, "2024-01-01", 0.15),
         rule(FUND_ESTOQUE_RATE_GENERAL, "2023-12-12", 0.15),
         rule(FUND_ESTOQUE_RATE_OPTION, "2023-12-12", 0.08),
+        rule(PENSION_IR_REGRESSIVE_UP_TO_2Y, "2005-01-01", 0.35),
+        rule(PENSION_IR_REGRESSIVE_2_TO_4Y, "2005-01-01", 0.30),
+        rule(PENSION_IR_REGRESSIVE_4_TO_6Y, "2005-01-01", 0.25),
+        rule(PENSION_IR_REGRESSIVE_6_TO_8Y, "2005-01-01", 0.20),
+        rule(PENSION_IR_REGRESSIVE_8_TO_10Y, "2005-01-01", 0.15),
+        rule(PENSION_IR_REGRESSIVE_OVER_10Y, "2005-01-01", 0.10),
+        rule(PENSION_IR_ADVANCE_RATE, "2005-01-01", 0.15),
     ])
 }
 

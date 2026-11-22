@@ -17,4 +17,5 @@ pub mod fund_redemption;
 pub mod iof;
 pub mod offshore;
 pub mod offshore_capital;
+pub mod pension;
 pub mod rules;
