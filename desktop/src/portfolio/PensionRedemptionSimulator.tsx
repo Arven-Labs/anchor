@@ -55,8 +55,15 @@ export default function PensionRedemptionSimulator({ currency }: { currency: str
   });
 
   const result = estimateMutation.data;
+  // O backend também recusa rendimento maior que o resgate, mas com a mensagem crua do erro; barramos aqui para o aviso ser claro.
+  const incomeTooHigh =
+    kind === "vgbl" && redeemed !== "" && income !== "" && Number(income) > Number(redeemed);
   const canSubmit =
-    Number(redeemed) > 0 && years !== "" && Number(years) >= 0 && (kind === "pgbl" || income !== "");
+    Number(redeemed) > 0 &&
+    years !== "" &&
+    Number(years) >= 0 &&
+    (kind === "pgbl" || income !== "") &&
+    !incomeTooHigh;
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -131,6 +138,11 @@ export default function PensionRedemptionSimulator({ currency }: { currency: str
           {estimateMutation.isPending ? "Estimating..." : "Estimate"}
         </Button>
       </form>
+      {incomeTooHigh && (
+        <p className="mt-3 text-sm text-destructive" data-testid="pension-income-error">
+          The income part can't be greater than the amount redeemed.
+        </p>
+      )}
       {estimateMutation.isError && (
         <p className="mt-3 text-sm text-destructive">{estimateMutation.error.message}</p>
       )}
