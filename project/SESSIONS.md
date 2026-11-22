@@ -5805,3 +5805,13 @@ troca (hoje seriam dois lançamentos à mão, com o valor em reais calculado pel
 - **Fora de escopo**: FII (usa CNPJ; ninguém mediu se aparece no IPE por `Codigo_CVM`), leitura do PDF, filtro por tipo na tela, alertas de fato relevante (`PHASE.md:2936`), a dívida de `read_filings` repetir o cabeçalho de `read_notices`.
 - **Não verificado**: o cartão em tela real (não há E2E: o E2E roda sem a chave do bolsai e sem o IPE); dados reais pelo app (o teste `live_filings_for_bbas3` é `#[ignore]` e não foi rodado); a recolha só para fato relevante é uma escolha, não foi medida a repetição em releases; o limite de 5 é palpite sobre a mediana, sem uso real; `Data_Referencia` e `Assunto` podem diferir levemente entre versões (a empresa corrigiu o assunto), e então a reapresentação não é recolhida.
 - **Em aberto**: lista de RI para FII (medir o IPE por CNPJ antes); leitura do PDF de RI (não decidido).
+
+
+## Sessão 395 — lista de RI para FII: medição do IPE (só docs)
+- **Pedido**: o item "Em aberto" da Sessão 394. Plan mode; o passo 0 (medir) foi aprovado antes de rodar.
+- **Medido** (IPE de 2025 e 2026 baixado só para contar, scripts no scratchpad, fora do repo): o IPE é de `CIA_ABERTA` e FII é registro separado da CVM. Contra os 1.447 CNPJs de FII do informe mensal de 2026, **0 linhas** do IPE casam (49.276 em 2025 e 41.625 em 2026), 0 FIIs distintos, e 0 linhas com "FII" ou "Fundo de Investimento Imobiliário" no nome.
+- **Controle**: o script reproduziu a Sessão 394 (2.773 fatos relevantes em 2025, igual; 2.255 em 2026 contra 2.211 na época, porque a CVM publicou mais). CNPJs com 14 dígitos dos dois lados.
+- **Conclusão**: a lista de RI para FII não sai do IPE (não é falta de `Codigo_CVM`: o FII não está no conjunto). Nenhum código mudou.
+- **Desvio**: `FII/CAD/DADOS` deu 404 (`FII/` só tem `DOC/`); a lista de FIIs veio de `inf_mensal_fii_geral_2026.csv`, que pode omitir FII sem informe em 2026. Com zero acertos e a checagem pelo nome, a conclusão não muda.
+- **Não verificado**: outro canal de documentos de FII (Fundos.NET) e se existe cadastro aberto de FII em outro caminho.
+- **Em aberto**: leitura do PDF de RI (não decidido); RI de FII só por outra fonte, ainda não pesquisada.
