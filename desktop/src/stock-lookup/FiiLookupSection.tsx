@@ -12,6 +12,7 @@ import type {
 } from "../collector/types";
 import AssetThesesSidebar from "./AssetThesesSidebar";
 import DividendHistoryChart from "./DividendHistoryChart";
+import FiiFinancialStatementsCard from "./FiiFinancialStatementsCard";
 import PriceHistoryChart from "./PriceHistoryChart";
 import {
   AddToAssetsButton,
@@ -354,6 +355,8 @@ function FiiLookupSection({ ticker, workspaceId }: { ticker: string; workspaceId
               </Table>
             </div>
           )}
+
+          {cnpj !== null && <FiiFinancialStatementsCard key={cnpj} cnpj={cnpj} />}
 
           <div>
             <h3 className="mb-3 text-sm font-semibold text-muted-foreground">
