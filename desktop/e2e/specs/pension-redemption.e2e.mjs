@@ -123,6 +123,7 @@ describe("Anchor — simulador de resgate de previdência", () => {
     expect(result).toContain("Deductible:R$8.000,00");
     expect(result).toContain("roomleft:R$4.000,00");
     expect(await byId("pension-limit-excess").isExisting()).toBe(false);
+    await (await byId("pension-limit-result")).scrollIntoView({ block: "center" });
     await snap("pension-deduction-limit");
   });
 
@@ -138,6 +139,7 @@ describe("Anchor — simulador de resgate de previdência", () => {
     await excess.waitForDisplayed({ timeout: 20_000 });
     expect(compact(await textOf(excess))).toContain("R$3.000,00isnotdeductible");
     expect(compact(await textOf(byId("pension-limit-result")))).toContain("roomleft:R$0,00");
+    await (await byId("pension-limit-result")).scrollIntoView({ block: "center" });
     await snap("pension-deduction-limit-excess");
   });
 
