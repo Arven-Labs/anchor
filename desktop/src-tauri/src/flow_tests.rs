@@ -7391,3 +7391,59 @@ async fn private_pension_tracks_contributions_balance_and_redemption_without_ent
     assert!(assessment.months.is_empty(), "o resgate não é venda tributável na apuração mensal");
     assert!(assessment.crypto_months.is_empty());
 }
+
+// Previdência, regime com tabela (Lei 11.053/2004, art. 1º e 3º): o seed da migration guarda as 6 faixas e os 15% de
+// antecipação como o texto da lei (Sessão 399).
+#[tokio::test]
+async fn the_seeded_pension_rules_match_the_law_text() {
+    let db = memory_db().await;
+    let rules = crate::commands::tax::load_rule_set(&db).await.unwrap();
+    let on = chrono::NaiveDate::from_ymd_opt(2026, 11, 22).unwrap();
+
+    for (key, rate) in [
+        ("pension_ir_regressive_up_to_2y", 0.35),
+        ("pension_ir_regressive_2_to_4y", 0.30),
+        ("pension_ir_regressive_4_to_6y", 0.25),
+        ("pension_ir_regressive_6_to_8y", 0.20),
+        ("pension_ir_regressive_8_to_10y", 0.15),
+        ("pension_ir_regressive_over_10y", 0.10),
+        ("pension_ir_advance_rate", 0.15),
+    ] {
+        assert!(close(rules.get(key, on).unwrap(), rate), "{key}");
+    }
+}
+
+#[tokio::test]
+async fn the_pension_estimate_follows_a_rate_the_owner_edited() {
+    use crate::commands::pension::{estimate_pension_redemption_in, EstimatePensionRedemptionRequest};
+    use crate::domain::tax::pension::PensionKind;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let db = memory_db().await;
+    let on = chrono::NaiveDate::from_ymd_opt(2026, 11, 22).unwrap();
+    let request = || EstimatePensionRedemptionRequest {
+        kind: PensionKind::Pgbl,
+        redeemed: 1000.0,
+        income: None,
+        years_since_contribution: 11.0,
+    };
+
+    // com a regra semeada: 10% sobre o valor total do PGBL
+    let seeded = estimate_pension_redemption_in(&db, request(), on).await.unwrap();
+    assert!(close(seeded.estimated_tax, 100.0));
+
+    // o dono edita a faixa de mais de 10 anos em Settings → Taxes
+    let row = tax_rules::Entity::find()
+        .filter(tax_rules::Column::RuleKey.eq("pension_ir_regressive_over_10y"))
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut edited: tax_rules::ActiveModel = row.into();
+    edited.value = Set(0.12);
+    edited.user_edited = Set(true);
+    edited.update(&db).await.unwrap();
+
+    let after = estimate_pension_redemption_in(&db, request(), on).await.unwrap();
+    assert!(close(after.estimated_tax, 120.0));
+}
