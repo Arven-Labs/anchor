@@ -224,6 +224,15 @@ pub async fn crypto_score_for(
     db: &DatabaseConnection,
     coin: String,
 ) -> Result<crypto_score::CryptoScore, AppError> {
+    crypto_score_as_of(db, coin, chrono::Utc::now().date_naive()).await
+}
+
+/// O score da moeda visto na data `as_of` (leitura vencida nessa data não conta).
+pub async fn crypto_score_as_of(
+    db: &DatabaseConnection,
+    coin: String,
+    as_of: chrono::NaiveDate,
+) -> Result<crypto_score::CryptoScore, AppError> {
     let readings = crypto_indicators::Entity::find()
         .filter(crypto_indicators::Column::Coin.eq(&coin))
         .order_by_desc(crypto_indicators::Column::ReadingDate)
@@ -246,7 +255,7 @@ pub async fn crypto_score_for(
         });
     }
 
-    Ok(crypto_score::compute_score(&coin, &latest, chrono::Utc::now().date_naive()))
+    Ok(crypto_score::compute_score(&coin, &latest, as_of))
 }
 
 /// Evolução do score da moeda, um ponto por `reading_date` (ver

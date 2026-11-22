@@ -13,6 +13,7 @@ import {
   type IndicatorKey,
 } from "./cryptoIndicators";
 import { AddToAssetsButton, CryptoFearGreedGauge, StatTile, type StockNote } from "./shared";
+import AssetThesesSidebar from "./AssetThesesSidebar";
 import PriceHistoryChart from "./PriceHistoryChart";
 import CryptoScoreHistoryChart, { type ScoreHistoryPoint } from "./CryptoScoreHistoryChart";
 import ThresholdEditorDialog from "./ThresholdEditorDialog";
@@ -199,7 +200,7 @@ function IndicatorTile({
 /// (`run_crypto_collector`) e limites em `indicator_thresholds`; o botão do
 /// coletor só aparece buscando uma dessas duas. Qualquer outra moeda segue
 /// com o registro manual, classificado pelos limites do ETH.
-function CryptoLookupSection({ ticker }: { ticker: string }) {
+function CryptoLookupSection({ ticker, workspaceId }: { ticker: string; workspaceId: number }) {
   const [readingDate, setReadingDate] = useState(today());
   const [drafts, setDrafts] = useState<Drafts>(emptyDrafts());
   const [thresholdsOpen, setThresholdsOpen] = useState(false);
@@ -394,6 +395,18 @@ function CryptoLookupSection({ ticker }: { ticker: string }) {
             <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Price history</h3>
             <PriceHistoryChart history={history} currencyPrefix="US$" />
           </div>
+
+          <AssetThesesSidebar
+            workspaceId={workspaceId}
+            ticker={ticker}
+            assetClass="cripto"
+            name={quoteQuery.data?.name ?? ticker}
+            currency={quoteQuery.data?.currency ?? "USD"}
+            exchange={quoteQuery.data?.exchange ?? null}
+            cnpj={null}
+            exposureType="categoria_especial"
+            exposureValue="crypto"
+          />
 
           <div>
             <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Notes</h3>

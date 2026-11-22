@@ -112,6 +112,7 @@ function AssetThesesSidebar({
   const draftMutation = useMutation<{ title: string; content_markdown: string }, AppError, void>({
     mutationFn: () => {
       if (assetClass === "fii") return invoke("build_fii_thesis_draft", { ticker });
+      if (assetClass === "cripto") return invoke("build_crypto_thesis_draft", { ticker });
       if (assetClass === "etf_br" || assetClass === "bdr") {
         return invoke("build_fund_thesis_draft", { ticker, kind: assetClass });
       }

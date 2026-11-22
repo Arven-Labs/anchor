@@ -5,14 +5,15 @@
 use chrono::{NaiveDate, Utc};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 
+use crate::commands::crypto_indicator::crypto_score_as_of;
 use crate::commands::screener::{screen_stocks_on, ScreenerFilters};
 use crate::domain::thesis_draft::{
-    render_draft, render_fii_draft, Draft, DraftIndicators, DraftInput, DraftValuation, FiiDraftInput, FiiDraftMonthly,
+    render_crypto_draft, CryptoDraftFearGreed, CryptoDraftInput, CryptoPricePoint, render_draft, render_fii_draft, Draft, DraftIndicators, DraftInput, DraftValuation, FiiDraftInput, FiiDraftMonthly,
     FiiDraftProperty, FundDraftInput, FundDraftTechnicals, FundKind, render_fund_draft,
 };
 use crate::entity::{
-    assets, fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_dividends_avg, stock_quotes, stock_technicals,
-    valuation,
+    assets, crypto_fear_greed, fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_dividends_avg,
+    stock_price_history, stock_quotes, stock_technicals, valuation,
 };
 use crate::error::AppError;
 
@@ -167,6 +168,52 @@ pub async fn build_fund_draft_on(db: &DatabaseConnection, ticker: &str, kind: Fu
     Ok(render_fund_draft(&input))
 }
 
+/// Rascunho de tese de cripto. Só lê o que já foi coletado (última cotação, histórico de
+/// fechamentos, último Fear & Greed e o score da moeda): sem rede. O score é visto na data `today`.
+pub async fn build_crypto_draft_on(db: &DatabaseConnection, ticker: &str, today: NaiveDate) -> Result<Draft, AppError> {
+    let ticker = ticker.trim().to_uppercase();
+    let quote = stock_quotes::Entity::find()
+        .filter(stock_quotes::Column::Ticker.eq(ticker.as_str()))
+        .order_by_desc(stock_quotes::Column::FetchedAt)
+        .one(db)
+        .await?;
+    // Linha com data ilegível é pulada: um ponto ruim não derruba o rascunho.
+    let mut history: Vec<CryptoPricePoint> = stock_price_history::Entity::find()
+        .filter(stock_price_history::Column::Ticker.eq(ticker.as_str()))
+        .all(db)
+        .await?
+        .into_iter()
+        .filter_map(|h| {
+            let date = NaiveDate::parse_from_str(&h.price_date, "%Y-%m-%d").ok()?;
+            Some(CryptoPricePoint { date, close: h.close_price })
+        })
+        .collect();
+    history.sort_by_key(|p| p.date);
+    let fear_greed = crypto_fear_greed::Entity::find()
+        .order_by_desc(crypto_fear_greed::Column::ReadingDate)
+        .one(db)
+        .await?
+        .map(|f| CryptoDraftFearGreed { value: f.value, classification: f.classification, reading_date: f.reading_date });
+    let score = crypto_score_as_of(db, ticker.clone(), today).await?;
+
+    let input = CryptoDraftInput {
+        name: quote.as_ref().and_then(|q| q.name.clone()),
+        price: quote.as_ref().map(|q| q.price),
+        currency: quote.and_then(|q| q.currency),
+        ticker,
+        today,
+        history,
+        fear_greed,
+        score: Some(score),
+    };
+    Ok(render_crypto_draft(&input))
+}
+
+#[tauri::command]
+pub async fn build_crypto_thesis_draft(db: tauri::State<'_, DatabaseConnection>, ticker: String) -> Result<Draft, AppError> {
+    build_crypto_draft_on(db.inner(), ticker.trim(), Utc::now().date_naive()).await
+}
+
 #[tauri::command]
 pub async fn build_fund_thesis_draft(
     db: tauri::State<'_, DatabaseConnection>,
@@ -195,6 +242,8 @@ mod tests {
         assets, fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_dividends_avg, stock_fundamentals,
         stock_quotes, stock_technicals,
     };
+    use crate::commands::crypto_indicator::{record_crypto_indicator_in, RecordCryptoIndicatorRequest};
+    use crate::entity::{crypto_fear_greed, stock_price_history};
     use crate::test_support::{asset, memory_db};
 
     fn today() -> NaiveDate {
@@ -471,6 +520,129 @@ mod tests {
         fii_quote(&db, "AAPL34", 60.0, "2026-11-01T10:00:00+00:00").await;
         let text = build_fund_draft_on(&db, "AAPL34", FundKind::Bdr, today()).await.unwrap().content_markdown;
         assert!(!text.contains("Underlying"), "{text}");
+    }
+
+    async fn crypto_quote(db: &DatabaseConnection, ticker: &str, price: f64, fetched_at: &str) {
+        stock_quotes::ActiveModel {
+            ticker: Set(ticker.to_string()),
+            price: Set(price),
+            source: Set("coingecko".to_string()),
+            fetched_at: Set(fetched_at.to_string()),
+            name: Set(Some("Ethereum".to_string())),
+            exchange: Set(Some("CoinGecko".to_string())),
+            currency: Set(Some("USD".to_string())),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert crypto quote");
+    }
+
+    async fn close_on(db: &DatabaseConnection, ticker: &str, date: &str, close: f64) {
+        stock_price_history::ActiveModel {
+            ticker: Set(ticker.to_string()),
+            price_date: Set(date.to_string()),
+            close_price: Set(close),
+            source: Set("coingecko".to_string()),
+            fetched_at: Set("2026-11-20T10:00:00+00:00".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert close");
+    }
+
+    async fn fear_greed(db: &DatabaseConnection, value: i32, classification: &str, reading_date: &str, fetched_at: &str) {
+        crypto_fear_greed::ActiveModel {
+            value: Set(value),
+            classification: Set(classification.to_string()),
+            reading_date: Set(reading_date.to_string()),
+            source: Set("alternative.me".to_string()),
+            fetched_at: Set(fetched_at.to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert fear greed");
+    }
+
+    fn indicator_on(coin: &str, indicator: &str, reading_date: &str, raw_value: f64) -> RecordCryptoIndicatorRequest {
+        RecordCryptoIndicatorRequest {
+            coin: coin.to_string(),
+            indicator: indicator.to_string(),
+            reading_date: reading_date.to_string(),
+            raw_value,
+            source: "test".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn the_crypto_draft_uses_the_latest_quote_the_ordered_history_fear_greed_and_score() {
+        let db = memory_db().await;
+        crypto_quote(&db, "ETH", 3000.0, "2026-11-10T10:00:00+00:00").await;
+        crypto_quote(&db, "ETH", 3300.0, "2026-11-20T10:00:00+00:00").await;
+        // Fora de ordem de propósito: o rascunho tem que ordenar por data.
+        close_on(&db, "ETH", "2026-11-20", 120.0).await;
+        close_on(&db, "ETH", "2026-11-13", 100.0).await;
+        close_on(&db, "ETH", "2026-11-17", 110.0).await;
+        // O mais novo por data da leitura, não por quando foi gravado.
+        fear_greed(&db, 40, "Fear", "2026-11-18", "2026-11-21T09:00:00+00:00").await;
+        fear_greed(&db, 72, "Greed", "2026-11-19", "2026-11-19T09:00:00+00:00").await;
+        record_crypto_indicator_in(&db, indicator_on("ETH", "funding_rate_7d", "2026-11-20", 3.0)).await.unwrap();
+
+        let draft = build_crypto_draft_on(&db, "eth", today()).await.unwrap();
+        let text = draft.content_markdown;
+        assert_eq!(draft.title, "ETH thesis");
+        assert!(text.starts_with("# ETH — Ethereum\n"), "{text}");
+        assert!(text.contains("- Price: 3300.00 USD"), "a cotação mais nova: {text}");
+        assert!(text.contains("- Price history up to: 2026-11-20"), "{text}");
+        assert!(text.contains("- Change 7d: +20.0%"), "{text}");
+        assert!(text.contains("- Fear & Greed: 72 (Greed), read on 2026-11-19"), "{text}");
+        assert!(text.contains("green (1 logged)"), "o score tem a leitura de hoje: {text}");
+    }
+
+    #[tokio::test]
+    async fn another_coins_data_does_not_leak_into_the_crypto_draft() {
+        let db = memory_db().await;
+        crypto_quote(&db, "ETH", 3300.0, "2026-11-20T10:00:00+00:00").await;
+        crypto_quote(&db, "BTC", 99999.0, "2026-11-20T10:00:00+00:00").await;
+        close_on(&db, "BTC", "2026-11-20", 99999.0).await;
+        record_crypto_indicator_in(&db, indicator_on("BTC", "funding_rate_7d", "2026-11-20", 3.0)).await.unwrap();
+
+        let text = build_crypto_draft_on(&db, "ETH", today()).await.unwrap().content_markdown;
+        assert!(text.contains("- Price: 3300.00 USD"), "{text}");
+        assert!(text.contains("- Price history up to: n/d"), "{text}");
+        assert!(text.contains("- Crypto score: n/d"), "{text}");
+        assert!(!text.contains("99999"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn the_crypto_score_is_seen_on_the_snapshot_date_not_on_the_clock() {
+        let db = memory_db().await;
+        crypto_quote(&db, "ETH", 3300.0, "2026-11-20T10:00:00+00:00").await;
+        // Funding vale 7 dias: lida em 2026-11-12, venceu em 2026-11-20 (8 dias).
+        record_crypto_indicator_in(&db, indicator_on("ETH", "funding_rate_7d", "2026-11-12", 3.0)).await.unwrap();
+        let text = build_crypto_draft_on(&db, "ETH", today()).await.unwrap().content_markdown;
+        assert!(text.contains("- Crypto score: n/d"), "{text}");
+        assert!(text.contains("0 logged, 1 expired"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_history_row_with_an_unreadable_date_is_skipped_not_fatal() {
+        let db = memory_db().await;
+        crypto_quote(&db, "ETH", 3300.0, "2026-11-20T10:00:00+00:00").await;
+        close_on(&db, "ETH", "not-a-date", 1.0).await;
+        close_on(&db, "ETH", "2026-11-20", 120.0).await;
+        let text = build_crypto_draft_on(&db, "ETH", today()).await.unwrap().content_markdown;
+        assert!(text.contains("- Price history up to: 2026-11-20"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn an_unknown_crypto_gets_the_skeleton_and_no_error() {
+        let db = memory_db().await;
+        let text = build_crypto_draft_on(&db, "ZZZ", today()).await.unwrap().content_markdown;
+        assert!(text.contains("No collected data for ZZZ yet (n/d)."), "{text}");
+        assert!(text.contains("## Why own it"), "{text}");
     }
 
     #[tokio::test]
