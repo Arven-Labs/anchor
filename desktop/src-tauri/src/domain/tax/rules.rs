@@ -46,6 +46,8 @@ pub const PENSION_IR_REGRESSIVE_8_TO_10Y: &str = "pension_ir_regressive_8_to_10y
 pub const PENSION_IR_REGRESSIVE_OVER_10Y: &str = "pension_ir_regressive_over_10y";
 /// Quem não optou pelo regime da tabela tem 15% retidos na fonte como antecipação do ajuste da declaração (art. 3º).
 pub const PENSION_IR_ADVANCE_RATE: &str = "pension_ir_advance_rate";
+/// Limite de dedução das contribuições ao PGBL: fração do total dos rendimentos da base de cálculo (Lei 9.532/1997, art. 11).
+pub const PENSION_PGBL_DEDUCTION_LIMIT: &str = "pension_pgbl_deduction_limit";
 
 /// IR retido no resgate de renda fixa, uma taxa fixa por papel (a tabela
 /// regressiva do IR não é modelada; o IOF mora em `domain::tax::iof`). `None`
@@ -137,6 +139,7 @@ pub(crate) fn test_rule_set() -> RuleSet {
         rule(PENSION_IR_REGRESSIVE_8_TO_10Y, "2005-01-01", 0.15),
         rule(PENSION_IR_REGRESSIVE_OVER_10Y, "2005-01-01", 0.10),
         rule(PENSION_IR_ADVANCE_RATE, "2005-01-01", 0.15),
+        rule(PENSION_PGBL_DEDUCTION_LIMIT, "2005-01-01", 0.12),
     ])
 }
 
