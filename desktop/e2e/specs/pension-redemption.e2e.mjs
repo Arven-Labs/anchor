@@ -92,13 +92,21 @@ describe("Anchor — simulador de resgate de previdência", () => {
     await snap("pension-simulator-vgbl-result");
   });
 
-  it("VGBL com rendimento maior que o resgate mostra o erro e não mostra resultado", async () => {
+  it("VGBL com rendimento maior que o resgate avisa na própria tela e não deixa estimar", async () => {
     await fillForm({ redeemed: "1000", income: "1500", years: "1" });
-    await clickCentered(byId("pension-submit"));
-    const error = $("//p[contains(@class,'text-destructive')]");
-    await error.waitForDisplayed({ timeout: 20_000 });
-    expect(await textOf(error)).toContain("greater than the redeemed amount");
-    expect(await byId("pension-result").isExisting()).toBe(false);
-    await snap("pension-simulator-error");
+    // A tela barra antes de chamar o backend: aviso em linguagem de usuário, sem o texto cru do erro.
+    const warning = byId("pension-income-error");
+    await warning.waitForDisplayed({ timeout: 10_000 });
+    expect(await textOf(warning)).toBe("The income part can't be greater than the amount redeemed.");
+    expect(await byId("pension-submit").isEnabled()).toBe(false);
+    await snap("pension-simulator-income-too-high");
+
+    // Corrigindo o rendimento, o aviso some e o botão volta.
+    await byId("pension-income").setValue("500");
+    await browser.waitUntil(async () => !(await byId("pension-income-error").isExisting()), {
+      timeout: 10_000,
+      timeoutMsg: "o aviso deveria sumir com o rendimento válido",
+    });
+    expect(await byId("pension-submit").isEnabled()).toBe(true);
   });
 });
