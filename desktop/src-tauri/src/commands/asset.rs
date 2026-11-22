@@ -369,6 +369,16 @@ pub async fn set_asset_update_2023_in(
 }
 
 #[cfg(test)]
+mod asset_class_tests {
+    use super::ASSET_CLASSES;
+
+    #[test]
+    fn private_pension_is_an_accepted_class() {
+        assert!(ASSET_CLASSES.contains(&"previdencia"));
+    }
+}
+
+#[cfg(test)]
 mod dirpf_tests {
     use super::normalize_dirpf_field;
 
