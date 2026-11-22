@@ -146,7 +146,7 @@ export default function PensionRedemptionSimulator({ currency }: { currency: str
       {estimateMutation.isError && (
         <p className="mt-3 text-sm text-destructive">{estimateMutation.error.message}</p>
       )}
-      {result && (
+      {result && !incomeTooHigh && (
         <div className="mt-3 flex flex-col gap-1 text-sm" data-testid="pension-result">
           <p>
             Rate: <strong>{formatPct(result.rate)}</strong> on{" "}

@@ -99,6 +99,8 @@ describe("Anchor — simulador de resgate de previdência", () => {
     await warning.waitForDisplayed({ timeout: 10_000 });
     expect(await textOf(warning)).toBe("The income part can't be greater than the amount redeemed.");
     expect(await byId("pension-submit").isEnabled()).toBe(false);
+    // O resultado do caso anterior não pode ficar na tela ao lado de campos que já não o produzem.
+    expect(await byId("pension-result").isExisting()).toBe(false);
     await snap("pension-simulator-income-too-high");
 
     // Corrigindo o rendimento, o aviso some e o botão volta.
