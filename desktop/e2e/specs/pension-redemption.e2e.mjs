@@ -21,13 +21,6 @@ async function estimate(form) {
   await byId("pension-result").waitForDisplayed({ timeout: 20_000 });
 }
 
-async function resetForm() {
-  for (const id of ["pension-redeemed", "pension-years"]) {
-    await byId(id).setValue("");
-  }
-  if (await byId("pension-income").isExisting()) await byId("pension-income").setValue("");
-}
-
 describe("Anchor — simulador de resgate de previdência", () => {
   it("abre o detalhe da previdência com PGBL, sem o campo de rendimento e com Estimate desabilitado", async () => {
     await enterWorkspace("E2E Pension");
@@ -61,19 +54,18 @@ describe("Anchor — simulador de resgate de previdência", () => {
     });
   });
 
-  it("PGBL: 10.000 resgatados após 5 anos pagam 20% sobre o total", async () => {
+  it("PGBL: 10.000 resgatados após 5 anos (faixa de 4 a 6 anos) pagam 25% sobre o total", async () => {
     await estimate({ redeemed: "10000", years: "5" });
     const result = compact(await textOf(byId("pension-result")));
-    expect(result).toContain("Rate:20.00%");
+    expect(result).toContain("Rate:25.00%");
     expect(result).toContain("R$10.000,00(thewholeredemption)");
-    expect(result).toContain("Estimatedtax:R$2.000,00");
-    expect(result).toContain("R$8.000,00");
+    expect(result).toContain("Estimatedtax:R$2.500,00");
+    expect(result).toContain("R$7.500,00");
     expect(result).toContain("15.00%");
     await snap("pension-simulator-pgbl");
   });
 
   it("exatamente 2 anos ainda está na faixa de 35% (limite superior inclusivo)", async () => {
-    await resetForm();
     await estimate({ redeemed: "10000", years: "2" });
     await waitForText(
       byId("pension-result"),
@@ -83,7 +75,6 @@ describe("Anchor — simulador de resgate de previdência", () => {
   });
 
   it("VGBL: só o rendimento é tributado (35% sobre 2.000 num resgate de 10.000 após 1 ano)", async () => {
-    await resetForm();
     await pickOption(byId("pension-kind"), "VGBL");
     await byId("pension-income").waitForDisplayed({ timeout: 10_000 });
     await estimate({ redeemed: "10000", income: "2000", years: "1" });
@@ -102,7 +93,6 @@ describe("Anchor — simulador de resgate de previdência", () => {
   });
 
   it("VGBL com rendimento maior que o resgate mostra o erro e não mostra resultado", async () => {
-    await resetForm();
     await fillForm({ redeemed: "1000", income: "1500", years: "1" });
     await clickCentered(byId("pension-submit"));
     const error = $("//p[contains(@class,'text-destructive')]");
