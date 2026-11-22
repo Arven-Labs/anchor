@@ -61,6 +61,8 @@ mod tests {
 
     fn filing(date: &str, link: &str, kind: FilingKind) -> CompanyFiling {
         CompanyFiling {
+            reference_date: "2026-02-10".to_string(),
+            version: 1,
             protocolo_entrega: link.to_string(),
             data_entrega: NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap(),
             link_download: link.to_string(),
@@ -97,6 +99,41 @@ mod tests {
         ];
         let urls: Vec<String> = recent_filings(filings, since(), 2).into_iter().map(|v| v.pdf_url).collect();
         assert_eq!(urls, ["c", "b"]);
+    }
+
+    #[test]
+    fn the_limit_is_per_kind_so_material_facts_do_not_push_the_releases_out() {
+        let mut filings = vec![
+            filing("2026-08-01", "rel-1", FilingKind::Release),
+            filing("2026-08-02", "rel-2", FilingKind::Release),
+            filing("2026-08-03", "pres-1", FilingKind::Presentation),
+        ];
+        // Oito fatos relevantes, todos mais novos que os releases.
+        for day in 1..=8 {
+            filings.push(filing(&format!("2026-10-{day:02}"), &format!("fact-{day}"), FilingKind::MaterialFact));
+        }
+        let urls: Vec<String> = recent_filings(filings, since(), 3).into_iter().map(|v| v.pdf_url).collect();
+        // 3 de cada tipo, do mais novo ao mais antigo no conjunto.
+        assert_eq!(urls, ["fact-8", "fact-7", "fact-6", "pres-1", "rel-2", "rel-1"]);
+    }
+
+    #[test]
+    fn a_kind_over_the_limit_keeps_its_newest() {
+        let filings: Vec<CompanyFiling> = (1..=4)
+            .map(|d| filing(&format!("2026-09-{d:02}"), &format!("rel-{d}"), FilingKind::Release))
+            .collect();
+        let urls: Vec<String> = recent_filings(filings, since(), 2).into_iter().map(|v| v.pdf_url).collect();
+        assert_eq!(urls, ["rel-4", "rel-3"]);
+    }
+
+    #[test]
+    fn the_window_applies_to_material_facts_too() {
+        let filings = vec![
+            filing("2026-06-30", "old-fact", FilingKind::MaterialFact),
+            filing("2026-07-01", "edge-fact", FilingKind::MaterialFact),
+        ];
+        let urls: Vec<String> = recent_filings(filings, since(), 10).into_iter().map(|v| v.pdf_url).collect();
+        assert_eq!(urls, ["edge-fact"]);
     }
 
     #[test]

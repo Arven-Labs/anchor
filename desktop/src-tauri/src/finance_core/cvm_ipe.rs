@@ -165,10 +165,16 @@ pub enum FilingKind {
     Release,
     /// Categoria "Comunicado ao Mercado", tipo "Apresentações a analistas/agentes do mercado".
     Presentation,
+    /// Categoria "Fato Relevante" (o `Tipo` vem sempre vazio no IPE).
+    MaterialFact,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompanyFiling {
+    /// Coluna `Data_Referencia`; com o `subject`, identifica o mesmo fato entre reapresentações.
+    pub reference_date: String,
+    /// Coluna `Versao` (1 = original; 2 em diante = reapresentação); 1 se ilegível.
+    pub version: u32,
     pub protocolo_entrega: String,
     pub data_entrega: NaiveDate,
     pub link_download: String,
@@ -201,7 +207,7 @@ fn read_filings(zip_path: &Path, cvm_code: i32) -> Result<Vec<CompanyFiling>, Ap
             .position(|h| h == name.as_bytes())
             .ok_or_else(|| unavailable(format!("missing column {name}")))
     };
-    let (c_cvm, c_category, c_type, c_subject, c_delivered, c_protocol, c_link) = (
+    let (c_cvm, c_category, c_type, c_subject, c_delivered, c_protocol, c_link, c_reference, c_version) = (
         required("Codigo_CVM")?,
         required("Categoria")?,
         required("Tipo")?,
@@ -209,6 +215,8 @@ fn read_filings(zip_path: &Path, cvm_code: i32) -> Result<Vec<CompanyFiling>, Ap
         required("Data_Entrega")?,
         required("Protocolo_Entrega")?,
         required("Link_Download")?,
+        required("Data_Referencia")?,
+        required("Versao")?,
     );
 
     let mut filings = Vec::new();
@@ -227,6 +235,8 @@ fn read_filings(zip_path: &Path, cvm_code: i32) -> Result<Vec<CompanyFiling>, Ap
         let link_download = field(c_link);
         let protocolo = field(c_protocol);
         filings.push(CompanyFiling {
+            reference_date: field(c_reference),
+            version: field(c_version).trim().parse().unwrap_or(1),
             protocolo_entrega: if protocolo.is_empty() { link_download.clone() } else { protocolo },
             data_entrega,
             link_download,
@@ -496,12 +506,103 @@ mod tests {
         assert_eq!(classify_filing(CAT_COMM, TIPO_RELEASE), None);
         assert_eq!(classify_filing(CAT_FIN, TIPO_PRES), None);
         assert_eq!(classify_filing(CAT_FIN, "Demonstrações Financeiras Anuais Completas"), None);
-        assert_eq!(classify_filing("Fato Relevante", ""), None);
         assert_eq!(classify_filing(DIVIDEND_CATEGORY, ""), None);
     }
 
+    #[test]
+    fn classifies_a_material_fact_by_its_category_whatever_the_type() {
+        // No IPE medido (2025 e 2026, 4.984 linhas) o `Tipo` é sempre vazio; a categoria basta.
+        assert_eq!(classify_filing("Fato Relevante", ""), Some(FilingKind::MaterialFact));
+        assert_eq!(classify_filing("Fato Relevante", "qualquer"), Some(FilingKind::MaterialFact));
+    }
+
+    #[test]
+    fn similar_categories_are_not_material_facts() {
+        assert_eq!(classify_filing("Política de Divulgação de Ato ou Fato Relevante", ""), None);
+        assert_eq!(classify_filing("Comunicado ao Mercado", ""), None);
+        assert_eq!(classify_filing("fato relevante", ""), None);
+    }
+
+    /// Fato relevante com `Data_Referencia`, `Versao` e protocolo próprios (a reapresentação
+    /// é outra entrega, com protocolo e link novos).
+    fn fact_row(cvm: &str, subject: &str, reference: &str, version: &str, delivered: &str, id: &str) -> String {
+        format!(
+            "00.000.000/0001-91;BANCO DO BRASIL S.A.;{cvm};{reference};Fato Relevante;;;{subject};{delivered};AP - Apresentação;P-{id};{version};https://x/{id}"
+        )
+    }
+
     #[tokio::test]
-    async fn filings_keep_only_releases_and_presentations_of_the_company() {
+    async fn filings_include_the_material_facts_of_the_company_only() {
+        let fake = Fake::new(vec![(
+            2026,
+            csv_bytes(&[
+                fact_row("001023", "Projeções 2026", "2026-02-20", "1", "2026-02-20", "a"),
+                fact_row("009512", "Outra empresa", "2026-02-21", "1", "2026-02-21", "b"),
+            ]),
+        )]);
+        let filings = filings_with(&fake, BB, 2026).await.unwrap();
+        assert_eq!(filings.len(), 1);
+        assert_eq!(filings[0].kind, FilingKind::MaterialFact);
+        assert_eq!(filings[0].subject, "Projeções 2026");
+        assert_eq!(filings[0].link_download, "https://x/a");
+    }
+
+    #[tokio::test]
+    async fn a_reissued_material_fact_keeps_only_the_newest_version() {
+        let fake = Fake::new(vec![(
+            2026,
+            csv_bytes(&[
+                fact_row("1023", "Distribuição de Dividendos", "2026-12-18", "1", "2026-12-18", "v1"),
+                fact_row("1023", "Distribuição de Dividendos", "2026-12-18", "3", "2026-12-20", "v3"),
+                fact_row("1023", "Distribuição de Dividendos", "2026-12-18", "2", "2026-12-19", "v2"),
+                fact_row("1023", "Outro assunto", "2026-12-18", "1", "2026-12-18", "other"),
+            ]),
+        )]);
+        let links: Vec<String> =
+            filings_with(&fake, BB, 2026).await.unwrap().into_iter().map(|f| f.link_download).collect();
+        assert_eq!(links, ["https://x/other", "https://x/v3"]);
+    }
+
+    #[tokio::test]
+    async fn the_same_subject_on_another_reference_date_is_another_fact() {
+        let fake = Fake::new(vec![(
+            2026,
+            csv_bytes(&[
+                fact_row("1023", "Remuneração aos Acionistas", "2026-02-19", "1", "2026-02-19", "feb"),
+                fact_row("1023", "Remuneração aos Acionistas", "2026-05-15", "1", "2026-05-15", "may"),
+            ]),
+        )]);
+        assert_eq!(filings_with(&fake, BB, 2026).await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_version_counts_as_the_original() {
+        let fake = Fake::new(vec![(
+            2026,
+            csv_bytes(&[
+                fact_row("1023", "Assunto", "2026-03-01", "", "2026-03-01", "blank"),
+                fact_row("1023", "Assunto", "2026-03-01", "2", "2026-03-02", "v2"),
+            ]),
+        )]);
+        let links: Vec<String> =
+            filings_with(&fake, BB, 2026).await.unwrap().into_iter().map(|f| f.link_download).collect();
+        assert_eq!(links, ["https://x/v2"]);
+    }
+
+    #[tokio::test]
+    async fn versions_of_a_release_are_left_alone() {
+        // A reapresentação só é recolhida para fato relevante, onde foi medida.
+        let versioned = |version: &str, link: &str| {
+            format!(
+                "00.000.000/0001-91;BB;1023;2026-02-10;{CAT_FIN};{TIPO_RELEASE};;Release 3T26;2026-11-05;AP - Apresentação;;{version};{link}"
+            )
+        };
+        let fake = Fake::new(vec![(2026, csv_bytes(&[versioned("1", LINK_A), versioned("2", LINK_B)]))]);
+        assert_eq!(filings_with(&fake, BB, 2026).await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn filings_keep_only_the_ri_categories_of_the_company() {
         let fake = Fake::new(vec![(
             2026,
             csv_bytes(&[
@@ -515,7 +616,8 @@ mod tests {
         )]);
         let filings = filings_with(&fake, BB, 2026).await.unwrap();
         let links: Vec<_> = filings.iter().map(|f| f.link_download.as_str()).collect();
-        assert_eq!(links, [LINK_A, LINK_C]);
+        // Release, apresentação e fato relevante; DFP e proventos seguem fora.
+        assert_eq!(links, [LINK_A, LINK_C, "https://x/fr"]);
     }
 
     #[tokio::test]
