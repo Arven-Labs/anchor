@@ -375,24 +375,123 @@ pub struct CryptoDraftInput {
 
 /// Média simples dos últimos `window` fechamentos; `None` se houver menos que `window`.
 pub fn sma(closes: &[f64], window: usize) -> Option<f64> {
-    todo!("sma {closes:?} {window}")
+    if window == 0 || closes.len() < window {
+        return None;
+    }
+    let sum: f64 = closes[closes.len() - window..].iter().sum();
+    Some(sum / window as f64)
 }
+
+/// Quantos dias de folga o ponto de partida da variação pode ter em relação à data-alvo.
+const CHANGE_TOLERANCE_DAYS: i64 = 3;
 
 /// Variação percentual do fechamento de `days` dias antes (com tolerância de 3 dias) até o último.
 /// `None` se o histórico não alcança essa data, se o ponto de partida é zero ou se há menos de 2 pontos.
 pub fn change_over_days(history: &[CryptoPricePoint], days: i64) -> Option<f64> {
-    todo!("change_over_days {history:?} {days}")
+    let (latest, earlier) = history.split_last()?;
+    let target = latest.date - chrono::Duration::days(days);
+    let start = earlier.iter().min_by_key(|p| (p.date - target).num_days().abs())?;
+    if (start.date - target).num_days().abs() > CHANGE_TOLERANCE_DAYS || start.close == 0.0 {
+        return None;
+    }
+    Some((latest.close - start.close) / start.close * 100.0)
 }
 
 /// Rótulo do veredito do score no texto da tese.
 pub fn verdict_label(verdict: ScoreVerdict) -> &'static str {
-    todo!("verdict_label {verdict:?}")
+    match verdict {
+        ScoreVerdict::Intact => "Intact",
+        ScoreVerdict::Neutral => "Neutral",
+        ScoreVerdict::ReduceRisk => "Reduce risk",
+    }
 }
 
 /// Rascunho de tese de cripto: cotação, médias móveis, variações, Fear & Greed e score. Campo
 /// ausente vira `n/d`, nunca zero. Sem nenhum dado coletado, só o aviso.
 pub fn render_crypto_draft(input: &CryptoDraftInput) -> Draft {
-    todo!("render_crypto_draft {input:?}")
+    let heading = match &input.name {
+        Some(name) => format!("# {} — {name}", input.ticker),
+        None => format!("# {}", input.ticker),
+    };
+    let content_markdown = format!(
+        "{heading}\n\n## Snapshot ({})\n\n{}\n\
+         ## Why own it\n\n\n## Risks\n\n\n## What would make me sell\n\n\n## Next review\n\n",
+        input.today,
+        crypto_lines(input),
+    );
+    Draft { title: format!("{} thesis", input.ticker), content_markdown }
+}
+
+fn crypto_lines(input: &CryptoDraftInput) -> String {
+    let score = input.score.as_ref();
+    let any_expired = score.is_some_and(|s| s.groups.iter().flat_map(|g| &g.indicators).any(|i| i.expired));
+    let has_score = score.is_some_and(|s| s.logged > 0);
+    if input.price.is_none() && input.history.is_empty() && input.fear_greed.is_none() && !has_score && !any_expired {
+        return format!("No collected data for {} yet ({MISSING}). Run a fetch in Research first.\n", input.ticker);
+    }
+    let price = match (input.price, &input.currency) {
+        (Some(p), Some(currency)) => format!("{p:.2} {currency}"),
+        (Some(p), None) => format!("{p:.2}"),
+        (None, _) => MISSING.to_string(),
+    };
+    let closes: Vec<f64> = input.history.iter().map(|p| p.close).collect();
+    let average = |window| or_missing(sma(&closes, window), |x| format!("{x:.2}"));
+    let change = |days| or_missing(change_over_days(&input.history, days), |x| format!("{x:+.1}%"));
+    let history_end = input.history.last().map_or_else(|| MISSING.to_string(), |p| p.date.to_string());
+    let fear_greed = input.fear_greed.as_ref().map_or_else(
+        || MISSING.to_string(),
+        |f| format!("{} ({}), read on {}", f.value, f.classification, f.reading_date),
+    );
+    format!(
+        "Quote, averages and score below are frozen at the snapshot date.\n\n\
+         - Price: {price}\n\
+         - Price history up to: {history_end}\n\
+         - SMA 50: {}\n\
+         - SMA 100: {}\n\
+         - SMA 200: {}\n\
+         - Change 7d: {}\n\
+         - Change 30d: {}\n\
+         - Change 90d: {}\n\
+         - Change 365d: {}\n\
+         - Fear & Greed: {fear_greed}\n\
+         {}",
+        average(50),
+        average(100),
+        average(200),
+        change(7),
+        change(30),
+        change(90),
+        change(365),
+        score_lines(score, has_score, any_expired),
+    )
+}
+
+fn score_lines(score: Option<&CryptoScore>, has_score: bool, any_expired: bool) -> String {
+    let Some(score) = score else {
+        return format!("- Crypto score: {MISSING}\n");
+    };
+    let mut lines = if has_score {
+        format!(
+            "- Crypto score: {} — {}/{} green ({} logged)\n",
+            verdict_label(score.verdict),
+            score.green,
+            score.total,
+            score.logged
+        )
+    } else {
+        format!("- Crypto score: {MISSING}\n")
+    };
+    if has_score || any_expired {
+        for group in &score.groups {
+            let expired = group.indicators.iter().filter(|i| i.expired).count();
+            let expired_note = if expired > 0 { format!(", {expired} expired") } else { String::new() };
+            lines.push_str(&format!(
+                "  - {}: {}/{} green, {} logged{expired_note}\n",
+                group.label, group.green, group.total, group.logged
+            ));
+        }
+    }
+    lines
 }
 
 #[cfg(test)]

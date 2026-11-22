@@ -139,7 +139,7 @@ function StockLookupPanel({
           ) : assetClass === "etf_br" ? (
             <EtfLookupSection key={activeTicker} ticker={activeTicker} workspaceId={workspaceId} />
           ) : assetClass === "cripto" ? (
-            <CryptoLookupSection key={activeTicker} ticker={activeTicker} />
+            <CryptoLookupSection key={activeTicker} ticker={activeTicker} workspaceId={workspaceId} />
           ) : assetClass === "bdr" ? (
             <BdrLookupSection key={activeTicker} ticker={activeTicker} workspaceId={workspaceId} />
           ) : assetClass === "metal" ? (

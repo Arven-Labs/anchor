@@ -5,14 +5,15 @@
 use chrono::{NaiveDate, Utc};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 
+use crate::commands::crypto_indicator::crypto_score_as_of;
 use crate::commands::screener::{screen_stocks_on, ScreenerFilters};
 use crate::domain::thesis_draft::{
-    render_draft, render_fii_draft, Draft, DraftIndicators, DraftInput, DraftValuation, FiiDraftInput, FiiDraftMonthly,
+    render_crypto_draft, CryptoDraftFearGreed, CryptoDraftInput, CryptoPricePoint, render_draft, render_fii_draft, Draft, DraftIndicators, DraftInput, DraftValuation, FiiDraftInput, FiiDraftMonthly,
     FiiDraftProperty, FundDraftInput, FundDraftTechnicals, FundKind, render_fund_draft,
 };
 use crate::entity::{
-    assets, fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_dividends_avg, stock_quotes, stock_technicals,
-    valuation,
+    assets, crypto_fear_greed, fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, stock_dividends_avg,
+    stock_price_history, stock_quotes, stock_technicals, valuation,
 };
 use crate::error::AppError;
 
@@ -170,8 +171,47 @@ pub async fn build_fund_draft_on(db: &DatabaseConnection, ticker: &str, kind: Fu
 /// Rascunho de tese de cripto. Só lê o que já foi coletado (última cotação, histórico de
 /// fechamentos, último Fear & Greed e o score da moeda): sem rede. O score é visto na data `today`.
 pub async fn build_crypto_draft_on(db: &DatabaseConnection, ticker: &str, today: NaiveDate) -> Result<Draft, AppError> {
-    let _ = (db, ticker, today);
-    todo!("build_crypto_draft_on")
+    let ticker = ticker.trim().to_uppercase();
+    let quote = stock_quotes::Entity::find()
+        .filter(stock_quotes::Column::Ticker.eq(ticker.as_str()))
+        .order_by_desc(stock_quotes::Column::FetchedAt)
+        .one(db)
+        .await?;
+    // Linha com data ilegível é pulada: um ponto ruim não derruba o rascunho.
+    let mut history: Vec<CryptoPricePoint> = stock_price_history::Entity::find()
+        .filter(stock_price_history::Column::Ticker.eq(ticker.as_str()))
+        .all(db)
+        .await?
+        .into_iter()
+        .filter_map(|h| {
+            let date = NaiveDate::parse_from_str(&h.price_date, "%Y-%m-%d").ok()?;
+            Some(CryptoPricePoint { date, close: h.close_price })
+        })
+        .collect();
+    history.sort_by_key(|p| p.date);
+    let fear_greed = crypto_fear_greed::Entity::find()
+        .order_by_desc(crypto_fear_greed::Column::ReadingDate)
+        .one(db)
+        .await?
+        .map(|f| CryptoDraftFearGreed { value: f.value, classification: f.classification, reading_date: f.reading_date });
+    let score = crypto_score_as_of(db, ticker.clone(), today).await?;
+
+    let input = CryptoDraftInput {
+        name: quote.as_ref().and_then(|q| q.name.clone()),
+        price: quote.as_ref().map(|q| q.price),
+        currency: quote.and_then(|q| q.currency),
+        ticker,
+        today,
+        history,
+        fear_greed,
+        score: Some(score),
+    };
+    Ok(render_crypto_draft(&input))
+}
+
+#[tauri::command]
+pub async fn build_crypto_thesis_draft(db: tauri::State<'_, DatabaseConnection>, ticker: String) -> Result<Draft, AppError> {
+    build_crypto_draft_on(db.inner(), ticker.trim(), Utc::now().date_naive()).await
 }
 
 #[tauri::command]

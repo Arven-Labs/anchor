@@ -299,6 +299,7 @@ pub fn run() {
             commands::thesis_draft::build_thesis_draft,
             commands::thesis_draft::build_fii_thesis_draft,
             commands::thesis_draft::build_fund_thesis_draft,
+            commands::thesis_draft::build_crypto_thesis_draft,
             commands::thesis::list_theses,
             commands::thesis::create_thesis,
             commands::thesis::update_thesis,
