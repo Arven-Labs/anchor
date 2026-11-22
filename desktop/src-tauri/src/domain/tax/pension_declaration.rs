@@ -58,7 +58,7 @@ pub fn year_end_position(year: i32, movements: &[Movement], statements: &[Statem
         })
         .sum();
     // Menos de meio centavo de cota é resíduo de ponto flutuante (ou resgate além do aportado), não um plano mantido.
-    if net_quotas < 0.005 {
+    if net_quotas < 0.0 {
         return YearEndPosition { year, cost: 0.0, balance: 0.0, balance_source: BalanceSource::NotHeld, balance_date: None };
     }
     match statements.iter().filter(|s| s.date <= year_end.as_str()).max_by(|a, b| a.date.cmp(b.date)) {
