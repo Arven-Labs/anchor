@@ -33,7 +33,7 @@ fn recent_filings(filings: Vec<CompanyFiling>, since: NaiveDate, limit_per_kind:
     recent
         .into_iter()
         .filter(|f| {
-            let count = taken.entry(f.kind).or_insert(0);
+            let count = taken.entry(FilingKind::Release).or_insert(0);
             *count += 1;
             *count <= limit_per_kind
         })

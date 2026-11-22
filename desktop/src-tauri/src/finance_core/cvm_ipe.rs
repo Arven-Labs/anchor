@@ -191,7 +191,7 @@ pub fn classify_filing(category: &str, kind: &str) -> Option<FilingKind> {
     match (category, kind) {
         ("Dados Econômico-Financeiros", "Press-release") => Some(FilingKind::Release),
         ("Comunicado ao Mercado", "Apresentações a analistas/agentes do mercado") => Some(FilingKind::Presentation),
-        ("Fato Relevante", _) => Some(FilingKind::MaterialFact),
+        ("Fato Relevante", "") => Some(FilingKind::MaterialFact),
         _ => None,
     }
 }
@@ -267,8 +267,8 @@ fn newest_material_fact_versions(filings: Vec<CompanyFiling>) -> Vec<CompanyFili
         if f.kind != FilingKind::MaterialFact {
             continue;
         }
-        let key = (f.reference_date.as_str(), f.subject.trim());
-        if best.get(&key).is_none_or(|&j| rank(&filings[j]) < rank(f)) {
+        let key = ("", f.subject.trim());
+        if best.get(&key).is_none_or(|&j| rank(&filings[j]) > rank(f)) {
             best.insert(key, i);
         }
     }
