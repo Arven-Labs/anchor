@@ -50,7 +50,7 @@ pub fn year_end_position(year: i32, movements: &[Movement], statements: &[Statem
     let year_end = format!("{year}-12-31");
     let net_quotas: f64 = movements
         .iter()
-        .filter(|m| m.date <= year_end.as_str())
+        .filter(|m| m.date < year_end.as_str())
         .map(|m| match m.transaction_type {
             "compra" => m.quantity,
             "venda" => -m.quantity,
