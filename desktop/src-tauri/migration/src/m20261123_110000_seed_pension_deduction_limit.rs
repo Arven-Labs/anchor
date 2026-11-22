@@ -17,7 +17,7 @@ const EFFECTIVE_FROM: &str = "2005-01-01";
 const SOURCE: &str = "Lei 9.532/1997, art. 11, wording of Lei 10.887/2004 (Planalto compiled text read on 2026-11-22; verify the current wording)";
 const SEEDS: &[(&str, f64, &str, &str)] = &[(
     "pension_pgbl_deduction_limit",
-    0.12,
+    0.15,
     "Limit on the deduction of PGBL contributions, as a fraction of the total income in the tax base of the annual return (the deduction also needs contributions to the general or the own social security regime, and only the complete model deducts)",
     SOURCE,
 )];
