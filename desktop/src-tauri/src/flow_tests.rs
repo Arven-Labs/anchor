@@ -7413,6 +7413,47 @@ async fn the_seeded_pension_rules_match_the_law_text() {
     }
 }
 
+// Limite de dedução do PGBL (Lei 9.532, art. 11): o seed guarda os 12% do texto compilado (Sessão 404).
+#[tokio::test]
+async fn the_seeded_pension_deduction_limit_is_twelve_percent() {
+    let db = memory_db().await;
+    let rules = crate::commands::tax::load_rule_set(&db).await.unwrap();
+    let on = chrono::NaiveDate::from_ymd_opt(2026, 11, 22).unwrap();
+
+    assert!(close(rules.get("pension_pgbl_deduction_limit", on).unwrap(), 0.12));
+}
+
+#[tokio::test]
+async fn the_pension_deduction_limit_follows_a_rate_the_owner_edited() {
+    use crate::commands::pension::{estimate_pension_deduction_limit_in, EstimatePensionDeductionLimitRequest};
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let db = memory_db().await;
+    let on = chrono::NaiveDate::from_ymd_opt(2026, 11, 22).unwrap();
+    let request = || EstimatePensionDeductionLimitRequest { base: 100_000.0, contributions: 15_000.0 };
+
+    // com a regra semeada: teto de 12.000 e 3.000 de excesso
+    let seeded = estimate_pension_deduction_limit_in(&db, request(), on).await.unwrap();
+    assert!(close(seeded.limit, 12_000.0));
+    assert!(close(seeded.excess, 3_000.0));
+
+    // o dono edita o percentual em Settings → Taxes
+    let row = tax_rules::Entity::find()
+        .filter(tax_rules::Column::RuleKey.eq("pension_pgbl_deduction_limit"))
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut edited: tax_rules::ActiveModel = row.into();
+    edited.value = Set(0.10);
+    edited.user_edited = Set(true);
+    edited.update(&db).await.unwrap();
+
+    let after = estimate_pension_deduction_limit_in(&db, request(), on).await.unwrap();
+    assert!(close(after.limit, 10_000.0));
+    assert!(close(after.excess, 5_000.0));
+}
+
 #[tokio::test]
 async fn the_pension_estimate_follows_a_rate_the_owner_edited() {
     use crate::commands::pension::{estimate_pension_redemption_in, EstimatePensionRedemptionRequest};

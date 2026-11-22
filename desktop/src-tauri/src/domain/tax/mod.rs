@@ -18,4 +18,5 @@ pub mod iof;
 pub mod offshore;
 pub mod offshore_capital;
 pub mod pension;
+pub mod pension_deduction;
 pub mod rules;
