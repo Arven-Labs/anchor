@@ -7338,3 +7338,56 @@ async fn deleting_a_swap_leg_follows_the_same_rule_per_asset() {
     assert!(remove(&db, swap.purchase.id).await.is_ok());
     assert_eq!(row_count(&db).await, 1, "sobrou só a compra de BTC");
 }
+
+// Previdência privada: cada real aportado é uma cota de preço 1 (quantidade = dinheiro aportado), o valor de mercado é
+// o último saldo do extrato lançado à mão (`asset_valuations`), e o resgate fica fora da apuração de IR de venda.
+#[tokio::test]
+async fn private_pension_tracks_contributions_balance_and_redemption_without_entering_the_tax_assessment() {
+    use crate::commands::transaction::compute_positions;
+    use crate::entity::asset_valuations;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let db = memory_db().await;
+    let ws = workspace(&db, "Pension").await;
+    let pf = portfolio(&db, ws.id, "Main").await;
+    let plan = asset(&db, "PREV1", "previdencia").await;
+
+    // dois aportes de 500: custo 1.000, sem saldo lançado o valor é o que foi aportado
+    trade(&db, pf.id, plan.id, "compra", 500.0, 500.0, "2026-01-05").await;
+    trade(&db, pf.id, plan.id, "compra", 500.0, 500.0, "2026-02-05").await;
+    let position = compute_positions(&db, pf.id).await.unwrap().remove(0);
+    assert!(close(position.quantity, 1000.0));
+    assert!(close(position.market_value.unwrap(), 1000.0));
+    assert_eq!(position.price_source, "avg_buy_price");
+
+    // o extrato mostra 1.080: o valor de mercado passa a ser o saldo, o ganho é 80
+    asset_valuations::ActiveModel {
+        asset_id: Set(plan.id),
+        valuation_date: Set("2026-03-01".to_string()),
+        value: Set(1080.0),
+        origin: Set("manual".to_string()),
+        notes: Set(None),
+        created_at: Set("2026-03-01T00:00:00Z".to_string()),
+        ..Default::default()
+    }
+    .insert(&db)
+    .await
+    .unwrap();
+    let position = compute_positions(&db, pf.id).await.unwrap().remove(0);
+    assert!(close(position.market_value.unwrap(), 1080.0));
+    assert!(close(position.unrealized_pl.unwrap(), 80.0));
+    assert_eq!(position.price_source, "manual_valuation");
+
+    // resgate de 300 (a 1,20 a cota, que seria ganho de 60 se fosse venda tributável): o custo cai para 700 e o
+    // saldo continua o último lançado até o dono atualizar
+    trade(&db, pf.id, plan.id, "venda", 300.0, 360.0, "2026-03-10").await;
+    let position = compute_positions(&db, pf.id).await.unwrap().remove(0);
+    assert!(close(position.quantity, 700.0));
+    assert!(close(position.average_buy_price.unwrap(), 1.0));
+    assert!(close(position.market_value.unwrap(), 1080.0));
+
+    // a venda não vira apuração de IR de renda variável: nenhum mês, nenhum DARF
+    let assessment = assess_workspace(&db, ws.id).await.unwrap();
+    assert!(assessment.months.is_empty(), "o resgate não é venda tributável na apuração mensal");
+    assert!(assessment.crypto_months.is_empty());
+}

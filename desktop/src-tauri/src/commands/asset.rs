@@ -93,7 +93,7 @@ async fn upsert_fii_cnpj_cache(
 // percentual de participação é sempre calculado a partir desses 2 últimos,
 // nunca gravado (decisão explícita da sessão).
 
-const ASSET_CLASSES: [&str; 15] = [
+const ASSET_CLASSES: [&str; 16] = [
     "acao_br",
     "fii",
     "etf_br",
@@ -109,6 +109,7 @@ const ASSET_CLASSES: [&str; 15] = [
     "imovel",
     "empresa_nao_listada",
     "fundo",
+    "previdencia",
 ];
 const EXPOSURE_TYPES: [&str; 2] = ["pais", "categoria_especial"];
 
@@ -366,6 +367,16 @@ pub async fn set_asset_update_2023_in(
     }
     .update(db)
     .await?)
+}
+
+#[cfg(test)]
+mod asset_class_tests {
+    use super::ASSET_CLASSES;
+
+    #[test]
+    fn private_pension_is_an_accepted_class() {
+        assert!(ASSET_CLASSES.contains(&"previdencia"));
+    }
 }
 
 #[cfg(test)]

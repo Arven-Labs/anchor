@@ -40,6 +40,9 @@ pub fn treatment(asset_class: &str, ticker: &str) -> TaxTreatment {
         "etf_renda_fixa" => TaxTreatment::Ignored,
         // Fundo de investimento: o come-cotas e o IR no resgate são do fundo, fora da apuração de venda (ver `come_cotas`).
         "fundo" => TaxTreatment::Ignored,
+        // Previdência privada: o IR é do plano (tabela progressiva ou regressiva, retido no resgate). Esta fatia não
+        // calcula nenhuma regra fiscal dela; o resgate fica fora da apuração de venda.
+        "previdencia" => TaxTreatment::Ignored,
         _ => TaxTreatment::Ignored,
     }
 }
@@ -47,6 +50,14 @@ pub fn treatment(asset_class: &str, ticker: &str) -> TaxTreatment {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Previdência: o IR é do plano (tabela progressiva ou regressiva, retido no resgate), não da apuração de venda.
+    // Hoje cai no braço genérico; o teste prende a decisão para ninguém a mudar sem ver.
+    #[test]
+    fn private_pension_is_left_out_of_the_sales_assessment() {
+        assert_eq!(treatment("previdencia", "PREV1"), TaxTreatment::Ignored);
+        assert_eq!(treatment("previdencia", "PREV11"), TaxTreatment::Ignored, "o sufixo 11 não a faz virar unit");
+    }
 
     #[test]
     fn units_lose_the_exemption() {

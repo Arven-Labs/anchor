@@ -18,7 +18,8 @@ pub const ASSET_CLASSES_WITH_AUTO_QUOTE: [&str; 10] = [
     "reit",
     "etf_us",
 ];
-const MANUAL_VALUATION_CLASSES: [&str; 2] = ["imovel", "empresa_nao_listada"];
+// `previdencia`: cada real aportado é uma cota de preço 1; o valor de mercado é o último saldo do extrato.
+const MANUAL_VALUATION_CLASSES: [&str; 3] = ["imovel", "empresa_nao_listada", "previdencia"];
 // Fundos: sem cotação de mercado, mas com valor de cota lançado pelo usuário (`fund_quota_values`), que entra no lugar
 // do preço da cotação automática.
 const MANUAL_QUOTA_CLASSES: [&str; 1] = ["fundo"];
@@ -125,6 +126,36 @@ mod tests {
         assert_eq!(result.market_value, Some(360_000.0));
         assert_eq!(result.price_source, "manual_valuation");
         assert_eq!(result.unrealized_pl, Some(60_000.0));
+    }
+
+    // Previdência privada: cada real aportado é uma cota de preço 1 (quantidade = dinheiro aportado), e o valor de
+    // mercado é o último saldo do extrato lançado à mão, como no imóvel.
+    #[test]
+    fn private_pension_uses_the_latest_balance_as_market_value() {
+        let result = price_position("previdencia", 1000.0, Some(1.0), None, Some(1080.0));
+
+        assert_eq!(result.current_price, None);
+        assert_eq!(result.market_value, Some(1080.0));
+        assert_eq!(result.price_source, "manual_valuation");
+        assert_eq!(result.unrealized_pl, Some(80.0));
+        assert_eq!(result.unrealized_pl_pct, Some(0.08));
+    }
+
+    #[test]
+    fn private_pension_without_a_balance_falls_back_to_what_was_contributed() {
+        let result = price_position("previdencia", 1000.0, Some(1.0), None, None);
+
+        assert_eq!(result.market_value, Some(1000.0));
+        assert_eq!(result.price_source, "avg_buy_price");
+        assert_eq!(result.unrealized_pl, Some(0.0));
+    }
+
+    #[test]
+    fn private_pension_ignores_any_ticker_price() {
+        let result = price_position("previdencia", 1000.0, Some(1.0), Some(999.0), None);
+
+        assert_eq!(result.market_value, Some(1000.0));
+        assert_eq!(result.price_source, "avg_buy_price");
     }
 
     #[test]
