@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::bank_account::balance_on;
 use crate::commands::general_transaction::{create_general_transaction_in, CreateGeneralTransactionRequest};
-use crate::commands::tax::ensure_yield_category;
+use crate::commands::general_transaction_category::ensure_yield_category;
 use crate::entity::{bank_account, general_transaction};
 use crate::error::AppError;
 
