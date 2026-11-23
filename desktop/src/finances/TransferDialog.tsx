@@ -35,7 +35,13 @@ type TransferResult = {
 // valor enviado. Se o extrato já embute a tarifa no valor recebido, não digite de novo.
 type CostKind = "iof" | "fee";
 
-type CostDraft = { kind: CostKind; valor: string };
+// `rate` é a taxa de IOF em % digitada pelo usuário, só para sugerir o valor; não é enviada ao backend.
+type CostDraft = { kind: CostKind; valor: string; rate: string };
+
+// Sugestão de IOF: valor enviado × taxa ÷ 100, arredondado ao centavo. O app não afirma alíquota nenhuma.
+function suggestIof(amountSent: number, ratePercent: number): string {
+  return (Math.round(((amountSent * ratePercent) / 100) * 100) / 100).toFixed(2);
+}
 
 type CreateTransferRequest = {
   workspace_id: number;
@@ -216,6 +222,31 @@ function TransferDialog({
                     <SelectItem value="fee">Fee / remittance</SelectItem>
                   </SelectContent>
                 </Select>
+                {cost.kind === "iof" && (
+                  <>
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      className="w-28"
+                      placeholder="IOF rate (%)"
+                      data-testid={`transfer-cost-rate-${index}`}
+                      value={cost.rate}
+                      onChange={(e) => updateCost(index, { rate: e.currentTarget.value })}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      data-testid={`transfer-cost-calc-${index}`}
+                      disabled={!(out > 0) || !(Number(cost.rate) > 0)}
+                      onClick={() =>
+                        updateCost(index, { valor: suggestIof(out, Number(cost.rate)) })
+                      }
+                    >
+                      Calculate
+                    </Button>
+                  </>
+                )}
                 <Input
                   required
                   type="number"
@@ -236,12 +267,20 @@ function TransferDialog({
                 </Button>
               </div>
             ))}
+            {from !== undefined && from.currency !== "BRL" && costs.some((c) => c.kind === "iof") && (
+              <p className="text-xs text-muted-foreground" data-testid="transfer-iof-base-hint">
+                The suggestion uses the amount sent ({from.currency}). IOF applies to the value of
+                the exchange in BRL, so adjust the amount if your statement differs.
+              </p>
+            )}
             <Button
               type="button"
               variant="outline"
               className="w-fit"
               data-testid="transfer-cost-add"
-              onClick={() => setCosts((current) => [...current, { kind: "iof", valor: "" }])}
+              onClick={() =>
+                setCosts((current) => [...current, { kind: "iof", valor: "", rate: "" }])
+              }
             >
               Add cost
             </Button>
