@@ -6,6 +6,16 @@ async function elementsOf(selector) {
   return Array.from(await $$(selector));
 }
 
+// Fechar o diálogo de transferência com Escape não limpa o rascunho (só o sucesso limpa): abrir de novo
+// traz as contas, os valores e os custos de antes. Os testes de IOF partem de um diálogo sem custos nem valores.
+async function openCleanTransferDialog() {
+  await byId("transfer-new").click();
+  while ((await elementsOf('[data-testid="transfer-cost-remove-0"]')).length > 0) {
+    await byId("transfer-cost-remove-0").click();
+  }
+  await byId("transfer-amount-out").clearValue();
+}
+
 describe("Anchor — moeda por conta, de ponta a ponta", () => {
   it("cria um Workspace e entra nele", async () => {
     await enterWorkspace("E2E Currency");
@@ -183,7 +193,7 @@ describe("Anchor — moeda por conta, de ponta a ponta", () => {
   });
 
   it("o campo de taxa só existe no custo IOF, e Calculate desliga sem taxa ou sem valor enviado válidos", async () => {
-    await byId("transfer-new").click();
+    await openCleanTransferDialog();
     await pickOption(byId("transfer-from"), "Nubank (Me) · BRL");
     await pickOption(byId("transfer-to"), "Banco Nación (Me) · ARS");
     await byId("transfer-cost-add").click();
@@ -208,7 +218,7 @@ describe("Anchor — moeda por conta, de ponta a ponta", () => {
   });
 
   it("com origem em moeda que não é BRL, o diálogo avisa que a base do IOF é o valor enviado", async () => {
-    await byId("transfer-new").click();
+    await openCleanTransferDialog();
     await pickOption(byId("transfer-from"), "Banco Nación (Me) · ARS");
     await pickOption(byId("transfer-to"), "Nubank (Me) · BRL");
     await byId("transfer-cost-add").click();
@@ -221,7 +231,7 @@ describe("Anchor — moeda por conta, de ponta a ponta", () => {
   });
 
   it("transferir com o IOF calculado grava o custo e a linha mostra o total", async () => {
-    await byId("transfer-new").click();
+    await openCleanTransferDialog();
     await pickOption(byId("transfer-from"), "Nubank (Me) · BRL");
     await pickOption(byId("transfer-to"), "Banco Nación (Me) · ARS");
     await byId("transfer-amount-out").setValue("1000");
