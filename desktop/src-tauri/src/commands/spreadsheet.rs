@@ -50,7 +50,7 @@ fn read_spreadsheet_preview_with(
     max_rows: usize,
 ) -> Result<Vec<Vec<String>>, AppError> {
     let is_csv = match content_type {
-        Some("text/csv") => false,
+        Some("text/csv") => true,
         Some("application/vnd.ms-excel")
         | Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") => false,
         other => {
