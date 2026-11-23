@@ -1,6 +1,6 @@
 # Mapa de domínios do crate (`desktop/src-tauri/src`)
 
-> Criado na Sessão 407 (2026-11-23), commit base `2bc2d9e`. Só leitura do código: **nada foi movido**. Origem: o "primeiro passo barato" da pesquisa de modularidade do workspace (2026-11-13), que este mapa corrige em dois pontos (ver "Correções à pesquisa"). Os números envelhecem; refaça a medição antes de agir com base neles.
+> Criado na Sessão 407 (2026-11-23), commit base `2bc2d9e`; **revisado na Sessão 408** (2026-11-23, commit base `694d9d5`): `custodia` voltou para a carteira (a atribuição da 407 estava errada) e o bloco de importação virou o domínio próprio **importacao**, o que muda a matriz e a leitura dos ciclos (seções marcadas "408"). Só leitura do código: **nada foi movido**. Origem: o "primeiro passo barato" da pesquisa de modularidade do workspace (2026-11-13), que este mapa corrige em dois pontos (ver "Correções à pesquisa"). Os números envelhecem; refaça a medição antes de agir com base neles.
 
 ## Como o mapa foi feito
 Cada arquivo `.rs` (exceto `flow_tests.rs` e `test_support.rs`, e os `mod.rs`/`prelude.rs` estruturais) foi atribuído a **um** domínio pelo nome e pelo que faz. Em seguida, para cada arquivo, contei as referências `crate::<módulo>::<item>` (inclusive dentro de `use crate::entity::{a, b}`), **cortando o arquivo no primeiro `#[cfg(test)]`** (teste não conta como dependência), e agrupei por domínio de origem e de destino. Referências a `crate::error` e `crate::db` não contam (são transversais). `domain/tax/` conta como uma unidade da carteira.
@@ -12,8 +12,9 @@ Limites: é análise textual (regex), não o compilador. Não pega `use super::*
 | Domínio | Arquivos | O que é |
 |---|---|---|
 | **teses** (58) | commands: backtest, banks, bazin, company_filings, crypto_indicator, cvm_notice, dcf, dividend_growth, fii, gordon, graham, projected_ceiling, reit, rim, rnav, screener, stock_notes, thesis, thesis_draft, valuation. domain: backtest, banks, bazin, benchmark, crypto_score, dcf, dividend_growth, gordon, graham, projected_ceiling, rim, rnav, thesis_draft, valuation_outcome. entity: asset_valuations, *_inputs (banks, bazin, dcf, gordon, graham, projected_ceiling, rim, rnav), crypto_fear_greed, crypto_indicators, fii_cnpj_cache, fii_cvm_monthly, fii_cvm_properties, indicator_thresholds, reit_fundamentals, reit_manual_indicators, stock_dcf_fundamentals, stock_fundamentals, stock_notes, stock_technicals, theses, thesis_attachments, valuation | Modelos de preço-teto, score cripto, teses, backtest. É o propósito original do app. |
-| **carteira** (50) | commands: asset, broker_settlement_io, currency, dividend_suggestion, fixed_income_io, fund, offshore, option_position, options, pending, pension, portfolio, portfolio_io, portfolio_summary, profitability, property, proventos, tax, transaction, watchlist. domain: calendar, cost_basis, currency_conversion, dividend_suggestion, option_payoff, option_position, position_pricing, proventos, **tax/** (16 arquivos), transaction_ledger, twr. entity: asset_attachments, asset_favorites, assets, fund_detail, fund_quota_value, import_pending, offshore_* (4), option_position, portfolio, stock_dividend_payments, suggested_dividends, tax_payments, tax_rules, transactions, watchlist_items, watchlists | Posições, lançamentos, rentabilidade, proventos, impostos (IR, exterior, previdência, fundos). |
-| **financas_pessoais** (23) | commands: balance_reconciliation, bank_account, custodia, general_transaction, general_transaction_category, liability, loan, net_worth, porquinho_estimate, statement_io. domain: liability, loan, net_worth, porquinho_yield. entity: bank_account, borrower, custodia, general_transaction, general_transaction_category, liability, liability_installment, loan, loan_repayment | Contas, lançamentos gerais, dívidas, empréstimos, patrimônio líquido (ADR 0005). |
+| **carteira** (47, 408) | commands: asset, currency, **custodia**, dividend_suggestion, fund, offshore, option_position, options, pension, portfolio, portfolio_summary, profitability, property, proventos, tax, transaction, watchlist. domain: calendar, cost_basis, currency_conversion, dividend_suggestion, option_payoff, option_position, position_pricing, proventos, **tax/** (16 arquivos), transaction_ledger, twr. entity: asset_attachments, asset_favorites, assets, **custodia**, fund_detail, fund_quota_value, offshore_* (4), option_position, portfolio, stock_dividend_payments, suggested_dividends, tax_payments, tax_rules, transactions, watchlist_items, watchlists | Posições, lançamentos, **custódia** (corretora, exchange ou wallet onde o ativo está: FK em `transactions`, base do custo médio por custódia e do IR de exterior), rentabilidade, proventos, impostos (IR, exterior, previdência, fundos). |
+| **financas_pessoais** (18, 408) | commands: balance_reconciliation, bank_account, general_transaction, general_transaction_category, liability, loan, net_worth. domain: liability, loan, net_worth. entity: bank_account, borrower, general_transaction, general_transaction_category, liability, liability_installment, loan, loan_repayment | Contas, lançamentos gerais, dívidas, empréstimos, patrimônio líquido (ADR 0005). `mark_tax_paid`/`unmark_tax_paid` e as categorias `Taxes`/`Yield`, hoje em `commands/tax.rs`, pertencem a este domínio por decisão do dono (408), mas **ainda não foram movidos**. |
+| **importacao** (8, 408) | commands: statement_io, fixed_income_io, broker_settlement_io, pending, porquinho_estimate, portfolio_io. domain: porquinho_yield. entity: import_pending | Camada de topo que cola extrato bancário e corretora (CSV/OFX, renda fixa, liquidação de corretora). Pode depender de carteira e finanças; ninguém deveria depender dela. |
 | **mercado** (59) | commands: collector, data_source_credentials, rates. domain: ptax, rates. entity: ingestion_runs, macro_index_monthly, ptax_daily, selic_daily, stock_adjusted_close, stock_dividends_avg, stock_price_history, stock_quotes. **finance_api/** (14) e **finance_core/** (30): CVM, Yahoo, CoinGecko, SEC, BCB, bolsai etc. root: ingestion, crypto_sources | Coleta e cache de dados externos. **Não é "finanças pessoais"**, apesar do prefixo `finance_`. |
 | **sync_backup** (18) | commands: backup, storage_settings, sync_registry, truthid, workspace_file. entity: storage_settings. storage/ (2). root: arweave, backup, dead_drop, ecies, ipns_key, lan_sweep, pin_content_cipher, sync_registry, sync_snapshot_cipher, workspace_file | Fase 8 (congelada, ADR 0006), backup local, arquivo de workspace. |
 | **wallet_viewer** (13) | commands: wallet_viewer. domain: bitcoin_xpub, wallet_address. entity: wallet_viewer_address, wallet_viewer_settings, wallet_viewer_xpub. wallet_viewer/ (7) | Visualizador de wallets (Ledger, Trezor, Bitcoin). ADR 0002. |
@@ -22,18 +23,21 @@ Limites: é análise textual (regex), não o compilador. Não pega `use super::*
 
 Fora do mapa: `flow_tests.rs` (7.577 linhas, testes de fluxo que atravessam domínios de propósito) e `test_support.rs`.
 
-## Matriz de dependências (origem -> destino, nº de referências em código de produção)
+## Matriz de dependências (origem -> destino, nº de referências em código de produção; revisada na 408)
 
-| Origem \ Destino | teses | carteira | finanças | mercado | sync | wallet | alertas | app |
-|---|---|---|---|---|---|---|---|---|
-| **teses** | — | 14 | 0 | 17 | 4 | 0 | 0 | 0 |
-| **carteira** | 5 | — | 12 | 20 | 3 | 0 | 0 | 1 |
-| **financas_pessoais** | 0 | 25 | — | 2 | 0 | 0 | 0 | 0 |
-| **mercado** | 18 | 13 | 2 | — | 0 | 0 | 0 | 1 |
-| **sync_backup** | 0 | 0 | 0 | 0 | — | 0 | 0 | 0 |
-| **wallet_viewer** | 0 | 0 | 0 | 2 | 0 | — | 0 | 0 |
-| **alertas** | 5 | 0 | 0 | 1 | 0 | 0 | — | 0 |
-| **app** | 0 | 5 | 0 | 0 | 0 | 0 | 0 | — |
+| Origem \ Destino | teses | carteira | finanças | importação | mercado | sync | wallet | alertas | app |
+|---|---|---|---|---|---|---|---|---|---|
+| **teses** | — | 13 | 0 | 1 | 17 | 4 | 0 | 0 | 0 |
+| **carteira** | 5 | — | **3** | 1 | 20 | 3 | 0 | 0 | 1 |
+| **financas_pessoais** | 0 | 15 | — | 0 | 2 | 0 | 0 | 0 | 0 |
+| **importacao** | 0 | 21 | 11 | — | 2 | 0 | 0 | 0 | 0 |
+| **mercado** | 18 | 13 | 2 | 0 | — | 0 | 0 | 0 | 1 |
+| **sync_backup** | 0 | 0 | 0 | 0 | 0 | — | 0 | 0 | 0 |
+| **wallet_viewer** | 0 | 0 | 0 | 0 | 2 | 0 | — | 0 | 0 |
+| **alertas** | 5 | 0 | 0 | 0 | 1 | 0 | 0 | — | 0 |
+| **app** | 0 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | — |
+
+Na 407 a matriz tinha `carteira -> finanças` = 12 e `finanças -> carteira` = 25. A mudança vem de duas reatribuições: `custodia` para a carteira e o bloco de importação para o domínio próprio. As 3 referências que sobram em `carteira -> finanças` são todas `commands/tax.rs` (`bank_account`, `general_transaction`, `general_transaction_category`, em `mark_tax_paid`/`unmark_tax_paid` e nas categorias). `carteira -> importação` (1) e `teses -> importação` (1) são o mesmo helper `read_spreadsheet_preview`, que mora em `portfolio_io` e é chamado por `property` e `thesis`.
 
 Os 2 de wallet -> mercado são `wallet_viewer/{esplora,rpc}` usando `finance_core::http` (o cliente HTTP compartilhado). A medição também contou 1 referência de `wallet_viewer/tests.rs` a `entity::assets` (carteira), que é arquivo inteiro de teste e **não** está na tabela por ser teste. Os 1 de carteira -> app e mercado -> app são `commands/currency` -> `entity/workspace_settings` e `ingestion` -> `entity/workspace`.
 
@@ -45,25 +49,26 @@ Os 2 de wallet -> mercado são `wallet_viewer/{esplora,rpc}` usando `finance_cor
 - **alertas:** depende de teses (5) e lê `stock_quotes`; ninguém depende dele.
 
 **Nó emaranhado (teses, carteira, finanças, mercado), com ciclos:**
-- `carteira -> financas_pessoais` (12) **e** `financas_pessoais -> carteira` (25): ciclo. Os 12 de ida vêm de `tax` (lê `bank_account`, `custodia`, `general_transaction`, `general_transaction_category`), `fixed_income_io` (usa `general_transaction`, `loan`, `statement_io`), `pending`, `broker_settlement_io` (ambos usam `statement_io`), `portfolio_io` e `transaction` (usam `custodia`). **A afirmação "finanças só dependem da carteira, nunca o contrário" que levantei no plano estava errada.**
+- **Ciclo `carteira <-> finanças` (408: quase só aparente).** A 407 media 12 e 25 referências porque tinha posto `custodia` em finanças (errado: é da carteira) e deixado o pipeline de importação espalhado nos dois lados. Com isso corrigido, `carteira -> finanças` = **3**, todas de `commands/tax.rs` (`mark_tax_paid`/`unmark_tax_paid` criam uma despesa em `general_transaction`), e `finanças -> carteira` = 15 (`currency`, `tax`, `twr`, `portfolio`, `option_position`), que é a direção saudável. **Decisão do dono (408): `mark_tax_paid`, `unmark_tax_paid` e as categorias `Taxes`/`Yield` são das finanças.** Movê-los zera o ciclo. A afirmação "finanças só dependem da carteira, nunca o contrário" do plano da 407 estava errada na medição de então, e passa a valer **depois** desse movimento.
+- **`importacao` é camada de topo:** depende de carteira (21) e finanças (11), e só é referida por `property`/`thesis` (helper `read_spreadsheet_preview`, a tirar de `portfolio_io`). Dentro dela há ciclo (`statement_io` <-> `fixed_income_io`), que é interno ao domínio e não atravessa fronteira.
 - `mercado -> teses` (18) e `mercado -> carteira` (13): a coleta **grava** direto nas entidades dos outros domínios (`finance_api/stocks`, `us_stock`, `crypto`, `fii`, `reit` escrevem `stock_fundamentals`, `crypto_indicators`, `fii_cvm_*`, `stock_dividend_payments`...), e `ingestion.rs` chama `commands::currency` e `commands::profitability` (a camada de dados chamando comando de Tauri, direção invertida).
-- `teses -> carteira` (14): `backtest` usa `tax`/`profitability`/`currency`; `cvm_notice` e `thesis_draft` leem `assets`/`portfolio`/`transactions`; `thesis` -> `portfolio_io`.
+- `teses -> carteira` (13): `backtest` usa `tax`/`profitability`/`currency`; `cvm_notice` e `thesis_draft` leem `assets`/`portfolio`/`transactions`. E `teses -> importacao` (1): `thesis` -> `portfolio_io::read_spreadsheet_preview`.
 - `teses -> mercado` (17) e `carteira -> mercado` (20): esperado, mas por `commands::collector`/entidades de cotação e não por uma interface.
 
-**Hubs (maiores fan-in, por onde qualquer fronteira passa):** `commands/currency` (15 importadores), `commands/tax` (11), `commands/portfolio_io` (7), `commands/transaction` (5). Todos são da carteira. Para outro domínio depender só de uma interface estreita, esses quatro precisam de dono e de superfície definidos primeiro.
+**Hubs (maiores fan-in, por onde qualquer fronteira passa):** `commands/currency` (15 importadores), `commands/tax` (11), `commands/portfolio_io` (7, agora em importação) e `commands/transaction` (5). Três são da carteira. (Contagem de importadores da 407, por arquivo, antes das reatribuições da 408.) Para outro domínio depender só de uma interface estreita, esses quatro precisam de dono e de superfície definidos primeiro.
 
 **Padrão geral:** `commands/` importa `commands/` (por exemplo `update_install` <-> `update_check` é um ciclo; `thesis_draft` -> `crypto_indicator`, `screener`). Em contraste, `domain/` é pura: não importa `entity` (0 referências) e só importa `error` e `finance_core` (1). A lógica de domínio já está separada de I/O; o acoplamento mora em `commands/`, `entity/` e `finance_api/`.
 
 ## Correções à pesquisa de modularidade (2026-11-13)
 1. `finance_core` e `finance_api` são **coletores de dados de mercado** (domínio mercado), não "finanças pessoais". As finanças pessoais são os 23 arquivos da tabela acima (a pesquisa estimava ~13 mil linhas de Rust e ~4 mil de front, número que vinha dessa confusão).
-2. Hipótese "finances e portfolio compartilham tabelas": **confirmada em parte**. A carteira lê 4 entidades das finanças (`bank_account`, `custodia`, `general_transaction`, `general_transaction_category`, em `tax`) e as finanças dependem fortemente da carteira. Não são separáveis sem decidir de quem é `custodia` e como o IR enxerga lançamentos gerais.
+2. Hipótese "finances e portfolio compartilham tabelas": **não se confirma como ciclo estrutural** (408). `custodia` é da carteira (FK em `transactions`, custo médio por custódia, IR de exterior; nenhum arquivo de finanças a usa). O que a carteira lê das finanças é só o pagamento de DARF em `tax.rs` (3 entidades), e o resto do acoplamento era o pipeline de importação, que é um domínio à parte. (A 407 tinha escrito "confirmada em parte"; foi uma leitura apressada da matriz com `custodia` mal atribuída.)
 3. Pergunta "`finance_core` é usado pelas teses?": é usado pela camada de mercado, que as teses alimentam e consomem (ver acima), e `domain/` o importa em 1 ponto.
 
 ## Direção proposta (a decidir; nada aplicado)
 Ordem do mais barato para o mais caro, sempre sem mudar comportamento:
 1. **Documentar e vigiar a fronteira dos domínios que já são folha** (sync_backup, wallet_viewer, alertas): um teste que falhe se um arquivo desses importar de outro domínio, ou se outro domínio importar além de uma lista curta. Custo baixo, não move código.
 2. **Quebrar os dois ciclos pequenos antes de qualquer agrupamento em pasta:** `update_install <-> update_check`, e a inversão `ingestion -> commands::{currency, profitability}` (puxar a lógica para `domain/` e deixar o comando só como casca).
-3. **Decidir o dono de `custodia` e dos leitores de `general_transaction` em `tax`** (finanças x carteira). Sem isso, agrupar `finanças_pessoais/` numa pasta só renomeia o emaranhado.
+3. **Decidido na 408:** `custodia` é da carteira; `mark_tax_paid`, `unmark_tax_paid` e as categorias `Taxes`/`Yield` são das finanças (hoje em `commands/tax.rs`: `mark_tax_paid_in`, `ensure_taxes_category`, `ensure_yield_category`, `ensure_fees_category`, `ensure_category`). Falta o **PR de código** que os move, sem mudar comportamento. Consumidores medidos por grep: `general_transaction` (`ensure_taxes_category`, `ensure_fees_category`), `balance_reconciliation` (`ensure_yield_category`), `fixed_income_io` (taxes e yield) e os testes de `flow_tests.rs` (`mark_tax_paid_in`). Três desses são das finanças, então mover também **remove** arestas `finanças -> carteira` (`general_transaction` e `balance_reconciliation` deixam de importar `tax`). O outro PR de código: tirar `read_spreadsheet_preview` de `portfolio_io` para um módulo neutro, de modo que `property` e `thesis` não dependam de importação.
 4. Mover para pastas por domínio **só depois** de 1 a 3, porque em Rust `mod` só organiza nomes e não impede importação cruzada: a pasta sem a vigilância do passo 1 volta ao estado atual em poucos PRs.
 
 Não recomendado: dividir em vários crates (cada hub acima viraria uma API pública forçada, e as 117 migrations são de um banco só), nem plugins instaláveis (um usuário, um banco).
