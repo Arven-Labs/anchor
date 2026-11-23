@@ -40,7 +40,7 @@ type CostDraft = { kind: CostKind; valor: string; rate: string };
 
 // Sugestão de IOF: valor enviado × taxa ÷ 100, arredondado ao centavo. O app não afirma alíquota nenhuma.
 function suggestIof(amountSent: number, ratePercent: number): string {
-  return (Math.round(((amountSent * ratePercent) / 10) * 100) / 100).toFixed(2);
+  return (Math.round(((amountSent * ratePercent) / 100) * 100) / 100).toFixed(2);
 }
 
 type CreateTransferRequest = {
