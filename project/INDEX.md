@@ -20,6 +20,7 @@ Leia o arquivo relevante para o que você precisa:
 | Visão geral, stack, status das fases, ambiente de desenvolvimento, arquitetura de código | `OVERVIEW.md` |
 | **Todas as fases detalhadas (0 a 10)** | **`PHASE.md`** |
 | Decisões de arquitetura em aberto | `ARCHITECTURE.md` |
+| **Domínios do crate Rust e dependências entre eles** (mapa medido, o que é folha e o que é emaranhado) | **`MODULES.md`** |
 | Roadmap, evoluções planejadas | `ROADMAP.md` |
 | Log completo de sessões de trabalho | `SESSIONS.md` |
 | **Conferir telas por código (capturas no CI) e automatizar fluxos** — o processo, as regras e o que cada uma evitou | **`AUTOMACAO.md`** |
