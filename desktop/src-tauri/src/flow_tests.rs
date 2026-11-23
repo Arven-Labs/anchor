@@ -2360,7 +2360,7 @@ async fn a_database_without_runs_is_due_for_the_first_ingestion() {
 
 #[tokio::test]
 async fn the_tax_is_only_paid_from_a_brl_account() {
-    use crate::commands::tax::{mark_tax_paid_in, MarkTaxPaidRequest};
+    use crate::commands::tax_payment::{mark_tax_paid_in, MarkTaxPaidRequest};
     use crate::entity::{general_transaction, tax_payments};
 
     let db = memory_db().await;
@@ -2395,7 +2395,7 @@ async fn the_tax_is_only_paid_from_a_brl_account() {
 
 #[tokio::test]
 async fn crypto_tax_is_assessed_apart_and_its_darf_is_paid_apart_from_the_exchange_one() {
-    use crate::commands::tax::{mark_tax_paid_in, MarkTaxPaidRequest};
+    use crate::commands::tax_payment::{mark_tax_paid_in, MarkTaxPaidRequest};
     use crate::entity::{general_transaction, tax_payments};
 
     let db = memory_db().await;
