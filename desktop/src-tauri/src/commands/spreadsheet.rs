@@ -1,3 +1,101 @@
+// Leitura de planilha (CSV, xls, xlsx) como texto. Módulo neutro: o importador da B3
+// (`portfolio_io`) e a prévia de anexo (`property`, `thesis`) leem daqui, sem dependerem
+// uns dos outros (ADR 0007, passo 4).
+use crate::error::AppError;
+
+/// Lê a primeira aba do xlsx como texto, linha a linha.
+pub fn read_xlsx_rows(path: &str) -> Result<Vec<Vec<String>>, AppError> {
+    use calamine::{open_workbook_auto, Data, Reader};
+    let mut workbook =
+        open_workbook_auto(path).map_err(|e| AppError::InvalidInput(format!("planilha ilegível: {e}")))?;
+    let name = workbook
+        .sheet_names()
+        .first()
+        .cloned()
+        .ok_or_else(|| AppError::InvalidInput("planilha sem abas".to_string()))?;
+    let range = workbook
+        .worksheet_range(&name)
+        .map_err(|e| AppError::InvalidInput(format!("aba '{name}' ilegível: {e}")))?;
+    let text = |cell: &Data| match cell {
+        Data::Empty => String::new(),
+        Data::String(s) => s.clone(),
+        Data::Float(f) => f.to_string(),
+        Data::Int(i) => i.to_string(),
+        Data::Bool(b) => b.to_string(),
+        Data::DateTime(dt) => dt
+            .as_datetime()
+            .map(|d| d.format("%d/%m/%Y").to_string())
+            .unwrap_or_default(),
+        Data::DateTimeIso(s) | Data::DurationIso(s) => s.clone(),
+        Data::Error(_) => String::new(),
+    };
+    Ok(range.rows().map(|row| row.iter().map(&text).collect()).collect())
+}
+
+/// Teto de tamanho do arquivo lido para a prévia de anexo (bytes).
+const PREVIEW_MAX_BYTES: u64 = 20 * 1024 * 1024;
+/// Teto de linhas devolvidas na prévia de anexo.
+const PREVIEW_MAX_ROWS: usize = 1000;
+
+/// Lê um anexo de planilha (CSV, xls ou xlsx) como texto, para a prévia da tela.
+/// O tipo vem do `content_type` gravado no anexo, não da extensão do arquivo.
+pub fn read_spreadsheet_preview(path: &str, content_type: Option<&str>) -> Result<Vec<Vec<String>>, AppError> {
+    read_spreadsheet_preview_with(path, content_type, PREVIEW_MAX_BYTES, PREVIEW_MAX_ROWS)
+}
+
+fn read_spreadsheet_preview_with(
+    path: &str,
+    content_type: Option<&str>,
+    max_bytes: u64,
+    max_rows: usize,
+) -> Result<Vec<Vec<String>>, AppError> {
+    let is_csv = match content_type {
+        Some("text/csv") => true,
+        Some("application/vnd.ms-excel")
+        | Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") => false,
+        other => {
+            return Err(AppError::InvalidInput(format!("anexo sem prévia de planilha (tipo {other:?})")));
+        }
+    };
+    let size = std::fs::metadata(path)
+        .map_err(|e| AppError::InvalidInput(format!("anexo ilegível: {e}")))?
+        .len();
+    if size > max_bytes {
+        return Err(AppError::InvalidInput(format!(
+            "arquivo grande demais para a prévia ({size} bytes, teto {max_bytes})"
+        )));
+    }
+    let mut rows = if is_csv { read_csv_rows(path, max_rows)? } else { read_xlsx_rows(path)? };
+    rows.truncate(max_rows);
+    Ok(rows)
+}
+
+/// CSV de anexo como texto: sem cabeçalho, linhas de tamanho variável, separador `,`, `;` ou tab
+/// pelo que mais aparece na primeira linha (CSV brasileiro costuma usar `;`). Bytes fora de UTF-8
+/// viram U+FFFD em vez de recusar o arquivo.
+fn read_csv_rows(path: &str, max_rows: usize) -> Result<Vec<Vec<String>>, AppError> {
+    let bytes = std::fs::read(path).map_err(|e| AppError::InvalidInput(format!("anexo ilegível: {e}")))?;
+    let first_line = bytes.split(|b| *b == b'\n').next().unwrap_or_default();
+    // `max_by_key` devolve o último empate: a vírgula ganha quando nada aparece.
+    let delimiter = [b';', b'\t', b',']
+        .into_iter()
+        .max_by_key(|d| first_line.iter().filter(|b| *b == d).count())
+        .unwrap_or(b',');
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .delimiter(delimiter)
+        .from_reader(bytes.as_slice());
+    reader
+        .byte_records()
+        .take(max_rows)
+        .map(|record| {
+            let record = record.map_err(|e| AppError::InvalidInput(format!("CSV ilegível: {e}")))?;
+            Ok(record.iter().map(|cell| String::from_utf8_lossy(cell).into_owned()).collect())
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
