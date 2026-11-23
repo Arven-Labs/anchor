@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{Datelike, NaiveDate, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
-    TransactionTrait, Unchanged,
+    Unchanged,
 };
 use serde::{Deserialize, Serialize};
 
@@ -26,10 +26,7 @@ use crate::domain::tax::foreign;
 use crate::domain::tax::offshore;
 use crate::domain::tax::offshore_capital;
 use crate::domain::tax::rules::{self, Rule, RuleSet};
-use crate::entity::{
-    assets, bank_account, custodia, general_transaction, general_transaction_category, option_position,
-    portfolio, tax_payments, tax_rules, transactions,
-};
+use crate::entity::{assets, custodia, option_position, portfolio, tax_payments, tax_rules, transactions};
 use crate::error::AppError;
 use crate::finance_api::{client, ptax_store};
 
@@ -37,13 +34,9 @@ const BUY: &str = "compra";
 const SELL: &str = "venda";
 const DIVIDEND: &str = "provento";
 const TRANSFER: &str = "transferencia";
-const DESPESA: &str = "despesa";
-const TAXES_CATEGORY: &str = "Taxes";
-const YIELD_CATEGORY: &str = "Yield";
-const FEES_CATEGORY: &str = "Fees";
 const EPS: f64 = 1e-9;
 
-fn parse_date(value: &str) -> Result<NaiveDate, AppError> {
+pub(crate) fn parse_date(value: &str) -> Result<NaiveDate, AppError> {
     NaiveDate::parse_from_str(value.get(0..10).unwrap_or(value), "%Y-%m-%d")
         .map_err(|_| AppError::InvalidGuard(format!("invalid date '{value}'")))
 }
@@ -955,172 +948,10 @@ pub async fn get_tax_assessment(
     Ok(TaxAssessmentView { assessment, payments })
 }
 
-#[derive(Deserialize)]
-pub struct MarkTaxPaidRequest {
-    pub workspace_id: i32,
-    pub period: String,
-    pub amount: f64,
-    pub paid_date: String,
-    pub bank_account_id: i32,
-    /// `b3` (padrão) ou `crypto`.
-    #[serde(default = "default_payment_kind")]
-    pub kind: String,
-}
-
+/// Tipo de apuração do DARF pago (`tax_payments.kind`). Mora aqui porque é conceito do
+/// imposto e o rateio (`tax_cost_flows`) o lê; o pagamento em si está em `tax_payment`.
 pub const PAYMENT_KIND_B3: &str = "b3";
 pub const PAYMENT_KIND_CRYPTO: &str = "crypto";
-
-fn default_payment_kind() -> String {
-    PAYMENT_KIND_B3.to_string()
-}
-
-#[tauri::command]
-pub async fn mark_tax_paid(
-    db: tauri::State<'_, DatabaseConnection>,
-    request: MarkTaxPaidRequest,
-) -> Result<tax_payments::Model, AppError> {
-    mark_tax_paid_in(db.inner(), request).await
-}
-
-/// Categoria "Taxes" do Workspace, criada se ainda não existir (DARF e IR retido
-/// de renda fixa caem nela).
-pub(crate) async fn ensure_taxes_category<C: sea_orm::ConnectionTrait>(
-    db: &C,
-    workspace_id: i32,
-) -> Result<i32, AppError> {
-    ensure_category(db, workspace_id, TAXES_CATEGORY).await
-}
-
-/// Categoria "Yield" do Workspace, criada se ainda não existir (rendimento de renda fixa e
-/// a receita da conciliação pelo saldo caem nela).
-pub(crate) async fn ensure_yield_category<C: sea_orm::ConnectionTrait>(
-    db: &C,
-    workspace_id: i32,
-) -> Result<i32, AppError> {
-    ensure_category(db, workspace_id, YIELD_CATEGORY).await
-}
-
-/// Categoria "Fees" do Workspace, criada se ainda não existir (tarifa e remessa de
-/// uma transferência ou câmbio).
-pub(crate) async fn ensure_fees_category<C: sea_orm::ConnectionTrait>(
-    db: &C,
-    workspace_id: i32,
-) -> Result<i32, AppError> {
-    ensure_category(db, workspace_id, FEES_CATEGORY).await
-}
-
-async fn ensure_category<C: sea_orm::ConnectionTrait>(
-    db: &C,
-    workspace_id: i32,
-    name: &str,
-) -> Result<i32, AppError> {
-    if let Some(category) = general_transaction_category::Entity::find()
-        .filter(general_transaction_category::Column::WorkspaceId.eq(workspace_id))
-        .filter(general_transaction_category::Column::Nome.eq(name))
-        .one(db)
-        .await?
-    {
-        return Ok(category.id);
-    }
-    Ok(general_transaction_category::ActiveModel {
-        workspace_id: Set(workspace_id),
-        nome: Set(name.to_string()),
-        limite_mensal: Set(None),
-        created_at: Set(Utc::now().to_rfc3339()),
-        ..Default::default()
-    }
-    .insert(db)
-    .await?
-    .id)
-}
-
-pub async fn mark_tax_paid_in(
-    db: &DatabaseConnection,
-    request: MarkTaxPaidRequest,
-) -> Result<tax_payments::Model, AppError> {
-    if request.amount <= 0.0 || !request.amount.is_finite() {
-        return Err(AppError::InvalidInput("amount must be positive".to_string()));
-    }
-    parse_date(&request.paid_date)?;
-    parse_date(&format!("{}-01", request.period))?;
-    let note_kind = match request.kind.as_str() {
-        PAYMENT_KIND_B3 => "stock exchange",
-        PAYMENT_KIND_CRYPTO => "crypto",
-        other => return Err(AppError::InvalidInput(format!("payment kind must be b3 or crypto, got '{other}'"))),
-    };
-
-    let account = bank_account::Entity::find_by_id(request.bank_account_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("bank account {}", request.bank_account_id)))?;
-    if account.workspace_id != request.workspace_id {
-        return Err(AppError::InvalidGuard("bank account belongs to another workspace".to_string()));
-    }
-    // O DARF é sempre em reais; numa conta em outra moeda o débito sairia no
-    // valor errado.
-    if account.currency != "BRL" {
-        return Err(AppError::InvalidInput(format!(
-            "the tax is paid in BRL, but the account is in {}",
-            account.currency
-        )));
-    }
-
-    let now = Utc::now().to_rfc3339();
-    let txn = db.begin().await?;
-
-    let category_id = ensure_taxes_category(&txn, request.workspace_id).await?;
-
-    let expense = general_transaction::ActiveModel {
-        workspace_id: Set(request.workspace_id),
-        bank_account_id: Set(request.bank_account_id),
-        transaction_type: Set(DESPESA.to_string()),
-        category_id: Set(Some(category_id)),
-        valor: Set(request.amount),
-        transaction_date: Set(request.paid_date.clone()),
-        notes: Set(Some(format!("DARF — capital gains tax ({note_kind}), period {}", request.period))),
-        created_at: Set(now.clone()),
-        ..Default::default()
-    }
-    .insert(&txn)
-    .await?;
-
-    let payment = tax_payments::ActiveModel {
-        workspace_id: Set(request.workspace_id),
-        period: Set(request.period),
-        amount: Set(request.amount),
-        paid_date: Set(request.paid_date),
-        kind: Set(request.kind),
-        general_transaction_id: Set(Some(expense.id)),
-        created_at: Set(now),
-        ..Default::default()
-    }
-    .insert(&txn)
-    .await?;
-
-    txn.commit().await?;
-    Ok(payment)
-}
-
-/// Desfaz o "pago": apaga o registro e a despesa criada junto em Finanças Gerais.
-#[tauri::command]
-pub async fn unmark_tax_paid(
-    db: tauri::State<'_, DatabaseConnection>,
-    payment_id: i32,
-) -> Result<(), AppError> {
-    let db = db.inner();
-    let payment = tax_payments::Entity::find_by_id(payment_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("tax payment {payment_id}")))?;
-
-    let txn = db.begin().await?;
-    tax_payments::Entity::delete_by_id(payment.id).exec(&txn).await?;
-    if let Some(gt_id) = payment.general_transaction_id {
-        general_transaction::Entity::delete_by_id(gt_id).exec(&txn).await?;
-    }
-    txn.commit().await?;
-    Ok(())
-}
 
 // ---------------------------------------------------------------------------
 // Rentabilidade líquida de imposto

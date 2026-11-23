@@ -23,7 +23,8 @@ use crate::commands::portfolio_io::{
     ProposedTransaction, MOVIMENTACAO_COLUMNS_MESSAGE, STATUS_PENDING,
 };
 use crate::commands::statement_io::{dedup_key, finish_pending, statement_row};
-use crate::commands::tax::{ensure_taxes_category, ensure_yield_category, load_rule_set};
+use crate::commands::general_transaction_category::{ensure_taxes_category, ensure_yield_category};
+use crate::commands::tax::load_rule_set;
 use crate::domain::tax::iof::iof_rate_for_days;
 use crate::domain::tax::rules::{fixed_income_ir_key, RuleSet};
 use crate::entity::{general_transaction, import_pending};

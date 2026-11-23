@@ -11,6 +11,62 @@ use crate::domain::currency_conversion::FxHistory;
 use crate::entity::{bank_account, general_transaction, general_transaction_category};
 use crate::error::AppError;
 
+const TAXES_CATEGORY: &str = "Taxes";
+const YIELD_CATEGORY: &str = "Yield";
+const FEES_CATEGORY: &str = "Fees";
+
+/// Categoria "Taxes" do Workspace, criada se ainda não existir (DARF e IR retido
+/// de renda fixa caem nela).
+pub(crate) async fn ensure_taxes_category<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    workspace_id: i32,
+) -> Result<i32, AppError> {
+    ensure_category(db, workspace_id, TAXES_CATEGORY).await
+}
+
+/// Categoria "Yield" do Workspace, criada se ainda não existir (rendimento de renda fixa e
+/// a receita da conciliação pelo saldo caem nela).
+pub(crate) async fn ensure_yield_category<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    workspace_id: i32,
+) -> Result<i32, AppError> {
+    ensure_category(db, workspace_id, YIELD_CATEGORY).await
+}
+
+/// Categoria "Fees" do Workspace, criada se ainda não existir (tarifa e remessa de
+/// uma transferência ou câmbio).
+pub(crate) async fn ensure_fees_category<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    workspace_id: i32,
+) -> Result<i32, AppError> {
+    ensure_category(db, workspace_id, FEES_CATEGORY).await
+}
+
+async fn ensure_category<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    workspace_id: i32,
+    name: &str,
+) -> Result<i32, AppError> {
+    if let Some(category) = general_transaction_category::Entity::find()
+        .filter(general_transaction_category::Column::WorkspaceId.eq(workspace_id))
+        .filter(general_transaction_category::Column::Nome.eq(name))
+        .one(db)
+        .await?
+    {
+        return Ok(category.id);
+    }
+    Ok(general_transaction_category::ActiveModel {
+        workspace_id: Set(workspace_id),
+        nome: Set(name.to_string()),
+        limite_mensal: Set(None),
+        created_at: Set(chrono::Utc::now().to_rfc3339()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await?
+    .id)
+}
+
 #[derive(Deserialize)]
 pub struct CreateGeneralTransactionCategoryRequest {
     pub workspace_id: i32,

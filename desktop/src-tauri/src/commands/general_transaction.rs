@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::currency::{base_currency, load_fx_history, DEFAULT_BASE_CURRENCY};
 use crate::commands::loan::ensure_account_in_workspace;
-use crate::commands::tax::{ensure_fees_category, ensure_taxes_category};
+use crate::commands::general_transaction_category::{ensure_fees_category, ensure_taxes_category};
 use crate::domain::currency_conversion::FxHistory;
 use crate::entity::{bank_account, general_transaction};
 use crate::error::AppError;
 
 const RECEITA: &str = "receita";
-const DESPESA: &str = "despesa";
+pub(crate) const DESPESA: &str = "despesa";
 const GENERAL_TRANSACTION_TYPES: [&str; 2] = [RECEITA, DESPESA];
 
 fn validate_type(transaction_type: &str) -> Result<(), AppError> {

@@ -52,6 +52,7 @@ pub mod sync_registry;
 pub mod fund;
 pub mod offshore;
 pub mod tax;
+pub mod tax_payment;
 pub mod thesis;
 pub mod thesis_draft;
 pub mod transaction;
