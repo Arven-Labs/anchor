@@ -59,7 +59,7 @@ pub async fn mark_tax_paid_in(
     }
     // O DARF é sempre em reais; numa conta em outra moeda o débito sairia no
     // valor errado.
-    if account.currency == "BRL" {
+    if account.currency != "BRL" {
         return Err(AppError::InvalidInput(format!(
             "the tax is paid in BRL, but the account is in {}",
             account.currency
