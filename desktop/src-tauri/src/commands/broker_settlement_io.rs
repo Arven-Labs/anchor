@@ -16,8 +16,9 @@ use chrono::NaiveDate;
 use sea_orm::DatabaseConnection;
 
 use crate::commands::portfolio_io::{
-    movimentacao_columns, normalize_header, parse_date, parse_number, read_xlsx_rows, ParseIssue, MOVIMENTACAO_COLUMNS_MESSAGE,
+    movimentacao_columns, normalize_header, parse_date, parse_number, ParseIssue, MOVIMENTACAO_COLUMNS_MESSAGE,
 };
+use crate::commands::spreadsheet::read_xlsx_rows;
 use crate::commands::statement_io::{stage_statement_parsed, ParsedStatement, ProposedBankTransaction, StatementStageResult};
 use crate::error::AppError;
 

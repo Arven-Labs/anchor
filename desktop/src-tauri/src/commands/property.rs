@@ -211,7 +211,7 @@ pub async fn read_asset_attachment_spreadsheet(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("asset attachment {attachment_id}")))?;
     let path = get_asset_attachment_path(app, db, attachment_id).await?;
-    crate::commands::portfolio_io::read_spreadsheet_preview(&path, existing.content_type.as_deref())
+    crate::commands::spreadsheet::read_spreadsheet_preview(&path, existing.content_type.as_deref())
 }
 
 #[cfg(test)]

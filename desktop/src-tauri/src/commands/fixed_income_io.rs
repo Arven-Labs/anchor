@@ -19,9 +19,10 @@ use serde::{Deserialize, Serialize};
 use crate::commands::general_transaction::{create_general_transaction_in, CreateGeneralTransactionRequest};
 use crate::commands::loan::ensure_account_in_workspace;
 use crate::commands::portfolio_io::{
-    movimentacao_columns, normalize_header, parse_date, parse_number, read_xlsx_rows, MovimentacaoColumns, ParseIssue,
+    movimentacao_columns, normalize_header, parse_date, parse_number, MovimentacaoColumns, ParseIssue,
     ProposedTransaction, MOVIMENTACAO_COLUMNS_MESSAGE, STATUS_PENDING,
 };
+use crate::commands::spreadsheet::read_xlsx_rows;
 use crate::commands::statement_io::{dedup_key, finish_pending, statement_row};
 use crate::commands::general_transaction_category::{ensure_taxes_category, ensure_yield_category};
 use crate::commands::tax::load_rule_set;

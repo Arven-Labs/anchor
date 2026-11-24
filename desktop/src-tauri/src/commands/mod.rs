@@ -32,6 +32,7 @@ pub mod pension;
 pub mod pending;
 pub mod portfolio;
 pub mod portfolio_io;
+pub mod spreadsheet;
 pub mod statement_io;
 pub mod workspace_file;
 pub mod portfolio_summary;
