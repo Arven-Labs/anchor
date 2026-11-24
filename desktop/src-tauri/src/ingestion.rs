@@ -204,6 +204,9 @@ pub(crate) async fn is_due_now(db: &DatabaseConnection, now: DateTime<Utc>) -> R
 
 /// Uma rodada completa. Falha de um item não interrompe as outras; `CollectorBusy`
 /// (coleta manual em andamento) volta sem gravar nada, pra quem chamou tentar depois.
+// MUTAÇÃO PROPOSITAL (será revertida): a inversão volta.
+type _MutationInversion = crate::commands::profitability::MonthlyReturn;
+
 pub async fn run_ingestion(
     db: &DatabaseConnection,
     lock: &AtomicBool,
