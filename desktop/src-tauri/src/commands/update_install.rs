@@ -11,8 +11,23 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_updater::Update;
 
-use super::update_check::map_updater_error;
 use crate::error::AppError;
+
+/// Traduz o erro do plugin para o do app. Falha de assinatura é recusa (nada foi
+/// instalado); o resto é indisponibilidade da fonte. Mora aqui, e não em
+/// `update_check`, para a dependência ir numa direção só (`update_check` -> `update_install`).
+pub(crate) fn map_updater_error(error: tauri_plugin_updater::Error) -> AppError {
+    use tauri_plugin_updater::Error as E;
+    match error {
+        E::ReleaseNotFound => AppError::NoData("updater: no release published".to_string()),
+        E::Minisign(_)
+        | E::SignatureUtf8(_)
+        | E::Base64(_)
+        | E::SignedVersionMismatch { .. }
+        | E::MissingSignedVersion => AppError::UpdateRejected(error.to_string()),
+        other => AppError::ProviderUnavailable(format!("updater: {other}")),
+    }
+}
 
 #[derive(Default)]
 enum Stage {
@@ -97,4 +112,35 @@ pub fn install_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> Resu
     })?;
     update.install(bytes).map_err(map_updater_error)?;
     app.restart()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_missing_release_maps_to_no_data() {
+        assert!(matches!(
+            map_updater_error(tauri_plugin_updater::Error::ReleaseNotFound),
+            AppError::NoData(_)
+        ));
+    }
+
+    #[test]
+    fn a_signature_problem_maps_to_a_rejection_not_to_an_outage() {
+        let error = tauri_plugin_updater::Error::SignatureUtf8("bad".to_string());
+        assert!(matches!(
+            map_updater_error(error),
+            AppError::UpdateRejected(_)
+        ));
+    }
+
+    #[test]
+    fn a_download_failure_maps_to_provider_unavailable() {
+        let error = tauri_plugin_updater::Error::Network("reset".to_string());
+        assert!(matches!(
+            map_updater_error(error),
+            AppError::ProviderUnavailable(_)
+        ));
+    }
 }

@@ -3882,7 +3882,6 @@ async fn a_fixed_income_etf_is_a_class_of_its_own_outside_the_mirrored_cash_and_
 
     // Fora da apuração, com o aviso próprio na revisão, e cotada como as outras classes da B3.
     assert!(class_tax_hint_text("etf_renda_fixa", "AUPO11").contains("withheld at source"));
-    assert!(crate::commands::profitability::ASSET_CLASSES_WITH_AUTO_QUOTE.contains(&"etf_renda_fixa"));
     assert!(crate::domain::position_pricing::ASSET_CLASSES_WITH_AUTO_QUOTE.contains(&"etf_renda_fixa"));
 }
 

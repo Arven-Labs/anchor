@@ -9,7 +9,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State, Url};
 use tauri_plugin_updater::UpdaterExt;
 
-use super::update_install::PendingUpdate;
+use super::update_install::{map_updater_error, PendingUpdate};
 use crate::error::AppError;
 
 // O link é montado aqui, a partir de uma versão já validada como MAJOR.MINOR.PATCH,
@@ -91,21 +91,6 @@ fn no_release_or_error(current: &str, error: AppError) -> Result<UpdateStatus, A
             release_url: None,
         }),
         other => Err(other),
-    }
-}
-
-/// Traduz o erro do plugin para o do app. Falha de assinatura é recusa (nada foi
-/// instalado); o resto é indisponibilidade da fonte.
-pub(crate) fn map_updater_error(error: tauri_plugin_updater::Error) -> AppError {
-    use tauri_plugin_updater::Error as E;
-    match error {
-        E::ReleaseNotFound => AppError::NoData("updater: no release published".to_string()),
-        E::Minisign(_)
-        | E::SignatureUtf8(_)
-        | E::Base64(_)
-        | E::SignedVersionMismatch { .. }
-        | E::MissingSignedVersion => AppError::UpdateRejected(error.to_string()),
-        other => AppError::ProviderUnavailable(format!("updater: {other}")),
     }
 }
 
@@ -296,32 +281,6 @@ mod tests {
         assert!(matches!(
             no_release_or_error("0.1.0", down),
             Err(AppError::ProviderUnavailable(_))
-        ));
-    }
-
-    #[test]
-    fn a_missing_release_maps_to_no_data() {
-        assert!(matches!(
-            map_updater_error(tauri_plugin_updater::Error::ReleaseNotFound),
-            AppError::NoData(_)
-        ));
-    }
-
-    #[test]
-    fn a_signature_problem_maps_to_a_rejection_not_to_an_outage() {
-        let error = tauri_plugin_updater::Error::SignatureUtf8("bad".to_string());
-        assert!(matches!(
-            map_updater_error(error),
-            AppError::UpdateRejected(_)
-        ));
-    }
-
-    #[test]
-    fn a_download_failure_maps_to_provider_unavailable() {
-        let error = tauri_plugin_updater::Error::Network("reset".to_string());
-        assert!(matches!(
-            map_updater_error(error),
-            AppError::ProviderUnavailable(_)
         ));
     }
 

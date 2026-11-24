@@ -10,6 +10,7 @@ use crate::commands::currency::{
 use crate::commands::transaction::{cost_events, split_ratio, BONUS, REVERSE_SPLIT, SPLIT};
 use crate::domain::benchmark::{self, PricePoint};
 use crate::domain::cost_basis;
+use crate::domain::position_pricing::ASSET_CLASSES_WITH_AUTO_QUOTE;
 use crate::domain::twr::{self, CashFlow, FlowKind};
 use crate::entity::{assets, macro_index_monthly, stock_price_history, transactions};
 use crate::error::AppError;
@@ -18,36 +19,13 @@ const BUY: &str = "compra";
 const SELL: &str = "venda";
 const DIVIDEND: &str = "provento";
 
-// Fase 10.3, fatia escopada às classes com preço histórico automatizado
-// (decisão explícita do dono do projeto — Stocks internacionais/Tesouro
-// Direto/Renda Fixa ainda não têm, ver project/PHASE.md). `aporte`/
-// `retirada` (sem asset_id) ficam fora deste cálculo. `fii` entrou na
-// Sessão 41, `etf_br` na Sessão 49 (2026-08-02) — mesmo endpoint Yahoo
-// `{ticker}.SA` que `acao_br` já usa pra `stock_price_history`, sem
-// coletor novo. `cripto` entrou na Sessão 51 — fonte diferente
-// (CoinGecko), mas grava na mesma tabela genérica `stock_price_history`
-// (`ticker`/`price_date`/`close_price`, sem coluna de fonte usada aqui),
-// então esta consulta não distingue de onde o preço veio. `bdr` entrou na
-// Sessão 53 — mesmo endpoint Yahoo `.SA` de `acao_br`/`fii`/`etf_br`, zero
-// mudança de coletor. `metal` entrou na Sessão 55 — fonte Yahoo sem `.SA`
-// (COMEX), mesma tabela genérica, mesmo raciocínio. Essa sub-carteira
-// é tratada como autocontida: suas próprias compra(+)/venda(−) são os
-// fluxos de caixa externos do Dietz Modificado — o app não modela um
-// sub-ledger de caixa, então uma compra não é "caixa→ativo", é "ativo
-// aparece", e pro efeito desta fatia isso equivale a um aporte na
-// sub-carteira.
-pub(crate) const ASSET_CLASSES_WITH_AUTO_QUOTE: [&str; 10] = [
-    "acao_br",
-    "fii",
-    "etf_br",
-    "etf_renda_fixa",
-    "cripto",
-    "bdr",
-    "metal",
-    "acao_internacional",
-    "reit",
-    "etf_us",
-];
+// A lista de classes com cotação automática (`ASSET_CLASSES_WITH_AUTO_QUOTE`) e a
+// história de como ela cresceu moram em `domain/position_pricing.rs`. Aqui, a
+// sub-carteira dessas classes é tratada como autocontida: suas próprias
+// compra(+)/venda(−) são os fluxos de caixa externos do Dietz Modificado — o app
+// não modela um sub-ledger de caixa, então uma compra não é "caixa→ativo", é
+// "ativo aparece", e pro efeito desta fatia isso equivale a um aporte na
+// sub-carteira. `aporte`/`retirada` (sem asset_id) ficam fora deste cálculo.
 const PRICE_TOLERANCE_DAYS: i64 = 7;
 
 #[derive(Serialize)]

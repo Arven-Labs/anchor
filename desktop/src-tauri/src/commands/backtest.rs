@@ -10,7 +10,7 @@ use chrono::{Datelike, NaiveDate};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
 
-use crate::commands::profitability::ASSET_CLASSES_WITH_AUTO_QUOTE;
+use crate::domain::position_pricing::ASSET_CLASSES_WITH_AUTO_QUOTE;
 use crate::commands::currency::positions_in_base;
 use crate::commands::tax::load_rule_set;
 use crate::domain::backtest::{self, AssetSeries, Params, Rebalance, TaxModel};
