@@ -71,6 +71,15 @@ const ALLOWED_IN: &[(&str, Prefix)] = &[
     ("commands/thesis.rs", &["storage"]),
 ];
 
+/// Dependências proibidas (ADR 0007, passo 2): (arquivo, trecho de texto). Vale para o código de produção, sem
+/// comentários. É texto e não caminho porque o ciclo `update_*` usa `super::`, que o leitor de `crate::` não vê.
+const FORBIDDEN: &[(&str, &str)] = &[
+    // o ciclo `update_install <-> update_check`: só `update_check` pode depender de `update_install`
+    ("commands/update_install.rs", "update_check"),
+    // a coleta de dados não chama comando da carteira
+    ("ingestion.rs", "commands::profitability"),
+];
+
 struct SourceFile {
     /// Caminho relativo a `src/`, com `/`.
     rel: String,
@@ -158,10 +167,15 @@ fn parse_use_tree(text: &str, prefix: &[String], out: &mut Vec<Vec<String>>) -> 
     }
 }
 
+/// Código de produção de um arquivo: corta no primeiro `#[cfg(test)]` e tira os comentários `//`.
+fn production_code(source: &str) -> String {
+    let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+    production.lines().map(|line| line.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n")
+}
+
 /// Todo caminho `crate::...` do código de produção de um arquivo.
 fn crate_refs(source: &str) -> Vec<Vec<String>> {
-    let production = source.split("#[cfg(test)]").next().unwrap_or(source);
-    let code: String = production.lines().map(|line| line.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+    let code = production_code(source);
     let mut refs = Vec::new();
     for (index, _) in code.match_indices("crate::") {
         let glued_to_identifier = code[..index].chars().next_back().is_some_and(|c| c.is_alphanumeric() || c == '_');
@@ -195,6 +209,12 @@ fn violations(files: &[SourceFile]) -> Vec<String> {
             if !allowed {
                 let side = if own.is_some() { "leaf imports outside its boundary" } else { "imports a leaf through a door that is not listed" };
                 found.push(format!("{}: {side}: crate::{}", file.rel, path.join("::")));
+            }
+        }
+        let code = production_code(&file.source);
+        for (_, token) in FORBIDDEN.iter().filter(|(rel, _)| *rel == file.rel) {
+            if code.contains(token) {
+                found.push(format!("{}: forbidden dependency: `{token}`", file.rel));
             }
         }
     }
@@ -340,6 +360,33 @@ use crate::domain::{alert_check, tax::{self, brackets}};
     }
 
     #[test]
+    fn a_forbidden_dependency_is_flagged_in_production_code() {
+        let cycle = [file("commands/update_install.rs", "use super::update_check::map_updater_error;\n")];
+        let report = found(&cycle);
+        assert!(report.contains("commands/update_install.rs"), "{report}");
+        assert!(report.contains("update_check"), "{report}");
+
+        let inversion = [file("ingestion.rs", "use crate::commands::profitability::MonthlyReturn;\n")];
+        assert!(found(&inversion).contains("commands::profitability"));
+    }
+
+    #[test]
+    fn a_forbidden_token_in_comments_tests_or_other_files_is_ignored() {
+        let source = "\
+// historia: antes importava de update_check
+fn run() {}
+
+#[cfg(test)]
+mod tests {
+    use super::super::update_check::UpdateStatus;
+}
+";
+        assert_eq!(found(&[file("commands/update_install.rs", source)]), "");
+        // a regra vale só para o arquivo dela: o outro lado da seta pode citar o nome
+        assert_eq!(found(&[file("commands/update_check.rs", "use super::update_install::PendingUpdate;\n")]), "");
+    }
+
+    #[test]
     fn real_sources_respect_the_leaf_boundaries() {
         let files = read_crate_sources();
         assert!(files.len() > 150, "expected the whole crate, found {} files", files.len());
@@ -360,6 +407,9 @@ use crate::domain::{alert_check, tax::{self, brackets}};
         };
         for (leaf, prefix) in OWNED.iter().chain(ALLOWED_OUT.iter()) {
             assert!(exists(prefix), "{leaf:?}: `{}` does not exist in src/", prefix.join("::"));
+        }
+        for (rel, _) in FORBIDDEN {
+            assert!(src.join(rel).exists(), "forbidden-rule file `{rel}` does not exist");
         }
         for (rel, prefix) in ALLOWED_IN {
             assert!(src.join(rel).exists(), "entry point `{rel}` does not exist");
