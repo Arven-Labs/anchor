@@ -3,9 +3,23 @@
 // o comando (`commands/transaction.rs::compute_positions`) busca os preços/
 // avaliações no banco, esta função só decide qual fonte usar e faz a conta.
 //
-// Mesma lista de classes com cotação automática que `commands/profitability.rs`
-// já usa pro cálculo de rentabilidade (decisão histórica documentada lá:
-// Tesouro Direto/Renda Fixa/Imóvel/Empresa não listada ficam fora).
+// Classes com cotação automática. É a única cópia da lista: rentabilidade
+// (`commands/profitability.rs`), backtest e a coleta (`ingestion.rs`) importam
+// daqui (havia uma segunda cópia idêntica em `profitability`, removida no
+// ADR 0007, passo 2).
+//
+// História: Fase 10.3, fatia escopada às classes com preço histórico
+// automatizado (decisão explícita do dono do projeto — Tesouro Direto/Renda
+// Fixa/Imóvel/Empresa não listada ficam fora, ver project/PHASE.md). `fii`
+// entrou na Sessão 41, `etf_br` na Sessão 49 (2026-08-02) — mesmo endpoint
+// Yahoo `{ticker}.SA` que `acao_br` já usa pra `stock_price_history`, sem
+// coletor novo. `cripto` entrou na Sessão 51 — fonte diferente (CoinGecko), mas
+// grava na mesma tabela genérica `stock_price_history` (`ticker`/`price_date`/
+// `close_price`, sem coluna de fonte usada aqui), então a consulta não distingue
+// de onde o preço veio. `bdr` entrou na Sessão 53 — mesmo endpoint Yahoo `.SA`
+// de `acao_br`/`fii`/`etf_br`, zero mudança de coletor. `metal` entrou na
+// Sessão 55 — fonte Yahoo sem `.SA` (COMEX), mesma tabela genérica, mesmo
+// raciocínio.
 pub const ASSET_CLASSES_WITH_AUTO_QUOTE: [&str; 10] = [
     "acao_br",
     "fii",
