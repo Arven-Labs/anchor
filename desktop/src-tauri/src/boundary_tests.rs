@@ -78,6 +78,7 @@ const FORBIDDEN: &[(&str, &str)] = &[
     ("commands/update_install.rs", "update_check"),
     // a coleta de dados não chama comando da carteira
     ("ingestion.rs", "commands::profitability"),
+    ("ingestion.rs", "commands::currency"),
 ];
 
 struct SourceFile {
@@ -368,6 +369,9 @@ use crate::domain::{alert_check, tax::{self, brackets}};
 
         let inversion = [file("ingestion.rs", "use crate::commands::profitability::MonthlyReturn;\n")];
         assert!(found(&inversion).contains("commands::profitability"));
+
+        let currency = [file("ingestion.rs", "use crate::commands::currency::{base_currency, workspace_asset_currencies};\n")];
+        assert!(found(&currency).contains("commands::currency"));
     }
 
     #[test]

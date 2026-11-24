@@ -4,9 +4,8 @@ use chrono::{Datelike, Duration, NaiveDate, Utc};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Serialize;
 
-use crate::commands::currency::{
-    base_currency, load_fx_history, workspace_of_portfolio, DEFAULT_BASE_CURRENCY,
-};
+use crate::commands::currency::{load_fx_history, workspace_of_portfolio};
+use crate::workspace_currency::{base_currency, DEFAULT_BASE_CURRENCY};
 use crate::commands::transaction::{cost_events, split_ratio, BONUS, REVERSE_SPLIT, SPLIT};
 use crate::domain::benchmark::{self, PricePoint};
 use crate::domain::cost_basis;

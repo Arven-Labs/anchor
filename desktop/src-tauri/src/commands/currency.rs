@@ -16,18 +16,9 @@ use crate::entity::{assets, portfolio, stock_price_history, transactions, worksp
 use crate::error::AppError;
 use crate::finance_api;
 use crate::finance_core::fx::CURRENCIES;
+use crate::workspace_currency::{base_currency, workspace_asset_currencies, DEFAULT_BASE_CURRENCY};
 
-pub const DEFAULT_BASE_CURRENCY: &str = "BRL";
 const PIVOT: &str = "USD";
-
-pub async fn base_currency(db: &DatabaseConnection, workspace_id: i32) -> Result<String, AppError> {
-    Ok(workspace_settings::Entity::find()
-        .filter(workspace_settings::Column::WorkspaceId.eq(workspace_id))
-        .one(db)
-        .await?
-        .map(|row| row.base_currency)
-        .unwrap_or_else(|| DEFAULT_BASE_CURRENCY.to_string()))
-}
 
 pub async fn workspace_of_portfolio(db: &DatabaseConnection, portfolio_id: i32) -> Result<i32, AppError> {
     portfolio::Entity::find_by_id(portfolio_id)
@@ -333,40 +324,6 @@ pub async fn save_base_currency(
         }
     }
     Ok(currency)
-}
-
-/// Moedas dos ativos com lançamento nas carteiras do workspace.
-pub(crate) async fn workspace_asset_currencies(
-    db: &DatabaseConnection,
-    workspace_id: i32,
-) -> Result<HashSet<String>, AppError> {
-    let portfolio_ids: Vec<i32> = portfolio::Entity::find()
-        .filter(portfolio::Column::WorkspaceId.eq(workspace_id))
-        .all(db)
-        .await?
-        .into_iter()
-        .map(|p| p.id)
-        .collect();
-    if portfolio_ids.is_empty() {
-        return Ok(HashSet::new());
-    }
-    let asset_ids: Vec<i32> = transactions::Entity::find()
-        .filter(transactions::Column::PortfolioId.is_in(portfolio_ids))
-        .all(db)
-        .await?
-        .into_iter()
-        .filter_map(|t| t.asset_id)
-        .collect();
-    if asset_ids.is_empty() {
-        return Ok(HashSet::new());
-    }
-    Ok(assets::Entity::find()
-        .filter(assets::Column::Id.is_in(asset_ids))
-        .all(db)
-        .await?
-        .into_iter()
-        .map(|a| a.currency)
-        .collect())
 }
 
 #[tauri::command]

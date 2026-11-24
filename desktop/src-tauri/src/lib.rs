@@ -28,6 +28,7 @@ mod storage;
 mod sync_registry;
 mod sync_snapshot_cipher;
 mod wallet_viewer;
+mod workspace_currency;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]

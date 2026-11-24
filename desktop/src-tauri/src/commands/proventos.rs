@@ -10,7 +10,8 @@ use chrono::{Datelike, Duration, NaiveDate, Utc};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Serialize;
 
-use crate::commands::currency::{base_currency, load_fx_history};
+use crate::commands::currency::load_fx_history;
+use crate::workspace_currency::base_currency;
 use crate::commands::tax::{jcp_rate_on, load_rule_set};
 use crate::domain::proventos::{bucket_monthly, by_asset, net_total, ProventoEntry, PAYMENT_TYPE_DIVIDENDO};
 use crate::entity::{assets, portfolio, suggested_dividends, transactions};

@@ -7,7 +7,8 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::commands::currency::{rates_for, DEFAULT_BASE_CURRENCY};
+use crate::commands::currency::rates_for;
+use crate::workspace_currency::DEFAULT_BASE_CURRENCY;
 use crate::commands::profitability::compute_profitability;
 use crate::domain::liability::{
     annualize_monthly_rate, compute_installments, compute_outstanding_balance, AmortizationSystem,

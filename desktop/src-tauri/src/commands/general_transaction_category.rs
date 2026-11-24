@@ -6,7 +6,8 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::commands::currency::{base_currency, load_fx_history, DEFAULT_BASE_CURRENCY};
+use crate::commands::currency::load_fx_history;
+use crate::workspace_currency::{base_currency, DEFAULT_BASE_CURRENCY};
 use crate::domain::currency_conversion::FxHistory;
 use crate::entity::{bank_account, general_transaction, general_transaction_category};
 use crate::error::AppError;

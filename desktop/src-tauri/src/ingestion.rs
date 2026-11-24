@@ -16,7 +16,7 @@ use sea_orm::{
 use tauri::Manager;
 
 use crate::commands::collector::{collect_asset, CollectorGuard};
-use crate::commands::currency::{base_currency, workspace_asset_currencies};
+use crate::workspace_currency::{base_currency, workspace_asset_currencies};
 use crate::domain::position_pricing::ASSET_CLASSES_WITH_AUTO_QUOTE;
 use crate::entity::{
     asset_favorites, assets, bank_account, ingestion_runs, loan, stock_price_history, transactions,
