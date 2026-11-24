@@ -32,6 +32,8 @@ mod wallet_viewer;
 mod test_support;
 #[cfg(test)]
 mod flow_tests;
+#[cfg(test)]
+mod boundary_tests;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
