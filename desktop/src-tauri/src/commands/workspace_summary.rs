@@ -11,7 +11,8 @@ use serde::Serialize;
 
 use crate::commands::portfolio_summary::ClassAllocation;
 use crate::commands::profitability::{compute_profitability, MonthlyReturn};
-use crate::commands::currency::{base_currency, positions_in_base, sum_in_base};
+use crate::commands::currency::{positions_in_base, sum_in_base};
+use crate::workspace_currency::base_currency;
 use crate::entity::{portfolio, transactions};
 use crate::error::AppError;
 

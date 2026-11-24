@@ -8,9 +8,8 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::commands::currency::{
-    base_currency, load_fx_history, positions_in_base, workspace_of_portfolio,
-};
+use crate::commands::currency::{load_fx_history, positions_in_base, workspace_of_portfolio};
+use crate::workspace_currency::base_currency;
 use crate::domain::cost_basis::{self, EventKind};
 use crate::domain::position_pricing::{self, PricingResult};
 use crate::domain::tax::classify::{treatment, TaxTreatment};

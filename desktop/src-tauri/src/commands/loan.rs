@@ -13,7 +13,8 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::commands::currency::{rates_for, validate_currency, DEFAULT_BASE_CURRENCY};
+use crate::commands::currency::{rates_for, validate_currency};
+use crate::workspace_currency::DEFAULT_BASE_CURRENCY;
 use crate::domain::loan::{
     accrued_interest, extra_received, outstanding_balance, validate_positive,
 };

@@ -10,7 +10,8 @@ use crate::commands::crypto_indicator::{
     apply_threshold, crypto_score_for, crypto_score_history_for, record_crypto_indicator_in,
     RecordCryptoIndicatorRequest,
 };
-use crate::commands::currency::{base_currency, positions_in_base, save_base_currency, sum_in_base};
+use crate::commands::currency::{positions_in_base, save_base_currency, sum_in_base};
+use crate::workspace_currency::base_currency;
 use crate::commands::profitability::{compare_with_benchmarks, compute_profitability};
 use crate::commands::proventos::proventos_summary_in;
 use crate::commands::transaction::list_transactions_in;

@@ -5,7 +5,8 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::commands::currency::{rates_for, validate_currency, DEFAULT_BASE_CURRENCY};
+use crate::commands::currency::{rates_for, validate_currency};
+use crate::workspace_currency::DEFAULT_BASE_CURRENCY;
 use crate::entity::{bank_account, general_transaction, liability, loan, loan_repayment};
 use crate::error::AppError;
 

@@ -9,7 +9,8 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::Serialize;
 
 use crate::commands::bank_account::{compute_total_cash, mirrored_cash_deduction};
-use crate::commands::currency::{base_currency, positions_in_base, rates_for, DEFAULT_BASE_CURRENCY};
+use crate::commands::currency::{positions_in_base, rates_for};
+use crate::workspace_currency::{base_currency, DEFAULT_BASE_CURRENCY};
 use crate::commands::liability::list_liabilities_view;
 use crate::commands::loan::list_loans_view;
 use crate::commands::option_position::list_option_positions_view;
