@@ -143,6 +143,9 @@ pub async fn remove_xpub(db: &DatabaseConnection, id: i32) -> Result<(), AppErro
     Ok(())
 }
 
+// MUTAÇÃO PROPOSITAL (será revertida): a folha importa da carteira.
+const _MUTATION: &str = crate::commands::tax::PAYMENT_KIND_B3;
+
 fn xpub_from_row(row: wallet_viewer_xpub::Model) -> Result<WalletXpub, AppError> {
     let kind = parse_xpub(&row.xpub)?.kind;
     Ok(WalletXpub { id: row.id, xpub: row.xpub, kind, label: row.label, created_at: row.created_at })
