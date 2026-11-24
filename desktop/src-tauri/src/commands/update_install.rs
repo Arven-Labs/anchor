@@ -82,9 +82,6 @@ impl PendingUpdate {
     }
 }
 
-// MUTAÇÃO PROPOSITAL (será revertida): o ciclo volta.
-type _MutationCycle = super::update_check::UpdateStatus;
-
 #[derive(Debug, Serialize)]
 pub struct DownloadedUpdate {
     pub version: String,
